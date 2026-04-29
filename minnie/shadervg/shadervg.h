@@ -3348,11 +3348,12 @@ YF void YAC_CALL sdvg_DrawPointsRoundPatternDecalAAVBO14_2 (sUI _vboId, sUI _byt
 
 // ----------- custom shaders ------------
 
-/* @function sdvg_CreateShader,String vs,String fs:int
+/* @function sdvg_CreateShader,String vs,String fs:int,String name
 Create user-defined shader program
 
 @arg vs Vertex shader source
 @arg fs Fragment shader source
+@arg name Shader program name (used for GL object label and to find precompiled shader binary, when supported). May be null.
 
 @return ShaderVG shader index
 
@@ -3360,7 +3361,7 @@ Create user-defined shader program
 @groupref Attrib
 @groupref Uniform
 */
-sUI YAC_CALL sdvg_CreateShader (const char *vs, const char *fs);
+sUI YAC_CALL sdvg_CreateShader (const char *vs, const char *fs, const char *name);
 
 /* @function sdvg_DestroyShader,int shaderIdx
 Destroy user-defined shader program
@@ -3441,7 +3442,7 @@ Set integer / sampler uniform in currently bound shader program
 */
 void YAC_CALL sdvg_Uniform1i (const char *_name, sSI _i);
 #ifdef SHADERVG_SCRIPT_API
-YF sUI YAC_CALL _sdvg_CreateShader (YAC_String *vs, YAC_String *fs);
+YF sUI YAC_CALL _sdvg_CreateShader (YAC_String *vs, YAC_String *fs, YAC_String *name);
 YF sSI YAC_CALL _sdvg_GetUniformLocation (YAC_String *_name);
 YF sSI YAC_CALL _sdvg_GetAttribLocation (YAC_String *_name);
 /* @function sdvg_UniformMatrix4,String name,Matrix4f m

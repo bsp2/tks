@@ -40,7 +40,11 @@ class ShaderVG_Shader {
    ~ShaderVG_Shader();
 
   public:
-	sBool create(const char *_sVert, const char *_sFrag);
+	sBool create(const char *_sVert, const char *_sFrag
+#ifdef SHADERVG_OBJECT_LABELS
+                , const char *_sName
+#endif // SHADERVG_OBJECT_LABELS
+                );
 
    void bind(void);
    void unbind(void);

@@ -498,205 +498,218 @@ static PointsRoundPatternAA14_2                      points_round_pattern_aa_14_
 static PointsRoundPatternDecalAA32                   points_round_pattern_decal_aa_32;
 static PointsRoundPatternDecalAA14_2                 points_round_pattern_decal_aa_14_2;
 
-static ShaderVG_Shape *all_shapes[] = {
-   /*0*/&triangles_fill_flat_32,
-   &triangles_fill_flat_14_2,
-   &triangles_fill_flat_uniform_32,
-   &triangles_fill_flat_uniform_14_2,
-   &triangles_fill_flat_uniform_32_linear,
-   &triangles_fill_flat_uniform_14_2_linear,
-   &triangles_fill_flat_uniform_32_radial,
-   &triangles_fill_flat_uniform_14_2_radial,
-   &triangles_fill_flat_uniform_32_conic,
-   &triangles_fill_flat_uniform_14_2_conic,
-   /*10*/&triangles_fill_flat_uniform_32_pattern,
-   &triangles_fill_flat_uniform_14_2_pattern,
-   &triangles_fill_flat_uniform_32_pattern_alpha,
-   &triangles_fill_flat_uniform_14_2_pattern_alpha,
-   &triangles_fill_flat_uniform_32_pattern_decal,
-   &triangles_fill_flat_uniform_14_2_pattern_decal,
-   &triangles_fill_flat_uniform_32_pattern_decal_alpha,
-   &triangles_fill_flat_uniform_14_2_pattern_decal_alpha,
-   &triangles_fill_gouraud_32,
-   &triangles_fill_gouraud_14_2,
-   /*20*/&triangles_fill_gouraud_modulate_32,
-   &triangles_fill_gouraud_modulate_14_2,
-   &triangles_fill_flat_edgeaa_32,
-   &triangles_fill_flat_edgeaa_14_2,
-   &triangles_fill_gouraud_edgeaa_32,
-   &triangles_fill_gouraud_edgeaa_14_2,
-   &triangles_tex_uv_flat_32,
-   &triangles_tex_uv_flat_14_2,
-   &triangles_tex_uv_gouraud_32,
-   &triangles_tex_uv_gouraud_14_2,
-   /*30*/&triangles_tex_uv_flat_decal_32,
-   &triangles_tex_uv_flat_decal_14_2,
-   &triangles_tex_uv_gouraud_decal_32,
-   &triangles_tex_uv_gouraud_decal_14_2,
-   &triangles_tex_uv_flat_32_alpha,
-   &triangles_tex_uv_flat_14_2_alpha,
-   &triangles_tex_uv_gouraud_32_alpha,
-   &triangles_tex_uv_gouraud_14_2_alpha,
-   &triangles_tex_uv_flat_decal_32_alpha,
-   &triangles_tex_uv_flat_decal_14_2_alpha,
-   /*40*/&triangles_tex_uv_gouraud_decal_32_alpha,
-   &triangles_tex_uv_gouraud_decal_14_2_alpha,
-   &triangles_tex_uv_flat_32_alpha_sdf,
-   &triangles_tex_uv_flat_14_2_alpha_sdf,
+typedef struct shadervg_shape_s {
+   ShaderVG_Shape *shape;
+#ifdef SHADERVG_OBJECT_LABELS
+   const char *name;
+#endif // SHADERVG_OBJECT_LABELS
+} shadervg_shape_t;
+
+#ifdef SHADERVG_OBJECT_LABELS
+#define Dshape_type(a) { &a, #a }
+#else
+#define Dshape_type(a) { &a }
+#endif // SHADERVG_OBJECT_LABELS
+
+static shadervg_shape_t all_shapes[] = {
+   /*0*/Dshape_type(triangles_fill_flat_32),
+   Dshape_type(triangles_fill_flat_14_2),
+   Dshape_type(triangles_fill_flat_uniform_32),
+   Dshape_type(triangles_fill_flat_uniform_14_2),
+   Dshape_type(triangles_fill_flat_uniform_32_linear),
+   Dshape_type(triangles_fill_flat_uniform_14_2_linear),
+   Dshape_type(triangles_fill_flat_uniform_32_radial),
+   Dshape_type(triangles_fill_flat_uniform_14_2_radial),
+   Dshape_type(triangles_fill_flat_uniform_32_conic),
+   Dshape_type(triangles_fill_flat_uniform_14_2_conic),
+   /*10*/Dshape_type(triangles_fill_flat_uniform_32_pattern),
+   Dshape_type(triangles_fill_flat_uniform_14_2_pattern),
+   Dshape_type(triangles_fill_flat_uniform_32_pattern_alpha),
+   Dshape_type(triangles_fill_flat_uniform_14_2_pattern_alpha),
+   Dshape_type(triangles_fill_flat_uniform_32_pattern_decal),
+   Dshape_type(triangles_fill_flat_uniform_14_2_pattern_decal),
+   Dshape_type(triangles_fill_flat_uniform_32_pattern_decal_alpha),
+   Dshape_type(triangles_fill_flat_uniform_14_2_pattern_decal_alpha),
+   Dshape_type(triangles_fill_gouraud_32),
+   Dshape_type(triangles_fill_gouraud_14_2),
+   /*20*/Dshape_type(triangles_fill_gouraud_modulate_32),
+   Dshape_type(triangles_fill_gouraud_modulate_14_2),
+   Dshape_type(triangles_fill_flat_edgeaa_32),
+   Dshape_type(triangles_fill_flat_edgeaa_14_2),
+   Dshape_type(triangles_fill_gouraud_edgeaa_32),
+   Dshape_type(triangles_fill_gouraud_edgeaa_14_2),
+   Dshape_type(triangles_tex_uv_flat_32),
+   Dshape_type(triangles_tex_uv_flat_14_2),
+   Dshape_type(triangles_tex_uv_gouraud_32),
+   Dshape_type(triangles_tex_uv_gouraud_14_2),
+   /*30*/Dshape_type(triangles_tex_uv_flat_decal_32),
+   Dshape_type(triangles_tex_uv_flat_decal_14_2),
+   Dshape_type(triangles_tex_uv_gouraud_decal_32),
+   Dshape_type(triangles_tex_uv_gouraud_decal_14_2),
+   Dshape_type(triangles_tex_uv_flat_32_alpha),
+   Dshape_type(triangles_tex_uv_flat_14_2_alpha),
+   Dshape_type(triangles_tex_uv_gouraud_32_alpha),
+   Dshape_type(triangles_tex_uv_gouraud_14_2_alpha),
+   Dshape_type(triangles_tex_uv_flat_decal_32_alpha),
+   Dshape_type(triangles_tex_uv_flat_decal_14_2_alpha),
+   /*40*/Dshape_type(triangles_tex_uv_gouraud_decal_32_alpha),
+   Dshape_type(triangles_tex_uv_gouraud_decal_14_2_alpha),
+   Dshape_type(triangles_tex_uv_flat_32_alpha_sdf),
+   Dshape_type(triangles_tex_uv_flat_14_2_alpha_sdf),
 #ifndef SHADERVG_STENCIL_POLYGONS
-   &polygon_fill_flat_32,
-   &polygon_fill_flat_14_2,
-   &polygon_fill_gouraud_32,
-   &polygon_fill_gouraud_14_2,
+   Dshape_type(polygon_fill_flat_32),
+   Dshape_type(polygon_fill_flat_14_2),
+   Dshape_type(polygon_fill_gouraud_32),
+   Dshape_type(polygon_fill_gouraud_14_2),
 #endif // SHADERVG_STENCIL_POLYGONS
-   &rect_fill_aa,
-   &rect_fill_aa_linear,
-   &rect_fill_aa_radial,
-   &rect_fill_aa_conic,
-   &rect_fill_aa_pattern,
-   &rect_fill_aa_pattern_alpha,
-   /*50*/&rect_fill_aa_pattern_decal,
-   &rect_fill_aa_pattern_decal_alpha,
-   &rect_stroke_aa,
-   &rect_stroke_aa_linear,
-   &rect_stroke_aa_radial,
-   &rect_stroke_aa_conic,
-   &rect_stroke_aa_pattern,
-   &rect_stroke_aa_pattern_alpha,
-   &rect_stroke_aa_pattern_decal,
-   &rect_stroke_aa_pattern_decal_alpha,
-   /*60*/&rect_fill_stroke_aa,
-   &ellipse_fill_aa,
-   &ellipse_fill_aa_linear,
-   &ellipse_fill_aa_radial,
-   &ellipse_fill_aa_conic,
-   &ellipse_fill_aa_pattern,
-   &ellipse_fill_aa_pattern_alpha,
-   &ellipse_fill_aa_pattern_decal,
-   &ellipse_fill_aa_pattern_decal_alpha,
-   &ellipse_stroke_aa,
-   /*70*/&ellipse_stroke_aa_linear,
-   &ellipse_stroke_aa_radial,
-   &ellipse_stroke_aa_conic,
-   &ellipse_stroke_aa_pattern,
-   &ellipse_stroke_aa_pattern_alpha,
-   &ellipse_stroke_aa_pattern_decal,
-   &ellipse_stroke_aa_pattern_decal_alpha,
-   &ellipse_fill_stroke_aa,
-   &roundrect_fill_aa,
-   &roundrect_fill_aa_linear,
-   /*80*/&roundrect_fill_aa_radial,
-   &roundrect_fill_aa_conic,
-   &roundrect_fill_aa_pattern,
-   &roundrect_fill_aa_pattern_alpha,
-   &roundrect_fill_aa_pattern_decal,
-   &roundrect_fill_aa_pattern_decal_alpha,
-   &roundrect_stroke_aa,
-   &roundrect_stroke_aa_linear,
-   &roundrect_stroke_aa_radial,
-   &roundrect_stroke_aa_conic,
-   /*90*/&roundrect_stroke_aa_pattern,
-   &roundrect_stroke_aa_pattern_alpha,
-   &roundrect_stroke_aa_pattern_decal,
-   &roundrect_stroke_aa_pattern_decal_alpha,
-   &roundrect_fill_stroke_aa,
+   Dshape_type(rect_fill_aa),
+   Dshape_type(rect_fill_aa_linear),
+   Dshape_type(rect_fill_aa_radial),
+   Dshape_type(rect_fill_aa_conic),
+   Dshape_type(rect_fill_aa_pattern),
+   Dshape_type(rect_fill_aa_pattern_alpha),
+   /*50*/Dshape_type(rect_fill_aa_pattern_decal),
+   Dshape_type(rect_fill_aa_pattern_decal_alpha),
+   Dshape_type(rect_stroke_aa),
+   Dshape_type(rect_stroke_aa_linear),
+   Dshape_type(rect_stroke_aa_radial),
+   Dshape_type(rect_stroke_aa_conic),
+   Dshape_type(rect_stroke_aa_pattern),
+   Dshape_type(rect_stroke_aa_pattern_alpha),
+   Dshape_type(rect_stroke_aa_pattern_decal),
+   Dshape_type(rect_stroke_aa_pattern_decal_alpha),
+   /*60*/Dshape_type(rect_fill_stroke_aa),
+   Dshape_type(ellipse_fill_aa),
+   Dshape_type(ellipse_fill_aa_linear),
+   Dshape_type(ellipse_fill_aa_radial),
+   Dshape_type(ellipse_fill_aa_conic),
+   Dshape_type(ellipse_fill_aa_pattern),
+   Dshape_type(ellipse_fill_aa_pattern_alpha),
+   Dshape_type(ellipse_fill_aa_pattern_decal),
+   Dshape_type(ellipse_fill_aa_pattern_decal_alpha),
+   Dshape_type(ellipse_stroke_aa),
+   /*70*/Dshape_type(ellipse_stroke_aa_linear),
+   Dshape_type(ellipse_stroke_aa_radial),
+   Dshape_type(ellipse_stroke_aa_conic),
+   Dshape_type(ellipse_stroke_aa_pattern),
+   Dshape_type(ellipse_stroke_aa_pattern_alpha),
+   Dshape_type(ellipse_stroke_aa_pattern_decal),
+   Dshape_type(ellipse_stroke_aa_pattern_decal_alpha),
+   Dshape_type(ellipse_fill_stroke_aa),
+   Dshape_type(roundrect_fill_aa),
+   Dshape_type(roundrect_fill_aa_linear),
+   /*80*/Dshape_type(roundrect_fill_aa_radial),
+   Dshape_type(roundrect_fill_aa_conic),
+   Dshape_type(roundrect_fill_aa_pattern),
+   Dshape_type(roundrect_fill_aa_pattern_alpha),
+   Dshape_type(roundrect_fill_aa_pattern_decal),
+   Dshape_type(roundrect_fill_aa_pattern_decal_alpha),
+   Dshape_type(roundrect_stroke_aa),
+   Dshape_type(roundrect_stroke_aa_linear),
+   Dshape_type(roundrect_stroke_aa_radial),
+   Dshape_type(roundrect_stroke_aa_conic),
+   /*90*/Dshape_type(roundrect_stroke_aa_pattern),
+   Dshape_type(roundrect_stroke_aa_pattern_alpha),
+   Dshape_type(roundrect_stroke_aa_pattern_decal),
+   Dshape_type(roundrect_stroke_aa_pattern_decal_alpha),
+   Dshape_type(roundrect_fill_stroke_aa),
    // &roundrect_fill_stroke_sym_aa,
-   &line_strip_flat_32,
-   &line_strip_flat_14_2,
-   &line_strip_flat_aa_32,
-   &line_strip_flat_aa_14_2,
-   &line_strip_flat_aa_32_linear,
-   /*100*/&line_strip_flat_aa_14_2_linear,
-   &line_strip_flat_aa_32_radial,
-   &line_strip_flat_aa_14_2_radial,
-   &line_strip_flat_aa_32_conic,
-   &line_strip_flat_aa_14_2_conic,
-   &line_strip_flat_aa_32_pattern,
-   &line_strip_flat_aa_14_2_pattern,
-   &line_strip_flat_aa_32_pattern_alpha,
-   &line_strip_flat_aa_14_2_pattern_alpha,
-   &line_strip_flat_aa_32_pattern_decal,
-   /*110*/&line_strip_flat_aa_14_2_pattern_decal,
-   &line_strip_flat_aa_32_pattern_decal_alpha,
-   &line_strip_flat_aa_14_2_pattern_decal_alpha,
-   &line_strip_pattern_aa_32,
-   &line_strip_pattern_aa_14_2,
-   &line_strip_pattern_decal_aa_32,
-   &line_strip_pattern_decal_aa_14_2,
-   &line_strip_flat_bevel_aa_32,
-   &line_strip_flat_bevel_aa_14_2,
-   &line_strip_pattern_bevel_aa_32,
-   /*120*/&line_strip_pattern_bevel_aa_14_2,
-   &line_strip_pattern_decal_bevel_aa_32,
-   &line_strip_pattern_decal_bevel_aa_14_2,
-   &line_strip_flat_bevel_aa_32_linear,
-   &line_strip_flat_bevel_aa_14_2_linear,
-   &line_strip_flat_bevel_aa_32_radial,
-   &line_strip_flat_bevel_aa_14_2_radial,
-   &line_strip_flat_bevel_aa_32_conic,
-   &line_strip_flat_bevel_aa_14_2_conic,
-   &line_strip_flat_bevel_aa_32_pattern,
-   /*130*/&line_strip_flat_bevel_aa_14_2_pattern,
-   &line_strip_flat_bevel_aa_32_pattern_alpha,
-   &line_strip_flat_bevel_aa_14_2_pattern_alpha,
-   &line_strip_flat_bevel_aa_32_pattern_decal,
-   &line_strip_flat_bevel_aa_14_2_pattern_decal,
-   &line_strip_flat_bevel_aa_32_pattern_decal_alpha,
-   &line_strip_flat_bevel_aa_14_2_pattern_decal_alpha,
-   &line_strip_flat_miter_aa_32,
-   &line_strip_flat_miter_aa_14_2,
-   &line_strip_pattern_miter_aa_32,
-   /*140*/&line_strip_pattern_miter_aa_14_2,
-   &line_strip_pattern_decal_miter_aa_32,
-   &line_strip_pattern_decal_miter_aa_14_2,
-   &line_strip_flat_miter_aa_32_linear,
-   &line_strip_flat_miter_aa_14_2_linear,
-   &line_strip_flat_miter_aa_32_radial,
-   &line_strip_flat_miter_aa_14_2_radial,
-   &line_strip_flat_miter_aa_32_conic,
-   &line_strip_flat_miter_aa_14_2_conic,
-   &line_strip_flat_miter_aa_32_pattern,
-   /*150*/&line_strip_flat_miter_aa_14_2_pattern,
-   &line_strip_flat_miter_aa_32_pattern_alpha,
-   &line_strip_flat_miter_aa_14_2_pattern_alpha,
-   &line_strip_flat_miter_aa_32_pattern_decal,
-   &line_strip_flat_miter_aa_14_2_pattern_decal,
-   &line_strip_flat_miter_aa_32_pattern_decal_alpha,
-   &line_strip_flat_miter_aa_14_2_pattern_decal_alpha,
-   &lines_flat_aa_32,
-   &lines_flat_aa_14_2,
-   &lines_gouraud_aa_32,
-   /*160*/&lines_gouraud_aa_14_2,
-   &lines_pattern_aa_32,
-   &lines_pattern_aa_14_2,
-   &points_square_aa_32,
-   &points_square_aa_14_2,
-   &points_square_gouraud_aa_32,
-   &points_square_gouraud_aa_14_2,
-   &points_round_aa_32,
-   &points_round_aa_32_linear,
-   &points_round_aa_32_radial,
-   /*170*/&points_round_aa_32_conic,
-   &points_round_aa_32_pattern,
-   &points_round_aa_32_pattern_alpha,
-   &points_round_aa_32_pattern_decal,
-   &points_round_aa_32_pattern_decal_alpha,
-   &points_round_aa_14_2,
-   &points_round_aa_14_2_linear,
-   &points_round_aa_14_2_radial,
-   &points_round_aa_14_2_conic,
-   &points_round_aa_14_2_pattern,
-   /*180*/&points_round_aa_14_2_pattern_alpha,
-   &points_round_aa_14_2_pattern_decal,
-   &points_round_aa_14_2_pattern_decal_alpha,
-   &points_round_gouraud_aa_32,
-   &points_round_gouraud_aa_14_2,
-   &points_round_pattern_aa_32,
-   &points_round_pattern_aa_14_2,
-   &points_round_pattern_decal_aa_32,
-   &points_round_pattern_decal_aa_14_2,
+   Dshape_type(line_strip_flat_32),
+   Dshape_type(line_strip_flat_14_2),
+   Dshape_type(line_strip_flat_aa_32),
+   Dshape_type(line_strip_flat_aa_14_2),
+   Dshape_type(line_strip_flat_aa_32_linear),
+   /*100*/Dshape_type(line_strip_flat_aa_14_2_linear),
+   Dshape_type(line_strip_flat_aa_32_radial),
+   Dshape_type(line_strip_flat_aa_14_2_radial),
+   Dshape_type(line_strip_flat_aa_32_conic),
+   Dshape_type(line_strip_flat_aa_14_2_conic),
+   Dshape_type(line_strip_flat_aa_32_pattern),
+   Dshape_type(line_strip_flat_aa_14_2_pattern),
+   Dshape_type(line_strip_flat_aa_32_pattern_alpha),
+   Dshape_type(line_strip_flat_aa_14_2_pattern_alpha),
+   Dshape_type(line_strip_flat_aa_32_pattern_decal),
+   /*110*/Dshape_type(line_strip_flat_aa_14_2_pattern_decal),
+   Dshape_type(line_strip_flat_aa_32_pattern_decal_alpha),
+   Dshape_type(line_strip_flat_aa_14_2_pattern_decal_alpha),
+   Dshape_type(line_strip_pattern_aa_32),
+   Dshape_type(line_strip_pattern_aa_14_2),
+   Dshape_type(line_strip_pattern_decal_aa_32),
+   Dshape_type(line_strip_pattern_decal_aa_14_2),
+   Dshape_type(line_strip_flat_bevel_aa_32),
+   Dshape_type(line_strip_flat_bevel_aa_14_2),
+   Dshape_type(line_strip_pattern_bevel_aa_32),
+   /*120*/Dshape_type(line_strip_pattern_bevel_aa_14_2),
+   Dshape_type(line_strip_pattern_decal_bevel_aa_32),
+   Dshape_type(line_strip_pattern_decal_bevel_aa_14_2),
+   Dshape_type(line_strip_flat_bevel_aa_32_linear),
+   Dshape_type(line_strip_flat_bevel_aa_14_2_linear),
+   Dshape_type(line_strip_flat_bevel_aa_32_radial),
+   Dshape_type(line_strip_flat_bevel_aa_14_2_radial),
+   Dshape_type(line_strip_flat_bevel_aa_32_conic),
+   Dshape_type(line_strip_flat_bevel_aa_14_2_conic),
+   Dshape_type(line_strip_flat_bevel_aa_32_pattern),
+   /*130*/Dshape_type(line_strip_flat_bevel_aa_14_2_pattern),
+   Dshape_type(line_strip_flat_bevel_aa_32_pattern_alpha),
+   Dshape_type(line_strip_flat_bevel_aa_14_2_pattern_alpha),
+   Dshape_type(line_strip_flat_bevel_aa_32_pattern_decal),
+   Dshape_type(line_strip_flat_bevel_aa_14_2_pattern_decal),
+   Dshape_type(line_strip_flat_bevel_aa_32_pattern_decal_alpha),
+   Dshape_type(line_strip_flat_bevel_aa_14_2_pattern_decal_alpha),
+   Dshape_type(line_strip_flat_miter_aa_32),
+   Dshape_type(line_strip_flat_miter_aa_14_2),
+   Dshape_type(line_strip_pattern_miter_aa_32),
+   /*140*/Dshape_type(line_strip_pattern_miter_aa_14_2),
+   Dshape_type(line_strip_pattern_decal_miter_aa_32),
+   Dshape_type(line_strip_pattern_decal_miter_aa_14_2),
+   Dshape_type(line_strip_flat_miter_aa_32_linear),
+   Dshape_type(line_strip_flat_miter_aa_14_2_linear),
+   Dshape_type(line_strip_flat_miter_aa_32_radial),
+   Dshape_type(line_strip_flat_miter_aa_14_2_radial),
+   Dshape_type(line_strip_flat_miter_aa_32_conic),
+   Dshape_type(line_strip_flat_miter_aa_14_2_conic),
+   Dshape_type(line_strip_flat_miter_aa_32_pattern),
+   /*150*/Dshape_type(line_strip_flat_miter_aa_14_2_pattern),
+   Dshape_type(line_strip_flat_miter_aa_32_pattern_alpha),
+   Dshape_type(line_strip_flat_miter_aa_14_2_pattern_alpha),
+   Dshape_type(line_strip_flat_miter_aa_32_pattern_decal),
+   Dshape_type(line_strip_flat_miter_aa_14_2_pattern_decal),
+   Dshape_type(line_strip_flat_miter_aa_32_pattern_decal_alpha),
+   Dshape_type(line_strip_flat_miter_aa_14_2_pattern_decal_alpha),
+   Dshape_type(lines_flat_aa_32),
+   Dshape_type(lines_flat_aa_14_2),
+   Dshape_type(lines_gouraud_aa_32),
+   /*160*/Dshape_type(lines_gouraud_aa_14_2),
+   Dshape_type(lines_pattern_aa_32),
+   Dshape_type(lines_pattern_aa_14_2),
+   Dshape_type(points_square_aa_32),
+   Dshape_type(points_square_aa_14_2),
+   Dshape_type(points_square_gouraud_aa_32),
+   Dshape_type(points_square_gouraud_aa_14_2),
+   Dshape_type(points_round_aa_32),
+   Dshape_type(points_round_aa_32_linear),
+   Dshape_type(points_round_aa_32_radial),
+   /*170*/Dshape_type(points_round_aa_32_conic),
+   Dshape_type(points_round_aa_32_pattern),
+   Dshape_type(points_round_aa_32_pattern_alpha),
+   Dshape_type(points_round_aa_32_pattern_decal),
+   Dshape_type(points_round_aa_32_pattern_decal_alpha),
+   Dshape_type(points_round_aa_14_2),
+   Dshape_type(points_round_aa_14_2_linear),
+   Dshape_type(points_round_aa_14_2_radial),
+   Dshape_type(points_round_aa_14_2_conic),
+   Dshape_type(points_round_aa_14_2_pattern),
+   /*180*/Dshape_type(points_round_aa_14_2_pattern_alpha),
+   Dshape_type(points_round_aa_14_2_pattern_decal),
+   Dshape_type(points_round_aa_14_2_pattern_decal_alpha),
+   Dshape_type(points_round_gouraud_aa_32),
+   Dshape_type(points_round_gouraud_aa_14_2),
+   Dshape_type(points_round_pattern_aa_32),
+   Dshape_type(points_round_pattern_aa_14_2),
+   Dshape_type(points_round_pattern_decal_aa_32),
+   Dshape_type(points_round_pattern_decal_aa_14_2),
 };
-#define SHADERVG_NUM_SHAPES  (sizeof(all_shapes)/sizeof(ShaderVG_Shape*))
+#define SHADERVG_NUM_SHAPES  (sizeof(all_shapes)/sizeof(shadervg_shape_t))
 
 struct ShaderVG_FBO {
    sUI fbo_id;  // 0=unused
@@ -1176,7 +1189,8 @@ sBool YAC_CALL sdvg_GetEnableDebug(void) {
 void YAC_CALL sdvg_SetEnableDebug(sBool _bEnable) {
    for(sUI i = 0u; i < SHADERVG_NUM_SHAPES; i++)
    {
-      ShaderVG_Shape *shape = all_shapes[i];
+      shadervg_shape_t *shapeType = &all_shapes[i];
+      ShaderVG_Shape *shape = shapeType->shape;
       shape->b_debug = _bEnable;
    }
 }
@@ -6015,7 +6029,11 @@ sBool YAC_CALL sdvg_OnOpen(void) {
    // (re-)load built-in shaders
    for(sUI i = 0u; i < SHADERVG_NUM_SHAPES; i++)
    {
-      ShaderVG_Shape *shape = all_shapes[i];
+      shadervg_shape_t *shapeType = &all_shapes[i];
+      ShaderVG_Shape *shape = shapeType->shape;
+#ifdef SHADERVG_OBJECT_LABELS   
+      shape->name = shapeType->name;
+#endif // SHADERVG_OBJECT_LABELS
       Dsdvg_debugprintfv("[trc] sdvg_OnOpen: call shape[%u].onOpen()\n", i);
       if(!shape->onOpen())
       {
@@ -6808,11 +6826,16 @@ void YAC_CALL sdvg_DisableStencilMask(void) {
 }
 
 // ----------- custom shaders ------------
-sUI YAC_CALL sdvg_CreateShader(const char *vs, const char *fs) {
+sUI YAC_CALL sdvg_CreateShader(const char *vs, const char *fs, const char *name) {
    sUI shaderIdx = 1u;
    while(shaderIdx < SHADERVG_MAX_CUSTOM_SHADERS - 1u)
    {
       ShaderVG_CustomShape *cs = &custom_shapes[shaderIdx];
+#ifdef SHADERVG_OBJECT_LABELS
+      cs->name = name;
+#else
+      (void)name;
+#endif // SHADERVG_OBJECT_LABELS      
       ShaderVG_Shader *shapeShader = &cs->shape_shader;
       if(0u == shapeShader->prg_id)
       {
@@ -6822,7 +6845,13 @@ sUI YAC_CALL sdvg_CreateShader(const char *vs, const char *fs) {
          }
          else
          {
-            Dsdvg_errorprintf("[---] sdvg_CreateShader: createShapeShader() failed\n");
+            Dsdvg_errorprintf("[---] sdvg_CreateShader: createShapeShader() failed"
+#ifdef SHADERVG_OBJECT_LABELS
+                              " (name=\"%s\")", name
+#else 
+                              "\n"
+#endif // SHADERVG_OBJECT_LABELS
+                              );
             return 0u;
          }
       }
@@ -6837,12 +6866,18 @@ sUI YAC_CALL sdvg_CreateShader(const char *vs, const char *fs) {
 }
 
 #ifdef SHADERVG_SCRIPT_API
-sUI YAC_CALL _sdvg_CreateShader(YAC_String *_vs, YAC_String *_fs) {
+sUI YAC_CALL _sdvg_CreateShader(YAC_String *_vs, YAC_String *_fs, YAC_String *_name) {
    if(YAC_Is_String(_vs) && YAC_Is_String(_fs))
    {
       YAC_CAST_STRING(vs, _vs);
       YAC_CAST_STRING(fs, _fs);
-      return sdvg_CreateShader((const char*)vs->chars, (const char*)fs->chars);
+      const char *nameChars = NULL;
+      if(YAC_Is_String(_name))
+      {
+         YAC_CAST_STRING(name, _name);
+         nameChars = (const char*)name->chars;
+      }
+      return sdvg_CreateShader((const char*)vs->chars, (const char*)fs->chars, nameChars);
    }
    return 0u;
 }

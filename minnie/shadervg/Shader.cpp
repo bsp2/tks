@@ -55,7 +55,11 @@ ShaderVG_Shader::~ShaderVG_Shader() {
 #endif
 }
 
-sBool ShaderVG_Shader::create(const char *_sVert, const char *_sFrag) {
+sBool ShaderVG_Shader::create(const char *_sVert, const char *_sFrag
+#ifdef SHADERVG_OBJECT_LABELS
+                              , const char *_sName
+#endif // SHADERVG_OBJECT_LABELS
+                              ) {
 #define MAX_SHADER_LOG_SIZE  4096
    sBool ret = YAC_FALSE;
 
@@ -98,6 +102,10 @@ sBool ShaderVG_Shader::create(const char *_sVert, const char *_sFrag) {
 
    // Create program
    prg_id = Dsdvg_glcall(glCreateProgram());
+
+#ifdef SHADERVG_OBJECT_LABELS
+   glObjectLabel(GL_PROGRAM, prg_id, -1/*length*/, _sName);
+#endif // SHADERVG_OBJECT_LABELS
 
    Dsdvg_glcall(glAttachShader(prg_id, vpId));
    Dsdvg_glcall(glAttachShader(prg_id, fpId));

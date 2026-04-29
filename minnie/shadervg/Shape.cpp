@@ -534,7 +534,11 @@ sBool ShaderVG_Shape::createShapeShader(const char *_sVS, const char *_sFS) {
 
    Dsdvg_debugprintfvv("[trc] ShaderVG_Shape::createShapeShader: ENTER\n");
 
-   if(!shape_shader.create(_sVS, _sFS))
+   if(!shape_shader.create(_sVS, _sFS
+#ifdef SHADERVG_OBJECT_LABELS
+                           , name
+#endif // SHADERVG_OBJECT_LABELS
+                           ))
    {
       Dsdvg_errorprintf("[---] ShaderVG_Shape::createShapeShader: failed to create shape_shader\n");
       return YAC_FALSE;

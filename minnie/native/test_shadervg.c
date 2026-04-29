@@ -777,7 +777,7 @@ static void LazyCreateCustomShader_1() {
          "   FRAGCOLOR = vec4(u_color_fill.rgb * c, u_color_fill.a); \n"
          "} \n"
          ;
-      custom_shader_idx_1 = sdvg_CreateShader(vs, fs);
+      custom_shader_idx_1 = sdvg_CreateShader(vs, fs, "test_shadervg/custom_shader_1");
    }
 }
 static sBool BindCustomShader_1() {
@@ -850,7 +850,7 @@ static void TestCustomShader_2(sF32 sizeX, sF32 sizeY) {
          "   FRAGCOLOR = vec4(v_color.rgb, v_color.a * u_global_alpha); \n"
          "} \n"
          ;
-      custom_shader_idx_2 = sdvg_CreateShader(vs, fs);
+      custom_shader_idx_2 = sdvg_CreateShader(vs, fs, "test_shadervg/custom_shader_2");
    }
    if(custom_shader_idx_2 >= 0u)
    {
@@ -910,7 +910,7 @@ static void TestCustomShader_3_VBO(Matrix4f *mProj, sF32 sizeX, sF32 sizeY) {
          "   FRAGCOLOR = vec4(v_color.rgb, v_color.a * u_global_alpha); \n"
          "} \n"
          ;
-      custom_shader_idx_3 = sdvg_CreateShader(vs, fs);
+      custom_shader_idx_3 = sdvg_CreateShader(vs, fs, "test_shadervg/custom_shader_3");
 
       // Create + initialize VBO
       custom_vbo_id_3 = sdvg_CreateVBO(256);
@@ -1690,7 +1690,7 @@ static void TestText_3_Swirl(void) {
          "  FRAGCOLOR = vec4(u_color_fill.rgb, TEXTURE2D(u_sampler, v_uv).TEX_ALPHA * u_color_fill.a); \n"
          "} \n"
          ;
-      test_text_3_shader_idx = sdvg_CreateShader(vs, fs);
+      test_text_3_shader_idx = sdvg_CreateShader(vs, fs, "test_shadervg/test_text_3_swirl");
       if(0u == test_text_3_shader_idx)
       {
          Derrorprintf("failed to created test_text_3_shader_idx");

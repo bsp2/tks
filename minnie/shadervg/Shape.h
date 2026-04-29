@@ -46,6 +46,9 @@ class ShaderVG_Shape {
   public:
    ShaderVG_Shader shape_shader;
    sBool b_builtin;
+#ifdef SHADERVG_OBJECT_LABELS
+   const char *name;
+#endif // SHADERVG_OBJECT_LABELS
 
    sSI shape_a_vertex;
    sSI shape_a_vertex_n;   // optional

@@ -108,7 +108,7 @@ extern "C" {
       void (YAC_CALL *sdvg_EnableStencilMask) (void);
       void (YAC_CALL *sdvg_DisableStencilMask) (void);
       // ----------- custom shaders ------------
-      sUI  (YAC_CALL *sdvg_CreateShader)       (const char *vs, const char *fs);
+      sUI  (YAC_CALL *sdvg_CreateShader)       (const char *vs, const char *fs, const char *name);
       void (YAC_CALL *sdvg_DestroyShader)      (sUI _shaderIdx);
       void (YAC_CALL *sdvg_BindShader)         (sUI _shaderIdx);
       void (YAC_CALL *sdvg_UnbindShader)       (void);
