@@ -44,19 +44,23 @@ static sF32  aa_exp    = 1.0f;  // (todo) 'k', lshift-k
 static YAC_Buffer minnie_scratch;
 
 // ----------------------------------------------------------------------------
-void MinnieVG_Init(sBool _bGLCore) {
-   MinnieVG_InitShaderVG(_bGLCore);
+sBool MinnieVG_Init(sBool _bGLCore) {
+   sBool r = YAC_TRUE;
+   r = r && MinnieVG_InitShaderVG(_bGLCore);
    MinnieVG_InitMinnie();
-   MinnieVG_InitMinnieScratchBuffers();
+   r = r && MinnieVG_InitMinnieScratchBuffers();
+   return r;
 }
 
 // ----------------------------------------------------------------------------
-void MinnieVG_InitShaderVG(sBool _bGLCore) {
+sBool MinnieVG_InitShaderVG(sBool _bGLCore) {
+   sBool r = YAC_TRUE;
    sdvg_SetScratchBufferSize(64*1024);
 #if 0
    sdvg_SetGLSLVersion(1/*b_glcore*//*bV3*/, YAC_FALSE/*bGLES*/, NULL/*sVersionStringOrNull*/);
 #endif // 0
-   sdvg_Init(_bGLCore);
+   r = r && sdvg_Init(_bGLCore);
+   return r;
 }
 
 // ----------------------------------------------------------------------------

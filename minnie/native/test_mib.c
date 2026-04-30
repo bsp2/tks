@@ -160,9 +160,9 @@ static const char *tests[] = {
    MIB_PATH "test089_roundrect_fill_stroke.mib", //
    MIB_PATH "test090_roundrect_fill.mib",        //
    MIB_PATH "test091_roundrect_stroke.mib",      //
-   MIB_PATH "test092_linejoin_round.mib",        // 
-   MIB_PATH "test093_polygon_evenodd.mib",       // 
-   MIB_PATH "test094_polygon_nonzero.mib",       // 
+   MIB_PATH "test092_linejoin_round.mib",        //
+   MIB_PATH "test093_polygon_evenodd.mib",       //
+   MIB_PATH "test094_polygon_nonzero.mib",       //
 };
 #define NUM_TESTS  (sizeof(tests) / sizeof(const char*))
 
@@ -528,9 +528,19 @@ int main(int argc, char**argv) {
 
    if(hal_window_init(DISPLAY_WIDTH, DISPLAY_HEIGHT))
    {
-      MinnieVG_Init(1/*b_glcore*/);
+      if(!MinnieVG_Init(1/*b_glcore*/))
+      {
+         Dprintf("[---] MinnieVG_Init() failed, exiting..\n");
+         exit(20);
+      }
+
       sdvg_SetFramebufferSize(DISPLAY_WIDTH, DISPLAY_HEIGHT);
-      MinnieVG_OnOpen();
+
+      if(!MinnieVG_OnOpen())
+      {
+         Dprintf("[---] MinnieVG_OnOpen() failed, exiting..\n");
+         exit(20);
+      }
 
       drawable = minDrawableNew();
       minDrawableInit(drawable);

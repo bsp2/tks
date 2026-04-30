@@ -3442,7 +3442,7 @@ Set integer / sampler uniform in currently bound shader program
 */
 void YAC_CALL sdvg_Uniform1i (const char *_name, sSI _i);
 #ifdef SHADERVG_SCRIPT_API
-YF sUI YAC_CALL _sdvg_CreateShader (YAC_String *vs, YAC_String *fs, YAC_String *name);
+YF sUI YAC_CALL _sdvg_CreateShader (YAC_String *vs, YAC_String *fs, YAC_Object *name);
 YF sSI YAC_CALL _sdvg_GetUniformLocation (YAC_String *_name);
 YF sSI YAC_CALL _sdvg_GetAttribLocation (YAC_String *_name);
 /* @function sdvg_UniformMatrix4,String name,Matrix4f m

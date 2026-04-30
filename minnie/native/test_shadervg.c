@@ -5629,7 +5629,11 @@ int main(int argc, char**argv) {
 #if 0
       sdvg_SetGLSLVersion(1/*b_glcore*//*bV3*/, YAC_FALSE/*bGLES*/, NULL/*sVersionStringOrNull*/);
 #endif // 0
-      sdvg_Init(1/*b_glcore*/);
+      if(!sdvg_Init(1/*b_glcore*/))
+      {
+         Dprintf("[---] sdvg_Init() failed, exiting..\n");
+         exit(20);
+      }
       sdvg_SetStrokeRadiusAAOffset(1.5f);
 
       Dprintf("[...] init OK, initializing textures..\n");
@@ -5650,7 +5654,11 @@ int main(int argc, char**argv) {
       Dprintf("[...] initializing shaders, textures and VBOs..\n");
       {
          sUI t = hal_get_ticks();
-         sdvg_OnOpen();
+         if(!sdvg_OnOpen())
+         {
+            Dprintf("[---] sdvg_OnOpen() failed, exiting..\n");
+            exit(20);
+         }
          t = hal_get_ticks() - t;
          Dprintf("[...] sdvg_onOpen took %u ms\n", t);
       }

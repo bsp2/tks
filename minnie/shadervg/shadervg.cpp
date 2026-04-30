@@ -6866,7 +6866,7 @@ sUI YAC_CALL sdvg_CreateShader(const char *vs, const char *fs, const char *name)
 }
 
 #ifdef SHADERVG_SCRIPT_API
-sUI YAC_CALL _sdvg_CreateShader(YAC_String *_vs, YAC_String *_fs, YAC_String *_name) {
+sUI YAC_CALL _sdvg_CreateShader(YAC_String *_vs, YAC_String *_fs, YAC_Object *_name) {
    if(YAC_Is_String(_vs) && YAC_Is_String(_fs))
    {
       YAC_CAST_STRING(vs, _vs);

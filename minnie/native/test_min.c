@@ -1655,7 +1655,12 @@ int main(int argc, char**argv) {
 
    if(hal_window_init(VP_W, VP_H))
    {
-      MinnieVG_Init(1/*b_glcore*/);
+      if(!MinnieVG_Init(1/*b_glcore*/))
+      {
+         Dprintf("[---] MinnieVG_Init() failed, exiting..\n");
+         exit(20);
+      }
+
       sdvg_SetFramebufferSize(VP_W, VP_H);
       sdvg_SetStrokeRadiusAAOffset(1.5f);
 
@@ -1675,7 +1680,11 @@ int main(int argc, char**argv) {
       Dprintf("[...] initializing shaders and VBOs..\n");
       {
          sUI t = hal_get_ticks();
-         MinnieVG_OnOpen();
+         if(!MinnieVG_OnOpen())
+         {
+            Dprintf("[---] MinnieVG_OnOpen() failed, exiting..\n");
+            exit(20);
+         }
          t = hal_get_ticks() - t;
          Dprintf("[...] MinnieVG_OnOpen took %u ms\n", t);
       }
