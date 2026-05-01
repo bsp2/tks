@@ -7397,8 +7397,8 @@ void YAC_CALL _tkopengl_FindOuterEdges2D(YAC_Object *_edgeIndices, YAC_Object *_
             {
                if(edgeOffI != edgeOff)
                {
-                  if(edgeIndices->elements[edgeOffI+0u] == idxA &&
-                     edgeIndices->elements[edgeOffI+1u] == idxB
+                  if(edgeIndices->elements[edgeOffI+0u] == sSI(idxA) &&
+                     edgeIndices->elements[edgeOffI+1u] == sSI(idxB)
                      )
                   {
                      bShared = YAC_TRUE;

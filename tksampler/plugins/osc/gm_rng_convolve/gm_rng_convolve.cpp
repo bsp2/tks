@@ -217,13 +217,13 @@ static void ST_PLUGIN_API loc_set_mod_value(st_plugin_voice_t *_voice,
 static void loc_next_cycle(gm_rng_convolve_voice_t *voice) {
    unsigned int seed;
 
-   seed = 1u + (unsigned int) (voice->mod_seed1_cur * 0x7fffFFFe);
+   seed = 1u + (unsigned int) (voice->mod_seed1_cur * (float)0x7fffFFFe);
    lfsr_init(&voice->lfsr_1, seed, 8u/*numPre*/);
 
-   seed = 1u + (unsigned int) (voice->mod_seed2_cur * 0x7fffFFFe);
+   seed = 1u + (unsigned int) (voice->mod_seed2_cur * (float)0x7fffFFFe);
    lfsr_init(&voice->lfsr_2, seed, 8u/*numPre*/);
 
-   seed = 1u + (unsigned int) (voice->mod_seed3_cur * 0x7fffFFFe);
+   seed = 1u + (unsigned int) (voice->mod_seed3_cur * (float)0x7fffFFFe);
    lfsr_init(&voice->lfsr_3, seed, 8u/*numPre*/);
 
    if(voice->cycle_idx > voice->cycle_len)

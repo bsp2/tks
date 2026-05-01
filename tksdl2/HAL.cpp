@@ -475,7 +475,7 @@ const unsigned char mem_base_loc_icon_bmp[578] = {
    ,   0u,   0u,   0u,   0u,   0u,   0u,   0u,   0u,   0u,   0u,   0u,   0u,   0u,   0u,   0u,   0u
    ,   0u,   0u,   0u,   0u,   0u,   0u,   0u,   0u,   0u,   0u,   0u,   0u,   0u,   0u,   0u,   0u
    ,   0u,   0u,   0u,   0u,   0u,   0u,   0u,   0u,   0u,   0u,   0u,   0u,   0u,   0u,   0u,   0u
-   ,   0u,   0u                                                                                    
+   ,   0u,   0u
 };
 
 // borrowed from SDL/test/testwm.c:
@@ -497,7 +497,7 @@ static SDL_Surface *LoadIconSurface(const unsigned char *_data, const unsigned i
 		return(NULL);
 	}
 
-	/* Check width and height 
+	/* Check width and height
 	if ( (icon->w%8) != 0 ) {
 		fprintf(stderr, "Icon width must be a multiple of 8!\n");
 		SDL_FreeSurface(icon);
@@ -815,7 +815,7 @@ void _HAL::sendTimerEvent(void) {
       b_timer_event_queued = 1;
 
       SDL_Event user_event;
-      
+
       // yac_host->printf("xxx SDL::sendTimerEvent\n");
 
       // called from timerthread
@@ -928,7 +928,7 @@ void _HAL::openJoysticks(void) {
       _Joystick *jo = new _Joystick[joysticks.num]();
       joysticks.elements = (void*)jo;
 
-      for(sUI i = 0u; i < joysticks.num; i++)
+      for(sSI i = 0u; i < joysticks.num; i++)
       {
          jo[i].class_ID = clid_Joystick;
          jo[i].open(i);

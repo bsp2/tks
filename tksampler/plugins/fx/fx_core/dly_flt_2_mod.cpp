@@ -1,7 +1,7 @@
 // ----
 // ---- file   : dly_flt_2_mod.cpp
 // ---- author : Bastian Spiegel <bs@tkscript.de>
-// ---- legal  : (c) 2020-2024 by Bastian Spiegel.
+// ---- legal  : (c) 2020-2026 by Bastian Spiegel.
 // ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
 // ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
 // ----
@@ -13,7 +13,7 @@
 // ----           - time modulation LFO
 // ----
 // ---- created: 25May2020
-// ---- changed: 31May2020, 08Jun2020, 10Feb2021, 21Jan2024, 27Sep2024
+// ---- changed: 31May2020, 08Jun2020, 10Feb2021, 21Jan2024, 27Sep2024, 01May2026
 // ----
 // ----
 // ----
@@ -328,7 +328,7 @@ static void ST_PLUGIN_API loc_prepare_block(st_plugin_voice_t *_voice,
       voice->hpf_r.step = voice->hpf_l.step;
 
       float modLFOSpeed = shared->params[PARAM_LFO_SPEED] + voice->mods[MOD_LFO_SPEED];
-      Dstplugin_clamp(modLFOSpeed, 0.0f, 1.0f);
+      modLFOSpeed = Dstplugin_clamp(modLFOSpeed, 0.0f, 1.0f);
       voice->lfo_phase += modLFOSpeed * (1.0f / (1000.0f / 50.0f/*Hz*/));
       if(voice->lfo_phase >= 1.0f)
          voice->lfo_phase -= 1.0f;

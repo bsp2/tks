@@ -1,14 +1,14 @@
 // ----
 // ---- file   : wave_multiplier_delay.cpp
 // ---- author : Bastian Spiegel <bs@tkscript.de>
-// ---- legal  : (c) 2021-2024 by Bastian Spiegel. 
-// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See 
+// ---- legal  : (c) 2021-2026 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
 // ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
 // ----
 // ---- info   : pseudo phase shifter
 // ----
 // ---- created: 13Oct2021
-// ---- changed: 21Jan2024
+// ---- changed: 21Jan2024, 01May2026
 // ----
 // ----
 // ----
@@ -208,7 +208,7 @@ static void ST_PLUGIN_API loc_prepare_block(st_plugin_voice_t *_voice,
    if(_numFrames > 0u)
    {
       double modSmooth = shared->params[PARAM_SMOOTH] + voice->mods[MOD_SMOOTH];
-      Dstplugin_clamp(modSmooth, 0.0f, 1.0);
+      modSmooth = Dstplugin_clamp(modSmooth, 0.0f, 1.0);
       modSmooth  = 1.0 - modSmooth;
       modSmooth *= modSmooth;
       modSmooth *= modSmooth;
@@ -279,7 +279,7 @@ static void ST_PLUGIN_API loc_prepare_block(st_plugin_voice_t *_voice,
 static void ST_PLUGIN_API loc_process_replace(st_plugin_voice_t  *_voice,
                                               int                 _bMonoIn,
                                               const float        *_samplesIn,
-                                              float              *_samplesOut, 
+                                              float              *_samplesOut,
                                               unsigned int        _numFrames
                                               ) {
    // Ring modulate at (modulated) note frequency
@@ -396,4 +396,3 @@ st_plugin_info_t *wave_multiplier_delay_init(void) {
    return &ret->base;
 }
 } // extern "C"
-
