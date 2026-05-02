@@ -6,7 +6,7 @@
 ///
 ///
 /// created: 06Jul2024
-/// changed: 27Apr2026, 28Apr2026
+/// changed: 27Apr2026, 28Apr2026, 02May2026
 ///
 ///
 
@@ -104,6 +104,22 @@ static void loc_on_lglw_close(lglw_t _lglw) {
 }
 
 // ---------------------------------------------------------------------------- tkclap_window_close
+static lglw_bool_t loc_on_lglw_keyboard(lglw_t      _lglw,
+                                        uint32_t    _vkey,
+                                        uint32_t    _kmod,
+                                        lglw_bool_t _bPressed
+                                        ) {
+   Dprintf("[dbg] loc_on_lglw_keyboard: lglw=%p vkey=0x%08x kmod=0x%08x bPressed=%d\n", _lglw, _vkey, _kmod, _bPressed);
+   if(_bPressed && 0u == _kmod)
+   {
+      TKCLAPWindow *vw = (TKCLAPWindow*)lglw_userdata_get(_lglw);
+      vw->plugin->callOnLinuxKeyDown(_vkey);
+      return LGLW_TRUE;
+   }
+   return LGLW_FALSE;
+}
+
+// ---------------------------------------------------------------------------- tkclap_window_close
 void tkclap_window_close(TKCLAPWindow *vw) {
    lglw_window_close(vw->lglw);
    lglw_exit(vw->lglw);
@@ -124,6 +140,21 @@ TKCLAPWindow *tkclap_window_create(CLAPPlugin *thiz) {
 
    if(1)
    {
+      // Create window object and remember in window list
+      //  (note) some plugins (e.g. TAL Pha) require this to be done before ext_gui->create()
+      tkclap_window_lock();
+      vw = new(std::nothrow) TKCLAPWindow;
+      vw->plugin                         = thiz;
+      vw->next                           = first_window;
+      vw->lglw                           = NULL; // see below
+      vw->clap_fd                        = -1;
+      vw->clap_fd_flags                  = 0;
+      vw->b_close_pending                = YAC_FALSE;
+      vw->b_allow_redirect_close_to_hide = YAC_TRUE;
+      ::strncpy(vw->window_title, loc_init_window_title, TKCLAP_MAX_WINDOWTITLE_SIZE);
+      first_window = vw;
+      tkclap_window_unlock();
+
       // Create plugin editor
       if(thiz->ext_gui->create(thiz->plugin, bParent?CLAP_WINDOW_API_X11:"", bParent?0:1/*is_floating=0=>embed in parent*/))
       {
@@ -167,23 +198,15 @@ TKCLAPWindow *tkclap_window_create(CLAPPlugin *thiz) {
             sSI uiWindowY = thiz->ui_window_y;
 
             // Create toplevel window
-            vw = new(std::nothrow) TKCLAPWindow;
             lglw_t lglw = lglw_init(32,32);  // initial hidden window size=32x32 (remove??)
             lglw_userdata_set(lglw, (void*)vw);
             lglw_close_callback_set(lglw, &loc_on_lglw_close);
+            lglw_keyboard_callback_set(lglw, &loc_on_lglw_keyboard);
             (void)lglw_window_open(lglw, NULL/*parent*/, uiWindowX/*x*/, uiWindowY/*y*/, sizeX, sizeY);
 
-            // Remember in window list
+            // Set LGLW handle
             tkclap_window_lock();
-            vw->plugin                         = thiz;
-            vw->next                           = first_window;
             vw->lglw                           = lglw;
-            vw->clap_fd                        = -1;
-            vw->clap_fd_flags                  = 0;
-            vw->b_close_pending                = YAC_FALSE;
-            vw->b_allow_redirect_close_to_hide = YAC_TRUE;
-            ::strncpy(vw->window_title, loc_init_window_title, TKCLAP_MAX_WINDOWTITLE_SIZE);
-            first_window = vw;
             tkclap_window_unlock();
 
             // Set plugin editor parent
@@ -193,6 +216,20 @@ TKCLAPWindow *tkclap_window_create(CLAPPlugin *thiz) {
             if(thiz->ext_gui->set_parent(thiz->plugin, &clapParentWindow))
             {
                Dprintf("[dbg] tkclap_window_create: ext_gui->set_parent() OK\n");
+
+               // Find plugin child window id
+               {
+                  void *firstChildWindow = lglw_find_first_child_window_handle(lglw);
+                  if(NULL != firstChildWindow)
+                  {
+                     Dprintf("[dbg] tkclap_window_create: first child window handle=%p\n", firstChildWindow);
+                     lglw_send_xembed_notify(lglw, firstChildWindow);
+                  }
+                  else
+                  {
+                     Dprintf("[~~~] tkclap_window_create: failed to find first child window handle\n");
+                  }
+               }
             }
             else
             {

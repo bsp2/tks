@@ -7,7 +7,7 @@
 ///
 /// created: 01Jul2024
 /// changed: 02Jul2024, 03Jul2024, 04Jul2024, 05Jul2024, 06Jul2024, 24Sep2024, 27Sep2024
-///          29Nov2024, 06Apr2026, 09Apr2026, 21Apr2026, 27Apr2026, 28Apr2026
+///          29Nov2024, 06Apr2026, 09Apr2026, 21Apr2026, 27Apr2026, 28Apr2026, 02May2026
 ///
 ///
 ///
@@ -195,9 +195,12 @@ static bool CLAP_ABI loc_clap_host_posix_fd_support_register_fd(const clap_host_
    if(NULL == vw)
    {
       vw = tkclap_window_find_by_plugin(plugin, 1/*bLock*/);
-      vw->clap_fd       = fd;
-      vw->clap_fd_flags = flags;
-      Dprintf("[dbg] loc_clap_host_posix_fd_support_register_fd: register fd=%d flags=%u\n", fd, flags);
+      if(NULL != vw)
+      {
+         vw->clap_fd       = fd;
+         vw->clap_fd_flags = flags;
+         Dprintf("[dbg] loc_clap_host_posix_fd_support_register_fd: register fd=%d flags=%u\n", fd, flags);
+      }
       ret = true;
    }
    else
@@ -2051,7 +2054,7 @@ void YAC_VCALL CLAPPlugin::yacGetSignalStringList(YAC_String *_sig) {
    // ---- the number represents the encoded argument type identifiers used by this function
    // ---- 1=int, 2=float, 3=object. bits 0+1 represent argument #0, bits 2+3 represent argument #1 and so on
    //
-   _sig->visit("onParamEdit:23 onAutomate:39 onWin32KeyEvent:7 onMacOSKeyDown:7 onRescanParams:3");
+   _sig->visit("onParamEdit:23 onAutomate:39 onWin32KeyEvent:7 onMacOSKeyDown:7 onLinuxKeyDown:7 onRescanParams:3");
 }
 
 void YAC_VCALL CLAPPlugin::yacRegisterSignal(sUI _id, YAC_FunctionHandle _fun) {
@@ -2120,6 +2123,21 @@ void CLAPPlugin::callOnMacOSKeyDown(sUI _keyCode) {
       args[1].initInt((sSI)_keyCode);
       yac_host->yacEvalFunction(tkclap_script_context, f, 2, args);
       ////yac_host->->printf("xxx callOnMacOSKeyDown: f call returned\n");
+   }
+}
+
+void CLAPPlugin::callOnLinuxKeyDown(sUI _keyCode) {
+   // (note) called via keyDown event (see window_view.mm)
+   Dprintf_debug("[dbg] CLAPPlugin::callOnLinuxKeyEvent: keyCode=0x%08x\n", _keyCode);
+
+   void *f = tkclap_signal_funs[CLAPPLUGIN_SIGNAL_ONLINUXKEYDOWN];
+   if(NULL != f)
+   {
+      YAC_Value args[2];
+      args[0].initObject(this, 0);
+      args[1].initInt((sSI)_keyCode);
+      yac_host->yacEvalFunction(tkclap_script_context, f, 2, args);
+      ////yac_host->->printf("xxx callOnLinuxKeyDown: f call returned\n");
    }
 }
 

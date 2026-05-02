@@ -7,7 +7,7 @@
 ///
 /// created: 01Jul2024
 /// changed: 02Jul2024, 03Jul2024, 04Jul2024, 05Jul2024, 06Jul2024, 22Sep2024, 27Sep2024
-///          19Apr2026, 23Apr2026, 27Apr2026, 28Apr2026
+///          19Apr2026, 23Apr2026, 27Apr2026, 28Apr2026, 02May2026
 ///
 ///
 ///
@@ -27,8 +27,9 @@ YG("clap");
 #define CLAPPLUGIN_SIGNAL_ONAUTOMATE       1  // param value change
 #define CLAPPLUGIN_SIGNAL_ONWIN32KEYEVENT  2  // key pressed (Windows build)
 #define CLAPPLUGIN_SIGNAL_ONMACOSKEYDOWN   3  // key pressed (macOS build)
-#define CLAPPLUGIN_SIGNAL_ONRESCANPARAMS   4  // params changed
-#define CLAPPLUGIN_NUM_SIGNALS             5
+#define CLAPPLUGIN_SIGNAL_ONLINUXKEYDOWN   4  // key pressed (Linux build)
+#define CLAPPLUGIN_SIGNAL_ONRESCANPARAMS   5  // params changed
+#define CLAPPLUGIN_NUM_SIGNALS             6
 
 extern YAC_FunctionHandle tkclap_signal_funs[CLAPPLUGIN_NUM_SIGNALS];
 extern YAC_ContextHandle tkclap_script_context;
@@ -444,6 +445,7 @@ YC class CLAPPlugin : public YAC_Object {
    void callOnAutomate (sSI _paramIdx, sF32 _value);
    void callOnWin32KeyEvent (sUI _lparam);
    void callOnMacOSKeyDown (sUI _keyCode);
+   void callOnLinuxKeyDown (sUI _keyCode);
    void callOnRescanParams (void);
 #ifdef YAC_LINUX
    void callPosixThreadSupportOnFD (int _fd, clap_posix_fd_flags_t _flags);

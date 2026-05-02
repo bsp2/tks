@@ -187,6 +187,13 @@ lglw_bool_t lglw_window_open (lglw_t _lglw, void *_parentHWNDOrNull, int32_t _x,
 // Query native LGLW window handle (e.g. Window on X11)
 void *lglw_window_get_native_handle (lglw_t _lglw);
 
+// Find first child window handle (Linux/X11)
+//  (note) after embedding CLAP plugin window in LGLW top-level window
+void *lglw_find_first_child_window_handle (lglw_t _lglw);
+
+// Send XEMBED_EMBEDDED_NOTIFY to child window (embedded CLAP plugin window) (Linux/X11)
+void lglw_send_xembed_notify (lglw_t _lglw, void *_childWindowHandle);
+
 // Resize previously opened LGLW window
 lglw_bool_t lglw_window_size_set (lglw_t _lglw, int32_t _w, int32_t _h);
 #if 1
