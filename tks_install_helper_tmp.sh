@@ -1,6 +1,6 @@
 #!/bin/bash
 
-TKS_WWW_PATH=http://tkscript.org/files/tmp/28Feb2026/
+TKS_WWW_PATH=http://tkscript.org/files/tmp/26Apr2026/
 ##TKS_WWW_PATH=http://tkscript.org/files/current/
 
 # (note) TKS_PACKAGES lists all files to be downloaded / unzipped
