@@ -1,6 +1,6 @@
 /// MIDIIn.cpp
 ///
-/// (c) 2006-2023 Bastian Spiegel <bs@tkscript.de>
+/// (c) 2006-2026 Bastian Spiegel <bs@tkscript.de>
 ///     - Distributed under terms of the Lesser GNU General Public License (LGPL).
 ///       See COPYING and <http://www.gnu.org/licenses/licenses.html#LGPL> for further information.
 ///
@@ -8,6 +8,7 @@
 /// changed: 09Sep2006, 02Jan2008, 04Jan2008, 13Jan2008, 09Nov2012, 13Nov2012, 23Mar2013
 ///          14Apr2013, 23May2013, 04Feb2014, 05Feb2014, 09Feb2014, 11Feb2014, 18Aug2014
 ///          22Aug2014, 23Aug2014, 11Feb2015, 29Mar2019, 18Jan2023, 22Jul2023, 01Aug2023
+///          06May2026
 ///
 ///
 ///
@@ -888,6 +889,7 @@ void MIDIIn::endRecordedEvent(RecordedMIDIEvent *_ev) {
       {
          // Overflow..
          record_numevents = MIDIIN_MAXEVENTS;
+         record_readoff = record_writeoff;
       }
    }
    else

@@ -1,6 +1,6 @@
 /// MIDIIn.cpp
 ///
-/// (c) 2006-2023 Bastian Spiegel <bs@tkscript.de>
+/// (c) 2006-2026 Bastian Spiegel <bs@tkscript.de>
 ///     - Distributed under terms of the Lesser GNU General Public License (LGPL).
 ///       See COPYING and <http://www.gnu.org/licenses/licenses.html#LGPL> for further information.
 ///
@@ -8,7 +8,7 @@
 /// changed: 09Sep2006, 02Jan2008, 04Jan2008, 13Jan2008, 09Nov2012, 13Nov2012, 23Mar2013
 ///          14Apr2013, 23May2013, 04Feb2014, 05Feb2014, 24Feb2014, 20Aug2014, 22Aug2014
 ///          11Feb2015, 12Aug2017, 19Jan2018, 22Jan2019, 20Jan2023, 04Mar2023, 18Jul2023
-///          22Jul2023, 01Aug2023, 17Sep2023
+///          22Jul2023, 01Aug2023, 17Sep2023, 06May2026
 ///
 ///
 ///
@@ -111,12 +111,14 @@ void RecordedMIDIEvent::classifyShortMessage(MIDIIn *thiz, sBool *bFiltered) {
          break;
 
       case 0x80:
+         DP("[trc] MIDIIn<portmidi>::RecordedMIDIEvent::classifyShortMessage: note-off byte=0x%02x\n", data.u32&0xFFu);
          size = 3;
          *bFiltered = thiz->b_filter_note_off;
          midimap_event_type = 0/*MIDIMapDefs.TYPE_NOTE_OFF*/;
          break;
 
       case 0x90:
+         DP("[trc] MIDIIn<portmidi>::RecordedMIDIEvent::classifyShortMessage: note-on byte=0x%02x\n", data.u32&0xFFu);
          size = 3;
          *bFiltered = thiz->b_filter_note_on;
          midimap_event_type = 1/*MIDIMapDefs.TYPE_NOTE_ON*/;
@@ -268,8 +270,7 @@ void RecordedMIDIEvent::classifyCtlChange(MIDIIn *thiz, sBool *bFiltered) {
    sU8 ccNr   = (data.u32 >>  8) & 255u;
    sU8 ccVal  = (data.u32 >> 16) & 255u;
 
-   DP("[trc] MIDIIn<portmidi>::RecordedMIDIEvent::classifyCtlChange: ch=%u ccNr=%u ccVal=%u b_parse=%d\n", midich, ccNr, ccVal, thiz->b_parse_param[midich]);
-   // yac_host->printf("xxx MIDIIn<portmidi>::RecordedMIDIEvent::classifyCtlChange: ch=%u ccNr=%u ccVal=%u b_parse=%d\n", midich, ccNr, ccVal, thiz->b_parse_param[midich]);
+   // DP("[trc] MIDIIn<portmidi>::RecordedMIDIEvent::classifyCtlChange: ch=%u ccNr=%u ccVal=%u b_parse=%d\n", midich, ccNr, ccVal, thiz->b_parse_param[midich]);
 
    if(thiz->b_parse_param[midich])
    {
@@ -287,7 +288,7 @@ void RecordedMIDIEvent::classifyCtlChange(MIDIIn *thiz, sBool *bFiltered) {
             // [...] MIDIIN: MIM_DATA. data=0x000106b0
             // [...] MIDIIN: MIM_DATA. data=0x002426b0
 
-            DP("[trc] MIDIIn<portmidi>::RecordedMIDIEvent::classifyCtlChange: thiz->data_entry_mode[midich]=%u\n", thiz->data_entry_mode[midich]);
+            // DP("[trc] MIDIIn<portmidi>::RecordedMIDIEvent::classifyCtlChange: thiz->data_entry_mode[midich]=%u\n", thiz->data_entry_mode[midich]);
             // yac_host->printf("xxx recv (N)RPN data entry MSB\n");
 
             if(MIDI_DATAENTRYMODE_MSB == thiz->data_entry_mode[midich])
@@ -538,12 +539,19 @@ void MIDIIn::endRecordedEvent(RecordedMIDIEvent *_ev) {
    if(_ev == recorded_events[record_writeoff])
    {
 #if 0
-      printf("[trc] MIDIIn<portmidi>::endRecordedEvent: ev.msg= %02x %02x %02x %02x\n",
-             _ev->data.u8[0],
-             _ev->data.u8[1],
-             _ev->data.u8[2],
-             _ev->data.u8[3]
-             );
+      // if( 0x90u == (_ev->data.u8[0] & 0xF0u) )
+      {
+         DP("[trc] MIDIIn<portmidi>::endRecordedEvent: ev=%p ev.msg= %02x %02x %02x %02x record_writeoff=%u record_numevents=%u record_readoff=%u\n",
+            _ev,
+            _ev->data.u8[0],
+            _ev->data.u8[1],
+            _ev->data.u8[2],
+            _ev->data.u8[3],
+            record_writeoff,
+            record_numevents,
+            record_readoff
+            );
+      }
 #endif
 
       record_writeoff = (record_writeoff + 1u) % MIDIIN_MAXEVENTS;
@@ -554,6 +562,7 @@ void MIDIIn::endRecordedEvent(RecordedMIDIEvent *_ev) {
       {
          // Overflow..
          record_numevents = MIDIIN_MAXEVENTS;
+         record_readoff = record_writeoff;
       }
    }
    else
@@ -727,7 +736,7 @@ YAC_Object *MIDIIn::_getNextEvent(void) {
    if(record_numevents > 0u)
    {
       r = recorded_events[record_readoff]; // RecordedMIDIEvent object
-      DP("[trc] MIDIIn<portmidi>::getNextEvent: record_readoff=%u r=%p\n", record_readoff, r);
+      // DP("[trc] MIDIIn<portmidi>::getNextEvent: record_readoff=%u r=%p\n", record_readoff, r);
       record_readoff = (record_readoff + 1u) % MIDIIN_MAXEVENTS;
       record_numevents--;
    }
@@ -1420,6 +1429,10 @@ void MIDIIn::parseMIDIByte(const sU8 c, midiin_reader_state_t &st) {
             {
                st.ev->data_entry = data_entry[st.ev->data.u8[0] & 15u];
                // yac_host->printf("xxx MIDIIn<portmidi>::parseMIDIByte: ch=%u st.ev->data_entry=0x%04x\n", (st.ev->data.u8[0] & 15u), st.ev->data_entry);
+               // if( (0x90u == (st.ev->data.u8[0]&0xF0u)) || (0x80u == (st.ev->data.u8[0]&0xF0u)) )
+               // {
+               //    DP("xxx MIDIIn<portmidi>::parseMIDIByte: ST_SHORTMSG1: endRecordedEvent. startByte=0x%02x\n", st.ev->data.u8[0]);
+               // }
                endRecordedEvent(st.ev);
             }
 
