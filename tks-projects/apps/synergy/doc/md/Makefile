@@ -1,5 +1,8 @@
 
-# msys
+.PHONY: md
+md: index keyboard faderport montage twister
+
+# bash (MSYS on Windows)
 .PHONY: screenshots
 screenshots:
 	bash create_screenshots.sh
@@ -24,8 +27,9 @@ faderport:
 montage:
 	tks app:md -il -css index.css montage.md
 
-.PHONY: md
-md: index keyboard faderport montage
+.PHONY: twister
+twister:
+	tks app:md -il -css index.css twister.md
 
 # cygwin
 .PHONY: thumbs
