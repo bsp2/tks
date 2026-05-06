@@ -1,14 +1,14 @@
 // ----
 // ---- file   : modcv_shuttlecontrol.tks
 // ---- author : Bastian Spiegel <bs@tkscript.de>
-// ---- legal  : (c) 2021-2025 by Bastian Spiegel.
+// ---- legal  : (c) 2021-2026 by Bastian Spiegel.
 // ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
 // ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
 // ----
 // ---- info   :
 // ----
 // ---- created: 31Mar2021
-// ---- changed: 04Apr2021, 13Apr2021, 07May2021, 21Feb2022, 23Oct2024, 14Mar2025
+// ---- changed: 04Apr2021, 13Apr2021, 07May2021, 21Feb2022, 23Oct2024, 14Mar2025, 05May2026
 // ----
 // ----
 // ----
@@ -27,12 +27,16 @@ class ModCV_ShuttleControl : ModCV_Output {
 
    FloatArray debug_last_out;
 
+   boolean b_all_pitchbend;
+
    public virtual init() {
       Module::init();
 
       initModule("ShuttleControl"/*id*/,
                  "ShCtl"/*header_id*/,
-                 "Shuttle Control\n\n Port 1..8: Pitchbend (bipolar -5V..+5V)\n\n Ports 9..16: CC#1 (unipolar 0..+5V)\n\n (note) implicit dev alias=\"shuttlecontrol\""/*tooltip*/
+                 b_all_pitchbend
+                 ? "Shuttle Control\n\n Port 1..16: Pitchbend (bipolar -5V..+5V)\n\n (note) implicit dev alias=\"shuttlecontrol\""/*tooltip*/
+                 : "Shuttle Control\n\n Port 1..8: Pitchbend (bipolar -5V..+5V)\n\n Ports 9..16: CC#1 (unipolar 0..+5V)\n\n (note) implicit dev alias=\"shuttlecontrol\""/*tooltip*/  // pre 05May2026
                  );
       setModuleSize(6, 3);
 
@@ -67,6 +71,8 @@ class ModCV_ShuttleControl : ModCV_Output {
          trace "[~~~] ModCV_ShuttleControl: dev alias=\"shuttlecontrol\" not found, module won't work";
          dev_idx = -1;
       }
+
+      b_all_pitchbend = true;
    }
 
    public virtual initUI() {
@@ -119,7 +125,10 @@ class ModCV_ShuttleControl : ModCV_Output {
       Module::saveState(ofs);
 
       // ver
-      ofs.i16 = 1;
+      ofs.i16 = 2;
+
+      // all-pitchbend (v2+)
+      ofs.i8 = b_all_pitchbend;
    }
 
    public virtual loadState(Stream ifs) : boolean {
@@ -128,6 +137,16 @@ class ModCV_ShuttleControl : ModCV_Output {
          short ver = ifs.u16;
          if(ver >= 1)
          {
+            if(ver >= 2)
+            {
+               // all-pitchbend (v2+)
+               b_all_pitchbend = ifs.b8;
+            }
+            else
+            {
+               b_all_pitchbend = false;
+            }
+
             return true;
          }
          else
@@ -136,6 +155,22 @@ class ModCV_ShuttleControl : ModCV_Output {
          }
       }
       return false;
+   }
+
+   public virtual onKey(Key _k) : boolean {
+
+      switch(_k.pressed)
+      {
+         case 'p':
+            if(_k.modNone())
+            {
+               b_all_pitchbend = !b_all_pitchbend;
+               trace "[...] b_all_pitchbend="+b_all_pitchbend;
+               return true;
+            }
+            break;
+      }
+      return ModCV_Output::onKey(_k);
    }
 
    public method tickOutput(MIDIPipeFrame _frOut) {
@@ -154,7 +189,7 @@ class ModCV_ShuttleControl : ModCV_Output {
 
             if(!replay.b_cycle_mute_after_loop)
             {
-               if(pIdx >= 8)
+               if(!b_all_pitchbend && pIdx >= 8)
                   _frOut.cc(true/*bSet*/, dev_idx, pIdx/*ch*/, 1/*modwheel*/, mathClampf(val*127.0f, 0.0f, 127.0f));
                else
                   _frOut.pitchbend(true/*bSet*/, dev_idx, pIdx/*ch*/, (val >= 0.0) ? (8192 + val*8191) : (8192 + val*8192));
