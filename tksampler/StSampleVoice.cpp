@@ -31,7 +31,7 @@
 // ----          07Sep2023, 14Sep2023, 17Sep2023, 18Nov2023, 09Jan2024, 10Jan2024, 13Jan2024
 // ----          14Jan2024, 15Jan2024, 16Jan2024, 19Jan2024, 28Sep2024, 30Sep2024, 03Oct2024
 // ----          31Oct2024, 03Nov2024, 08Nov2024, 09Nov2024, 11Dec2024, 03Jan2025, 04Jan2025
-// ----          12Jan2025, 09Jan2026, 11Jan2026, 10Apr2026
+// ----          12Jan2025, 09Jan2026, 11Jan2026, 10Apr2026, 08May2026, 09May2026
 // ----
 // ----
 // ----
@@ -1014,7 +1014,9 @@ void StSampleVoice::reallyStartVoice(const StSampleVoiceNoteOnParams *_params,
    }
 
    // Patch that prevents the samplerengine from crashing in case a waveform could not be loaded
-   if(NULL == sample->waveform->sample_data)
+   if(NULL == sample->waveform->sample_data ||
+      0u == sample->waveform->sample_data->num_elements
+      )
    {
       b_used    = YAC_FALSE;
       b_playing = YAC_FALSE;
@@ -6443,7 +6445,7 @@ void StSampleVoice::renderBlockAdditive(sF32 *    _buf,
       blkSz--;
    }
 
-   
+
    // Animate wave position and handle loops
    cOff += 4.0f * ts / (float_block_size);
 
@@ -10158,7 +10160,7 @@ void StSampleVoice::adjustPlayOffsetToNextZeroCrossing(const sF32 *_smpDat) {
                   // Dyac_host_printf("[>>>] adjust initial play_offset to zc at off=%u (l=%f c=%f)\n", off, l, c);
                   return;
                }
-               
+
                // Next frame
                off++;
             }
@@ -10185,6 +10187,9 @@ sUI StSampleVoice::renderBlock(sF32 *buf, sUI blkSz, sF32 a, sF32 b, sF32 _volSc
       //            the drawback is that the layered samples may be phase-shifted
       return 0;
    }
+
+   if(0u == sample->waveform->sample_data->num_elements)
+      return 0u;  // data deleted in editor
 
    ////printf("xxx renderBlock: this=%p blkSz=%d a=%f b=%f cVol=%f nVol=%f\n", this, blkSz, a,b,cVol,nVol);
    ////printf("xxx renderBlock: cVol=%f nVol=%f current_vol=%f next_vol=%f volScale=%f\n", cVol,nVol, current_vol, next_vol, _volScale);
@@ -10667,7 +10672,7 @@ void StSampleVoice::renderInt(YAC_Object *_buf, sF32 _volScale, const sF32**_inp
 
          if(NULL != sample)
          {
-            if(-1 != sample->voice_bus)
+            if(-1 != sample->voice_bus && !sample->b_skip_range/*solo*/)
             {
                // Redirect output to voice bus
                if(0 == sample->voice_bus)
@@ -10679,7 +10684,7 @@ void StSampleVoice::renderInt(YAC_Object *_buf, sF32 _volScale, const sF32**_inp
                else
                {
                   sUI busBufferIdx = sUI(sample->voice_bus - 1);
-                  if(busBufferIdx < voice_bus_first_voice->num_layers)///STSAMPLEVOICE_MAX_LAYERS)
+                  if(busBufferIdx < voice_bus_first_voice->num_layers)
                   {
                      buf = voice_bus_buffers[busBufferIdx];
                      dbgBufStart = buf;

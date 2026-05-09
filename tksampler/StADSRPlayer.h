@@ -1,7 +1,7 @@
 // ----
 // ---- file   : StADSRPlayer.h
 // ---- author : Bastian Spiegel <bs@tkscript.de>
-// ---- legal  : (c) 2009-2024 by Bastian Spiegel.
+// ---- legal  : (c) 2009-2026 by Bastian Spiegel.
 // ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
 // ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
 // ----
@@ -11,7 +11,7 @@
 // ----
 // ---- changed: 21Jan2010, 14Feb2010, 16Feb2010, 20Feb2010, 13May2010, 29Jun2010, 01Aug2010
 // ----          09Sep2010, 28Dec2018, 17Jan2019, 11May2019, 12May2019, 13May2019, 13Jul2019
-// ----          25Jul2019, 19Feb2020, 10Dec2022, 03Oct2024
+// ----          25Jul2019, 19Feb2020, 10Dec2022, 03Oct2024, 09May2026
 // ----
 // ----
 // ----
@@ -37,6 +37,7 @@ class StADSRPlayer {
    sBool         b_finished;
    sBool         b_sustain_finished;
    sBool         b_skip_sustain;  // when retriggering envelope during after note-off
+   sBool         b_queued_release_during_attack;  // noteOff() during attack when ADSR is in b_attack_oneshot mode
 
    sF32 min_level;  // unscaled env min level. def=-2 but volume ADSRs are clamped to 0.
 
@@ -82,6 +83,8 @@ class StADSRPlayer {
    void            visitEnv (StEnvelope *_env);
    /* /\* YAC_FloatArray *getEnv   (sUI _envIdx); *\/ */
    /* /\* StEnvelope *    getStEnv (sUI _envIdx); *\/ */
+
+   void noteOffStartRelease (void);
 
   public:
    StADSRPlayer(void);

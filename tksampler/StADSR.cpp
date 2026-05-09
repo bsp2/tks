@@ -1,7 +1,7 @@
 // ----
 // ---- file   : StADSR.cpp
 // ---- author : Bastian Spiegel <bs@tkscript.de>
-// ---- legal  : (c) 2009-2024 by Bastian Spiegel.
+// ---- legal  : (c) 2009-2026 by Bastian Spiegel.
 // ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
 // ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
 // ----
@@ -9,7 +9,7 @@
 // ----
 // ---- created: 23Sep2009
 // ---- changed: 21Jan2010, 08Feb2010, 09Feb2010, 14Feb2010, 15Feb2010, 28Dec2018, 29Dec2018
-// ----          12Apr2023, 03Oct2024
+// ----          12Apr2023, 03Oct2024, 09May2026
 // ----
 // ----
 // ----
@@ -28,6 +28,7 @@ StADSR::StADSR(void) {
 
    stage_op = STADSR_STAGEOP_MUL;
    b_sustain_loop = YAC_TRUE;
+   b_attack_oneshot = YAC_FALSE;
 }
 
 StADSR::~StADSR() {
@@ -208,4 +209,12 @@ sSI StADSR::_getEnableSustainLoop(void) {
 
 void StADSR::_setEnableSustainLoop(sSI _bEnabled) {
    b_sustain_loop = _bEnabled;
+}
+
+sSI StADSR::_getEnableAttackOneshot(void) {
+   return b_attack_oneshot;
+}
+
+void StADSR::_setEnableAttackOneshot(sSI _bEnabled) {
+   b_attack_oneshot = _bEnabled;
 }

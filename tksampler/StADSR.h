@@ -1,7 +1,7 @@
 // ----
 // ---- file   : StADSR.h
 // ---- author : Bastian Spiegel <bs@tkscript.de>
-// ---- legal  : (c) 2009-2024 by Bastian Spiegel.
+// ---- legal  : (c) 2009-2026 by Bastian Spiegel.
 // ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
 // ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
 // ----
@@ -10,7 +10,7 @@
 // ---- created: 23Sep2009
 // ----
 // ---- changed: 21Jan2010, 08Feb2010, 09Feb2010, 14Feb2010, 15Feb2010, 29Jun2010, 28Dec2018
-// ----          29Dec2018, 11May2019, 31May2020, 03Oct2024
+// ----          29Dec2018, 11May2019, 31May2020, 03Oct2024, 09May2026
 // ----
 // ----
 // ----
@@ -49,6 +49,7 @@ YC class StADSR : public YAC_Object {
    /* /\* sBool b_abs_levels;   // 0=scale sustain by last attack lvl and release by last sustain*lastattack (default), 1=use absolute env levels (intensity blends between prev stage scaling (0) and current stage (1)) *\/ */
    sSI stage_op; // STADSR_STAGEOP_xxx
    sSI b_sustain_loop;  // 1=loop sustain envelope (default), 0=oneshot sustain envelope, -1=loop sustain infinitely
+   sSI b_attack_oneshot;  // 1=always finish attack before entering release phase (see StADSRPlayer::b_queued_release_during_attack)
 
   public:
 
@@ -94,6 +95,9 @@ YC class StADSR : public YAC_Object {
 
    YM sSI   _getEnableSustainLoop (void);
    YM void  _setEnableSustainLoop (sSI _bEnabled);
+
+   YM sSI   _getEnableAttackOneshot (void);
+   YM void  _setEnableAttackOneshot (sSI _bEnabled);
 };
 
 

@@ -11,7 +11,7 @@
 // ----
 // ---- changed: 21Jan2010, 14Feb2010, 29Jun2010, 01Aug2010, 15Dec2018, 28Dec2018, 17Jan2019
 // ----          11May2019, 12May2019, 13Jul2019, 25Jul2019, 23Aug2021, 12Apr2023, 29Sep2024
-// ----          03Oct2024, 22Apr2026
+// ----          03Oct2024, 22Apr2026, 09May2026
 // ----
 // ----
 // ----
@@ -45,6 +45,8 @@ StADSRPlayer::StADSRPlayer(void) {
    sp_mod_aspeed    = NULL;
    sp_mod_sspeed    = NULL;
    sp_mod_rspeed    = NULL;
+
+   b_queued_release_during_attack = YAC_FALSE;
 }
 
 StADSRPlayer::~StADSRPlayer() {
@@ -123,8 +125,8 @@ void StADSRPlayer::startADSR(StADSR *_adsr, sF32 _defaultLevel, sBool _bResetMod
       env_index     = ENV_ATTACK;
       b_finished    = YAC_FALSE;
       b_sustain_finished = YAC_FALSE;
-
       b_skip_sustain = _bRelease;  // when restarting envelope after note off
+      b_queued_release_during_attack = YAC_FALSE;
 
       {
          default_level = _defaultLevel;
@@ -171,7 +173,7 @@ void StADSRPlayer::startADSR(StADSR *_adsr, sF32 _defaultLevel, sBool _bResetMod
          if(b_skip_sustain)
          {
             // Start release envelope
-            noteOff();
+            noteOffStartRelease();
          }
          else
          {
@@ -200,8 +202,8 @@ sBool StADSRPlayer::isInRelease(void) const {
    return (ENV_RELEASE == env_index);
 }
 
-void StADSRPlayer::noteOff(void) {
-   // Dyac_host_printf("xxx StADSRPlayer::noteOff: b_finished=%d\n", b_finished);
+void StADSRPlayer::noteOffStartRelease(void) {
+   // Dyac_host_printf("xxx StADSRPlayer::noteOffStartRelease: b_finished=%d\n", b_finished);
    if(!b_finished)
    {
       if(NULL != adsr)
@@ -239,12 +241,22 @@ void StADSRPlayer::noteOff(void) {
             }
          }
 
-         // Dyac_host_printf("xxx StADSRPlayer::noteOff: current_env->num_elements=%d\n",current_env->num_elements);
-         // Dyac_host_printf("xxx StADSRPlayer::noteOff: end of S env. sustain_level=%f\n", sustain_level);
+         // Dyac_host_printf("xxx StADSRPlayer::noteOffStartRelease: current_env->num_elements=%d\n",current_env->num_elements);
+         // Dyac_host_printf("xxx StADSRPlayer::noteOffStartRelease: end of S env. sustain_level=%f\n", sustain_level);
       }
    }
 }
 
+void StADSRPlayer::noteOff(void) {
+   if(adsr->b_attack_oneshot && ENV_ATTACK == env_index)
+   {
+      b_queued_release_during_attack = YAC_TRUE;
+   }
+   else
+   {
+      noteOffStartRelease();
+   }
+}
 
 sF32 StADSRPlayer::tick(void) {
    sF32 r = 0.0f;
@@ -289,14 +301,14 @@ sF32 StADSRPlayer::tick(void) {
                   attack_level = t * cIntensity + (default_level * (1.0f - cIntensity));
                   // Dyac_host_printf("xxx end of AD env. attack_level=%f\n", attack_level);
 
-                  if(b_skip_sustain)
+                  if(b_skip_sustain || b_queued_release_during_attack)
                   {
                      // Hold last value
                      b_sustain_finished = YAC_TRUE;
                      sustain_level = attack_level;
 
                      // Start release env (if any)
-                     noteOff();
+                     noteOffStartRelease();
                   }
                   else
                   {
@@ -518,5 +530,5 @@ void StADSRPlayer::noteOffRestartRelease(void) {
    // called in b_glide_release mode (when already in release phase)
    //  => restart release at last seen release level
    sustain_level = final_level;
-   noteOff();
+   noteOffStartRelease();
 }
