@@ -31,7 +31,7 @@
  */
 
 // #define USE_XEVENTPROC  defined
-// #define LGLW_PROPAGATE_UNHANDLED_EVENT  defined
+#define LGLW_PROPAGATE_UNHANDLED_EVENT  defined
 
 // (note) undefined for tkclap plugin host build
 // #define USE_HIDDEN_WINDOW  defined
@@ -975,7 +975,6 @@ static lglw_bool_t loc_eventProc(XEvent *xev, lglw_int_t *lglw) {
                      eventHandled = LGLW_FALSE;
                      break;
                }
-
                break;
 
             case ButtonPress:
@@ -1086,8 +1085,23 @@ static lglw_bool_t loc_eventProc(XEvent *xev, lglw_int_t *lglw) {
 
                XSendEvent(lglw->xdsp, cbReq->requestor, True, NoEventMask, (XEvent *)&cbRes);
                eventHandled = LGLW_TRUE;
-
                break;
+
+#if 0
+            /* when SubstructureRedirectMask is set
+                 (note) for window managers (set on root window)
+             */
+            case CirculateNotify:
+            case ConfigureNotify:
+            case CreateNotify:
+            case DestroyNotify:
+            case GravityNotify:
+            case MapNotify:
+            case ReparentNotify:
+            case UnmapNotify:
+               eventHandled = LGLW_TRUE;
+               break;
+#endif
 
          } // switch xev->type
       } // if !eventHandled (xinput)
@@ -1324,13 +1338,41 @@ static void loc_setEventProc (Display *display, Window window) {
 
 // ---------------------------------------------------------------------------- lglw_send_xembed_notify
 void lglw_send_xembed_notify(lglw_t _lglw, void *_childWindowHandle) {
+   LGLW(_lglw);
+
    // Time xTime;
    XEvent ev;
    memset(&ev, 0, sizeof(ev));
 
    Window childWindow = (Window)_childWindowHandle;
 
-   LGLW(_lglw);
+   // query _XEMBED_INFO client property
+   {
+      Atom atom_xembed_info = XInternAtom(lglw->xdsp, "_XEMBED_INFO", False);
+      Atom userType;
+      int userSize;
+      unsigned long bytes;
+      unsigned long userCount = 0u;
+      unsigned char *data = NULL;
+
+      XGetWindowProperty(lglw->xdsp,
+                         childWindow,
+                         atom_xembed_info,
+                         0/*offset*/,
+                         2/*length*/,
+                         False/*delete*/,
+                         AnyPropertyType,
+                         &userType/*actual_type_return*/,
+                         &userSize/*actual_format_return*/,
+                         &userCount/*nitems_return*/,
+                         &bytes/*bytes_after_return / partial reads*/,
+                         &data
+                         );
+
+      Dlog_vv("[trc] lglw_send_xembed_notify: query _XEMBED_INFO childWindowHandle=%p bytes=%lu userSize=%d userCount=%lu\n", _childWindowHandle, bytes, userSize, userCount);
+
+      XFree(data);
+   }
     
    ev.xclient.type = ClientMessage;
    ev.xclient.window = childWindow; // Send to the client
@@ -1379,7 +1421,8 @@ lglw_bool_t lglw_window_open (lglw_t _lglw, void *_parentHWNDOrNull, int32_t _x,
       Dlog_v("lglw:lglw_window_open: 5\n");
       swa.border_pixel = 0;
       swa.colormap = lglw->cmap;
-      swa.event_mask = KeyPressMask | KeyReleaseMask | ButtonPressMask | ButtonReleaseMask | EnterWindowMask | LeaveWindowMask | PointerMotionMask | ButtonMotionMask | ExposureMask | FocusChangeMask; // NoEventMask to bubble-up to parent
+      swa.event_mask = KeyPressMask | KeyReleaseMask | ButtonPressMask | ButtonReleaseMask | EnterWindowMask | LeaveWindowMask | PointerMotionMask | ButtonMotionMask | ExposureMask | FocusChangeMask ; // NoEventMask to bubble-up to parent
+      // SubstructureRedirectMask | StructureNotifyMask
       lglw->win.xwnd = XCreateWindow(lglw->xdsp/*display*/,
                                      DefaultRootWindow(lglw->xdsp)/*parent. see Cameron's comment below.*/,
                                      0/*x*/,
@@ -1433,7 +1476,10 @@ lglw_bool_t lglw_window_open (lglw_t _lglw, void *_parentHWNDOrNull, int32_t _x,
                     EnterNotify    |
                     LeaveNotify    |
                     FocusIn        |
-                    FocusOut
+                    FocusOut       |
+                    /* StructureNotifyMask      | */
+                    /* SubstructureRedirectMask | */
+                    0
                     )
                    );
 
