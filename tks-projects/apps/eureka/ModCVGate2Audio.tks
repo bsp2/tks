@@ -1,0 +1,377 @@
+// ----
+// ---- file   : ModCVGate2Audio.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2025-2026 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 05Jan2025
+// ---- changed: 07Jan2025, 20Dec2025, 08May2026
+// ----
+// ----
+// ----
+
+module MModCVGate2Audio;
+
+namespace st2;
+
+
+// <class.png>
+class ModCVGate2Audio : Mod {
+   // left channel: pitch CV
+   // left channel: Gate
+
+   define int PARAM_NONE         = 0;
+   define int PARAM_PB_UP        = 1;  // -60..60
+   define int PARAM_PB_DOWN      = 2;  // -60..60
+   define int PARAM_PITCH_SCL    = 3;  // -2..2
+   define int PARAM_PITCH_OFF    = 4;  // -0.5..0.5
+   define int NUM_PARAMS         = 5;
+
+   float pb_up;   // def=12
+   float pb_down; // def=12
+   protected float pb_cur;  // current note offset
+
+   float pitch_scl;
+   float pitch_off;
+   protected float pitch_last; // last block pitch output (-1..1)
+   protected float pitch_cur;  // current pitch output (-1..1)
+   boolean b_pitch_lerp;
+
+   protected IntArray active_notes;
+
+
+   // <method_init.png>
+   public virtual init() {
+      Mod::init();
+      allocateIOBuffers(DEF_NUM_IO_BUFFERS/*numIn*/, DEF_NUM_IO_BUFFERS/*numOut*/);
+
+      active_notes.allocAndFill(128, -1);
+      active_notes.empty();
+
+      addInput("In L");
+      addInput("In R");
+
+      addOutput("Out L");
+      addOutput("Out R");
+
+      pb_up   = 12.0f;
+      pb_down = 12.0f;
+      pb_cur  = 0.0f;
+
+      pitch_scl  = 0.45;  // tuned for ES-10 module
+      pitch_off  = 0.06;  // tuned for ES-10 module
+      pitch_last = 0.0f;
+      pitch_cur  = 0.0f;
+      b_pitch_lerp = false;
+   }
+
+   // <method_exit.png>
+   public virtual exit() {
+      Mod::exit();
+   }
+
+   // <method_get.png>
+   public virtual getName() : String {
+      return "CVGate2Audio";
+   }
+
+   // <method.png>
+   public virtual isEffect() : boolean {
+      return true;
+   }
+
+   // <method.png>
+   public virtual modClone(boolean _bFullInit) : Mod {
+      ModCVGate2Audio cl <= new ModCVGate2Audio;
+      cl.init();
+      cl.modCopyBaseFrom(this);
+      return deref cl;
+   }
+
+   // <method.png>
+   public virtual modIsPatchCompatibleWith(Mod _o) : boolean {
+      return (_o instanceof ModCVGate2Audio);
+   }
+
+   // <method.png>
+   public virtual modCopyPatchFrom(Mod _o) : boolean {
+      if(_o instanceof ModCVGate2Audio)
+      {
+         ModCVGate2Audio o <= _o;
+         pb_up        = o.pb_up;
+         pb_down      = o.pb_down;
+         pitch_scl    = o.pitch_scl;
+         pitch_off    = o.pitch_off;
+         b_pitch_lerp = o.b_pitch_lerp;
+         return true;
+      }
+      return false;
+   }
+
+   // <method_get.png>
+   public virtual getNumParameters() : int {
+      return 0;//NUM_PARAMS;
+   }
+
+   // <method_get.png>
+   public virtual getParameterNamesArray(StringArray _retParamNames) : boolean {
+      _retParamNames.empty();
+
+      _retParamNames = [
+         "-",           //  0: PARAM_NONE
+         "Pb Up",       //  1: PARAM_PB_UP
+         "Pb Down",     //  2: PARAM_PB_DOWN
+         "Pitch Scl",   //  3: PARAM_PITCH_SCL
+         "Pitch Off",   //  4: PARAM_PITCH_OFF
+                        ];
+
+      return true;
+   }
+
+   // <method_set.png>
+   public virtual setParameterValue(local int _idx, local float _value) {
+      // trace "xxx ModCVGate2Audio::setParameterValue: idx="+_idx+" value="+_value;
+      switch(_idx)
+      {
+         case PARAM_PB_UP:
+            pb_up = _value;
+            break;
+
+         case PARAM_PB_DOWN:
+            pb_down = _value;
+            break;
+
+         case PARAM_PITCH_SCL:
+            pitch_scl = _value;
+            break;
+
+         case PARAM_PITCH_OFF:
+            pitch_off = _value;
+            break;
+      }
+   }
+
+   // <method_get.png>
+   public virtual getParameterValue(local int _idx) : float {
+      switch(_idx)
+      {
+         case PARAM_PB_UP:
+            return pb_up;
+
+         case PARAM_PB_DOWN:
+            return pb_down;
+
+         case PARAM_PITCH_SCL:
+            return pitch_scl;
+
+         case PARAM_PITCH_OFF:
+            return pitch_off;
+      }
+      return 0.0f;
+   }
+
+   // <method.png>
+   public virtual getParameterMinValue(local int _idx) : float {
+      switch(_idx)
+      {
+         case PARAM_PB_UP:     return -60.0f;
+         case PARAM_PB_DOWN:   return -60.0f;
+         case PARAM_PITCH_SCL: return -2.0f;
+         case PARAM_PITCH_OFF: return -0.5f;
+      }
+      return 0.0f;
+   }
+
+   // <method.png>
+   public virtual getParameterMaxValue(local int _idx) : float {
+      switch(_idx)
+      {
+         case PARAM_PB_UP:     return 60.0f;
+         case PARAM_PB_DOWN:   return 60.0f;
+         case PARAM_PITCH_SCL: return 2.0f;
+         case PARAM_PITCH_OFF: return 0.5f;
+      }
+      return 0.0f;
+   }
+
+   // <method_set.png>
+   public method setPbUp(float _f) {
+      mtx_param.lock();
+      pb_up = _f;
+      mtx_param.unlock();
+   }
+
+   // <method_set.png>
+   public method setPbDown(float _f) {
+      mtx_param.lock();
+      pb_down = _f;
+      mtx_param.unlock();
+   }
+
+   // <method_set.png>
+   public method setPitchScl(float _f) {
+      mtx_param.lock();
+      pitch_scl = _f;
+      mtx_param.unlock();
+   }
+
+   // <method_set.png>
+   public method setPitchOff(float _f) {
+      mtx_param.lock();
+      pitch_off = _f;
+      mtx_param.unlock();
+   }
+
+   // <method_set.png>
+   public method setEnablePitchLerp(boolean _bEnable) {
+      mtx_param.lock();
+      b_pitch_lerp = _bEnable;
+      mtx_param.unlock();
+   }
+
+   // <save.png>
+   public virtual saveState(Stream _ofs) : boolean {
+
+      Mod::saveState(_ofs);
+
+      // Write version
+      _ofs.i16 = 1;
+
+      _ofs.f32 = pb_up;
+      _ofs.f32 = pb_down;
+      _ofs.f32 = pitch_scl;
+      _ofs.f32 = pitch_off;
+      _ofs.i8  = b_pitch_lerp;
+
+      return true;
+   }
+
+   // <load.png>
+   public virtual loadState(Stream _ifs, boolean _bRestoreInstanceIDs) : boolean {
+
+      boolean r = Mod::loadState(_ifs, _bRestoreInstanceIDs);
+
+      if(r)
+      {
+         // Read version
+         short ver = _ifs.u16;
+
+         if(ver >= 1)
+         {
+            pb_up        = _ifs.f32;
+            pb_down      = _ifs.f32;
+            pitch_scl    = _ifs.f32;
+            pitch_off    = _ifs.f32;
+            b_pitch_lerp = _ifs.b8;
+
+            r = true;
+         }
+         else
+         {
+            Global.Error("ModCVGate2Audio::loadState: invalid ver="+ver);
+            r = false;
+         }
+      }
+
+      return r;
+   }
+
+   // <replay.png>
+   protected virtual processMIDINoteOn(local byte midiCh, local byte xNote, local byte velocity) {
+      active_notes.add(xNote);
+      updatePitchOutput();
+   }
+
+   // <replay.png>
+   protected virtual processMIDINoteOff(local byte midiCh, local byte xNote, local byte velocity) {
+      active_notes.remove(xNote);
+      updatePitchOutput();
+   }
+
+   // <method.png>
+   protected method updatePitchOutput() {
+      if(active_notes.numElements > 0)
+      {
+         pitch_cur = (((active_notes.last + pb_cur) - (12*5)/*middle_c*/) / (12*5)) * pitch_scl + pitch_off;
+         // trace "xxx updatePitchOutput: #active="+active_notes.numElements+" active_notes="+active_notes+" lastNote="+active_notes.last+" pb_cur="+pb_cur+" scl="+pitch_scl+" off="+pitch_off+" => pitch_cur="+pitch_cur;
+      }
+   }
+
+   // <replay.png>
+   public virtual process(local int _numFrames,
+                          local MIDIPipeFrame _frInput,
+                          local int _fltDev, local int _fltCh,
+                          local int _forceCh, local int _globalCh,
+                          local boolean _bPlaying
+                          ) {
+      // // local FloatArray inL <= input_bufs.get(0);
+      // // local FloatArray inR <= input_bufs.get(1);
+      local FloatArray outL <= output_bufs.get(0);
+      local FloatArray outR <= output_bufs.get(1);
+
+      if(replay.b_reset_all_controllers)
+      {
+         active_notes.empty();
+         pb_cur     = 0.0f;
+         pitch_last = 0.0f;
+         pitch_cur  = 0.0f;
+         updatePitchOutput();
+      }
+
+      if(replay.b_have_events)
+      {
+         processMIDINotes(_frInput, _fltDev, _fltCh);
+
+         // Pitchbend
+         if(input_filter.enablePitchbend)
+         {
+            local int numPB = _frInput.getNumEventsPitchbendByFlt(_fltDev, _fltCh);
+            local int evIdx = 0;
+            loop(numPB)
+            {
+               if(_frInput.getEventByIdxAndFlt(evIdx, pev, MIDIPIPE_EVENT_TYPE_PITCHBEND, _fltDev, _fltCh))
+               {
+                  pb_cur =
+                     ((pev.pitchbend - 8192) < 0)
+                     ? (((pev.pitchbend - 8192) / 8192.0) * pb_down)
+                     : (((pev.pitchbend - 8192) / 8191.0) * pb_up)
+                     ;
+                  updatePitchOutput();
+               }
+               // Next pitchbend event
+               evIdx++;
+            }
+         }
+      }
+
+      if(_bPlaying)
+      {
+         mtx_param.lock();
+
+         if(b_pitch_lerp)
+         {
+            local int i = 0;
+            local float pitch = pitch_last;
+            local float pitchStep = (pitch_cur - pitch_last) / _numFrames;
+            loop(_numFrames)
+            {
+               outL[i++] = pitch;
+               pitch += pitchStep;
+            }
+         }
+         else
+         {
+            outL.fillRegion(0, _numFrames, pitch_cur);
+         }
+         outR.fillRegion(0, _numFrames, (active_notes.numElements > 0) ? 1.0f : 0.0f);
+
+         mtx_param.unlock();
+
+         pitch_last = pitch_cur;
+      }
+   }
+
+}

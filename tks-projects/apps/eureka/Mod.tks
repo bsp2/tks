@@ -15,7 +15,7 @@
 // ----          06Feb2021, 25Apr2021, 12Dec2021, 26Dec2021, 27Dec2021, 31Dec2021, 04Mar2023
 // ----          06Mar2023, 07Mar2023, 08Mar2023, 29Jul2023, 05Nov2023, 09Nov2023, 06Jan2024
 // ----          02Jul2024, 04Jul2024, 05Jul2024, 06Jul2024, 17Sep2024, 19Sep2024, 07Jan2025
-// ----          08Jan2025, 21Jun2025, 20Dec2025, 14Apr2026, 23Apr2026, 24Apr2026
+// ----          08Jan2025, 21Jun2025, 20Dec2025, 14Apr2026, 23Apr2026, 24Apr2026, 08May2026
 // ----
 // ----
 // ----
@@ -145,6 +145,8 @@ abstract class Mod {
    int        queued_param_set_smooth;
 
    byte ui_mutex_group_id;  // -1=none, 0=1A, 1=1B, 2=2A, 3=2B, 4=3A, ..
+
+   MIDIPipeEvent pev;  // temporary during process()
 
 
    // <method_init.png>
@@ -1455,12 +1457,151 @@ abstract class Mod {
    }
 
    // <replay.png>
+   protected method processMIDINoteOn(local byte midiCh, local byte xNote, local byte velocity) {
+      // implemented by derived classes (that support note on/off, e.g. ModSample, ModCVGate2Audio, ..)
+   }
+
+   // <replay.png>
+   protected method processMIDINoteOff(local byte midiCh, local byte xNote, local byte velocity) {
+      // implemented by derived classes (that support note on/off, e.g. ModSample, ModCVGate2Audio, ..)
+   }
+
+   // <replay.png>
+   namespace method processMIDINotes(local MIDIPipeFrame fr,
+                                     local int _fltDev, local int _fltCh
+                                     ) {
+      // called by derived classes (that support note on/off, e.g. ModSample, ModCVGate2Audio, ..)
+      // also called by Replay when processing temp sample player events
+      local int evIdx = 0;
+      local int xNote;
+
+      // Handle note-offs (pre note-on)
+      local int numNoteOffPre = fr.getNumEventsNoteOffByFlt(_fltDev, _fltCh);
+      evIdx = 0;
+      loop(numNoteOffPre)
+      {
+         if(fr.getEventByIdxAndFlt(evIdx, pev, MIDIPIPE_EVENT_TYPE_NOTE_OFF, _fltDev, _fltCh))
+         {
+            if(pev.isNoteOffPre())
+            {
+               // trace "xxx "+#(this)+": noteOff pre evIdx="+evIdx+" pev.note="+pev.note;
+               xNote = mathClampi(pev.note + input_filter.noteTranspose, 0, 127);
+               // trace "xxx "+#(this)+":    xNote="+xNote+" input_filter.enableVRR="+input_filter.enableVRR+" noteMin="+input_filter.noteMin+" noteMax="+input_filter.noteMax;
+
+               if(input_filter.enableVRR)
+               {
+                  if(input_filter.vrrNote == pev.note)
+                  {
+                     if(input_filter.noteMin <= pev.note <= input_filter.noteMax)
+                     {
+                        processMIDINoteOff(pev.midiCh, xNote, pev.velocity);
+                     }
+                     // trace "xxx vrr noteoff<smp>: note="+input_filter.vrrNote;
+                     input_filter.vrrNote = -1;
+                  }
+               }
+               else
+               {
+                  if(input_filter.noteMin <= pev.note <= input_filter.noteMax)
+                  {
+                     processMIDINoteOff(pev.midiCh, xNote, pev.velocity);
+                  }
+               }
+               // trace "xxx "+#(this)+": noteoff<pre> "+pev.note;
+            }
+         }
+
+         // Next note-off event
+         evIdx++;
+      }
+
+      // Handle note-ons
+      local int numNoteOn = fr.getNumEventsNoteOnByFlt(_fltDev, _fltCh);
+      evIdx = 0;
+      loop(numNoteOn)
+      {
+         if(fr.getEventByIdxAndFlt(evIdx, pev, MIDIPIPE_EVENT_TYPE_NOTE_ON, _fltDev, _fltCh))
+         {
+            xNote = mathClampi(pev.note + input_filter.noteTranspose, 0, 127);
+
+            if(input_filter.enableVRR)
+            {
+               if(evIdx == input_filter.vrrNoteOnIdx)
+               {
+                  if((input_filter.noteMin <= pev.note <= input_filter.noteMax) &&
+                     (input_filter.velocityMin <= pev.velocity <= input_filter.velocityMax)
+                     )
+                  {
+                     processMIDINoteOn(pev.midiCh, xNote, pev.velocity);
+                  }
+                  input_filter.vrrNote = pev.note;
+                  // trace "xxx "+#(this)+": vrr noteon<smp>: note="+input_filter.vrrNote;
+               }
+            }
+            else
+            {
+               if((input_filter.noteMin <= pev.note <= input_filter.noteMax) &&
+                  (input_filter.velocityMin <= pev.velocity <= input_filter.velocityMax)
+                  )
+               {
+                  processMIDINoteOn(pev.midiCh, xNote, pev.velocity);
+               }
+            }
+            // trace "xxx "+#(this)+": noteon "+pev.note;
+         }
+
+         // Next note-on event
+         evIdx++;
+      }
+
+      // Handle note-offs (post note-on)
+      local int numNoteOffPost = fr.getNumEventsNoteOffByFlt(_fltDev, _fltCh);
+      evIdx = 0;
+      loop(numNoteOffPost)
+      {
+         if(fr.getEventByIdxAndFlt(evIdx, pev, MIDIPIPE_EVENT_TYPE_NOTE_OFF, _fltDev, _fltCh))
+         {
+            if(!pev.isNoteOffPre())
+            {
+               // trace "xxx "+#(this)+": noteOff post evIdx="+evIdx+" pev.note="+pev.note;
+               xNote = mathClampi(pev.note + input_filter.noteTranspose, 0, 127);
+
+               if(input_filter.enableVRR)
+               {
+                  if(input_filter.vrrNote == pev.note)
+                  {
+                     if(input_filter.noteMin <= pev.note <= input_filter.noteMax)
+                     {
+                        processMIDINoteOff(pev.midiCh, xNote, pev.velocity);
+                     }
+                     // trace "xxx "+#(this)+": vrr noteoff<smp>: note="+input_filter.vrrNote;
+                     input_filter.vrrNote = -1;
+                  }
+               }
+               else
+               {
+                  if(input_filter.noteMin <= pev.note <= input_filter.noteMax)
+                  {
+                     processMIDINoteOff(pev.midiCh, xNote, pev.velocity);
+                  }
+               }
+               // trace "xxx "+#(this)+": noteoff "+pev.note;
+            }
+         }
+
+         // Next note-off event
+         evIdx++;
+      }
+   }
+
+   // <replay.png>
    public method process(local int _numFrames,
                          local MIDIPipeFrame _frInput,
                          local int _fltDev, local int _fltCh,
                          local int _forceCh, local int _globalCh,
                          local boolean _bPlaying
                          ) {
+      // implemented by derived classes
    }
 
    // <method.png>

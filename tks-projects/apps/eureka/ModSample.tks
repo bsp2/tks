@@ -189,8 +189,6 @@ class ModSample : Mod {
    float initial_sample_offset_ms;  // -1=none, >=0: sample start in milliseconds (for audio track style samples)
    short initial_sample_offset_ms_lo;  // 14bit RPN (98). lower 6bits = fractional part
 
-   MIDIPipeEvent pev;
-
 
    // <method_init.png>
    public virtual init() {
@@ -2920,120 +2918,6 @@ class ModSample : Mod {
       }
    }
 
-   // <replay.png>
-   public method processMIDINotes(local MIDIPipeFrame fr,
-                                  local int _fltDev, local int _fltCh
-                                  ) {
-      local int evIdx = 0;
-      local int xNote;
-
-      // Handle note-offs (pre note-on)
-      local int numNoteOffPre = fr.getNumEventsNoteOffByFlt(_fltDev, _fltCh);
-      evIdx = 0;
-      loop(numNoteOffPre)
-      {
-         if(fr.getEventByIdxAndFlt(evIdx, pev, MIDIPIPE_EVENT_TYPE_NOTE_OFF, _fltDev, _fltCh))
-         {
-            if(pev.isNoteOffPre())
-            {
-               // trace "xxx ModSample: noteOff pre evIdx="+evIdx+" pev.note="+pev.note;
-               xNote = mathClampi(pev.note + input_filter.noteTranspose, 0, 127);
-               // trace "xxx ModSample:    xNote="+xNote+" input_filter.enableVRR="+input_filter.enableVRR+" noteMin="+input_filter.noteMin+" noteMax="+input_filter.noteMax;
-
-               if(input_filter.enableVRR)
-               {
-                  if(input_filter.vrrNote == pev.note)
-                  {
-                     if(input_filter.noteMin <= pev.note <= input_filter.noteMax)
-                        noteOff(xNote, pev.velocity / 127.0);
-                     // trace "xxx vrr noteoff<smp>: note="+input_filter.vrrNote;
-                     input_filter.vrrNote = -1;
-                  }
-               }
-               else
-               {
-                  if(input_filter.noteMin <= pev.note <= input_filter.noteMax)
-                     noteOff(xNote, pev.velocity / 127.0);
-               }
-               // trace "xxx ModSample: noteoff<pre> "+pev.note;
-            }
-         }
-
-         // Next note-off event
-         evIdx++;
-      }
-
-      // Handle note-ons
-      local int numNoteOn = fr.getNumEventsNoteOnByFlt(_fltDev, _fltCh);
-      evIdx = 0;
-      loop(numNoteOn)
-      {
-         if(fr.getEventByIdxAndFlt(evIdx, pev, MIDIPIPE_EVENT_TYPE_NOTE_ON, _fltDev, _fltCh))
-         {
-            xNote = mathClampi(pev.note + input_filter.noteTranspose, 0, 127);
-
-            if(input_filter.enableVRR)
-            {
-               if(evIdx == input_filter.vrrNoteOnIdx)
-               {
-                  if((input_filter.noteMin <= pev.note <= input_filter.noteMax) &&
-                     (input_filter.velocityMin <= pev.velocity <= input_filter.velocityMax)
-                     )
-                     noteOn(xNote, pev.velocity / 127.0, true/*bAllowNoteOff*/);
-                  input_filter.vrrNote = pev.note;
-                  // trace "xxx vrr noteon<smp>: note="+input_filter.vrrNote;
-               }
-            }
-            else
-            {
-               if((input_filter.noteMin <= pev.note <= input_filter.noteMax) &&
-                  (input_filter.velocityMin <= pev.velocity <= input_filter.velocityMax)
-                  )
-                  noteOn(xNote, pev.velocity / 127.0, true/*bAllowNoteOff*/);
-            }
-            // trace "xxx ModSample: noteon "+pev.note;
-         }
-
-         // Next note-on event
-         evIdx++;
-      }
-
-      // Handle note-offs (post note-on)
-      local int numNoteOffPost = fr.getNumEventsNoteOffByFlt(_fltDev, _fltCh);
-      evIdx = 0;
-      loop(numNoteOffPost)
-      {
-         if(fr.getEventByIdxAndFlt(evIdx, pev, MIDIPIPE_EVENT_TYPE_NOTE_OFF, _fltDev, _fltCh))
-         {
-            if(!pev.isNoteOffPre())
-            {
-               // trace "xxx ModSample: noteOff post evIdx="+evIdx+" pev.note="+pev.note;
-               xNote = mathClampi(pev.note + input_filter.noteTranspose, 0, 127);
-
-               if(input_filter.enableVRR)
-               {
-                  if(input_filter.vrrNote == pev.note)
-                  {
-                     if(input_filter.noteMin <= pev.note <= input_filter.noteMax)
-                        noteOff(xNote, pev.velocity / 127.0);
-                     // trace "xxx vrr noteoff<smp>: note="+input_filter.vrrNote;
-                     input_filter.vrrNote = -1;
-                  }
-               }
-               else
-               {
-                  if(input_filter.noteMin <= pev.note <= input_filter.noteMax)
-                     noteOff(xNote, pev.velocity / 127.0);
-               }
-               // trace "xxx ModSample: noteoff "+pev.note;
-            }
-         }
-
-         // Next note-off event
-         evIdx++;
-      }
-   }
-
    // <method.png>
    public method startQueuedVoices() {
       local int voicekey;
@@ -3046,6 +2930,16 @@ class ModSample : Mod {
          // trace "xxx 2 initStartedVoicesByKey:   => numPlayingVoices="+sample_player.numPlayingVoices+" numActiveVoices="+sample_player.numActiveVoices;
       }
       queued_voicekeys.empty();
+   }
+
+   // <replay.png>
+   protected virtual processMIDINoteOn(local byte midiCh, local byte xNote, local byte velocity) {
+      noteOn(xNote, velocity / 127.0, true/*bAllowNoteOff*/);
+   }
+
+   // <replay.png>
+   protected virtual processMIDINoteOff(local byte midiCh, local byte xNote, local byte velocity) {
+      noteOff(xNote, velocity / 127.0);
    }
 
    // <replay.png>
