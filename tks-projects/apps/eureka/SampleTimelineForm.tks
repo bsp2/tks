@@ -12,7 +12,7 @@
 // ---- changed: 05Apr2025, 06Apr2025, 07Apr2025, 09Apr2025, 10Apr2025, 01May2025, 03May2025
 // ----          04May2025, 20May2025, 31May2025, 14Jun2025, 15Jun2025, 22Jun2025, 26Jun2025
 // ----          02Jan2026, 03Jan2026, 17Jan2026, 07Apr2026, 14Apr2026, 15Apr2026, 16Apr2026
-// ----          17Apr2026
+// ----          17Apr2026, 10May2026
 // ----
 // ----
 // ----
@@ -87,6 +87,7 @@ class SampleTimelineForm : XMLForm, ActionProvider, SampleViewPlugin {
    protected static Buffer *timeline_clipboard;
 
    protected PopupMenu *pm_context;
+   protected PopupMenu *pm_audiotrack;
 
 
    // <init.png>
@@ -462,6 +463,39 @@ class SampleTimelineForm : XMLForm, ActionProvider, SampleViewPlugin {
       return null;
    }
 
+   // <ui_update.png>
+   protected method updateAudioTrackSelection() {
+      SampleTimelineModelTrack modelTrack <= getSelectedModelTrack();
+      if(null != modelTrack)
+      {
+         if(modelTrack.audio_track_unique_id >= 0)
+         {
+            AudioTrack audioTrack <= current_project.findAudioTrackByUniqueId(modelTrack.audio_track_unique_id);
+            if(null != audioTrack)
+            {
+               bt_clip_sample_rec.setCaption(String(current_project.getAudioTrackIdx(audioTrack) + 1));
+            }
+            else
+            {
+               // AudioTrack does not exist (anymore)
+               bt_clip_sample_rec.setCaption("!");
+               Global.Debug("SampleTimelineForm::updateAudioTrackSelection: invalid audio_track_unique_id="+modelTrack.audio_track_unique_id);
+            }
+         }
+         else
+         {
+            // Use default input
+            bt_clip_sample_rec.setCaption("*");
+         }
+      }
+      else
+      {
+         // No timeline track selected (not reachable?)
+         bt_clip_sample_rec.setCaption("?");
+      }
+      bt_clip_sample_rec.redraw();
+   }
+
    // <ui_show.png>
    public method showClipDetails(SampleTimelineEditorClip _clipOrNull, boolean _bWidgets, boolean _bSampleView) {
       // called from SampleTimelineEditor::timelineShowClipDetails()
@@ -504,6 +538,7 @@ class SampleTimelineForm : XMLForm, ActionProvider, SampleViewPlugin {
                bt_clip_sample.setEditable(true);
                bt_clip_sample_rec.setEditable(true);
                bt_clip_sample_rec.setToggleState(current_sample.b_clip_recording);
+               updateAudioTrackSelection();
             }
          }
          else
@@ -518,6 +553,7 @@ class SampleTimelineForm : XMLForm, ActionProvider, SampleViewPlugin {
                bt_clip_sample.setEditable(true);
                bt_clip_sample_rec.setEditable(false);
                bt_clip_sample_rec.setToggleState(false);
+               updateAudioTrackSelection();
             }
          }
 
@@ -563,6 +599,7 @@ class SampleTimelineForm : XMLForm, ActionProvider, SampleViewPlugin {
             bt_clip_sample.setEditable(false);
             bt_clip_sample_rec.setEditable(false);
             bt_clip_sample_rec.setToggleState(false);
+            updateAudioTrackSelection();
          }
       }
       sv_wave.redraw();
@@ -738,6 +775,7 @@ class SampleTimelineForm : XMLForm, ActionProvider, SampleViewPlugin {
 
    // <ui_update.png>
    public method updateTrackWidgets() {
+      // (note) called by e.g. SampleTimelineEditor::timelineHandleCursorTrackChanged()
       SampleTimelineModelTrack track <= getSelectedModelTrack();
       if(null != track)
       {
@@ -760,6 +798,7 @@ class SampleTimelineForm : XMLForm, ActionProvider, SampleViewPlugin {
          cb_track_master_volume.setSelectedAndDisable(false);
       }
 
+      updateAudioTrackSelection();
    }
 
    // <ui_update.png>
@@ -1414,7 +1453,7 @@ class SampleTimelineForm : XMLForm, ActionProvider, SampleViewPlugin {
    }
 
    // <ui_handle.png>
-   public method handleToggleClipRec() {
+   public method handleToggleClipRec() : boolean {
       // called from UI thread by onTriadKey() handler
       if(null != sample_timeline)
       {
@@ -1424,9 +1463,21 @@ class SampleTimelineForm : XMLForm, ActionProvider, SampleViewPlugin {
             {
                if(current_sample.b_audio_clip)
                {
-                  // Find first record-enable audio track
-                  //  (todo) support recording to multiple clip samples from multiple audio tracks
-                  //  (todo) support audio track selection (TBD)
+                  // Auto-record-enable audio-track
+                  SampleTimelineModelTrack modelTrack <= getSelectedModelTrack();
+                  if(null != modelTrack)
+                  {
+                     AudioTrack audioTrack <= current_project.findAudioTrackByUniqueId(modelTrack.audio_track_unique_id);
+                     if(null != audioTrack)
+                     {
+                        current_project.setRecordEnableSingleAudioTrack(audioTrack);
+                     }
+                     // else: record from first enabled audio-track
+                  }
+
+                  // Find first record-enable audio-track
+                  //  (todo) support recording to multiple clip samples from multiple audio-tracks
+                  //  (todo) support audio-track selection (TBD)
                   AudioTrack *atrack;
                   AudioTrack atrackRec <= null;
                   foreach atrack in current_project.audio_tracks
@@ -1457,6 +1508,7 @@ class SampleTimelineForm : XMLForm, ActionProvider, SampleViewPlugin {
                         // replay.toggleSeq(true/*bRec*/);
                         // sample_timeline.toggleReplay(sample_timeline.loop_start, STConfig.sample_timeline_clip_rec_skip_num_frames);
                         Global.Print("Start clip rec (src atrack=\""+atrackRec.name+"\")");
+                        return true;
                      }
                      else
                      {
@@ -1488,6 +1540,8 @@ class SampleTimelineForm : XMLForm, ActionProvider, SampleViewPlugin {
       {
          Global.Warning("Rec: no timeline");
       }
+      bt_clip_sample_rec.setToggleState(false);
+      return false;
    }
 
    // <ui_handle.png>
@@ -1518,6 +1572,35 @@ class SampleTimelineForm : XMLForm, ActionProvider, SampleViewPlugin {
             Global.SuccessShort("Rec: finish clip recording ("+(int(newNumSec*100)/100.0f)+" sec)");
          }
          bt_clip_sample_rec.setToggleState(false);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleAudioTrackChanged(int _audioTrackIdx) {
+      Global.Debug("SampleTimelineForm::handleAudioTrackChanged: audioTrackIdx="+_audioTrackIdx);
+      AudioTrack audioTrack <= current_project.getAudioTrackByIdx(_audioTrackIdx);
+      SampleTimelineModelTrack modelTrack <= getSelectedModelTrack();
+      if(null != modelTrack)
+      {
+         if(null != audioTrack)
+         {
+            Global.Debug("SampleTimelineForm::handleAudioTrackChanged: audioTrack.name=\""+audioTrack.name+"\" unique_id="+audioTrack.unique_id);
+            modelTrack.audio_track_unique_id = audioTrack.unique_id;
+            bt_clip_sample_rec.setCaption(String(_audioTrackIdx+1));
+            // // updateAudioTrackSelection();
+         }
+         else
+         {
+            // Select default input (currently enabled audio tracks)
+            modelTrack.audio_track_unique_id = -1;
+            bt_clip_sample_rec.setCaption("*");
+            // // updateAudioTrackSelection();
+         }
+         // else: should not be reachable
+      }
+      else
+      {
+         Global.Warning("No timeline track selected");
       }
    }
 
@@ -1720,6 +1803,49 @@ class SampleTimelineForm : XMLForm, ActionProvider, SampleViewPlugin {
       Global.Print("Show timeline menu");
    }
 
+   // <ui_show.png>
+   public method showAudioTrackMenu(boolean _bFocusFirst) {
+      if(null != getSelectedModelClip())
+      {
+         pm_audiotrack <= PopupMenu.New(this);
+         PopupMenuButton *pmb;
+         PopupMenu pm <= pm_audiotrack;
+         PopupMenu *spm;
+
+         int audioTrackIdx = -1;
+         SampleTimelineModelTrack modelTrack <= getSelectedModelTrack();
+         if(null != modelTrack)
+            audioTrackIdx = current_project.findAudioTrackIndexByUniqueId(modelTrack.audio_track_unique_id);
+
+         pmb <= pm.addRadioButton(" *:<first record-enabled audio track>",
+                                  (-1 == audioTrackIdx),
+                                  "audiotrack_0"
+                                  );
+
+         AudioTrack *audioTrack;
+         Integer audioTrackNr = 1;
+         foreach audioTrack in current_project.audio_tracks
+         {
+            pmb <= pm.addRadioButton(audioTrackNr.printf("%2d")+":"+audioTrack.name+" ("+audioTrack.unique_id+")",
+                                     ((audioTrackIdx+1) == audioTrackNr),
+                                     "audiotrack_"+audioTrackNr
+                                     );
+            audioTrackNr++;
+         }
+
+         pm.resizeToMinimum();
+         pm.showNearMouse(-10, -10);
+         if(_bFocusFirst)
+            pm.focusNextMenuItem();
+
+         Global.Print("Show audio-track menu");
+      }
+      else
+      {
+         Global.Warning("No clip selected");
+      }
+   }
+
    // <ui_kbd.png>
    public virtual onKey(Key _k) : boolean {
       // // trace "[>>>] SampleTimelineForm::onKey: key="+_k.name+" pressed="+_k.pressed+" mod="+_k.mod;
@@ -1781,7 +1907,16 @@ class SampleTimelineForm : XMLForm, ActionProvider, SampleViewPlugin {
          showContextMenu(false/*bFocusFirst*/);
          return true;
       }
-      return XMLForm::onMouseHold(_ev);
+      return XMLForm::onMouseClick(_ev);
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouse(MouseEvent _ev) : boolean {
+      if(_ev.wheelUp() || _ev.wheelDown())
+      {
+         return true;
+      }
+      return XMLForm::onMouse(_ev);
    }
 
   // <ui_consume.png>
@@ -1973,6 +2108,26 @@ class SampleTimelineForm : XMLForm, ActionProvider, SampleViewPlugin {
             }
             return true;
 
+         case @(pm_audiotrack):
+            Global.Debug("pm_audiotrack acName="+acName);
+            switch(acName)
+            {
+               case PopupMenu.ACTION_CANCEL:
+               case "":
+                  Global.Print("Close audio-track menu.");
+                  refocusDefault();
+                  return true;
+
+               default:
+                  if(acName <= "audiotrack_")
+                  {
+                     handleAudioTrackChanged(int(acName.replace("audiotrack_","")) - 1);
+                     refocusDefault();
+                  }
+                  break;
+            }
+            return true;
+
          case @(cf_model):
             if(ComboField.ACTION_OPTIONADDED == acName)
             {
@@ -2127,13 +2282,20 @@ class SampleTimelineForm : XMLForm, ActionProvider, SampleViewPlugin {
             return true;
 
          case @(bt_clip_sample_rec):
-            if(bt_clip_sample_rec.getToggleState())
+            if(Button.ACTION_HOLD_CLICK == acName)
             {
-               handleToggleClipRec();
+               showAudioTrackMenu(false/*bFocusFirst*/);
             }
             else
             {
-               handleToggleReplay(false/*bCursor*/);
+               if(bt_clip_sample_rec.getToggleState())
+               {
+                  handleToggleClipRec();
+               }
+               else
+               {
+                  handleToggleReplay(false/*bCursor*/);
+               }
             }
             return true;
 
