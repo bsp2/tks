@@ -248,13 +248,19 @@ void StADSRPlayer::noteOffStartRelease(void) {
 }
 
 void StADSRPlayer::noteOff(void) {
-   if(adsr->b_attack_oneshot && ENV_ATTACK == env_index)
+   if(NULL != adsr)
    {
-      b_queued_release_during_attack = YAC_TRUE;
-   }
-   else
-   {
-      noteOffStartRelease();
+      if(!b_finished)
+      {
+         if(adsr->b_attack_oneshot && ENV_ATTACK == env_index)
+         {
+            b_queued_release_during_attack = YAC_TRUE;
+         }
+         else
+         {
+            noteOffStartRelease();
+         }
+      }
    }
 }
 
