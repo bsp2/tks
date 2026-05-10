@@ -698,6 +698,7 @@ when CLAP / VST2 editor window is focused:
    |:SPACE                |:start/stop replay (start from left loop locator, rewind to selection/clip start)
    |:lctrl - SPACE        |:start/stop replay (start from cursor pos, rewind to cursor position)
    |:lctrl - x SPACE      |:start replay and record to selected clip sample (input=first record-enable audio track)
+   |:lctrl - x a          |:show audio-track menu (when timeline clip/track is selected)
    |:LEFT                 |:move edit cursor left
    |:lctrl - LEFT         |:move edit cursor left (fast)
    |:lshift - LEFT        |:extend / start selection to previous grid unit
