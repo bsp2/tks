@@ -389,13 +389,6 @@ class NT_PatternView : Control, NT_Defs {
    protected IntArray     mesh_row_zoom_vbos;  // 0..num_rows
    protected IntArray     mesh_row_num_verts;
 
-   // // protected FloatArray   bg_mesh_vertices; // 2d quads
-   // // protected IntArray     bg_mesh_colors;
-   // // protected FloatArray   bg_mesh_colors_f;  // see STConfig.b_node_tracker_use_colorarray4f
-   // // protected FloatArray   bg_mesh_cliptop_vertices; // 2d quads
-   // // protected FloatArray   bg_mesh_clipbottom_vertices; // 2d quads
-   // // protected IntArray     bg_mesh_clip_colors;
-   // // protected FloatArray   bg_mesh_clip_colors_f;  // see STConfig.b_node_tracker_use_colorarray4f
    protected int bg_mesh_vbo_id;
    protected int bg_mesh_clip_vbo_id;
    protected int bg_mesh_num_verts;
@@ -1032,9 +1025,6 @@ class NT_PatternView : Control, NT_Defs {
    // <method_set.png>
    public method setEnableDrawBGMesh(boolean _bEnabled) : boolean {
       b_bg_mesh = _bEnabled;
-
-      // // bg_mesh_cliptop_vertices    = bg_mesh_vertices;
-      // // bg_mesh_clipbottom_vertices = bg_mesh_vertices;
 
       updateBGMesh();
       redraw();
@@ -2349,14 +2339,6 @@ class NT_PatternView : Control, NT_Defs {
 
       float trackPx = NUM_SONGPOS_COLS * char_width;
 
-      // // bg_mesh_vertices.empty();
-      // // bg_mesh_cliptop_vertices.empty();
-      // // bg_mesh_clipbottom_vertices.empty();
-      // // bg_mesh_colors.empty();
-      // // bg_mesh_colors_f.empty();
-      // // bg_mesh_clip_colors.empty();
-      // // bg_mesh_clip_colors_f.empty();
-
       int numVisTracks = getNumVisibleTracks();
       int trackNr = parent_node.pv_track_shift;
       boolean bBigEndian = TKS.isBigEndian();
@@ -2455,9 +2437,6 @@ class NT_PatternView : Control, NT_Defs {
          trackNr++;
 
       } // loop numVisTracks
-
-      // // bg_mesh_cliptop_vertices    = bg_mesh_vertices;
-      // // bg_mesh_clipbottom_vertices = bg_mesh_vertices;
 
       sdvg_UpdateVBO(bg_mesh_vbo_id,      0/*offset*/, buf.offset/*numBytes*/, buf);
       sdvg_UpdateVBO(bg_mesh_clip_vbo_id, 0/*offset*/, bufClip.offset/*numBytes*/, bufClip);
@@ -6105,7 +6084,7 @@ class NT_PatternView : Control, NT_Defs {
    public =replay= method splitPatternToClipboard(boolean _bPasteNewPattern) {
       // Copy second half of pattern to clipboard then delete it
       NT_MetaPattern mpat <= parent_node.getCurrentEditMetaPattern();
-      if((null != mpat) && !mpat.patIsEmpty())
+      if(null != mpat && !mpat.patIsEmpty())
       {
          int numTicks1 = mpat.num_ticks / 2;
          int numTicks2 = mpat.num_ticks - numTicks1;
@@ -6179,6 +6158,88 @@ class NT_PatternView : Control, NT_Defs {
             Global.Print("Split pattern to clipboard ("+numTicks2+" ticks)");
       }
 
+   }
+
+   // <method.png>
+   public =replay= method mergeNextPattern(boolean _bDeleteNextPatternAfterMerge) {
+      // Copy next pattern to clipboard and merge with this one
+      NT_MetaPattern mpat <= parent_node.getCurrentEditMetaPattern();
+      if(null == mpat)
+      {
+         parent_editor.cmd_pattern_alloc(false/*bSub*/);
+         mpat <= parent_node.getCurrentEditMetaPattern();
+      }
+      if(null != mpat)
+      {
+         int patNr = parent_node.nodeGetCurrentEditPatternNr();
+         int oldEditOffset = parent_node.getEditOffset();
+         int oldNumTicks = mpat.num_ticks;
+
+         int patNrNext = parent_node.nodeFindNextPatternNrByUsedIdxWithOffset(patNr+1, 0);
+
+         if(-1 != patNrNext)
+         {
+            parent_node.undoBeginNested("merge_pattern");
+            parent_node.undoTouchPattern(patNr);
+            parent_node.undoTouchNodeState();
+
+            parent_editor.selectPatternByIdx(patNrNext);
+
+            NT_MetaPattern mpatNext <= parent_node.getCurrentEditMetaPattern();
+            if(null != mpatNext && !mpatNext.patIsEmpty())
+            {
+               // Save current block mode
+               b_block_quiet = true;
+               int oldBlockMode = block_mode;
+               block_mode = BLOCK_MODE_PATTERN;
+
+               int nextNumTicks = mpatNext.num_ticks;
+
+               // Select + copy next pattern to clipboard
+               blockSelectCurrentPattern();
+               blockCopy();
+               if(_bDeleteNextPatternAfterMerge)
+                  parent_editor.cmd_pattern_free(true/*bFreeMeta*/, false/*bUndoBegin*/);
+
+               // Reselect original pattern and paste clipboard
+               parent_editor.selectPatternByIdx(patNr);
+
+               // Resize pattern
+               mpat.setNumTicks(oldNumTicks + nextNumTicks);
+
+               // Paste at end of current pattern
+               parent_node.setEditOffset(oldNumTicks);
+               blockPaste(false/*bShift*/, false/*bUndoStartEnd*/, false/*bScrollDown*/);
+
+               // Restore edit offset and block mode
+               parent_node.setEditOffset(oldEditOffset);
+               block_mode = oldBlockMode;
+               b_block_quiet = false;
+
+               // Reselect again to update patLen widget
+               parent_editor.selectPatternByIdxAndUpdateWidgets(patNr);
+
+               Global.Print("Merge with pattern "+(Node.patnr_options.get(patNrNext))+" ("+nextNumTicks+" tick"+Utils.GetPluralString(nextNumTicks)+")"+(_bDeleteNextPatternAfterMerge ? " (delete next)":""));
+            }
+            else
+            {
+               // Next pattern is empty
+               parent_editor.selectPatternByIdx(patNr);
+            }
+
+            parent_node.undoEndNested("merge_pattern");
+
+         } // if patNrNext
+         else
+         {
+            Global.Warning("Merge: no next pattern");
+         }
+      } // if mpat
+      else
+      {
+         // should not be reachable
+         Global.Error("Merge: no current pattern");
+      }
    }
 
    // <ui_selection.png>
@@ -10550,28 +10611,6 @@ class NT_PatternView : Control, NT_Defs {
       if(patEndY < size_y)
          clipBottom = patEndY;
 
-      // // int idx = 0;
-      // // idx = 0;
-      // // loop(numBGQuadVertices / 4)
-      // // {
-      // //    bg_mesh_vertices[idx + 1] = clipTop;
-      // //    bg_mesh_vertices[idx + 3] = clipTop;
-      // //    bg_mesh_vertices[idx + 5] = clipBottom;
-      // //    bg_mesh_vertices[idx + 7] = clipBottom;
-
-      // //    bg_mesh_cliptop_vertices[idx + 1] = 0.0f;
-      // //    bg_mesh_cliptop_vertices[idx + 3] = 0.0f;
-      // //    bg_mesh_cliptop_vertices[idx + 5] = clipTop;
-      // //    bg_mesh_cliptop_vertices[idx + 7] = clipTop;
-
-      // //    bg_mesh_clipbottom_vertices[idx + 1] = clipBottom;
-      // //    bg_mesh_clipbottom_vertices[idx + 3] = clipBottom;
-      // //    bg_mesh_clipbottom_vertices[idx + 5] = size_y;
-      // //    bg_mesh_clipbottom_vertices[idx + 7] = size_y;
-
-      // //    idx += (4 * 2);
-      // // }
-
       sdvg_EnableBlending();
       sdvg_SetColorARGB(#ffffffff);
 
@@ -12233,7 +12272,7 @@ class NT_PatternView : Control, NT_Defs {
    // <ui_mouse.png>
    public virtual onMouseHold(MouseEvent _ev) : boolean {
 
-      if(_ev.mouse_rel_y < TRACK_MUTE_MINY*UI.font_scaling) // // TRACK_LABEL_HEIGHT
+      if(_ev.mouse_rel_y < TRACK_MUTE_MINY*UI.font_scaling)
       {
          editCurrentTrackName();
          return true;
@@ -13617,6 +13656,24 @@ class NT_PatternView : Control, NT_Defs {
             else
                parent_editor.cmd_pattern_enterlen();
             return true;
+
+         case 'm':
+            if(_k.modShift())
+            {
+               if(_k.modCtrl())
+               {
+                  // lctrl - lshift - m
+                  mergeNextPattern(true/*bDeleteNextPatternAfterMerge*/);
+                  return true;
+               }
+               else
+               {
+                  // lshift - m
+                  mergeNextPattern(false/*bDeleteNextPatternAfterMerge*/);
+                  return true;
+               }
+            }
+            break;
 
          case 'o':
             parent_editor.cmd_events_copystate();
