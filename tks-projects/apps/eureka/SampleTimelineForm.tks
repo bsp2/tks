@@ -12,7 +12,7 @@
 // ---- changed: 05Apr2025, 06Apr2025, 07Apr2025, 09Apr2025, 10Apr2025, 01May2025, 03May2025
 // ----          04May2025, 20May2025, 31May2025, 14Jun2025, 15Jun2025, 22Jun2025, 26Jun2025
 // ----          02Jan2026, 03Jan2026, 17Jan2026, 07Apr2026, 14Apr2026, 15Apr2026, 16Apr2026
-// ----          17Apr2026, 10May2026
+// ----          17Apr2026, 10May2026, 11May2026
 // ----
 // ----
 // ----
@@ -87,6 +87,7 @@ class SampleTimelineForm : XMLForm, ActionProvider, SampleViewPlugin {
    protected static Buffer *timeline_clipboard;
 
    protected PopupMenu *pm_context;
+   protected PopupMenu *pm_selection;
    protected PopupMenu *pm_audiotrack;
 
 
@@ -1804,6 +1805,94 @@ class SampleTimelineForm : XMLForm, ActionProvider, SampleViewPlugin {
    }
 
    // <ui_show.png>
+   protected method showSelectionContextMenu(boolean _bFocusFirst) {
+
+      pm_selection <= PopupMenu.New(this);
+      PopupMenuButton *pmb;
+      PopupMenu pm <= pm_selection;
+
+      // Loop
+      pmb <= pm.addDefaultButton("Set loop (prefer clips)",
+                                 "loop_set_clips"
+                                 );
+      pmb.setAccelerators("c", "");
+
+      pmb <= pm.addDefaultButton("Set loop (prefer region)",
+                                 "loop_set_region"
+                                 );
+      pmb.setAccelerators("lshift-c", "");
+
+      // Select
+      pm.addSeparator();
+      pmb <= pm.addDefaultButton("Select until end",
+                                 "select_until_end"
+                                 );
+      pmb.setAccelerators("lalt-z", "");
+      pmb.setToolTipCaption("Select until end\n\n (note) lalt-y on german kbd\n\n (note) press repeatedly to toggle cursor / all tracks");
+
+      pmb <= pm.addDefaultButton("Select all track clips, all clips, or none",
+                                 "select_cycle"
+                                 );
+      pmb.setAccelerators("lctrl-a", "");
+
+      pmb <= pm.addDefaultButton("Select none",
+                                 "select_none"
+                                 );
+      pmb.setAccelerators("lctrl-lshift-a", "");
+
+      // Clipboard
+      pm.addSeparator();
+      pmb <= pm.addDefaultButton("Copy clips to clipboard",
+                                  "clip_copy"
+                                  );
+      pmb.setAccelerators("lctrl-c", "");
+
+      pmb <= pm.addDefaultButton("Cut clips to clipboard",
+                                 "clip_cut"
+                                 );
+      pmb.setAccelerators("lctrl-w", "");
+
+      // Mute
+      pm.addSeparator();
+      pmb <= pm.addDefaultButton("Mute",
+                                 "clip_mute"
+                                 );
+      pmb.setAccelerators("t", "");
+      pmb.setToolTipCaption("(Un-)mute selected clips");
+
+      // Erase
+      pm.addSeparator();
+      pmb <= pm.addDefaultButton("Erase",
+                                 "clip_erase"
+                                 );
+      pmb.setAccelerators("e", "");
+      pmb.setToolTipCaption("Erase(clear) selection\n\n (note) split clip(s) if required (do not modify samples)");
+
+      // Razor
+      pm.addSeparator();
+      pmb <= pm.addDefaultButton("Razor",
+                                 "clip_razor"
+                                 );
+      pmb.setAccelerators("r", "");
+      pmb.setToolTipCaption("Erase(clear) selection\n\n (note) split clip(s) if required (do not modify samples)");
+
+      // Merge
+      pm.addSeparator();
+      pmb <= pm.addDefaultButton("Merge",
+                                 "clip_merge"
+                                 );
+      pmb.setAccelerators("m", "");
+      pmb.setToolTipCaption("Merge selected clips\n\n (note) do not modify samples");
+
+      pm.resizeToMinimum();
+      pm.showNearMouse(-10, -10);
+      if(_bFocusFirst)
+         pm.focusNextMenuItem();
+
+      Global.Print("Show selection menu");
+   }
+
+   // <ui_show.png>
    public method showAudioTrackMenu(boolean _bFocusFirst) {
       if(null != getSelectedModelClip())
       {
@@ -1855,7 +1944,14 @@ class SampleTimelineForm : XMLForm, ActionProvider, SampleViewPlugin {
          case 'a':
             if(_k.modNone())
             {
-               showContextMenu(true/*bFocusFirst*/);
+               if(sample_timeline_editor.timelineHaveSelection())
+               {
+                  showSelectionContextMenu(true/*bFocusFirst*/);
+               }
+               else
+               {
+                  showContextMenu(true/*bFocusFirst*/);
+               }
                return true;
             }
             break;
@@ -1904,7 +2000,14 @@ class SampleTimelineForm : XMLForm, ActionProvider, SampleViewPlugin {
    public virtual onMouseClick(MouseEvent _ev) : boolean {
       if(_ev.isRightButton())
       {
-         showContextMenu(false/*bFocusFirst*/);
+         if(sample_timeline_editor.timelineHaveSelection())
+         {
+            showSelectionContextMenu(false/*bFocusFirst*/);
+         }
+         else
+         {
+            showContextMenu(false/*bFocusFirst*/);
+         }
          return true;
       }
       return XMLForm::onMouseClick(_ev);
@@ -1923,6 +2026,7 @@ class SampleTimelineForm : XMLForm, ActionProvider, SampleViewPlugin {
    public virtual consumeAction(Action _action) : boolean {
       ActionProvider ap <= _action.getActionProvider();
       String acName <= _action.getActionName();
+      PageProject pgProject <= root_form.pg_project;
 
       if(TA_REDRAW == acName)
       {
@@ -1944,7 +2048,6 @@ class SampleTimelineForm : XMLForm, ActionProvider, SampleViewPlugin {
 
          case @(pm_context):
             Global.Debug("pm_context acName="+acName);
-            PageProject pgProject <= root_form.pg_project;
             switch(acName)
             {
                case PopupMenu.ACTION_CANCEL:
@@ -2081,17 +2184,17 @@ class SampleTimelineForm : XMLForm, ActionProvider, SampleViewPlugin {
                   return true;
 
                case "mode_draw":
-                  sample_timeline_editor.handleKeyW(false/*bShift*/);
+                  sample_timeline_editor.handleKeyW(false/*bShift*/, true/*bAllowModeChange*/);
                   refocusDefault();
                   return true;
 
                case "mode_erase":
-                  sample_timeline_editor.handleKeyE();
+                  sample_timeline_editor.handleKeyE(true/*bAllowModeChange*/);
                   refocusDefault();
                   return true;
 
                case "mode_razor":
-                  sample_timeline_editor.handleKeyR();
+                  sample_timeline_editor.handleKeyR(true/*bAllowModeChange*/);
                   refocusDefault();
                   return true;
 
@@ -2101,10 +2204,81 @@ class SampleTimelineForm : XMLForm, ActionProvider, SampleViewPlugin {
                   return true;
 
                case "mode_mute":
-                  sample_timeline_editor.handleKeyT();
+                  sample_timeline_editor.handleKeyT(true/*bAllowModeChange*/);
                   refocusDefault();
                   return true;
 
+            }
+            return true;
+
+         case @(pm_selection):
+            Global.Debug("pm_selection acName="+acName);
+            switch(acName)
+            {
+               case PopupMenu.ACTION_CANCEL:
+               case "":
+                  Global.Print("Close selection menu.");
+                  refocusDefault();
+                  return true;
+
+               case "loop_set_clips":
+                  sample_timeline_editor.handleSetLoop(false/*bPreferRegion*/);
+                  refocusDefault();
+                  return true;
+
+               case "loop_set_region":
+                  sample_timeline_editor.handleSetLoop(true/*bPreferRegion*/);
+                  refocusDefault();
+                  return true;
+
+               case "select_until_end":
+                  sample_timeline_editor.timelineSelectUntilEnd();
+                  redraw();
+                  refocusDefault();
+                  return true;
+
+               case "select_cycle":
+                  sample_timeline_editor.timelineToggleSelectTrackClipsOrAllClips();
+                  redraw();
+                  refocusDefault();
+                  return true;
+
+               case "select_none":
+                  sample_timeline_editor.timelineSelectNone();
+                  redraw();
+                  refocusDefault();
+                  return true;
+
+               case "clip_copy":
+                  sample_timeline_editor.handleClipCopy();
+                  refocusDefault();
+                  return true;
+
+               case "clip_cut":
+                  sample_timeline_editor.handleClipCut();
+                  refocusDefault();
+                  return true;
+
+               case "clip_erase":
+                  sample_timeline_editor.handleKeyE(false/*bAllowModeChange*/);
+                  refocusDefault();
+                  return true;
+
+               case "clip_razor":
+                  sample_timeline_editor.handleKeyR(false/*bAllowModeChange*/);
+                  refocusDefault();
+                  return true;
+
+               case "clip_mute":
+                  sample_timeline_editor.handleKeyT(false/*bAllowModeChange*/);
+                  refocusDefault();
+                  return true;
+
+               case "clip_merge":
+                  sample_timeline_editor.timelineMergeClipsFromKbdSelection();
+                  sample_timeline_editor.timelineMarkAsModified();
+                  refocusDefault();
+                  return true;
             }
             return true;
 
