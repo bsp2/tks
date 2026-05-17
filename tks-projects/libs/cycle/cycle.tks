@@ -28,7 +28,7 @@
 // ----          09Nov2024, 22Nov2024, 03Dec2024, 04Dec2024, 06Dec2024, 12Dec2024, 13Dec2024
 // ----          15Dec2024, 17Dec2024, 19Dec2024, 20Dec2024, 21Dec2024, 22Dec2024, 23Dec2024
 // ----          09Jan2025, 10Jan2025, 11Jan2025, 13Jan2025, 15Jan2025, 29Jan2025, 31Jan2025
-// ----          17Jan2026, 31Jan2026, 25Apr2026
+// ----          17Jan2026, 31Jan2026, 25Apr2026, 14May2026, 15May2026
 // ----
 // ----
 // ----
@@ -3545,7 +3545,7 @@ class CyModuleBts : CyModule {
          sMul <= sDiv;
 
       _out.append(_sDstVar+" = loc_bipolar_to_scale("+_sDstVar+", "+sDiv+", "+sMul+");\n");
-      parent_script.b_use_bts = true;
+      _script.b_use_bts = true;
       if(null != sVarDiv)
          _script.freeTmpVar(sVarDiv);
       if(null != sVarMul)
@@ -3588,8 +3588,8 @@ class CyModuleBts : CyModule {
          sMul <= String(int(FX_ONE * inDiv.getConstVal()));
 
       _out.append(_sDstVar+" = loc_bipolar_to_scale_int("+_sDstVar+", "+sDivScl+", "+sMul+");\n");
-      parent_script.b_use_bts = true;
-      parent_script.b_use_bts_int = true;
+      _script.b_use_bts = true;
+      _script.b_use_bts_int = true;
       if(null != sVarMul)
          _script.freeTmpVarInt(sVarMul);
    }
@@ -9547,15 +9547,17 @@ class CyModulePhd : CyModule {
    public virtual init() {
       CyModule::init();
 
-      addInput("amount", 0.5, 0.0, 1.0);
+      addInput("amount", 1.0, 0.0, 1.0);
       addInputAlias("amt", "amount");
 
       addInput("mode",   1.0, 0.0, 9.0);
       addInputAlias("m", "mode");
 
-      // (note) remove ? already have sigmod/sigmodinv
-      addInput("invert", 0.0, 0.0, 1.0);
+      // // (note) remove ? already have sigmod/sigmodinv
+      addInput("invert", 0.0, 0.0, 1.0);  // (1.0 - x)  and (1.0 - res)
       addInputAlias("inv", "invert");
+
+      addInput("flipy", 0.0, 0.0, 1.0);  // 1.0 - res
    }
 
    // <method_get.png>
@@ -9563,8 +9565,16 @@ class CyModulePhd : CyModule {
       switch(_input)
       {
          case "mode":
-            _retNames  = ["bend", "warp", "rate", "sigmoid", "sigmoidinv", "sigmoidc", "sigmoidinvc", "hermite1", "hermite2", "hermite3"];
-            _retValues = [ 0,      1,      2,      3,         4,            5,          6,             7,          8           9        ];
+            _retNames  = ["bend",       "warp",     "rate",        "sigmoid",
+                          "sigmoidinv", "sigmoidc", "sigmoidinvc", "hermite1",
+                          "hermite2",   "hermite3", "hs",          "sin",
+                          "log",        "exp"
+                          ];
+            _retValues = [ 0,   1,   2,  3,
+                           4,   5,   6,  7,
+                           8,   9,  10,  11,
+                           12, 13,
+                           ];
             return true;
       }
       return false;
@@ -9575,8 +9585,10 @@ class CyModulePhd : CyModule {
       local CyInput inAmount <= findInputById("amount");
       local CyInput inMode   <= findInputById("mode");
       local CyInput inInvert <= findInputById("invert");
+      local CyInput inFlipY  <= findInputById("flipy");
 
       local boolean bInvert = (inInvert.getConstVal() >= 0.5f);
+      local boolean bFlipY  = (inFlipY.getConstVal() >= 0.5f);
 
       local String sVarAmount <= _script.allocTmpVar(_out, "phd_amount");
       inAmount.emitFloat(_script, _out, sVarAmount);
@@ -9584,8 +9596,6 @@ class CyModulePhd : CyModule {
       local String sVarExp <= _script.allocTmpVar(_out, "phd_exp");
       local String sVarTmp <= _script.allocTmpVar(_out, "phd_tmp");
       local String sVarX <= _script.allocTmpVar(_out, "phd_x");
-
-      parent_script.b_use_pow = true;
 
       if(bInvert)
          _out.append(sVarX+" = 1.0f - "+_sDstVar+";\n");
@@ -9597,6 +9607,7 @@ class CyModulePhd : CyModule {
       {
          case 0:  // bend
          default:
+            _script.b_use_pow = true;
             _out.append(sVarExp+" = 0.05f + (1.0f - "+sVarAmount+") * 0.9f;\n");
             _out.append(sVarX+" = ("+sVarX+" - 0.5f) * 2.0f;\n");
             _out.append(sVarX+" = mathPowerf("+sVarX+", "+sVarExp+");\n");
@@ -9604,6 +9615,7 @@ class CyModulePhd : CyModule {
             break;
 
          case 1:  // warp
+            _script.b_use_pow = true;
             _out.append(sVarExp+" = "+sVarAmount+" * 7.0f + 1.0f;\n");
             _out.append(sVarX+" = 2.0f * "+sVarX+" - 1.0f;\n");
             _out.append("if("+sVarX+" < 0.0f)\n");
@@ -9622,6 +9634,7 @@ class CyModulePhd : CyModule {
             break;
 
          case 2:  // rate
+            _script.b_use_pow = true;
             _out.append(sVarExp+" = mathPowerf(2.0f, 1.0f + "+sVarAmount+" * 11.0f);\n");
             _out.append(sVarTmp+" = 16384.0f / "+sVarExp+";\n");
             _out.append(sVarExp+" = "+sVarExp+" / 16384.0f;\n");
@@ -9629,14 +9642,17 @@ class CyModulePhd : CyModule {
             break;
 
          case 3:  // sigmoid
+            _script.b_use_pow = true;
             _out.append(sVarX+" = 1.0f / (1.0f + mathPowerf(2.71828182846f,("+sVarX+" * -27.0f)));\n");
             break;
 
          case 4:  // sigmoidinv
+            _script.b_use_pow = true;
             _out.append(sVarX+" = 1.0f - (1.0f / (1.0f + mathPowerf(2.71828182846f,((1.0f - "+sVarX+") * -27.0f))));\n");
             break;
 
          case 5:  // sigmoidc (center)
+            _script.b_use_pow = true;
             _out.append(sVarX+" = 2.0f * "+sVarX+" - 1.0f;\n");
             _out.append("if("+sVarX+" < 0.0f)\n");
             _out.append("{\n");
@@ -9650,6 +9666,7 @@ class CyModulePhd : CyModule {
             break;
 
          case 6:  // sigmoidinvc (center)
+            _script.b_use_pow = true;
             _out.append(sVarX+" = 2.0f * "+sVarX+" - 1.0f;\n");
             _out.append("if("+sVarX+" < 0.0f)\n");
             _out.append("{\n");
@@ -9676,12 +9693,54 @@ class CyModulePhd : CyModule {
             _out.append(sVarExp+" *= "+sVarExp+";\n");
             _out.append(sVarX+" = "+sVarExp+" * ((-20.0f * "+sVarX+" * "+sVarX+" * "+sVarX+") + (70.0f * "+sVarX+" * "+sVarX+") - (84.0f * "+sVarX+") + 35.0f);\n");
             break;
+
+         case 10: // hs  (half-sine)
+            if(b_export_c)
+            {
+               _script.b_use_sine_tbl = true;
+               _out.append(sVarX+" = cycle_sine_tbl_f[(unsigned short)(8192 * "+sVarX+")&8191u];\n");
+            }
+            else
+            {
+               _out.append(sVarX+" = sin(PI * "+sVarX+");\n");
+            }
+            break;
+
+         case 11: // sin  (full-sine)
+            if(b_export_c)
+            {
+               _script.b_use_sine_tbl = true;
+               _out.append(sVarX+" = cycle_sine_tbl_f[(unsigned short)(16384 * "+sVarX+")&16383u];\n");
+            }
+            else
+            {
+               _out.append(sVarX+" = sin(2PI * "+sVarX+");\n");
+            }
+            break;
+
+         case 12: // log
+            // log(0.0497870683678)  -3
+            // log(2.71828182846)     1
+            // log(1+0.0497870683678)  0.0485873515758
+            // (log(1+0.0497870683678)+3) / 3.04858735158   0..1
+            _script.b_use_log = true;
+            _out.append(sVarX+" = (mathLogf("+sVarX+" + 0.0497870683678f) + 3.0f) / 3.04858735158f;\n");
+            break;
+
+         case 13: // exp
+            // pow(2,x*x) - 1
+            _script.b_use_pow = true;
+            _out.append(sVarX+" = mathPowerf(2.0f, "+sVarX+" * "+sVarX+") - 1.0f;\n");
+            break;
       }
 
-      if(bInvert)
+      if(bInvert ^ bFlipY)
          _out.append(sVarX+" = 1.0f - "+sVarX+";\n");
 
-      _out.append(_sDstVar+" += ("+sVarX+" - "+_sDstVar+") * "+sVarAmount+";\n");
+      if(inAmount.isConstVal() && 1.0 == inAmount.getConstVal())
+         _out.append(_sDstVar+" = "+sVarX+";\n");
+      else
+         _out.append(_sDstVar+" += ("+sVarX+" - "+_sDstVar+") * "+sVarAmount+";\n");
 
       _script.freeTmpVar(sVarTmp);
       _script.freeTmpVar(sVarExp);
@@ -22747,7 +22806,8 @@ class CyScript : CyDefs {
          else
          {
             s_var_decl.append("int "+sVar+";\n");
-            s_alloc_reset.append("   "+sVar+" = "+_val+";\n");
+            // // s_alloc_reset.append("   "+sVar+" = "+_val+";\n");
+            s_global_reset.append("   "+sVar+" = "+_val+"; // global\n");
          }
       }
       else
@@ -23073,6 +23133,8 @@ class CyScript : CyDefs {
       local String      sPluginGetArrayParamElementName;
       local String      sPluginGetArrayParamElementReset;
       local String      sPluginUpdateLUTCases;
+      local String      sWtInitGlobalReset;
+      local String      sFxnBipolarToScale;
       if(b_plugin)
       {
          if(plugin_id.isBlank())
@@ -23498,30 +23560,27 @@ class CyScript : CyDefs {
          else
          {
             sHeader.append("\nfunction ffrac_s(float _f) { return (_f >= 0.0f) ? frac(_f) : (1.0f + frac(_f)); }\n");
-
-            // // if(b_use_bts)
-            {
-               sHeader.append("\nfunction loc_bipolar_to_scale(float _t, float _div, float _mul) {\n");
-               sHeader.append("   // t (-1..1) => /_div .. *_mul\n");
-                  sHeader.append("   \n");
-               sHeader.append("   float s;\n");
-               sHeader.append("\n");
-               sHeader.append("   if(_t < 0.0f)\n");
-               sHeader.append("   {\n");
-               sHeader.append("      s = (1.0f / _div);\n");
-               sHeader.append("      s = 1.0f + (s - 1.0f) * -_t;\n");
-               sHeader.append("      if(s < 0.0f)\n");
-               sHeader.append("         s = 0.0f;\n");
-               sHeader.append("   }\n");
-               sHeader.append("   else\n");
-               sHeader.append("   {\n");
-               sHeader.append("      s = _mul;\n");
-               sHeader.append("      s = 1.0f + (s - 1.0f) * _t;\n");
-               sHeader.append("   }\n");
-               sHeader.append("   \n");
-               sHeader.append("   return s;\n");
-               sHeader.append("}\n");
-            }
+            
+            sFxnBipolarToScale.append("\nfunction loc_bipolar_to_scale(float _t, float _div, float _mul) {\n");
+            sFxnBipolarToScale.append("   // t (-1..1) => /_div .. *_mul\n");
+            sFxnBipolarToScale.append("   \n");
+            sFxnBipolarToScale.append("   float s;\n");
+            sFxnBipolarToScale.append("\n");
+            sFxnBipolarToScale.append("   if(_t < 0.0f)\n");
+            sFxnBipolarToScale.append("   {\n");
+            sFxnBipolarToScale.append("      s = (1.0f / _div);\n");
+            sFxnBipolarToScale.append("      s = 1.0f + (s - 1.0f) * -_t;\n");
+            sFxnBipolarToScale.append("      if(s < 0.0f)\n");
+            sFxnBipolarToScale.append("         s = 0.0f;\n");
+            sFxnBipolarToScale.append("   }\n");
+            sFxnBipolarToScale.append("   else\n");
+            sFxnBipolarToScale.append("   {\n");
+            sFxnBipolarToScale.append("      s = _mul;\n");
+            sFxnBipolarToScale.append("      s = 1.0f + (s - 1.0f) * _t;\n");
+            sFxnBipolarToScale.append("   }\n");
+            sFxnBipolarToScale.append("   \n");
+            sFxnBipolarToScale.append("   return s;\n");
+            sFxnBipolarToScale.append("}\n");
          }
       }
 
@@ -24220,8 +24279,10 @@ class CyScript : CyDefs {
             s_global_reset.append(s_alloc_reset);
             s_alloc_reset.empty();
 
-            sInitFxn.replace("$(GLOBAL_RESET)", s_global_reset);
+            // // sInitFxn.replace("$(GLOBAL_RESET)", s_global_reset);
+            sWtInitGlobalReset = s_global_reset;
             s_global_reset.empty();
+            sInitFxn.replace("$(GLOBAL_RESET)","");
 
             sInitFxn.replace("$(CYCLE_RESET)", s_cycle_reset);
             s_cycle_reset.empty();
@@ -24462,6 +24523,7 @@ class CyScript : CyDefs {
             _out.append("function Calc(FloatArray _d) {\n");
          _out.append("   int off = 0;\n");
          _out.append("   var_wt_y = 0.0f;\n");
+         _out.append("$(WT_GLOBAL_RESET)");  // see sWtInitGlobalReset
          _out.append(sInitMain);
          _out.append("$(CALL_LUT_SHARED)");
          if(bCycleFreq)
@@ -24544,6 +24606,9 @@ class CyScript : CyDefs {
          }
          _out.replace("$(INIT_DECL)", sPluginInitDecl);
       }
+
+      _out.replace("$(WT_GLOBAL_RESET)", sWtInitGlobalReset);
+      sWtInitGlobalReset.empty();
 
       if(b_plugin)
       {
@@ -24872,6 +24937,9 @@ class CyScript : CyDefs {
          }
       }
       sHeader.replace("$(INT_FUNCTIONS)", sIntFunctions);
+
+      if(b_use_bts)
+         sHeader += sFxnBipolarToScale;
 
       _out.replace("$(HEADER)", sHeader);
 
@@ -25310,6 +25378,7 @@ class CyScript : CyDefs {
 
       local String sInitMain;  // for VPL noteOn
       local String sStaticInit;
+      local String sWtInitGlobalReset;
 
       // Tmp var
       if(bFirstPatch)
@@ -25889,7 +25958,7 @@ class CyScript : CyDefs {
          _out.append("$(TMPVARDECL)");
 
          _out.append("$(INIT)");
-         _out.append("$(GLOBAL_RESET)");
+         // // // _out.append("$(GLOBAL_RESET)");
          _out.append("$(CYCLE_RESET)");
 
          _out.append("   "+short_type+" out = 0;\n");
@@ -25918,8 +25987,10 @@ class CyScript : CyDefs {
          _out.replace("$(INIT)", sInitIndent);
          s_init.empty();
 
-         _out.replace("$(GLOBAL_RESET)", s_global_reset);
+         // // // _out.replace("$(GLOBAL_RESET)", s_global_reset);
+         sWtInitGlobalReset = s_global_reset;
          s_global_reset.empty();
+         _out.replace("$(GLOBAL_RESET)","");
 
          _out.replace("$(CYCLE_RESET)", s_cycle_reset);
          s_cycle_reset.empty();
@@ -25979,7 +26050,9 @@ class CyScript : CyDefs {
                         _out.append("void calc"+export_c_prefix+"(char *_d) {\n");
                      }
                      else
+                     {
                         _out.append("function Calc(FloatArray _d) {\n");
+                     }
                      _out.append("$(TMPVARDECL)");
                      _out.append(sInitMain);
                      _out.append("$(INIT)");
@@ -26211,6 +26284,7 @@ class CyScript : CyDefs {
 
          _out.append("   int off = 0;\n");
          _out.append("   var_wt_y"+export_c_prefix+" = 0;\n");
+         _out.append("$(WT_GLOBAL_RESET)");       
          _out.append(sInitMain);
          if(bCycleFreq)
          {
@@ -26284,6 +26358,8 @@ class CyScript : CyDefs {
 
       _out.replace("$(CYCLE_RESET)", s_cycle_reset);
       _out.replace("$(GLOBAL_RESET)", s_global_reset);
+      _out.replace("$(WT_GLOBAL_RESET)", sWtInitGlobalReset);
+      sWtInitGlobalReset.empty();
 
       if(b_use_float_fallback)
       {
