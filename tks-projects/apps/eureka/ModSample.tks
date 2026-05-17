@@ -16,7 +16,7 @@
 // ----          01Dec2022, 10Dec2022, 10Mar2023, 14Jun2023, 07Sep2023, 08Sep2023, 10Sep2023
 // ----          17Nov2023, 06Jan2024, 19Jan2024, 11Sep2024, 13Sep2024, 17Sep2024, 18Sep2024
 // ----          19Sep2024, 30Sep2024, 08Nov2024, 30Dec2024, 07Jan2025, 14Jan2025, 15Jan2025
-// ----          28May2025, 29May2025, 20Dec2025, 27Dec2025, 24Apr2026
+// ----          28May2025, 29May2025, 20Dec2025, 27Dec2025, 24Apr2026, 17May2026
 // ----
 // ----
 // ----
@@ -140,6 +140,7 @@ class ModSample : Mod {
    String autoload_suggested_pathname;  // e.g. "/bsp/cycle_stfx"
 
    boolean b_fx_auto_note_on;  // 1=auto-start note after instantiation (and ignore note-ons/offs)
+   boolean b_receive_patch_changes;  // 1=allow sample selection via MIDI
 
    IntArray voicekeys;  // 128 midi notes
    FloatArray voicepressure;      // current poly pressure for each note (0..1)
@@ -223,6 +224,8 @@ class ModSample : Mod {
 
       initial_sample_offset_ms = -1;
       initial_sample_offset_ms_lo = 0;
+
+      b_receive_patch_changes = true;
    }
 
    // <method_exit.png>
@@ -295,6 +298,16 @@ class ModSample : Mod {
    // <method_get.png>
    public method getEnableFXAutoNoteOn() : boolean {
       return b_fx_auto_note_on;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableReceivePatchChanges(boolean _bEnable) {
+      b_receive_patch_changes = _bEnable;
+   }
+
+   // <method_get.png>
+   public method getEnableReceivePatchChanges() : boolean {
+      return b_receive_patch_changes;
    }
 
    // <method.png>
@@ -2115,7 +2128,7 @@ class ModSample : Mod {
       Mod::saveState(_ofs);
 
       // Write version
-      _ofs.i16 = 5;
+      _ofs.i16 = 6;
 
       // Sample Idx
       _ofs.i16 = sample_idx;
@@ -2131,6 +2144,9 @@ class ModSample : Mod {
 
       // FX auto note-on (v5+)
       _ofs.i8 = b_fx_auto_note_on;
+
+      // Receive patch changes (v6+)
+      _ofs.i8 = b_receive_patch_changes;
 
       // Autoload (v3+)
       local Sample sample <= current_project.getSampleByIdx(sample_idx);
@@ -2193,6 +2209,12 @@ class ModSample : Mod {
             {
                // FX auto note-on (v5+)
                b_fx_auto_note_on = _ifs.b8;
+            }
+
+            if(ver >= 6)
+            {
+               // Receive patch changes (v6+)
+               b_receive_patch_changes = _ifs.b8;
             }
 
             if(ver >= 3)
@@ -2471,66 +2493,36 @@ class ModSample : Mod {
       local Sample *sample;
       local boolean bUpdateMod = false;
 
-      // Program Change
-      if(input_filter.enablePrgChg)
+      if(b_receive_patch_changes)
       {
-         local int numPC = fr.getNumEventsPrgChgByFlt(_fltDev, _fltCh);
-         evIdx = 0;
-         loop(numPC)
+         // Program Change
+         if(input_filter.enablePrgChg)
          {
-            if(fr.getEventByIdxAndFlt(evIdx, pev, MIDIPIPE_EVENT_TYPE_PRGCHG, _fltDev, _fltCh))
+            local int numPC = fr.getNumEventsPrgChgByFlt(_fltDev, _fltCh);
+            evIdx = 0;
+            loop(numPC)
             {
-               sample <= current_project.findSampleByPrg(pev.prgChg);
-               if(null != sample)
+               if(fr.getEventByIdxAndFlt(evIdx, pev, MIDIPIPE_EVENT_TYPE_PRGCHG, _fltDev, _fltCh))
                {
-                  setSampleIdx_NoSync(current_project.getSampleIdx(sample), false/*bMarkProjectAsModified*/);
-                  sample.b_autoload = false;
-                  preferred_namespace_idx = sample.namespace_idx;
+                  sample <= current_project.findSampleByPrg(pev.prgChg);
+                  if(null != sample)
+                  {
+                     setSampleIdx_NoSync(current_project.getSampleIdx(sample), false/*bMarkProjectAsModified*/);
+                     sample.b_autoload = false;
+                     preferred_namespace_idx = sample.namespace_idx;
+                  }
                }
+               // Next program change event
+               evIdx++;
             }
-            // Next program change event
-            evIdx++;
          }
-      }
 
-      // RPN unique sample id (alternative program change)
-      local short smpUID = fr.getFilteredRPN(_fltDev, _fltCh, RPN_SMP_UID);
-      if(smpUID >= 0)
-      {
-         sample <= current_project.findSampleByUniqueID(smpUID);
-         // trace "xxx ModSample: recv RPN_SMP_UID smpUID="+smpUID+" => sample="+#(sample);
-         if(null != sample)
+         // RPN unique sample id (alternative program change)
+         local short smpUID = fr.getFilteredRPN(_fltDev, _fltCh, RPN_SMP_UID);
+         if(smpUID >= 0)
          {
-            setSampleIdx_NoSync(current_project.getSampleIdx(sample), false/*bMarkProjectAsModified*/);
-            sample.b_autoload = false;
-            preferred_namespace_idx = sample.namespace_idx;
-         }
-      }
-
-      // RPN namespace sample nr (alternative program change)
-      local short smpNspNr = fr.getFilteredRPN(_fltDev, _fltCh, RPN_SMP_NSP_ABS);
-      if(smpNspNr > 0)
-      {
-         sample <= current_project.findSampleByLocalNamespaceIdx(smpNspNr - 1, preferred_namespace_idx);
-         // trace "xxx ModSample: recv RPN_SMP_NSP_ABS smpNspNr="+smpNspNr+" => sample="+#(sample);
-         if(null != sample)
-         {
-            setSampleIdx_NoSync(current_project.getSampleIdx(sample), false/*bMarkProjectAsModified*/);
-            sample.b_autoload = false;
-            preferred_namespace_idx = sample.namespace_idx;
-         }
-      }
-
-      // RPN namespace sample nr (alternative program change)
-      local short smpNspRel = fr.getFilteredRPN(_fltDev, _fltCh, RPN_SMP_NSP_REL);
-      if(smpNspRel >= 0)
-      {
-         local int nspNum = current_project.findNumSamplesAssignedToNamespace(preferred_namespace_idx);
-         if(nspNum > 0)
-         {
-            local int smpNspIdx = mathClampi((smpNspRel * nspNum) >> 14/*/16384*/, 0, nspNum-1);
-            sample <= current_project.findSampleByLocalNamespaceIdx(smpNspIdx, preferred_namespace_idx);
-            // trace "xxx ModSample: recv RPN_SMP_NSP_REL smpNspRel="+smpNspRel+" => smpNspIdx="+smpNspIdx+" => sample="+#(sample);
+            sample <= current_project.findSampleByUniqueID(smpUID);
+            // trace "xxx ModSample: recv RPN_SMP_UID smpUID="+smpUID+" => sample="+#(sample);
             if(null != sample)
             {
                setSampleIdx_NoSync(current_project.getSampleIdx(sample), false/*bMarkProjectAsModified*/);
@@ -2538,7 +2530,40 @@ class ModSample : Mod {
                preferred_namespace_idx = sample.namespace_idx;
             }
          }
-      }
+
+         // RPN namespace sample nr (alternative program change)
+         local short smpNspNr = fr.getFilteredRPN(_fltDev, _fltCh, RPN_SMP_NSP_ABS);
+         if(smpNspNr > 0)
+         {
+            sample <= current_project.findSampleByLocalNamespaceIdx(smpNspNr - 1, preferred_namespace_idx);
+            // trace "xxx ModSample: recv RPN_SMP_NSP_ABS smpNspNr="+smpNspNr+" => sample="+#(sample);
+            if(null != sample)
+            {
+               setSampleIdx_NoSync(current_project.getSampleIdx(sample), false/*bMarkProjectAsModified*/);
+               sample.b_autoload = false;
+               preferred_namespace_idx = sample.namespace_idx;
+            }
+         }
+
+         // RPN namespace sample nr (alternative program change)
+         local short smpNspRel = fr.getFilteredRPN(_fltDev, _fltCh, RPN_SMP_NSP_REL);
+         if(smpNspRel >= 0)
+         {
+            local int nspNum = current_project.findNumSamplesAssignedToNamespace(preferred_namespace_idx);
+            if(nspNum > 0)
+            {
+               local int smpNspIdx = mathClampi((smpNspRel * nspNum) >> 14/*/16384*/, 0, nspNum-1);
+               sample <= current_project.findSampleByLocalNamespaceIdx(smpNspIdx, preferred_namespace_idx);
+               // trace "xxx ModSample: recv RPN_SMP_NSP_REL smpNspRel="+smpNspRel+" => smpNspIdx="+smpNspIdx+" => sample="+#(sample);
+               if(null != sample)
+               {
+                  setSampleIdx_NoSync(current_project.getSampleIdx(sample), false/*bMarkProjectAsModified*/);
+                  sample.b_autoload = false;
+                  preferred_namespace_idx = sample.namespace_idx;
+               }
+            }
+         }
+      } // if b_receive_patch_changes
 
       // CC
       local int numCC = fr.getNumEventsCCByFlt(_fltDev, _fltCh);
