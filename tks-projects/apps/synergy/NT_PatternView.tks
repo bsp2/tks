@@ -47,7 +47,7 @@
 // ----          23Jun2022, 24Jun2022, 04Feb2023, 09Feb2023, 18Feb2023, 27Jul2023, 29Jul2023
 // ----          03Oct2023, 15Oct2023, 30Oct2023, 02Nov2023, 17Nov2023, 18Nov2023, 03Feb2024
 // ----          06May2024, 01Oct2024, 31Jan2025, 28Feb2025, 07Jun2025, 11Sep2025, 16Sep2025
-// ----          17Sep2025, 10Oct2025, 27Dec2025, 28Mar2026, 14Apr2026
+// ----          17Sep2025, 10Oct2025, 27Dec2025, 28Mar2026, 14Apr2026, 16May2026
 // ----
 // ----
 // ----
@@ -264,6 +264,7 @@ StringArray patnr2_strings = [ "1A", "1B", "1C", "1D", "2A", "2B", "2C", "2D",
 
 
 NT_BlockInterpolationDialog *dlg_blockinterpol;
+NT_BlockScaleOffsetDialog   *dlg_blockscaleoffset;
 
 
 // <class.png>
@@ -551,8 +552,9 @@ class NT_PatternView : Control, NT_Defs {
 
       freedraw_cursor_track = -1;
 
-      dlg_blockinterpol <= NT_BlockInterpolationDialog.New(this);
-      dlg_tickmodulo    <= new NT_SetTickModuloDialog;
+      dlg_blockinterpol    <= NT_BlockInterpolationDialog.New(this);
+      dlg_blockscaleoffset <= NT_BlockScaleOffsetDialog.New(this);
+      dlg_tickmodulo       <= new NT_SetTickModuloDialog;
 
       allocRows();
    }
@@ -8350,6 +8352,85 @@ class NT_PatternView : Control, NT_Defs {
       }
    }
 
+
+
+   // <ui_selection.png>
+   protected =replay= method blockScaleOffset(float _scale, float _offset) {
+      Global.Debug("blockScaleOffset: scale="+_scale+" offset="+_offset);
+
+      if(parent_node.haveSelection())
+      {
+         // Swap start/end if necessary
+         verifyBlockStartAndEnd();
+
+         NT_CEL cel <= getCurrentControllerLayout();
+         if(null != cel)
+         {
+            int ctlId = cel.ctl_id;
+
+            Envelope env <= getCurrentEnvelope(ctlId);
+            if(null != env && env.numElements >= 2)
+            {
+               int numUpdated = 0;
+               parent_node.undoBeginNested("patternBlockScaleOffset");
+               int trackNr = getCurrentTrackNr();
+               int patNr = parent_node.nodeGetCurrentEditPatternNr();
+
+               int envIdx = 0;
+               int t = 0;
+
+               loop(env.numElements / 2)
+               {
+                  t += env[envIdx + 0];
+
+                  if(parent_node.pv_block_start_pat_offset <= t < parent_node.pv_block_end_pat_offset)
+                  {
+                     float vOld = env[envIdx + 1];
+                     float vNew = vOld * _scale + _offset;
+                     vNew = mathClampf(vNew, cel.getMinVal(), cel.getMaxVal());
+                     if(vNew != vOld)
+                     {
+                        parent_node.undoTouchController(trackNr, patNr, ctlId, env);
+                        env[envIdx + 1] = vNew;
+                        numUpdated++;
+                     }
+                  }
+
+                  // Next event
+                  envIdx += 2;
+               }
+
+               ta_redraw_all.scheduleShort();
+
+               parent_node.undoEndNested("patternBlockScaleOffset");
+
+               Global.Print("block scale/offset: updated "+numUpdated+" event"+Utils.GetPluralString(numUpdated));
+            }
+            else
+            {
+               Global.Warning("block scale/offset: no env or events");
+            }
+         } // if cel
+      }
+      else
+      {
+         Global.Warning("block scale/offset: no selection");
+      }
+   }
+
+   // <ui_show.png>
+   public method showBlockScaleOffsetDialog() {
+      // called by Global.cmd_block_scaleoffset
+      if(parent_node.haveSelection())
+      {
+         dlg_blockscaleoffset.showCentered();
+      }
+      else
+      {
+         Global.Error("block scale/offset: no block selected");
+      }
+   }
+
    // <ui_show.png>
    protected method showBlockContextMenu(boolean _bHaveSel, boolean _bFocusFirst) {
       // Create context-sensitive popupmenu
@@ -8393,6 +8474,11 @@ class NT_PatternView : Control, NT_Defs {
       pmb <= pm_block.addDefaultButton("Interpolate..", "block_interpolate");
       pmb.setActive(bEdit && _bHaveSel);
       pmb.setAccelerators("lctrl-x 1", "lctrl-i");
+
+      pm_block.addSeparator();
+      pmb <= pm_block.addDefaultButton("Scale/Offset..", "block_scaleoffset");
+      pmb.setActive(bEdit && _bHaveSel);
+      pmb.setAccelerators("", "lctrl-lshift-i");
 
       pmb <= pm_block.addDefaultButton("Sort Notes", "block_sortnotes");
       pmb.setActive(bEdit && _bHaveSel);
@@ -15427,6 +15513,15 @@ class NT_PatternView : Control, NT_Defs {
             }
             return true;
 
+         case @(dlg_blockscaleoffset):
+            if(acName == NT_BlockScaleOffsetDialog.ACTION_NAME)
+            {
+               blockScaleOffset(dlg_blockscaleoffset.getScale(),
+                                dlg_blockscaleoffset.getOffset()
+                                );
+            }
+            return true;
+
          case @(this):
             switch(acName)
             {
@@ -15556,6 +15651,10 @@ class NT_PatternView : Control, NT_Defs {
 
                case "block_interpolate":
                   parent_editor.cmd_block_interpol();
+                  return true;
+
+               case "block_scaleoffset":
+                  parent_editor.cmd_block_scaleoffset();
                   return true;
 
                case "block_sortnotes":
