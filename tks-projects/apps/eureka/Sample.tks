@@ -36,7 +36,7 @@
 // ----          03Jan2025, 04Jan2025, 12Jan2025, 15Jan2025, 03Apr2025, 05Apr2025, 06May2025
 // ----          20May2025, 28May2025, 05Jun2025, 12Jun2025, 13Jun2025, 14Jun2025, 22Dec2025
 // ----          09Jan2026, 13Jan2026, 16Jan2026, 14Feb2026, 09Apr2026, 10Apr2026, 12Apr2026
-// ----          16Apr2026, 19Apr2026, 23Apr2026, 09May2026
+// ----          16Apr2026, 19Apr2026, 23Apr2026, 09May2026, 17May2026
 // ----
 // ----
 // ----
@@ -305,9 +305,9 @@ class Sample {
       "Const  4",              //   8
       "Const 16",              //   9
       "Const 100",             //  10
-      "Const 127",             //  11   
-      "Const 255",             //  12   
-      "Rand 1 (+-)",           //  13   
+      "Const 127",             //  11
+      "Const 255",             //  12
+      "Rand 1 (+-)",           //  13
       "Rand 1 (+)",            //  14
       "Rand 2 (+-)",           //  15
       "Rand 2 (+)",            //  16
@@ -367,7 +367,7 @@ class Sample {
       "CC#01 Mod Bip",         //  70  // added in MM state ver 28
       "CC#01 Mod Bip @On",     //  71  // added in MM state ver 28
       "CC#01 Mod Trig",        //  72  // added in MM state ver 41
-      "CC#02 Breath",          //  73 
+      "CC#02 Breath",          //  73
       "CC#02 Breath @On",      //  74
       "CC#02 Breath Inv",      //  75  // added in MM state ver 29
       "CC#02 Breath Inv @On",  //  76  // added in MM state ver 29
@@ -394,10 +394,10 @@ class Sample {
       "CC#11 Expr Bip",        //  97  // added in MM state ver 31
       "CC#11 Expr Bip @On",    //  98  // added in MM state ver 31
       "CC#11 Expr Trig",       //  99  // added in MM state ver 41
-      "CC#16 Gen. 1",          // 100 
-      "CC#16 Gen. 1 @On",      // 101 
+      "CC#16 Gen. 1",          // 100
+      "CC#16 Gen. 1 @On",      // 101
       "CC#16 Gen. 1 Trig",     // 102
-      "CC#17 Gen. 2",          // 103 
+      "CC#17 Gen. 2",          // 103
       "CC#17 Gen. 2 @On",      // 104
       "CC#17 Gen. 2 Trig",     // 105
       "CC#18 Gen. 3",          // 106
@@ -426,7 +426,7 @@ class Sample {
       "LFO Aux",               // 129
       "Env Freq",              // 130
       "Env Vol",               // 131
-      "Env Pan",               // 132 
+      "Env Pan",               // 132
       "Env Aux",               // 133
       "ModSeq 1",              // 134
       "ModSeq 2",              // 135
@@ -524,7 +524,7 @@ class Sample {
       "Filter Offset",            //  17
       "Filter Res",               //  18
       "Filter Aux Env Amt",       //  19  v42+
-      "Sample Offset",            //  20 
+      "Sample Offset",            //  20
       "Sample Shift",             //  21
       "Sample Shift EOL",         //  22
       "Loop Restart",             //  23  v7+
@@ -5660,7 +5660,7 @@ class Sample {
       StADSR *adsr;
       StLFO *lfo;
 
-      ofs.i16 = 85; // Ver
+      ofs.i16 = 86; // Ver
 
       // Play Mode (v28+)
       ofs.i8 = s.playMode;
@@ -6188,8 +6188,11 @@ class Sample {
          // Timestretch Interpolation Type
          ofs.i8 = s.timestretchInterpolType;
 
-         // Timestretch Grain Window Type
+         // Timestretch Grain Window Type (v35+)
          ofs.i8 = s.timestretchGrainWindowType;
+
+         // Timestretch Anti-Click sample-offset interpolation (v86+)
+         ofs.i8 = s.timestretchSmpOffInterpolMode;
 
          // Timestretch Phase Bend (v18+)
          ofs.f32 = s.timestretchBend;
@@ -8632,6 +8635,12 @@ class Sample {
             s.timestretchGrainWindowType = ifs.u8;
          }
 
+         if(ver >= 86)
+         {
+            // Timestretch Anti-Click sample-offset interpolation (v86+)
+            s.timestretchSmpOffInterpolMode = ifs.u8;
+         }
+
          if(ver >= 18)
          {
             // Timestretch Phase Bend (v18+)
@@ -10349,6 +10358,25 @@ class Sample {
    }
 
    // <method.png>
+   public method buildInitialMergedZoneNames(Sample _o) {
+      int zoneIdx = 0;
+      StSample *zone;
+      StSample *zoneO;
+      zone <= sample_bank.firstSample;
+      while(null != zone)
+      {
+         zoneO <= _o.getZoneByIdx(zoneIdx);
+         if(null != zoneO)  // should not be null
+         {
+            zone.name = BuildMergedZoneNr(_o, zoneO, zoneIdx+1);
+         }
+         // Next sample zone
+         zoneIdx++;
+         zone <= zone.next;
+      }
+   }
+
+   // <method.png>
    public method mergeSample(Sample _o, float _volumeScl, float _pan,
                              int _noteTranspose,
                              int _noteMin, int _noteMax,
@@ -11008,6 +11036,31 @@ class Sample {
                frInput.empty();
                replay.b_have_events = false;
                // // replay.b_reset_all_controllers = true;  // (note) clashes with ctl reload
+               // track.b_reset_all_controllers = true;
+
+               // All notes off
+               if(track.midi_ch < 0)
+               {
+                  byte midiCh = 0;
+                  loop(16)
+                     frInput.allNotesOff(true/*bSet*/, track.dev_idx, midiCh++);
+               }
+               else
+               {
+                  frInput.allNotesOff(true/*bSet*/, track.dev_idx, track.midi_ch);
+               }
+               replay.b_have_events = true;
+               track.prepareProcess(src_track_idx, 1/*numFrames*/, false/*bForceAllNotesOff*/);    // prepare/clear mixBuf
+               track.process(src_track_idx, 1/*numFrames*/, frInput);  // render to mixBuf
+
+               frInput.empty();
+               replay.b_have_events = false;
+
+               // Reset ModSample voices
+               local PointerArray aModSample; track.findModSampleInstances(aModSample);
+               ModSample *modSample;
+               foreach modSample in aModSample
+                  modSample.stopVoices();
 
                tkclap_end_process_from_main_thread();
 
