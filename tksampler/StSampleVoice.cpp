@@ -31,7 +31,8 @@
 // ----          07Sep2023, 14Sep2023, 17Sep2023, 18Nov2023, 09Jan2024, 10Jan2024, 13Jan2024
 // ----          14Jan2024, 15Jan2024, 16Jan2024, 19Jan2024, 28Sep2024, 30Sep2024, 03Oct2024
 // ----          31Oct2024, 03Nov2024, 08Nov2024, 09Nov2024, 11Dec2024, 03Jan2025, 04Jan2025
-// ----          12Jan2025, 09Jan2026, 11Jan2026, 10Apr2026, 08May2026, 09May2026
+// ----          12Jan2025, 09Jan2026, 11Jan2026, 10Apr2026, 08May2026, 09May2026, 14May2026
+// ----          15May2026
 // ----
 // ----
 // ----
@@ -64,13 +65,7 @@ static sUI stat_opt_generic  = 0;
 static sF32 zero_samples[2 * NUM_ZERO_SAMPLES];
 static sSI b_fill_zero_samples = YAC_TRUE;
 
-
-//#define ANTICLICK_FADEOUT_TIME 512 //4096
 #define ANTICLICK_FADEOUT_TIME 64
-
-// # of samples to interpolate when modulating sample offset in granular mode
-#define ANTICLICK_GRANULAR_SMPOFFINTERPOL_TIME 512
-
 
 #define Dsoftstopped() (volramp_fadeout_countdown >= 0)
 #define Dfadedout() (!b_playing && (volramp_fadeout_countdown < 0))
@@ -386,7 +381,7 @@ void StSampleVoice::_resetVoice(void) {
    anticlick_fadeout_countdown = 0;
    last_sample_l               = 0.0f;
    last_sample_r               = 0.0f;
-   anticlick_granular_smpoffinterpol_countdown = 0;
+   anticlick_granular_smpoffinterpol_countdown = 0u;
 #ifdef USE_SAMPLESHIFT_EOL_XFADE_BUF
    sampleshift_eol_xfade_loopstart_frameidx = 0u;
    // (note) clearing the buffer should not be necessary (just a precaution)
@@ -398,7 +393,7 @@ void StSampleVoice::_resetVoice(void) {
    float_block_size      = 0.0f;
    current_block_size    = 0u;
    current_block_offset  = 0u;
-   last_relsmpoff        = 0;
+   last_relsmpoff        = 0.0f;
    current_sample_offset = 0u;
    current_sample_len    = 0u;
    current_clipend_off   = 0u;
@@ -1353,7 +1348,7 @@ void StSampleVoice::reallyStartVoice(const StSampleVoiceNoteOnParams *_params,
       }
 
       // Calculate initial (relative) play offset
-      last_relsmpoff = -1; // Force calculation of current_play_offset
+      last_relsmpoff = -1.0f; // Force calculation of current_play_offset
       calcCurrentSampleLen();
 
       current_ts_offset   = 0.0f;
@@ -1377,10 +1372,12 @@ void StSampleVoice::reallyStartVoice(const StSampleVoiceNoteOnParams *_params,
 
       calcCurrentOffset();
 
+#ifdef TKSAMPLER_WAVEPATH
       if(sample->b_wavepath)
       {
          current_play_offset = (sF64) wavepath_next_play_offset;
       }
+#endif // TKSAMPLER_WAVEPATH
 
       // Clip play offset
       // Dyac_host_printf("xxx clip play offset: relSmpOff=%f off=%f currentLen=%u\n", relSmpOff, current_play_offset, current_sample_len);
@@ -1396,11 +1393,13 @@ void StSampleVoice::reallyStartVoice(const StSampleVoiceNoteOnParams *_params,
          }
       }
 
+#ifdef TKSAMPLER_WAVEPATH
       if(sample->b_wavepath)
       {
          // Copy back clipped offset
          wavepath_next_play_offset = (sUI) current_play_offset;
       }
+#endif // TKSAMPLER_WAVEPATH
 
       ////Dyac_host_printf("xxx reallyStartVoice: current_play_offset=%f\n", current_play_offset);
 
@@ -2038,7 +2037,9 @@ void StSampleVoice::startVoiceInt(StSample *_sample,
    queued_noteon._adsrauxlvl            = 1.0f;
    queued_noteon._adsrauxint            = 1.0f;
    queued_noteon._jumptoloop            = -1;
+#ifdef TKSAMPLER_WAVEPATH
    queued_noteon._wavepathidx           = _sample->wavepath_idx;
+#endif // TKSAMPLER_WAVEPATH
    queued_noteon._afreqspd              = 1.0f;
    queued_noteon._sfreqspd              = 1.0f;
    queued_noteon._rfreqspd              = 1.0f;
@@ -4278,6 +4279,7 @@ void StSampleVoice::_setJumpToLoopRel(sF32 _relIdx) {
 }
 
 void StSampleVoice::_setWavepathIndex(sSI _idx) {
+#ifdef TKSAMPLER_WAVEPATH
    if(queued_noteon.b_valid)
    {
       // Voice has not been started, yet
@@ -4288,6 +4290,9 @@ void StSampleVoice::_setWavepathIndex(sSI _idx) {
       // Modify voice
       queued_wavepath_idx = _idx;
    }
+#else
+   (void)_idx;
+#endif // TKSAMPLER_WAVEPATH
 }
 
 void StSampleVoice::handleEndOfLoopOver(const sF32 *_smpDatCur, sUI _frameOffOver, const sF32 **_smpDatNew, sUI *_frameOffNew) const {
@@ -5259,32 +5264,34 @@ void StSampleVoice::calcCurrentOffset(void) {
 
    // (note) [04Oct2021] not updating current_play_offset every time causes distortion in wavetable mode when modulating MM_DST_SAMPLE_OFFSET
    //                     (but not when modulating WT_2D_X_REL)
-   // // if(sample->b_timestretch || Dfltnotequal(relSmpOff, last_relsmpoff))
-   if(b_allow_smpoff/*!b_glide*/ && Dfltnotequal(relSmpOff, last_relsmpoff))
+   if( (sample->b_timestretch || b_allow_smpoff/*!b_glide*/) && Dfltnotequal(relSmpOff, last_relsmpoff) )
    {
       // Dyac_host_printf("xxx recalc off relSmpOff=%f last_relsmpoff=%f\n", relSmpOff, last_relsmpoff);
-      if((last_relsmpoff >= 0) && sample->b_timestretch)
+      if(last_relsmpoff >= 0.0f && sample->b_timestretch)
       {
          // voice already started, avoid clicks by interpolating with last played cycle
-         anticlick_granular_smpoffinterpol_countdown = ANTICLICK_GRANULAR_SMPOFFINTERPOL_TIME;
-         ////printf("xxx current_play_offset=%f cyclen=%f\n", current_play_offset, current_cyclelen);
+         // Dyac_host_printf("xxx replay_ticks=%u anticlick_granular_smpoffinterpol_countdown=%u current_play_offset=%f cycleLen=%f tsOff=%f\n", replay_ticks, anticlick_granular_smpoffinterpol_countdown, current_play_offset, current_cyclelen, current_ts_offset);
+         anticlick_granular_smpoffinterpol_countdown = sample->getCurrentTimestretchSmpOffInterpolNumFrames();
          anticlick_granular_smpoffinterpol_winoff    = (sUI) ( ((sUI)(current_play_offset / current_cyclelen)) * current_cyclelen );
+         anticlick_granular_smpoffinterpol_tsoff     = current_ts_offset;
+         anticlick_granular_smpoffinterpol_fragoff   = sF32((current_play_offset - anticlick_granular_smpoffinterpol_winoff) / current_cyclelen);
+#ifdef TKSAMPLER_WAVEPATH
          if(sample->b_wavepath)
          {
             anticlick_granular_smpoffinterpol_nextwinoff = (sUI)wavepath_next_play_offset;
          }
          else
+#endif // TKSAMPLER_WAVEPATH
          {
             anticlick_granular_smpoffinterpol_nextwinoff = (sUI)(anticlick_granular_smpoffinterpol_winoff + current_cyclelen);
          }
-         anticlick_granular_smpoffinterpol_tsoff     = current_ts_offset;
-         anticlick_granular_smpoffinterpol_fragoff   = sF32((current_play_offset - anticlick_granular_smpoffinterpol_winoff) / current_cyclelen);
       }
 
       current_play_offset  = (sF64) (relSmpOff * current_sample_len);
       // Dyac_host_printf("xxx mod_sampleoff=%f relSmpOff=%f\n", mod_sampleoff, relSmpOff);
       // Dyac_host_printf("xxx recalc current_play_offset=%f relSmpOff=%f\n", current_play_offset, relSmpOff);
 
+#ifdef TKSAMPLER_WAVEPATH
       if(sample->b_wavepath)
       {
          if(NULL != sample->wavepath_table)
@@ -5348,6 +5355,7 @@ void StSampleVoice::calcCurrentOffset(void) {
             }
          }
       } // if sample->b_wavepath
+#endif // TKSAMPLER_WAVEPATH
 
       last_relsmpoff = relSmpOff;
    }
@@ -6675,7 +6683,8 @@ void StSampleVoice::applyFragmentInterpol(void) {
    }
 }
 
-void StSampleVoice::updateWt2dOffset(void) {
+sBool StSampleVoice::updateWt2dOffset(void) {
+   sBool ret = YAC_FALSE;
    if(sample->timestretch_2d_w > 1u)
    {
       if(b_queued_wt2d)
@@ -6687,11 +6696,17 @@ void StSampleVoice::updateWt2dOffset(void) {
          else
             absOff = (wt2d_x * (sample->timestretch_2d_w-1u)) * current_cyclelen;
          mod_sampleoff_wt2d = absOff / current_sample_len;
-         last_relsmpoff = -1;
+#if 0
+         // (note) skips anticlick_granular_smpoffinterpol_* cycle interpolation)
+         //         (note) (which should be fixed now)
+         last_relsmpoff = -1.0f;
+#endif
          calcCurrentOffset();
-         // Dyac_host_printf("xxx new wt2d mod_sampleoff=%f (abs=%f)\n", mod_sampleoff, absOff);
+         // Dyac_host_printf("xxx new wt2d mod_sampleoff_wt2d=%f (abs=%f)\n", mod_sampleoff_wt2d, absOff);
+         ret = YAC_TRUE;
       }
    }
+   return ret;
 }
 
 void StSampleVoice::renderBlockTimestretch(sF32 *    _buf,
@@ -6707,7 +6722,7 @@ void StSampleVoice::renderBlockTimestretch(sF32 *    _buf,
                                            const sF32**_inputsOrNull/*sz=STSAMPLE_MAX_INPUTS*/
                                            )
 {
-   // printf("xxx renderBlockTimestretch cVolL=%f cVolR=%f\n", cVolL, cVolR);
+   // Dyac_host_printf("xxx renderBlockTimestretch cVolL=%f cVolR=%f\n", cVolL, cVolR);
 
    // Calculate timestretch and cyclelen
    sF32 ts;
@@ -6725,15 +6740,15 @@ void StSampleVoice::renderBlockTimestretch(sF32 *    _buf,
       return;
    }
 
-   // [14May2019] clip (prevent crash when modulating wavetable sample offset with LFO)
-   // (note) this check breaks loops (don't re-enable !!)
-   // // if(current_play_offset < 0)
-   // //    return;
-   // // if((current_play_offset + current_cyclelen) > current_sample_len)
-   // //    return;
+   // // [14May2019] clip (prevent crash when modulating wavetable sample offset with LFO)
+   // // (note) this check breaks loops (don't re-enable !!)
+   // // // if(current_play_offset < 0)
+   // // //    return;
+   // // // if((current_play_offset + current_cyclelen) > current_sample_len)
+   // // //    return;
 
 
-   //////sF32 cycleLen  = (sF32) (mix_rate * sample->timestretch_granularity);
+   // //////sF32 cycleLen  = (sF32) (mix_rate * sample->timestretch_granularity);
 
    ////Dyac_host_printf("this=%p ts=%f cycleLen=%f\n", this, ts, cycleLen);
 
@@ -6746,7 +6761,7 @@ void StSampleVoice::renderBlockTimestretch(sF32 *    _buf,
 
    sF32 cNoteHz;
    sF32 nNoteHz;
-   // // sF32 sNoteHz = (nNoteHz - cNoteHz) / _blkSz;
+   // // // sF32 sNoteHz = (nNoteHz - cNoteHz) / _blkSz;
 
    cNoteHz = noteToFreq(current_freq + (next_freq - current_freq) * a) * liverec_osc_pitch_factor;
    nNoteHz = noteToFreq(current_freq + (next_freq - current_freq) * b) * liverec_osc_pitch_factor;
@@ -6823,32 +6838,16 @@ void StSampleVoice::renderBlockTimestretch(sF32 *    _buf,
 
    sF32 tsOff = current_ts_offset;
 
-   // sF32 cyclePlayLen = current_cyclelen / cRate;
+   // // sF32 cyclePlayLen = current_cyclelen / cRate;
 
    if(tsOff >= current_cyclelen)
    {
-      updateWt2dOffset();
-      // // if(sample->timestretch_2d_w > 1u)
-      // // {
-      // //    if(b_queued_wt2d)
-      // //    {
-      // //       b_queued_wt2d = YAC_FALSE;
-      // //       sF32 absOff;
-      // //       if(sample->timestretch_2d_h > 1u)
-      // //          absOff = ((wt2d_x * (sample->timestretch_2d_w-1u)) + (sUI(wt2d_y * (sample->timestretch_2d_h-1u)+0.5f) * sample->timestretch_2d_w)) * current_cyclelen;
-      // //       else
-      // //          absOff = (wt2d_x * (sample->timestretch_2d_w-1u)) * current_cyclelen;
-      // //       mod_sampleoff_wt2d = absOff / current_sample_len;
-      // //       last_relsmpoff = -1;
-      // //       calcCurrentOffset();
-      // //       // Dyac_host_printf("xxx new mod_sampleoff=%f (abs=%f)\n", mod_sampleoff, absOff);
-      // //    }
-      // // }
-
       while(tsOff >= current_cyclelen)
       {
          tsOff -= current_cyclelen;
       }
+      current_ts_offset = tsOff;
+      updateWt2dOffset();
    }
 
    sF64 cOff = current_play_offset;
@@ -6890,6 +6889,8 @@ void StSampleVoice::renderBlockTimestretch(sF32 *    _buf,
       sF32 *smpDatNextLRX = smpDatLRX;
       sUI nextSampleLen = current_sample_len;
 
+   // Dyac_host_printf("xxx tsOff=%f anticlick_granular_smpoffinterpol_tsoff=%f\n", tsOff, anticlick_granular_smpoffinterpol_tsoff);
+
       sSI intWinOff = ((sSI)(cOff / current_cyclelen));
       sUI winOff = (sUI) (intWinOff * current_cyclelen);
       fragment_interpol = sF32((cOff - winOff) / current_cyclelen);
@@ -6926,6 +6927,7 @@ void StSampleVoice::renderBlockTimestretch(sF32 *    _buf,
       else
          fRate = tsRate;
 
+#ifdef TKSAMPLER_WAVEPATH
       if(sample->b_wavepath)
       {
          ////printf("xxx check end of cycle: cOff=%f cRate=%f winOffNext=%u\n", cOff, cRate, winOffNext);
@@ -6946,7 +6948,7 @@ void StSampleVoice::renderBlockTimestretch(sF32 *    _buf,
                   }
 
                   // Re-calculate current/next play offsets
-                  last_relsmpoff = -1;
+                  last_relsmpoff = -1.0f;
                   calcCurrentOffset();
 
                   winOff = (sUI) current_play_offset;
@@ -6972,7 +6974,7 @@ void StSampleVoice::renderBlockTimestretch(sF32 *    _buf,
                next_wavepath_idx = queued_wavepath_idx;
 
                // Re-calculate current/next play offsets
-               last_relsmpoff = -1;
+               last_relsmpoff = -1.0f;
                calcCurrentOffset();
 
                winOff = (sUI) current_play_offset;
@@ -6996,6 +6998,7 @@ void StSampleVoice::renderBlockTimestretch(sF32 *    _buf,
       {
          // Use neighbour cycle
       }
+#endif // TKSAMPLER_WAVEPATH
 
       // Apply fragment interpolation function
       applyFragmentInterpol();
@@ -7050,9 +7053,6 @@ void StSampleVoice::renderBlockTimestretch(sF32 *    _buf,
             smpLA = (smpLA + l2) * 0.5f;
             smpRA = (smpRA + r2) * 0.5f;
          }
-
-         // // smpLA *= cVolL;
-         // // smpRA *= cVolR;
       }
 
       // Read next fragment (linear sample interpolation)
@@ -7081,9 +7081,6 @@ void StSampleVoice::renderBlockTimestretch(sF32 *    _buf,
             smpLB = (smpLB + l2) * 0.5f;
             smpRB = (smpRB + r2) * 0.5f;
          }
-
-         // // smpLB *= cVolL;
-         // // smpRB *= cVolR;
       }
 
       // Calculate interpolated sample
@@ -7095,47 +7092,45 @@ void StSampleVoice::renderBlockTimestretch(sF32 *    _buf,
       sF32 newSmpL = smpLA + (smpLB - smpLA) * fragment_interpol;
       sF32 newSmpR = smpRA + (smpRB - smpRA) * fragment_interpol;
 
-      float grainVol;
-      switch(sample->timestretch_grain_window_type)
+      // Grain fading
+      //  (todo) move to utility method and also apply to anticlick_* result (below)
       {
-         default:
-         case STSAMPLE_TIMESTRETCH_GRAIN_WINDOW_NONE:
-            break;
+         sF32 grainVol;
+         switch(sample->timestretch_grain_window_type)
+         {
+            default:
+            case STSAMPLE_TIMESTRETCH_GRAIN_WINDOW_NONE:
+               break;
 
-         case STSAMPLE_TIMESTRETCH_GRAIN_WINDOW_SINE:
-            grainVol = sinf( (fragment_interpol-0.25f) * float(2.0f*sM_PI) ) * 0.5f + 0.5f;
-            newSmpL *= grainVol;
-            newSmpR *= grainVol;
-            break;
+            case STSAMPLE_TIMESTRETCH_GRAIN_WINDOW_SINE:
+               grainVol = sinf( (fragment_interpol-0.25f) * float(2.0f*sM_PI) ) * 0.5f + 0.5f;
+               newSmpL *= grainVol;
+               newSmpR *= grainVol;
+               break;
 
-         case STSAMPLE_TIMESTRETCH_GRAIN_WINDOW_TRI:
-            grainVol = (fragment_interpol < 0.5f) ? (fragment_interpol*2.0f) : (1.0f - (fragment_interpol - 0.5f)*2.0f);
-            newSmpL *= grainVol;
-            newSmpR *= grainVol;
-            break;
+            case STSAMPLE_TIMESTRETCH_GRAIN_WINDOW_TRI:
+               grainVol = (fragment_interpol < 0.5f) ? (fragment_interpol*2.0f) : (1.0f - (fragment_interpol - 0.5f)*2.0f);
+               newSmpL *= grainVol;
+               newSmpR *= grainVol;
+               break;
+         }
       }
 
-
-      // newSmpL = smpLA; // xxx
-      // newSmpR = smpRA; // xxx
-
+#if 1
       // Interpolate samples before and after modulation to avoid clicks when sample offset is being modulated
-#if 1  /// xxxxxxxx [15May2019] removed during testing
-      if(anticlick_granular_smpoffinterpol_countdown > 0)
+      if(anticlick_granular_smpoffinterpol_countdown > 0u)
       {
          anticlick_granular_smpoffinterpol_countdown--;
          sF32 lcSmpLA, lcSmpRA;
          sF32 lcSmpLB, lcSmpRB;
          // Read current fragment before modulation (linear sample interpolation)
          {
-//             printf("xxx anticlick_granular_smpoffinterpol_winoff=%u anticlick_granular_smpoffinterpol_tsoff=%f\n",
-//                    anticlick_granular_smpoffinterpol_winoff,
-//                    anticlick_granular_smpoffinterpol_tsoff
-//                    );
-            // readWindowedSample(smpDat,
-            //                    anticlick_granular_smpoffinterpol_winoff + anticlick_granular_smpoffinterpol_tsoff,
-            //                    &lcSmpLA, &lcSmpRA
-            //                    );
+            // Dyac_host_printf("xxx anticlick_granular_smpoffinterpol_winoff=%u anticlick_granular_smpoffinterpol_tsoff=%f winOff=%u tsOff=%f\n",
+            //                  anticlick_granular_smpoffinterpol_winoff,
+            //                  anticlick_granular_smpoffinterpol_tsoff,
+            //                  winOff,
+            //                  tsOff
+            //                  );
             readWindowedCycleSample(smpDat,
                                     smpDatLRX,
                                     anticlick_granular_smpoffinterpol_winoff,
@@ -7157,16 +7152,10 @@ void StSampleVoice::renderBlockTimestretch(sF32 *    _buf,
                lcSmpLA = (lcSmpLA + l2) * 0.5f;
                lcSmpRA = (lcSmpRA + r2) * 0.5f;
             }
-
-            lcSmpLA *= cVolL;
-            lcSmpRA *= cVolR;
          }
 
          // Read next fragment before modulation (linear sample interpolation)
          {
-            // readWindowedSample(smpDat,
-            //                    anticlick_granular_smpoffinterpol_nextwinoff + anticlick_granular_smpoffinterpol_tsoff,
-            //                    &lcSmpLB, &lcSmpRB);
             readWindowedCycleSample(smpDat,
                                     smpDatLRX,
                                     anticlick_granular_smpoffinterpol_nextwinoff,
@@ -7188,22 +7177,24 @@ void StSampleVoice::renderBlockTimestretch(sF32 *    _buf,
                lcSmpLB = (lcSmpLB + l2) * 0.5f;
                lcSmpRB = (lcSmpRB + r2) * 0.5f;
             }
-
-            lcSmpLB *= cVolL;
-            lcSmpRB *= cVolR;
          }
 
          // Calculate interpolated sample
-         sF32 lcSmpL = lcSmpLA * (1.0f - anticlick_granular_smpoffinterpol_fragoff) + lcSmpLB * anticlick_granular_smpoffinterpol_fragoff;
-         sF32 lcSmpR = lcSmpRA * (1.0f - anticlick_granular_smpoffinterpol_fragoff) + lcSmpRB * anticlick_granular_smpoffinterpol_fragoff;
+         sF32 lcSmpL = lcSmpLA + (lcSmpLB - lcSmpLA) * anticlick_granular_smpoffinterpol_fragoff;
+         sF32 lcSmpR = lcSmpRA + (lcSmpRB - lcSmpRA) * anticlick_granular_smpoffinterpol_fragoff;
 
-         // Repeat sample calculation for sample offset before modulation
-         sF32 t = (((sF32)anticlick_granular_smpoffinterpol_countdown) / ANTICLICK_GRANULAR_SMPOFFINTERPOL_TIME);
-         ////printf("cd=%u t=%f\n", anticlick_granular_smpoffinterpol_countdown, t);
-         // // newSmpL = (lcSmpL * t) + (newSmpL * (1.0f - t));
-         // // newSmpR = (lcSmpR * t) + (newSmpR * (1.0f - t));
+         // Lerp between pre-modulated and current play offset
+         sF32 t = ((sF32)anticlick_granular_smpoffinterpol_countdown) / sample->getCurrentTimestretchSmpOffInterpolNumFrames();
+         if(t > 1.0f)
+            t = 1.0f;  // edited
+         // Dyac_host_printf("xxx anticlick_granular: cd=%u t=%f\n", anticlick_granular_smpoffinterpol_countdown, t);
+#if 1
          newSmpL = newSmpL + (lcSmpL - newSmpL) * t;
          newSmpR = newSmpR + (lcSmpR - newSmpR) * t;
+#else
+         newSmpR = lcSmpR;
+         // debug
+#endif
 
          // Increase and wrap-around before-modulation cycle offset
          anticlick_granular_smpoffinterpol_tsoff += fRate;
@@ -7216,7 +7207,7 @@ void StSampleVoice::renderBlockTimestretch(sF32 *    _buf,
       {
          ////printf("nointerpol: cd=%u\n", anticlick_granular_smpoffinterpol_countdown);
       }
-#endif // 0
+#endif // 1
 
       // printf("xxx w=%u ts=%f n=(%f; %f) v=(%f; %f)\n", winOff, tsOff, newSmpL, newSmpR, cVolL, cVolR);
 
@@ -7303,33 +7294,16 @@ void StSampleVoice::renderBlockTimestretch(sF32 *    _buf,
       // // cNoteHz += sNoteHz;
 
       ////Dyac_host_printf("xxx 1 tsOff=%f tsRate=%f\n", tsOff, tsRate);
-      // // while(tsOff >= current_cyclelen)
-      // // {
-      // //    tsOff -= current_cyclelen;
-      // // }
       if(tsOff >= current_cyclelen)
       {
-         if(sample->timestretch_2d_w > 1u)
-         {
-            if(b_queued_wt2d)
-            {
-               b_queued_wt2d = YAC_FALSE;
-               sF32 absOff;
-               if(sample->timestretch_2d_h > 1u)
-                  absOff = ((wt2d_x * (sample->timestretch_2d_w-1u)) + (sUI(wt2d_y * (sample->timestretch_2d_h-1u)+0.5f) * sample->timestretch_2d_w)) * current_cyclelen;
-               else
-                  absOff = (wt2d_x * (sample->timestretch_2d_w-1u)) * current_cyclelen;
-               mod_sampleoff_wt2d = absOff / current_sample_len;
-               // Dyac_host_printf("xxx new mod_sampleoff=%f (abs=%f)\n", mod_sampleoff, absOff);
-               last_relsmpoff = -1;
-               calcCurrentOffset();
-               cOff = current_play_offset;
-            }
-         }
-
          while(tsOff >= current_cyclelen)
          {
             tsOff -= current_cyclelen;
+         }
+         current_ts_offset = tsOff;  // [15May2026]
+         if(updateWt2dOffset())
+         {
+            cOff = current_play_offset;
          }
       }
 
@@ -7393,12 +7367,12 @@ void StSampleVoice::renderBlockTimestretch(sF32 *    _buf,
             inputs[i]++;
          }
       }
-   }
+   } // while blkSz > 0
 
    current_play_offset = cOff;
    current_ts_offset = tsOff;
 
-   ////printf("xxx   --> end block cOff=%f\n", cOff);
+   // Dyac_host_printf("xxx renderBlockTimestretch   --> end block cOff=%f tsOff=%f\n", cOff, tsOff);
 }
 
 

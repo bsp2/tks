@@ -28,7 +28,7 @@
 // ----          22Sep2023, 17Nov2023, 18Nov2023, 08Jan2024, 10Jan2024, 13Jan2024, 14Jan2024
 // ----          15Jan2024, 16Jan2024, 19Apr2024, 04Aug2024, 15Aug2024, 28Sep2024, 30Sep2024
 // ----          02Oct2024, 03Oct2024, 13Oct2024, 09Nov2024, 03Jan2025, 09Jan2026, 16Jan2026
-// ----          26Jan2026, 10Apr2026
+// ----          26Jan2026, 10Apr2026, 14May2026, 15May2026
 // ----
 // ----
 // ----
@@ -230,13 +230,21 @@ YC class StSample : public YAC_Object {
    sSI   timestretch_interpol_type;      // see STSAMPLE_TIMESTRETCH_INTERPOL_xxx
    sSI   timestretch_grain_window_type;  // see STSAMPLE_TIMESTRETCH_GRAIN_WINDOW_xxx
    sF32  timestretch_bend;               // -1..1  (phase bend)
+#ifdef TKSAMPLER_WAVEPATH
    sBool b_wavepath;                     // 1=user defined wavetable path
    sSI   wavepath_idx;                   // initial cycle index
    YAC_FloatArray *wavepath_table;
+#endif // TKSAMPLER_WAVEPATH
    sF32  timestretch_startphase_rand_amount;
    sUI   timestretch_2d_w;               // 2D wavetable size. smpoff= (y*(cyclelen*w))+(cyclelen*x)
    sUI   timestretch_2d_h;               // w/h = 0: use regular wavetable mode (select cycle via smpoffset mod)
 
+#define STSAMPLE_TIMESTRETCH_SMPOFF_INTERPOL_NONE  YCI 0
+#define STSAMPLE_TIMESTRETCH_SMPOFF_INTERPOL_LOW   YCI 1
+#define STSAMPLE_TIMESTRETCH_SMPOFF_INTERPOL_MID   YCI 2
+#define STSAMPLE_TIMESTRETCH_SMPOFF_INTERPOL_HIGH  YCI 3
+#define STSAMPLE_TIMESTRETCH_SMPOFF_INTERPOL_ULTRA YCI 4
+   sUI timestretch_smpoff_interpol_mode;
 
 #define STSAMPLE_TIMESTRETCH_INTERPOL_NONE        YCI  0
 #define STSAMPLE_TIMESTRETCH_INTERPOL_LINEAR      YCI  1
@@ -1124,6 +1132,8 @@ YC class StSample : public YAC_Object {
    sF32 calcMMNoteRel (sF32 _note) const;
    sF32 calcMMNoteAbs (sF32 _note) const;
 
+   sUI getCurrentTimestretchSmpOffInterpolNumFrames (void) const;
+
 #define STSAMPLE_VOICEPLUGIN_DST_DEF  YCI  0   // default (audio-rate) processing (after sample read)
 #define STSAMPLE_VOICEPLUGIN_DST_SR   YCI  1   // sample read rate modulation (before sample read)
 #define STSAMPLE_VOICEPLUGIN_DST_AM   YCI  2   // amplitude modulation (post)
@@ -1401,6 +1411,10 @@ YC class StSample : public YAC_Object {
    YM void setTimestretchGrainWindowType (sSI _type);
    YM sSI  getTimestretchGrainWindowType (void);
 
+   // see STSAMPLE_TIMESTRETCH_SMPOFF_INTERPOL_NONE|LOW|MID|HIGH
+   YM void _setTimestretchSmpOffInterpolMode (sUI _mode);
+   YM sUI  _getTimestretchSmpOffInterpolMode (void);
+
    // -1..1
    YM void setTimestretchBend (sF32 _amount);
    YM sF32 getTimestretchBend (void);
@@ -1465,6 +1479,7 @@ YC class StSample : public YAC_Object {
    YM void  _setEnableFromStart (sBool _bEnabled);
    YM sBool _getEnableFromStart (void);
 
+   // when compiled with TKSAMPLER_WAVEPATH option
    YM YAC_Object *_getOrCreateWavepathTable (void);
    YM void        _setEnableWavepath        (sBool _bEnabled);
    YM sBool       _getEnableWavepath        (void);

@@ -24,7 +24,7 @@
 // ----          28Dec2022, 29Dec2022, 30Dec2022, 31Dec2022, 09Mar2023, 03Apr2023, 14Aug2023
 // ----          16Aug2023, 14Sep2023, 10Jan2024, 11Jan2024, 13Jan2024, 14Jan2024, 15Jan2024
 // ----          16Jan2024, 05Aug2024, 28Sep2024, 01Oct2024, 02Oct2024, 03Oct2024, 03Nov2024
-// ----          03Jan2025, 04Jan2025, 09Jan2026, 16Jan2026
+// ----          03Jan2025, 04Jan2025, 09Jan2026, 16Jan2026, 14May2026, 16May2026
 // ----
 // ----
 // ----
@@ -272,8 +272,8 @@ YC class StSampleVoice : public YAC_Object {
 
 #define STSAMPLEVOICE_LOOPRESTART_NUMSTEPS 64
 
-#define STSAMPLEPLAYER_PERFCTL_PITCHBEND        YCI  0
-#define STSAMPLEPLAYER_PERFCTL_PRESSURE         YCI  1
+#define STSAMPLEPLAYER_PERFCTL_PITCHBEND        YCI  0    // 0..16383
+#define STSAMPLEPLAYER_PERFCTL_PRESSURE         YCI  1    // 0..l27
 #define STSAMPLEPLAYER_PERFCTL_CC1_MODWHEEL     YCI  2
 #define STSAMPLEPLAYER_PERFCTL_CC2_BREATHCTL    YCI  3
 #define STSAMPLEPLAYER_PERFCTL_CC4_FOOTCTL      YCI  4
@@ -684,7 +684,7 @@ YC class StSampleVoice : public YAC_Object {
    // dst=AM/VB1..8
    void processPluginsAM (sF32 *_pluginAmp);
 
-   void updateWt2dOffset (void);
+   sBool updateWt2dOffset (void);
 
    void renderBlockAdditive (sF32 *     buf,
                              sUI        blkSz,

@@ -27,6 +27,7 @@
 // ----          10Jan2024, 13Jan2024, 14Jan2024, 15Jan2024, 16Jan2024, 19Apr2024, 04Aug2024
 // ----          15Aug2024, 28Sep2024, 30Sep2024, 01Oct2024, 03Oct2024, 05Oct2024, 13Oct2024
 // ----          14Oct2024, 08Nov2024, 09Nov2024, 11Dec2024, 03Jan2025, 09Jan2026, 10Apr2026
+// ----          14May2026, 15May2026
 // ----
 // ----
 // ----
@@ -70,7 +71,11 @@ StSample::StSample(void) {
    ::memset((void*)default_modseq_patches, 0, sizeof(default_modseq_patches));
    global_modseq_tick_nr = ~0u;
 
+#ifdef TKSAMPLER_WAVEPATH
    wavepath_table = NULL;
+#endif // TKSAMPLER_WAVEPATH
+
+   timestretch_smpoff_interpol_mode = STSAMPLE_TIMESTRETCH_SMPOFF_INTERPOL_MID;
 
    parent_samplebank = NULL;
 
@@ -194,8 +199,10 @@ void StSample::reinit(void) {
    timestretch_2d_w               = 0u;
    timestretch_2d_h               = 0u;
 
+#ifdef TKSAMPLER_WAVEPATH
    b_wavepath                     = YAC_FALSE;
    wavepath_idx                   = 0;
+#endif // TKSAMPLER_WAVEPATH
 
    timestretch_startphase_rand_amount = 0.0f;
 
@@ -388,7 +395,9 @@ void StSample::free(void) {
    YAC_DELETE_SAFE(key_range);
    YAC_DELETE_SAFE(vel_range);
    YAC_DELETE_SAFE(mod_range);
+#ifdef TKSAMPLER_WAVEPATH
    YAC_DELETE_SAFE(wavepath_table);
+#endif // TKSAMPLER_WAVEPATH
 
    for(sUI i = 0u; i < STSAMPLE_NUM_MODSEQ; i++)
    {
@@ -1798,6 +1807,14 @@ sSI StSample::getTimestretchGrainWindowType(void) {
    return timestretch_grain_window_type;
 }
 
+void StSample::_setTimestretchSmpOffInterpolMode(sUI _mode) {
+   timestretch_smpoff_interpol_mode = _mode;
+}
+
+sUI StSample::_getTimestretchSmpOffInterpolMode(void) {
+   return timestretch_smpoff_interpol_mode;
+}
+
 void StSample::setTimestretchStartPhaseRandAmount(sF32 _amount) {
    timestretch_startphase_rand_amount = _amount;
 }
@@ -2001,27 +2018,47 @@ sBool StSample::_getEnableFromStart(void) {
 }
 
 YAC_Object *StSample::_getOrCreateWavepathTable() {
+#ifdef TKSAMPLER_WAVEPATH
    if(NULL == wavepath_table)
    {
       wavepath_table = YAC_New_FloatArray();
    }
    return wavepath_table;
+#else
+   return NULL;
+#endif // TKSAMPLER_WAVEPATH
 }
 
 void StSample::_setEnableWavepath(sBool _bEnabled) {
+#ifdef TKSAMPLER_WAVEPATH
    b_wavepath = _bEnabled;
+#else
+   (void)_bEnabled;
+#endif // TKSAMPLER_WAVEPATH
 }
 
 sBool StSample::_getEnableWavepath(void) {
+#ifdef TKSAMPLER_WAVEPATH
    return b_wavepath;
+#else
+   return YAC_FALSE;
+#endif // TKSAMPLER_WAVEPATH
 }
 
 void StSample::_setWavepathIndex(sSI _idx) {
+#ifdef TKSAMPLER_WAVEPATH
    wavepath_idx = _idx;
+#else
+   (void)_idx;
+#endif // TKSAMPLER_WAVEPATH
 }
 
 sSI StSample::_getWavepathIndex(void) {
+#ifdef TKSAMPLER_WAVEPATH
    return wavepath_idx;
+#else
+   return 0;
+#endif // TKSAMPLER_WAVEPATH
 }
 
 void StSample::_setEnableSkipRange(sSI _bEnable) {
@@ -5241,6 +5278,20 @@ sF32 StSample::calcMMNoteAbs(sF32 _note) const {
          mmNote = mmMin;
    }
    return mmNote;
+}
+
+sUI StSample::getCurrentTimestretchSmpOffInterpolNumFrames(void) const {
+   // # of sample-frames to interpolate when modulating sample offset in granular mode
+   switch(timestretch_smpoff_interpol_mode)
+   {
+      default:
+      case STSAMPLE_TIMESTRETCH_SMPOFF_INTERPOL_NONE:  break;
+      case STSAMPLE_TIMESTRETCH_SMPOFF_INTERPOL_LOW:   return 64u;
+      case STSAMPLE_TIMESTRETCH_SMPOFF_INTERPOL_MID:   return 128u;
+      case STSAMPLE_TIMESTRETCH_SMPOFF_INTERPOL_HIGH:  return 256u;
+      case STSAMPLE_TIMESTRETCH_SMPOFF_INTERPOL_ULTRA: return 512u;
+   }
+   return 0u;
 }
 
 void StSample::reorderPluginModMatrixEntries(const sUI *_newOrder) {
