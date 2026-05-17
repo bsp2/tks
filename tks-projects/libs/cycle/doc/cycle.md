@@ -1,6 +1,6 @@
 % Cycle Sample Generator / Soft Synth
 % bsp
-% 25-Apr-2026
+% 15-May-2026
 >>>
 11Oct2020, 13Oct2020, 14Oct2020, 31Jul2021, 12Aug2021, 24Aug2021, 16Jan2022,
 06Jan2023, 07Jan2023, 28Mar2023, 07Apr2023, 19Apr2023, 04May2023, 05May2023,
@@ -15,7 +15,7 @@
 10Nov2024, 30Nov2024, 04Dec2024, 06Dec2024, 13Dec2024, 15Dec2024, 17Dec2024,
 18Dec2024, 19Dec2024, 20Dec2024, 21Dec2024, 22Dec2024, 23Dec2024, 08Jan2025,
 09Jan2025, 13Jan2025, 14Jan2025, 15Jan2025, 29Jan2025, 29May2025, 31May2025,
-01Jun2025, 12Jun2025, 25Apr2026
+01Jun2025, 12Jun2025, 25Apr2026, 15May2026
 <<<
 $(var:header)
 
@@ -2788,8 +2788,10 @@ arg p_amt 0.0 0 1
 ##-# Inputs
 
 |noheader
-|:       |: `mode` / `m`  |: range is 0(bend), 1(warp), 2(rate), 3(sigmoid), 4(sigmodinv), 5(sigmoidc), 6(sigmodinvc), 7(hermite1), 8(hermite2), 9(hermite3) (default=warp)
-|:       |: `amount` / `amt` |: range is 0..1 (default=0)
+|:       |: `amount` / `amt` |: range is 0..1 (default=1)
+|: const |: `mode` / `m`  |: range is 0(bend), 1(warp), 2(rate), 3(sigmoid), 4(sigmodinv), 5(sigmoidc), 6(sigmodinvc), 7(hermite1), 8(hermite2), 9(hermite3), 10(hs), 11(sin), 12(log), 13(exp) (default=warp)
+|: const |: `invert` |: range is 0/1 (default=0) | (1.0-in) and (1.0 - res)
+|: const |: `flipy`  |: range is 0/1 (default=0) | (1.0 - res)
 ].table_inputs
 
 
