@@ -12,7 +12,7 @@
 // ---- changed: 02Jul2022, 03Jul2022, 04Jul2022, 08Jul2022, 09Jul2022, 10Jul2022, 16Jul2022
 // ----          17Jul2022, 22Jul2022, 10Mar2023, 16Aug2023, 18Aug2023, 01Feb2024, 13Sep2024
 // ----          14Sep2024, 15Sep2024, 18Sep2024, 30Dec2024, 22Mar2025, 23Mar2025, 04Apr2025
-// ----          20Dec2025, 27Dec2025, 14Feb2026
+// ----          20Dec2025, 27Dec2025, 14Feb2026, 16May2026
 // ----
 // ----
 // ----
@@ -937,7 +937,7 @@ class SamplePadKit {
    public SamplePadCommon *[] pads;
    public int edit_variation_idx;  // always valid
    public int edit_pad_idx;        // always valid
-   public int var_base_note;       // variation-select MIDI base note (0..127). default=12*3=C-3
+   public int var_base_note;       // variation-select MIDI base note (0..127). default=12*0=C-0
    public int layout;
    public boolean b_show_bank_b;   // true=show bank b pads in UI
 
@@ -947,7 +947,7 @@ class SamplePadKit {
    protected int ui_queued_edit_pad_idx;        // -1=none. used by UI when editor follows last played pad
 
    public IntArray perf_ctl_bipolar_flags; // STSAMPLEPLAYER_NUM_PERFCTL. 1=CC modulation is bipolar (-127..+127), 0=unipolar (0..127)
-   protected FloatArray current_perf_ctl;  // External MIDI CC modulation. STSAMPLEPLAYER_NUM_PERFCTL. -1=undefined (after reset). Same setup as Sample.initial_perf_ctl.
+   protected FloatArray current_perf_ctl;  // External MIDI CC/PB modulation. STSAMPLEPLAYER_NUM_PERFCTL. -1=undefined (after reset). Same setup as Sample.initial_perf_ctl.
    protected FloatArray active_var_perf_ctl; // copied from SamplePadKitVariation.initial_perf_ctl (initially -128=none)
    protected FloatArray effective_perf_ctl;  // temporary during replay (merge initial sample+pad and midi ctls)
    protected boolean b_update_perf_ctl;      // true=sampleplayer performance controller update pending (temp flag)
@@ -993,6 +993,9 @@ class SamplePadKit {
       active_var_perf_ctl   .allocAndFill(STSAMPLEPLAYER_NUM_PERFCTL, -128/*none*/);
       current_perf_ctl      .allocAndFill(STSAMPLEPLAYER_NUM_PERFCTL, -1/*none*/);
       effective_perf_ctl    .allocAndFill(STSAMPLEPLAYER_NUM_PERFCTL, 0);
+      // // effective_perf_ctl[STSAMPLEPLAYER_PERFCTL_PITCHBEND]   = 8192.0f;
+      // // effective_perf_ctl[STSAMPLEPLAYER_PERFCTL_CC8_BALANCE] = 64.0f;
+      // // effective_perf_ctl[STSAMPLEPLAYER_PERFCTL_CC10_PAN]    = 64.0f;
       b_update_perf_ctl = false;
 
       default_namespace_idx = current_project.getOrCreateSampleNamespace(STConfig.sample_pad_default_namespace/*drumkit*/);
@@ -1686,19 +1689,22 @@ class SamplePadKit {
                                          local Sample                _sample,
                                          local SamplePad             _pad
                                          ) {
-      effective_perf_ctl = _sample.initial_perf_ctl;  // -1 or 0..127
+      effective_perf_ctl = _sample.initial_perf_ctl;  // -1 or 0..127 (CC) / 0..16383 (PB)
       effective_perf_ctl.mergeArraySkipVal(_pad.initial_perf_ctl, -1);  // -1 or 0..127 (override sample perfctl if not -1)
 
       // Add bipolar modulation from kit variation
       local FloatArray kvPerfCtl <= active_var_perf_ctl;
-      local int idx = 0;
+      local int idx = 1;  // skip pb idx=0
       local float valP;
       local float valN;
       local float valC;
       // // trace "xxx calcEffectivePerfCtl: initial effective_perf_ctl="+#(effective_perf_ctl);
       // // trace "xxx calcEffectivePerfCtl: kvPerfCtl=="+#(kvPerfCtl);
       // // trace "xxx calcEffectivePerfCtl: current_perf_ctl=="+#(current_perf_ctl);
-      loop(effective_perf_ctl.numElements)
+
+      effective_perf_ctl[STSAMPLEPLAYER_PERFCTL_PITCHBEND/*0*/] = current_perf_ctl[STSAMPLEPLAYER_PERFCTL_PITCHBEND/*0*/];
+
+      loop(effective_perf_ctl.numElements -1/*skip pb idx=0*/)
       {
          valP = effective_perf_ctl.get(idx);
          valN = kvPerfCtl.get(idx);
@@ -1740,6 +1746,41 @@ class SamplePadKit {
          // Next controller
          idx++;
       }
+   }
+
+   // <replay.png>
+   protected method updatePerfCtl(local SamplePadCommon sc,
+                                  local SamplePadKitVariation kv,
+                                  local SamplePad pad
+                                  ) {
+      local Sample sample <= current_project.getSampleByIdx(pad.sample_idx);
+      if(null != sample)
+      {
+         calcEffectivePerfCtl(kv, sample, pad);
+         // trace "xxx pad_idx="+sc.pad_idx+" effective_perf_ctl="+#(effective_perf_ctl);
+
+         StSamplePlayer samplePlayer <= sc.sample_player;
+         samplePlayer.updatePerfCtls(effective_perf_ctl);  // skips values < 0
+
+         local float pb = effective_perf_ctl[STSAMPLEPLAYER_PERFCTL_PITCHBEND];
+         if(pb >= 0)
+         {
+            // trace "xxx SamplePadState: perf_ctl_pb="+pb;
+            local float freq;
+            if(pb >= 8192.0)
+            {
+               pb = (pb - 8192.0) / 8191.0;
+               freq = sample.pitchbend_up  * pb;
+            }
+            else
+            {
+               pb = (pb - 8192.0) / 8192.0;
+               freq = sample.pitchbend_down * pb;
+            }
+            // trace "xxx SamplePadState::updateFreq: pb="+pb+" freq="+freq;
+            samplePlayer.updateFreq(freq);
+         }
+      } // if sample
    }
 
    // <replay.png>
@@ -1816,9 +1857,10 @@ class SamplePadKit {
             if(null != sample)
             {
                pad.voice_note = playNote;
-               calcEffectivePerfCtl(kv, sample, pad);
-               sp.updatePerfCtls(effective_perf_ctl);
-               b_update_perf_ctl = false;
+               // // calcEffectivePerfCtl(kv, sample, pad);
+               // // sp.updatePerfCtls(effective_perf_ctl);
+               updatePerfCtl(sc, kv, pad);  // (note) also updates pitchbend
+               // // b_update_perf_ctl = false;  // other pads may need updates, too
 
                if(sc.isPlaying())
                {
@@ -1937,6 +1979,7 @@ class SamplePadKit {
       local float pb = fr.getFilteredPitchbend(_fltDev, _fltCh);
       if(pb >= 0.0f)
       {
+         // trace "xxx SamplePadState::processMIDI: pb="+pb;
          current_perf_ctl[STSAMPLEPLAYER_PERFCTL_PITCHBEND] = pb;
          b_update_perf_ctl = true;
       }
@@ -2173,6 +2216,9 @@ class SamplePadKit {
       // //    trace "xxx SamplePadState: update current_perf_ctl="+#(current_perf_ctl);
       local SamplePadKitVariation kv <= variations[replay_variation_idx];
 
+      // // if(b_update_perf_ctl)
+      // //    trace "xxx SamplePadState: b_update_perf_ctl: current_perf_ctl="+(current_perf_ctl);
+
       local SamplePadCommon *sc;
       foreach sc in pads
       {
@@ -2185,32 +2231,7 @@ class SamplePadKit {
 
          if(b_update_perf_ctl)
          {
-            local Sample sample <= current_project.getSampleByIdx(pad.sample_idx);
-            if(null != sample)
-            {
-               calcEffectivePerfCtl(kv, sample, pad);
-               // // trace "xxx pad_idx="+sc.pad_idx+" effective_perf_ctl="+#(effective_perf_ctl);
-
-               StSamplePlayer samplePlayer <= sc.sample_player;
-               samplePlayer.updatePerfCtls(effective_perf_ctl);  // skips values < 0
-
-               local float pb = effective_perf_ctl[STSAMPLEPLAYER_PERFCTL_PITCHBEND];
-               if(pb >= 0)
-               {
-                  local float freq;
-                  if(pb >= 8192.0)
-                  {
-                     pb = (pb - 8192.0) / 8191.0;
-                     freq = sample.pitchbend_up  * pb;
-                  }
-                  else
-                  {
-                     pb = (pb - 8192.0) / 8192.0;
-                     freq = sample.pitchbend_down * pb;
-                  }
-                  samplePlayer.updateFreq(freq);
-               }
-            } // if sample
+            updatePerfCtl(sc, kv, pad);
          }
 
          sc.process(mix_buffer, _numFrames);
