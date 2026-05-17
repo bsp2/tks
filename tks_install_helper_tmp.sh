@@ -1,7 +1,7 @@
 #!/bin/bash
 
-TKS_WWW_PATH=http://tkscript.org/files/tmp/26Apr2026/
-##TKS_WWW_PATH=http://tkscript.org/files/current/
+##TKS_WWW_PATH=http://tkscript.org/files/tmp/14May2026/
+TKS_WWW_PATH=http://tkscript.org/files/current/
 
 # (note) TKS_PACKAGES lists all files to be downloaded / unzipped
 # (note) the list of packages to be built is configured in makefile.[macos|linux|msvc]
