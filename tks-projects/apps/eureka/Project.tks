@@ -28,7 +28,7 @@
 // ----          19Sep2024, 23Sep2024, 08Nov2024, 15Nov2024, 22Nov2024, 30Dec2024, 07Jan2025
 // ----          14Jan2025, 04Apr2025, 06Apr2025, 12Jun2025, 13Jun2025, 09Dec2025, 13Dec2025
 // ----          18Dec2025, 19Dec2025, 20Dec2025, 03Jan2026, 08Jan2026, 14Apr2026, 18Apr2026
-// ----          10May2026, 17May2026
+// ----          10May2026, 17May2026, 18May2026, 19May2026, 20May2026
 // ----
 // ----
 // ----
@@ -4087,6 +4087,7 @@ class Project {
          ModVST2 *modVST2;
          VST2Plugin *vst2Plugin;
          ModEQ3 *modEQ3;
+         ModGain *modGain;
          ModDelay *modDelay;
          ModSTFX *modSTFX;
          Sample *smp;
@@ -4127,14 +4128,15 @@ class Project {
                {
                   if(lane.b_enable)
                   {
-                     if(lane.getNumExportableModsSYN() > 0)
-                     {
+                     // [19May2026] export all lanes (may be sub-mix lanes, e.g. for drums)
+                     // // if(lane.getNumExportableModsSYN() > 0)
+                     // // {
                         lane.tmp_syn_export_track_idx = numTracks++;
-                     }
-                     else
-                     {
-                        lane.tmp_syn_export_track_idx = -1;
-                     }
+                     // // }
+                     // // else
+                     // // {
+                     // //    lane.tmp_syn_export_track_idx = -1;
+                     // // }
                   }
                }
             }
@@ -4152,8 +4154,8 @@ class Project {
          {
             if(track.canExport() && (Track.STATE_PLAY == track.play_state))
             {
-               Output outputT <= track.getOutputByIdx(0);
                float level;
+               int exportLaneIdx = 0;
                foreach lane in track.lanes
                {
                   if(lane.b_enable)
@@ -4162,7 +4164,7 @@ class Project {
                      int numParams;
                      int paramIdx;
 
-                     if(numExportableMods > 0)
+                     if(1) // if(numExportableMods > 0)   [19May2026] export all lanes
                      {
                         // .b midi port (vst_a..vst_h = 0..7)
                         f.i8 = track.dev_idx;
@@ -4170,7 +4172,7 @@ class Project {
                         // .b midi channel (0..15 => 1..16, -1=*)
                         f.i8 = track.midi_ch;
 
-                        // .b num mods
+                        // .b num mods / plugins
                         f.i8 = numExportableMods;
 
                         Mod *mod;
@@ -4181,6 +4183,7 @@ class Project {
                               modSample <= mod;
                               modVST2   <= mod;
                               modEQ3    <= mod;
+                              modGain   <= mod;
                               modDelay  <= mod;
                               modSTFX   <= mod;
 
@@ -4233,7 +4236,6 @@ class Project {
                                  f.i8 = 1;
 
                                  // plugin id
-                                 //  (todo) add generic STFX plugin support
                                  Utils.WriteString(f, "bsp schroederverb");
 
                                  vst2Plugin <= modVST2.plugin;
@@ -4255,6 +4257,31 @@ class Project {
                                  f.i8 = 1;
 
                                  exportVoicePluginSYN(f, modEQ3.shared);
+                              }
+                              else if(modGain instanceof ModGain)
+                              {
+                                 // STFX gain plugin ("bsp gain")
+
+                                 // .b type (0=sample, 1=STFX plugin)
+                                 f.i8 = 1;
+
+                                 // plugin id
+                                 Utils.WriteString(f, "bsp gain");
+
+                                 // .b num parameters
+                                 f.i16 = 6;
+
+                                 // .nf parameter values
+                                 f.f32 = 0.0f;  // PARAM_NONE (ModGain compatibility)
+                                 float gainLevel = mathClampf(modGain.level, 0.0f, 48.0f);
+                                 if(gainLevel <= 1.0f)
+                                    f.f32 = gainLevel * 0.5f;  // PARAM_LEVEL
+                                 else
+                                    f.f32 = 0.5f + ((gainLevel - 1.0f)/(2.0f*47.0f));  // 0..48 => 0..1
+                                 f.f32 = modGain.pan * 0.5f + 0.5f;  // PARAM_PAN
+                                 f.f32 = modGain.stereo_width * 0.5f;  // PARAM_STEREO_WIDTH
+                                 f.f32 = modGain.b_flip_phase ? 1.0f : 0.0f;  // PARAM_FLIP_PHASE
+                                 f.f32 = modGain.b_flip_channels ? 1.0f : 0.0f;  // PARAM_FLIP_CHANNELS
                               }
                               else if(modDelay instanceof ModDelay)
                               {
@@ -4296,41 +4323,73 @@ class Project {
                         int numLaneOutputs = 0;
                         Output *outputL;
                         Track *outputTrack;
+                        Lane *outputLane;
                         Lane *laneTmp;
+                        Output *outputT;
+                        int outputTIdx;
 
                         // Count number of outputs
                         foreach outputL in lane.outputs
                         {
-                           if(Output.TYPE_DEFAULT == outputL.type)
+                           if(outputL.b_enable)
                            {
-                              if(Output.TYPE_DEFAULT == outputT.type)
-                                 numLaneOutputs++;
-                              else
+                              if(Output.TYPE_DEFAULT == outputL.type)
                               {
-                                 outputTrack <= getTrackByIdx(outputT.track_idx);
-                                 if(null != outputTrack)
+                                 // Lane send to track outputs
+                                 foreach outputT in track.outputs
                                  {
-                                    if(outputTrack.getNumLanes() > 0)
+                                    if(outputT.b_enable)
+                                    {
+                                       if(Output.TYPE_DEFAULT == outputT.type)
+                                       {
+                                          numLaneOutputs++;
+                                       }
+                                       else if(Output.TYPE_TRACK == outputT.type)
+                                       {
+                                          if(outputT.track_idx > exportTrackIdx)  // skip "self" and previous track destinations
+                                          {
+                                             outputTrack <= getTrackByIdx(outputT.track_idx);
+                                             if(null != outputTrack)
+                                             {
+                                                if(outputTrack.getNumLanes() > 0)
+                                                   numLaneOutputs++;
+                                             }
+                                          }
+                                       }
+                                    } // if outputT.b_enable
+                                 }  // loop track.outputs
+                              }
+                              else if(Output.TYPE_TRACK == outputL.type)
+                              {
+                                 // Lane send to track
+                                 if(outputL.track_idx > exportTrackIdx)  // skip "self" and previous track destinations
+                                 {
+                                    outputTrack <= getTrackByIdx(outputL.track_idx);
+                                    if(null != outputTrack)
+                                    {
+                                       if(outputTrack.getNumLanes() > 0)
+                                          numLaneOutputs++;
+                                    }
+                                 }
+                              }
+                              else if(Output.TYPE_LANE == outputL.type)
+                              {
+                                 // Lane send to lane
+                                 if(outputL.lane_idx > exportLaneIdx) // skip "self" and previous lane destinations
+                                 {
+                                    outputLane <= track.getLaneByIdx(outputL.lane_idx);
+                                    if(null != outputLane)
                                        numLaneOutputs++;
                                  }
                               }
-                           }
-                           else if(Output.TYPE_TRACK == outputL.type)
-                           {
-                              if(outputL.track_idx > exportTrackIdx)  // skip "self" and previous track destinations
-                              {
-                                 outputTrack <= getTrackByIdx(outputL.track_idx);
-                                 if(null != outputTrack)
-                                 {
-                                    if(outputTrack.getNumLanes() > 0)
-                                       numLaneOutputs++;
-                                 }
-                              }
-                           }
+                           } // if outputL.b_enable
                         }
 
-                        if(numLaneOutputs > 4)
-                           numLaneOutputs = 4;  // see synergy_replay SR_MAX_TRACK_OUTPUTS
+                        if(numLaneOutputs > 8)
+                           numLaneOutputs = 8;  // see synergy_replay SR_MAX_TRACK_OUTPUTS
+
+                        // if(track.name == "drums")
+                        //    trace "xxx track.name=\"Drums\" numLaneOutputs="+numLaneOutputs;
 
                         // .b num outputs
                         f.i8 = numLaneOutputs;
@@ -4339,71 +4398,133 @@ class Project {
                         int outputEmitIdx = 0;
                         foreach outputL in lane.outputs
                         {
-                           int outputTrackIdx = -1;
-                           if(Output.TYPE_DEFAULT == outputL.type)
+                           if(outputL.b_enable)
                            {
-                              if(Output.TYPE_DEFAULT == outputT.type)
+                              int outputTrackIdx = -1;
+                              if(Output.TYPE_DEFAULT == outputL.type)
                               {
-                                 // .b dest
-                                 f.i8 = 0;
-                                 // .2b Level + Pan
-                                 level = (outputT.b_enable && outputL.b_enable) ? (outputT.level * outputL.level) : 0.0f;
-                                 f.i8 = mathClampi(level * 255, 0, 255);
-                                 f.i8 = mathClampi((outputT.pan + outputL.pan) * 127, -127, 127);
-                                 outputEmitIdx++;
-                              }
-                              else
-                              {
-                                 // Send to track
-                                 outputTrack <= getTrackByIdx(outputT.track_idx);
-                                 if(null != outputTrack)
+                                 // Lane outputs to track outputs
+                                 outputTIdx = 0;
+                                 foreach outputT in track.outputs
                                  {
-                                    foreach laneTmp in outputTrack.lanes
+                                    if(outputT.b_enable)
                                     {
-                                       // .b dest
-                                       f.i8 = laneTmp.tmp_syn_export_track_idx + 1;
-                                       // .2b Level + Pan
-                                       level = (outputT.b_enable && outputL.b_enable) ? (outputT.level * outputL.level) : 0.0f;
-                                       f.i8 = mathClampi(level * 255, 0, 255);
-                                       f.i8 = mathClampi((outputT.pan + outputL.pan) * 127, -127, 127);
-                                       outputEmitIdx++;
-                                       break;
+                                       if(Output.TYPE_DEFAULT == outputT.type)
+                                       {
+                                          // Track send to default output
+                                          // .b dest
+                                          f.i8 = 0;
+                                          // .b orig_track_output_idx (for RPN#300.307 modulation)
+                                          f.i8 = outputTIdx;
+                                          // .b track level
+                                          f.i8 = mathClampi(outputT.level * 255, 0, 255);
+                                          // .b lane level
+                                          f.i8 = mathClampi(outputL.level * 255, 0, 255);
+                                          // .b pan
+                                          f.i8 = mathClampi((outputT.pan + outputL.pan) * 127, -127, 127);
+                                          outputEmitIdx++;
+                                       }
+                                       else if(Output.TYPE_TRACK == outputT.type)
+                                       {
+                                          // Track send to track
+                                          if(outputT.track_idx > exportTrackIdx)  // skip "self" and previous track destinations
+                                          {
+                                             outputTrack <= getTrackByIdx(outputT.track_idx);
+                                             if(null != outputTrack)
+                                             {
+                                                foreach laneTmp in outputTrack.lanes
+                                                {
+                                                   // .b dest
+                                                   f.i8 = laneTmp.tmp_syn_export_track_idx + 1;
+                                                   // .b orig_track_output_idx (for RPN#300.307 modulation)
+                                                   f.i8 = outputTIdx;
+                                                   // .b track level
+                                                   f.i8 = mathClampi(outputT.level * 255, 0, 255);
+                                                   // .b lane level
+                                                   f.i8 = mathClampi(outputL.level * 255, 0, 255);
+                                                   // .b pan
+                                                   f.i8 = mathClampi((outputT.pan + outputL.pan) * 127, -127, 127);
+                                                   outputEmitIdx++;
+                                                   break;  // (todo) send to _all_ lanes ??
+                                                }
+                                             }
+                                          }
+                                       }
+                                    }
+                                    outputTIdx++;
+                                 } // loop track.outputs
+                              }
+                              else if(Output.TYPE_TRACK == outputL.type)
+                              {
+                                 // Lane send to track
+                                 if(outputL.track_idx > exportTrackIdx)  // skip "self" and previous track destinations
+                                 {
+                                    outputTrack <= getTrackByIdx(outputL.track_idx);
+                                    if(null != outputTrack)
+                                    {
+                                       foreach laneTmp in outputTrack.lanes
+                                       {
+                                          // .b dest
+                                          f.i8 = laneTmp.tmp_syn_export_track_idx + 1;
+                                          // .b orig_track_output_idx (for RPN#300.307 modulation)
+                                          f.i8 = -1;
+                                          // .b track level
+                                          f.i8 = 255;
+                                          // .b lane level
+                                          f.i8 = mathClampi(outputL.level * 255, 0, 255);
+                                          // .b pan
+                                          f.i8 = mathClampi(outputL.pan * 127, -127, 127);
+                                          outputEmitIdx++;
+                                          break;  // (todo) send to _all_ lanes ??
+                                       }
                                     }
                                  }
                               }
-                           }
-                           else if(Output.TYPE_TRACK == outputL.type)
-                           {
-                              if(outputL.track_idx > exportTrackIdx)  // skip "self" and previous track destinations
+                              else if(Output.TYPE_LANE == outputL.type)
                               {
-                                 outputTrack <= getTrackByIdx(outputL.track_idx);
-                                 if(null != outputTrack)
+                                 // Lane send to lane
+                                 if(outputL.lane_idx > exportLaneIdx) // skip "self" and previous lane destinations
                                  {
-                                    foreach laneTmp in outputTrack.lanes
+                                    outputLane <= track.getLaneByIdx(outputL.lane_idx);
+                                    if(null != outputLane)
                                     {
                                        // .b dest
-                                       f.i8 = laneTmp.tmp_syn_export_track_idx + 1;
-                                       // .2b Level + Pan
-                                       level = outputL.b_enable ? outputL.level : 0.0f;
-                                       f.i8 = mathClampi(level * 255, 0, 255);
+                                       f.i8 = outputLane.tmp_syn_export_track_idx + 1;
+                                       // // // trace "xxx Output.TYPE_LANE: dst="+(outputLane.tmp_syn_export_track_idx + 1);
+                                       // .b orig_track_output_idx (for RPN#300.307 modulation)
+                                       f.i8 = -1;
+                                       // .b track level
+                                       f.i8 = 255;
+                                       // .b lane level
+                                       f.i8 = mathClampi(outputL.level * 255, 0, 255);
+                                       // .b pan
                                        f.i8 = mathClampi(outputL.pan * 127, -127, 127);
                                        outputEmitIdx++;
-                                       break;
                                     }
                                  }
                               }
-                           }
 
-                           if(4 == outputEmitIdx)  // see synergy_replay SR_MAX_TRACK_OUTPUTS
-                              break;
+                              if(8 == outputEmitIdx)  // see synergy_replay SR_MAX_TRACK_OUTPUTS
+                                 break;
+                           } // if outputL.b_enable
                         } // foreach outputL
 
-                     } // if numExportableMods > 0
+                        if(numLaneOutputs != outputEmitIdx)
+                        {
+                           trace "[!!!]";
+                           trace "[!!!] Project::exportSYN: numLaneOutputs="+numLaneOutputs+" != outputEmitIdx="+outputEmitIdx;
+                           trace "[!!!]";
+                        }
+
+                     } // if 1   // // if numExportableMods > 0
                   } // if lane.b_enable
+                  exportLaneIdx++;
                } // foreach lane
             } // if track.canExport
             exportTrackIdx++;
          } // foreach track
+
+         Global.Debug("Project::exportSYN: numSamples offset="+f.offset);
 
          // .b number of samples (0..128)
          //     (note) maybe expand to 255 later (via bank select 0/1)
@@ -4414,7 +4535,8 @@ class Project {
          {
             if(smp.prg_id >= 0)  // assigned to MIDI program ?
             {
-               smp.exportSYNSmpInfo(f);
+               // trace "xxx Project::exportSYN: smpinfo prg_id="+smp.prg_id+" offset="+f.offset;
+               smp.exportSYNSmpInfo(f, b_force_static_samples);
             }
          }
 
@@ -4424,7 +4546,15 @@ class Project {
          {
             if(smp.prg_id >= 0)  // assigned to MIDI program ?
             {
-               smp.exportSYNWaveform(f);
+               if(!smp.b_procedural || b_force_static_samples)
+               {
+                  // trace "xxx Project::exportSYN: waveform smp.prg_id="+smp.prg_id+" offset="+f.offset;
+                  smp.exportSYNWaveform(f);
+               }
+               else
+               {
+                  trace "[dbg] exportSynWaveform: SKIP procedural ioOffset="+f.offset+" prg="+smp.prg_id+" name=\""+smp.unique_name+"\"";
+               }
             }
          }
          wfSz = f.offset - wfSz;
