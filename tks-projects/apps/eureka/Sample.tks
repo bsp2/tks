@@ -36,7 +36,7 @@
 // ----          03Jan2025, 04Jan2025, 12Jan2025, 15Jan2025, 03Apr2025, 05Apr2025, 06May2025
 // ----          20May2025, 28May2025, 05Jun2025, 12Jun2025, 13Jun2025, 14Jun2025, 22Dec2025
 // ----          09Jan2026, 13Jan2026, 16Jan2026, 14Feb2026, 09Apr2026, 10Apr2026, 12Apr2026
-// ----          16Apr2026, 19Apr2026, 23Apr2026, 09May2026, 17May2026
+// ----          16Apr2026, 19Apr2026, 23Apr2026, 09May2026, 17May2026, 18May2026, 20May2026
 // ----
 // ----
 // ----
@@ -4915,11 +4915,8 @@ class Sample {
       // Timescale (ms)
       ofs.f32 = env.timescaleMillisec;
 
-      if(_bEditor)
-      {
-         // Exponent (v2+)
-         ofs.f32 = env.exponent;
-      }
+      // Exponent (v2+)
+      ofs.f32 = env.exponent;
 
       if(_bEditor)
       {
@@ -6667,11 +6664,11 @@ class Sample {
       // Program id
       ofs.i8 = prg_id;
 
+      // Unique ID (v7+)
+      ofs.i16 = unique_id;
+
       if(_bEditor)
       {
-         // Unique ID (v7+)
-         ofs.i16 = unique_id;
-
          // Sample Type
          ofs.i8 = sample_type;
 
@@ -7046,14 +7043,16 @@ class Sample {
    }
 
    // <save.png>
-   public method exportSYNSmpInfo(Stream ofs) {
+   public method exportSYNSmpInfo(Stream ofs, boolean _bForceStaticSamples) {
+
+      trace "[...] exportSynSmpInfo: BEGIN ioOffset="+ofs.offset+" prg="+prg_id+" name=\""+unique_name+"\"";
 
       int ofsSz = ofs.offset;
 
-      ofs.i16 = 8; // ver
+      ofs.i16 = 9; // ver
 
       // .b procedural flag
-      ofs.i8 = b_procedural;
+      ofs.i8 = b_procedural && !_bForceStaticSamples;
 
       // .l waveform num frames
       ofs.i32 = waveform.numFrames;
@@ -7065,7 +7064,6 @@ class Sample {
       ofs.f32 = waveform.sampleRate;
 
       // Sample name (debug helper)
-      //  (todo) remove
       Utils.WriteString(ofs, unique_name);
 
       // Initial performance controller
@@ -7109,19 +7107,20 @@ class Sample {
 
       ofsSz = ofs.offset - ofsSz;
 
-      trace "[...] exportSynSmpInfo: prg="+prg_id+" name=\""+unique_name+"\" sz="+(int((100*ofsSz)/1024)/100.0)+"k";
+      trace "[...] exportSynSmpInfo: END prg="+prg_id+" name=\""+unique_name+"\" sz="+(int((100*ofsSz)/1024)/100.0)+"k";
    }
 
    // <save.png>
    public method exportSYNWaveform(Stream ofs) {
       // (note) waveform size is stored in sample header
+      trace "[...] exportSynWaveform: BEGIN ioOffset="+ofs.offset+" prg="+prg_id+" name=\""+unique_name+"\"";
       FloatArray smpDat <= waveform.sampleData;
       int ioOff = ofs.offset;
       int sz = ioOff;
       smpDat.saveToStreamSigned12FrameEnc(ofs, 0/*num=all*/);
       sz = ofs.offset - sz;
       int srcSz  = (smpDat.numElements*3)/2; // uncompressed data would be stored as signed 12bit integers
-      trace "[...] exportSynWaveform: prg="+prg_id+" name=\""+unique_name+"\" ioOff="+ioOff+" srcSz="+(int((100*srcSz)/1024)/100.0)+"k encSz="+(int((100*sz)/1024)/100.0)+"k ("+(int(10000.0*sz/srcSz)/100.0)+"%)";
+      trace "[...] exportSynWaveform: END prg="+prg_id+" name=\""+unique_name+"\" ioOff="+ioOff+" srcSz="+(int((100*srcSz)/1024)/100.0)+"k encSz="+(int((100*sz)/1024)/100.0)+"k ("+(int(10000.0*sz/srcSz)/100.0)+"%)";
    }
 
    // <load.png>
@@ -10863,6 +10862,7 @@ class Sample {
 
    // <method.png>
    public =replay= method renderSourceTrack() {
+      boolean bDebug = false;
       Track track <= current_project.getTrackByIdx(src_track_idx);
       if(null != track)
       {
@@ -10920,7 +10920,8 @@ class Sample {
                      {
                         int evIdx = 0;
                         local MIDIPipeEvent pev;
-                        trace "xxx process frInput.numEventsNoteOn="+frInput.numEventsNoteOn;
+                        if(bDebug)
+                           trace "xxx process frInput.numEventsNoteOn="+frInput.numEventsNoteOn;
                         loop(frInput.numEventsNoteOn)
                         {
                            frInput.getEventByIdxAndFlt(evIdx, pev, MIDIPIPE_EVENT_TYPE_NOTE_ON, -1/*fltDev*/, -1/*fltCh*/);
@@ -10940,7 +10941,8 @@ class Sample {
                                                     pev.note,
                                                     0/*vel*/
                                                     );
-                                 trace "xxx delete aPendingNoteOffs i="+i;
+                                 if(bDebug)
+                                    trace "xxx delete aPendingNoteOffs i="+i;
                                  aPendingNoteOffs.delete4(i);
                               }
                               else
@@ -10949,16 +10951,19 @@ class Sample {
                               }
                            }
 
-                           trace "xxx queue pending note-off at frameOff="+int(dstFrameOff + pev.duration * framesPerTick)+" note="+pev.note+" pev.duration="+pev.duration+" #pending="+(aPendingNoteOffs.numElements / 4);
+                           if(bDebug)
+                              trace "xxx queue pending note-off at frameOff="+int(dstFrameOff + pev.duration * framesPerTick)+" note="+pev.note+" pev.duration="+pev.duration+" #pending="+(aPendingNoteOffs.numElements / 4);
                            aPendingNoteOffs.add(dstFrameOff + pev.duration * framesPerTick);  // absFrameOff
                            aPendingNoteOffs.add(pev.devIdx);
                            aPendingNoteOffs.add(pev.midiCh);
                            aPendingNoteOffs.add(pev.note);
-                           trace "xxx    => new aPendingNoteOffs.numElements="+aPendingNoteOffs.numElements;
+                           if(bDebug)
+                              trace "xxx    => new aPendingNoteOffs.numElements="+aPendingNoteOffs.numElements;
 
                            evIdx++;
                         } // loop note on
-                        trace "xxx    END process frInput.numEventsNoteOn="+frInput.numEventsNoteOn;
+                        if(bDebug)
+                           trace "xxx    END process frInput.numEventsNoteOn="+frInput.numEventsNoteOn;
                      } // if #note on
 
                      frSeq <= proc_seq_frames.get(++frIdx);
@@ -10978,16 +10983,17 @@ class Sample {
                   // Find nearest note off event
                   i = 0;
                   int minNumFramesNoteOff = 999999999;
-                  // trace "xxx aPendingNoteOffs.num="+(aPendingNoteOffs.numElements/4);
+                  // // trace "xxx aPendingNoteOffs.num="+(aPendingNoteOffs.numElements/4);
                   loop(aPendingNoteOffs.numElements / 4)
                   {
                      int noteOffFrameOff = aPendingNoteOffs[i+0]/*absFrameOff*/ - dstFrameOff;
-                     // trace "xxx dstFrameOff="+dstFrameOff+" noteOffFrameOff="+noteOffFrameOff+" (note="+aPendingNoteOffs[i+3]+") minNumFramesNoteOff="+minNumFramesNoteOff;
+                     // // trace "xxx dstFrameOff="+dstFrameOff+" noteOffFrameOff="+noteOffFrameOff+" (note="+aPendingNoteOffs[i+3]+") minNumFramesNoteOff="+minNumFramesNoteOff;
                      if(noteOffFrameOff < minNumFramesNoteOff)
                      {
                         if(noteOffFrameOff <= 0)
                         {
-                           trace "xxx noteOff at dstFrameOff="+dstFrameOff+" (ticks="+int(dstFrameOff/framesPerTick)+") note="+aPendingNoteOffs[i+3]+" #pending="+(aPendingNoteOffs.numElements / 4);
+                           if(bDebug)
+                              trace "xxx noteOff at dstFrameOff="+dstFrameOff+" (ticks="+int(dstFrameOff/framesPerTick)+") note="+aPendingNoteOffs[i+3]+" #pending="+(aPendingNoteOffs.numElements / 4);
                            frInput.noteOff(true/*bSet*/,
                                            aPendingNoteOffs[i+1]/*devIdx*/,
                                            aPendingNoteOffs[i+2]/*midiCh*/,
@@ -11036,7 +11042,6 @@ class Sample {
                frInput.empty();
                replay.b_have_events = false;
                // // replay.b_reset_all_controllers = true;  // (note) clashes with ctl reload
-               // track.b_reset_all_controllers = true;
 
                // All notes off
                if(track.midi_ch < 0)
