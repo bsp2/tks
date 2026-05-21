@@ -476,6 +476,7 @@ st_plugin_info_t *valley_plateau_init(void) {
    return &ret->base;
 }
 
+#ifndef STFX_SKIP_MAIN_INIT
 ST_PLUGIN_APICALL st_plugin_info_t *ST_PLUGIN_API st_plugin_init(unsigned int _pluginIdx) {
    if(0u == _pluginIdx)
    {
@@ -483,4 +484,5 @@ ST_PLUGIN_APICALL st_plugin_info_t *ST_PLUGIN_API st_plugin_init(unsigned int _p
    }
    return NULL;
 }
+#endif // STFX_SKIP_MAIN_INIT
 } // extern "C"
