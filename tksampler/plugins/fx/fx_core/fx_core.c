@@ -12,7 +12,7 @@
 // ----          26May2020, 31May2020, 01Jun2020, 02Jun2020, 06Jun2020, 07Jun2020, 08Jun2020
 // ----          09Jun2020, 08Feb2021, 11Feb2021, 23Feb2021, 14Apr2021, 02May2021, 31May2021
 // ----          16Aug2021, 13Oct2021, 14Oct2021, 04Jan2023, 30Mar2023, 27Sep2024, 08Nov2024
-// ----          19Dec2024, 31Jan2026
+// ----          19Dec2024, 31Jan2026, 19May2026
 // ----
 // ----
 // ----
@@ -126,6 +126,7 @@ ST_PLUGIN_APICALL st_plugin_info_t *ST_PLUGIN_API st_plugin_init(unsigned int _p
       case 96u: return dly_flt_2_mod_init            ();
       case 97u: return ws_lin_cpx_init               ();
       case 98u: return stereo_width_init             ();
+      case 99u: return gain_init                     ();
    }
 
    return NULL;

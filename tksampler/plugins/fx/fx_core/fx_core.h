@@ -12,7 +12,7 @@
 // ----          26May2020, 31May2020, 01Jun2020, 02Jun2020, 05Jun2020, 06Jun2020, 07Jun2020
 // ----          08Jun2020, 09Jun2020, 08Feb2021, 11Feb2021, 23Feb2021, 14Apr2021, 02May2021
 // ----          04May2021, 31May2021, 16Aug2021, 13Oct2021, 14Oct2021, 04Jan2023, 30Mar2023
-// ----          27Sep2024, 14Oct2024, 08Nov2024, 19Dec2024, 31Jan2026
+// ----          27Sep2024, 14Oct2024, 08Nov2024, 19Dec2024, 31Jan2026, 19May2026
 // ----
 // ----
 // ----
@@ -116,3 +116,4 @@ extern st_plugin_info_t *modfm_init                    (void);
 extern st_plugin_info_t *dly_flt_2_mod_init            (void);
 extern st_plugin_info_t *ws_lin_cpx_init               (void);
 extern st_plugin_info_t *stereo_width_init             (void);
+extern st_plugin_info_t *gain_init                     (void);
