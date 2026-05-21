@@ -13,7 +13,8 @@
 #VCTK="c:/Program Files/Microsoft Visual Studio/2022/Community/VC/Tools/MSVC/14.39.33519"
 #VCTK="c:/Program Files/Microsoft Visual Studio/2022/Community/VC/Tools/MSVC/14.44.35207"
 # vs2026:
-VCTK="c:/Program Files/Microsoft Visual Studio/18/Community/VC/Tools/MSVC/14.50.35717"
+#VCTK="c:/Program Files/Microsoft Visual Studio/18/Community/VC/Tools/MSVC/14.50.35717"
+VCTK="c:/Program Files/Microsoft Visual Studio/18/Community/VC/Tools/MSVC/14.51.36231"
 export VCTK_MSYS=`cygpath "${VCTK}"`
 
 # Adjust this to match the Windows SDK installation path
