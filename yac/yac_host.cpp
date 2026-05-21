@@ -1745,8 +1745,10 @@ void             YAC_VCALL YAC_Iterator::end                          (void)    
 	// ----                       ( C/C++ reflection support )
 	// ----
 	// ----
+#ifndef YAC_NO_HOST
                  YAC_Host::YAC_Host                         (void)                                  { }
                  YAC_Host::~YAC_Host                        ()                                      { }
+#endif // YAC_NO_HOST
 
 
 #ifndef YAC_CUST_STRING
@@ -1871,7 +1873,7 @@ va_end(va);fixLength();}
 
 #ifndef YAC_CUST_STRING
 #endif
-#ifdef YAC_PRINTF
+#if defined(YAC_PRINTF) && !defined(YAC_NO_HOST)
 void             YAC_Host::printf                     (const char *_fmt, ...)      {
    if(_fmt)
    {

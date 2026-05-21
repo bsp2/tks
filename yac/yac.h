@@ -20,7 +20,7 @@
 /// ----          06-Jan-2023 / 16-Jan-2023 / 26-Jan-2023 / 05-Feb-2023 / 12-Apr-2023 / 14-Apr-2023
 /// ----          17-Jul-2023 / 24-Jul-2023 / 26-Jul-2023 / 13-Jan-2024 / 07-Jun-2024 / 17-Aug-2024
 /// ----          20-Aug-2024 / 22-Aug-2024 / 10-Oct-2024 / 20-Oct-2024 / 14-Mar-2025 / 01-Oct-2025
-/// ----          03-Oct-2025 / 22-Feb-2026 / 09-Apr-2026
+/// ----          03-Oct-2025 / 22-Feb-2026 / 09-Apr-2026 / 18-May-2026
 /// ----
 /// ---- info   : YAC - Yet Another Component object model.  YAC is a self contained, binary level
 /// ----          C++ component/reflectance model and plugin SDK.
@@ -2601,7 +2601,7 @@ YAC_APIC sUI  YAC_Version(void      ); // ---- query plugin version information.
 #define YAC_IS_METACLASS(a) ((a)->yacMetaClassName()!=0)
 
 // ---- object class template macros ----
-#if defined(__cplusplus) && !defined(YAC_C_STRUCTS)
+#if defined(__cplusplus) && !defined(YAC_C_STRUCTS) && !defined(YAC_NO_HOST)
 // -------- regular template ----
 /* template <class T> class YAC_Template  {public:T *ctemplate; public: YAC_Template  (YAC_Host *_host) { ctemplate=new T(); _host->yacRegisterClass(ctemplate, YAC_CLASSTYPE_NORMAL); } ~YAC_Template() { delete ctemplate; } };  */
 /* // -------- singleton type template, may not be instanciated ---- */
@@ -2615,10 +2615,9 @@ template <class T> class YAC_Template  {public: T ctemplate; YAC_Template(YAC_Ho
 template <class T> class YAC_STemplate {public: T ctemplate; YAC_STemplate(YAC_Host *_host) { _host->yacRegisterClass(&ctemplate, YAC_CLASSTYPE_STATIC); } ~YAC_STemplate() { } };
 // -------- interface template, objects are only created by plugins, may not be instanciated but pointer variables may be declared ----
 template <class T> class YAC_RTemplate {public: T ctemplate; YAC_RTemplate(YAC_Host *_host) { _host->yacRegisterClass(&ctemplate, YAC_CLASSTYPE_NOINST); } ~YAC_RTemplate() { } };
-
 #endif // __cplusplus
 
-#ifndef YAC_NO_EXPORTS
+#if !defined(YAC_NO_EXPORTS) && !defined(YAC_NO_HOST)
 extern YAC_Host *yac_host;
 #endif
 
