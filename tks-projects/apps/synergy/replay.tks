@@ -1,7 +1,7 @@
 // ----
 // ---- file   : replay.tks
 // ---- author : Bastian Spiegel <bs@tkscript.de>
-// ---- legal  : (c) 2006-2025 by Bastian Spiegel.
+// ---- legal  : (c) 2006-2026 by Bastian Spiegel.
 // ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
 // ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
 // ----
@@ -34,7 +34,7 @@
 // ----          07May2020, 26Aug2020, 23Oct2020, 01Nov2020, 10Nov2020, 29Nov2020, 09Dec2021
 // ----          16Dec2021, 03Nov2022, 15Nov2022, 04Feb2023, 13Jun2023, 14Jun2023, 22Jul2023
 // ----          28Jul2023, 16Nov2023, 17Nov2023, 18Nov2023, 03Dec2023, 11Apr2024, 13Apr2024
-// ----          25Jan2025, 26Jan2025, 28Feb2025, 14Mar2025
+// ----          25Jan2025, 26Jan2025, 28Feb2025, 14Mar2025, 18May2026
 // ----
 // ----
 // ----
@@ -96,9 +96,9 @@ class Replay {
    // ppq = 24 ticks
    // value resets to 0 when replay is started (see PatternView::handleStartPlaying())
    // value is increased continuously even when replay is stopped if "send continuous timing clock" is enabled
-   int midi_timing_ticks = 0;
+   int midi_timing_ticks;// = 0;
 
-   public int ticks_to_play = 0; // Used to e.g. replay the current patternview line (i.e. step_resolution ticks) or when edit offset changed in NodeArranger
+   public int ticks_to_play;// = 0; // Used to e.g. replay the current patternview line (i.e. step_resolution ticks) or when edit offset changed in NodeArranger
    int seek_ticks_after_play_step;  // -1=don't seek after playing 'ticks_to_play', song position otherwise
    boolean b_play_step_muted;    // true=remove note-ons while playing 'ticks_to_play', auto-resets to false
 
@@ -144,13 +144,17 @@ class Replay {
 
    protected Node *pattern_node;  // Node that started pattern replay
 
-   static int keepalive_counter = 0;
+   static int keepalive_counter;// = 0;
 
    Buffer     smf_export_buffer;
    Buffer *[] smf_export_track_buffers;  // 16 Buffer instances. when fmt is 0, only buffer 0 is used.
    boolean    b_smf_export;
-   int        smf_export_fmt;            // 0=single-track, 1=multi-track (one track per channel)
+   // 0=single-track
+   // 1=multi-track (one track per channel)
+   // 2=multi-track (one track per vst_a..vst_p device)
+   int        smf_export_fmt;            
    IntArray   smf_export_tick_delta;     // one element per track/midi channel
+   IntArray   smf_export_abs_time;       // one element per track/midi channel (debug)
    boolean    b_smf_export_sysex;        // true=in sysex message (may span several buffers)
    boolean    b_smf_allow_sysex;         // true=include SysEx messages in exported .mid file
    Buffer     smf_export_sysex_buffer;   // temporary, while parsing/gathering sysex message
@@ -261,6 +265,7 @@ class Replay {
    // <method.png>
    public method startSMFExport() {
       smf_export_tick_delta.allocAndFill(16, 0);
+      smf_export_abs_time.allocAndFill(16, 0);
       smf_export_buffer.offset = 0;
       smf_export_buffer.byteOrder = YAC_BIG_ENDIAN;
 
@@ -275,7 +280,7 @@ class Replay {
 
       // File header: SMF type
       smf_export_buffer.i8 = 0;
-      smf_export_buffer.i8 = smf_export_fmt;
+      smf_export_buffer.i8 = (smf_export_fmt > 0) ? 1 : 0;
 
       // File header: Num Tracks
       smf_export_buffer.i8 = 0;
@@ -313,6 +318,14 @@ class Replay {
    }
 
    // <method.png>
+   protected method smfAppendDeltaTime(Buffer _trkBuf, int _trackIdx, boolean _bDebug) {
+      // if(_bDebug)
+      //    trace "xxx smfAppendDeltaTime: ["+_trackIdx+":"+smf_export_abs_time.get(_trackIdx)+"] dt="+smf_export_tick_delta.get(_trackIdx);
+      MIDIFileUtils.WriteVariableLength(_trkBuf, smf_export_tick_delta.get(_trackIdx));
+      smf_export_tick_delta[_trackIdx] = 0;
+   }
+
+   // <method.png>
    public method finishSMFExport() {
 
       int trackIdx = 0;
@@ -320,7 +333,7 @@ class Replay {
       foreach trkBuf in smf_export_track_buffers
       {
          // End of track
-         smfAppendDeltaTime(trkBuf, trackIdx);
+         smfAppendDeltaTime(trkBuf, trackIdx, false/*bDebug*/);
          // // trkBuf.i8 = 0x00;  // Delta-time
          trkBuf.i8 = 0xFF;  // Meta
          trkBuf.i8 = 0x2F;  // "End of Track"
@@ -361,7 +374,9 @@ class Replay {
    }
 
    // <method.png>
-   protected method appendEventsToSMFBuffer(Buffer _buffer) {
+   protected method appendEventsToSMFBuffer(Buffer _buffer, byte _vstDevIdx) {
+      // 'vstDevIdx': 0(a)..15(p), or -1
+
       int off = 0;
       int numEv = 0;
       int syxStart = -1;
@@ -397,7 +412,7 @@ class Replay {
                smf_export_sysex_buffer.offset = 0;
                if(b_smf_allow_sysex)
                {
-                  smfAppendDeltaTime(trkBuf, 0/*trackIdx*/);
+                  smfAppendDeltaTime(trkBuf, 0/*trackIdx*/, false/*bDebug*/);
                   trkBuf.i8 = 0xF0;
                }
             }
@@ -426,14 +441,20 @@ class Replay {
          }
          else
          {
-            int trackIdx = (1 == smf_export_fmt) ? (msg & 15) : 0;
+            int trackIdx;
+            if(1 == smf_export_fmt)
+               trackIdx = (msg & 15);  // midi channel per track
+            if(2 == smf_export_fmt)
+               trackIdx = _vstDevIdx & 15;  // vst_a..vst_p dev per track (16 channels each)
+            else
+               trackIdx = 0;  // single track
             trkBuf <= smf_export_track_buffers.get(trackIdx);
 
             switch(msg & 0xF0)
             {
                case 0x80:
                   // Note Off
-                  smfAppendDeltaTime(trkBuf, trackIdx);
+                  smfAppendDeltaTime(trkBuf, trackIdx, false/*bDebug*/);
                   trkBuf.i8 = msg;
                   trkBuf.i8 = _buffer.peekI8(off +1);  // note
                   trkBuf.i8 = _buffer.peekI8(off +2);  // vel
@@ -443,7 +464,7 @@ class Replay {
 
                case 0x90:
                   // Note On
-                  smfAppendDeltaTime(trkBuf, trackIdx);
+                  smfAppendDeltaTime(trkBuf, trackIdx, true/*bDebug*/);
                   trkBuf.i8 = msg;
                   trkBuf.i8 = _buffer.peekI8(off +1);  // note
                   trkBuf.i8 = _buffer.peekI8(off +2);  // vel
@@ -453,7 +474,7 @@ class Replay {
 
                case 0xA0:
                   // Polyphonic aftertouch
-                  smfAppendDeltaTime(trkBuf, trackIdx);
+                  smfAppendDeltaTime(trkBuf, trackIdx, false/*bDebug*/);
                   trkBuf.i8 = msg;
                   trkBuf.i8 = _buffer.peekI8(off +1);  // note
                   trkBuf.i8 = _buffer.peekI8(off +2);  // val
@@ -462,7 +483,7 @@ class Replay {
 
                case 0xB0:
                   // CC
-                  smfAppendDeltaTime(trkBuf, trackIdx);
+                  smfAppendDeltaTime(trkBuf, trackIdx, false/*bDebug*/);
                   trkBuf.i8 = msg;
                   trkBuf.i8 = _buffer.peekI8(off +1);  // ctl
                   trkBuf.i8 = _buffer.peekI8(off +2);  // val
@@ -471,7 +492,7 @@ class Replay {
 
                case 0xC0:
                   // Program change
-                  smfAppendDeltaTime(trkBuf, trackIdx);
+                  smfAppendDeltaTime(trkBuf, trackIdx, false/*bDebug*/);
                   trkBuf.i8 = msg;
                   trkBuf.i8 = _buffer.peekI8(off +1);  // prgnr
                   off += 2;
@@ -479,7 +500,7 @@ class Replay {
 
                case 0xD0:
                   // Channel pressure
-                  smfAppendDeltaTime(trkBuf, trackIdx);
+                  smfAppendDeltaTime(trkBuf, trackIdx, false/*bDebug*/);
                   trkBuf.i8 = msg;
                   trkBuf.i8 = _buffer.peekI8(off +1);  // pressure
                   off += 2;
@@ -487,7 +508,7 @@ class Replay {
 
                case 0xE0:
                   // Pitch bend
-                  smfAppendDeltaTime(trkBuf, trackIdx);
+                  smfAppendDeltaTime(trkBuf, trackIdx, false/*bDebug*/);
                   trkBuf.i8 = msg;
                   trkBuf.i8 = _buffer.peekI8(off +1);  // value LSB
                   trkBuf.i8 = _buffer.peekI8(off +2);  // value MSB
@@ -515,13 +536,8 @@ class Replay {
    }
 
    // <method.png>
-   protected method smfAppendDeltaTime(Buffer _trkBuf, int _trackIdx) {
-      MIDIFileUtils.WriteVariableLength(_trkBuf, smf_export_tick_delta.get(_trackIdx));
-      smf_export_tick_delta[_trackIdx] = 0;
-   }
-
-   // <method.png>
-   public method appendToSMFBuffer(Buffer _cmdBuffer, Buffer _noteBuffer) {
+   public method appendToSMFBuffer(Buffer _cmdBuffer, Buffer _noteBuffer, byte _vstDevIdx) {
+      // 'vstDevIdx': 0(a)..15(p), or -1
 
       // trace "xxx appendToSMFBuffer ENTER";
 
@@ -535,12 +551,12 @@ class Replay {
          // trace "xxx 1 smf_export_buffer.offset="+smf_export_buffer.offset;
          if(_cmdBuffer.offset > 0)
          {
-            appendEventsToSMFBuffer(_cmdBuffer);
+            appendEventsToSMFBuffer(_cmdBuffer, _vstDevIdx);
          }
 
          if(_noteBuffer.offset > 0)
          {
-            appendEventsToSMFBuffer(_noteBuffer);
+            appendEventsToSMFBuffer(_noteBuffer, _vstDevIdx);
          }
 
          // trace "xxx _cmdBuffer.offset="+_cmdBuffer.offset;
@@ -1737,7 +1753,7 @@ class Replay {
                         //    // Utils.HexDump(cmd_buffer, 0, cmd_buffer.offset);
                         // }
 
-                        appendToSMFBuffer(outDev.cmd_buffer, outDev.note_buffer);
+                        appendToSMFBuffer(outDev.cmd_buffer, outDev.note_buffer, outDev.getVSTDevIdx());
                      // }
                   }
 
@@ -1760,9 +1776,10 @@ class Replay {
          if(b_smf_export)
          {
             int smfTrackIdx = 0;
-            loop(16/*midi ch*/)
+            loop(16/*midi-ch or vst-dev-idx*/)
             {
                smf_export_tick_delta[smfTrackIdx] = smf_export_tick_delta[smfTrackIdx] + 1;
+               smf_export_abs_time  [smfTrackIdx] = smf_export_abs_time  [smfTrackIdx] + 1;
                smfTrackIdx++;
             }
          }
