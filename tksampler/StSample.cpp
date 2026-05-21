@@ -1807,11 +1807,11 @@ sSI StSample::getTimestretchGrainWindowType(void) {
    return timestretch_grain_window_type;
 }
 
-void StSample::_setTimestretchSmpOffInterpolMode(sUI _mode) {
+void StSample::setTimestretchSmpOffInterpolMode(sUI _mode) {
    timestretch_smpoff_interpol_mode = _mode;
 }
 
-sUI StSample::_getTimestretchSmpOffInterpolMode(void) {
+sUI StSample::getTimestretchSmpOffInterpolMode(void) {
    return timestretch_smpoff_interpol_mode;
 }
 

@@ -1412,8 +1412,8 @@ YC class StSample : public YAC_Object {
    YM sSI  getTimestretchGrainWindowType (void);
 
    // see STSAMPLE_TIMESTRETCH_SMPOFF_INTERPOL_NONE|LOW|MID|HIGH
-   YM void _setTimestretchSmpOffInterpolMode (sUI _mode);
-   YM sUI  _getTimestretchSmpOffInterpolMode (void);
+   YM void setTimestretchSmpOffInterpolMode (sUI _mode);
+   YM sUI  getTimestretchSmpOffInterpolMode (void);
 
    // -1..1
    YM void setTimestretchBend (sF32 _amount);
