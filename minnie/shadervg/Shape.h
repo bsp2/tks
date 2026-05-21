@@ -42,14 +42,16 @@ YG("shadervg");
 
 
 class ShaderVG_Shape {
-
+#define MAX_SHAPE_NAME_CHARS 64
   public:
    ShaderVG_Shader shape_shader;
    sBool b_builtin;
 #ifdef SHADERVG_OBJECT_LABELS
-   const char *name;
+   char name[MAX_SHAPE_NAME_CHARS];
 #endif // SHADERVG_OBJECT_LABELS
-
+#ifdef SHADERVG_DELAYED_PROGRAM_QUERIES
+   sBool b_queued_queries;
+#endif // SHADERVG_DELAYED_PROGRAM_QUERIES
    sSI shape_a_vertex;
    sSI shape_a_vertex_n;   // optional
    sSI shape_a_vertex_nn;  // optional
@@ -126,6 +128,8 @@ class ShaderVG_Shape {
    ShaderVG_Shape(void);
    virtual ~ShaderVG_Shape();
 
+   void copyName (const char *_name);
+
    void allocScratchBuffer (sSI _aVertex, Dsdvg_buffer_ref_t _scratchBuf, sUI _numBytes);
 
    static void EmitQuadVertices (Dsdvg_buffer_ref_t _vb,
@@ -166,15 +170,21 @@ class ShaderVG_Shape {
                                            sF32 _aaRange
                                            );
 
+  protected:
    virtual sBool validateShapeShader (void);
 
+   sBool queryLocationsAndValidate (void);
+
+  public:
    sBool createShapeShader (const char *_sVS, const char *_sFS);
 
    void updatePaintUniforms (const shadervg_paint_t *_paint);
 
    virtual sBool onOpen (void);
 
-   sSI bindAndReturnVertexAttrib (void);
+   sBool bindShader (void);
+   sSI bindShaderAndReturnVertexAttrib (void);
+   void unbindShader (void);
 
    void drawTrianglesFillFlatUniformVBO32Paint (sUI              _vboId,
                                                 sUI              _byteOffset,

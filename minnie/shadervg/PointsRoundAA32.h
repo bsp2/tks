@@ -138,7 +138,8 @@ class PointsRoundAA32 : public ShaderVG_Shape {
 
       sdvg_BindVBO(_vboId);
 
-      shape_shader.bind();
+      if(!bindShader())
+         return;
 
       Dsdvg_uniform_mat4(shape_u_transform, _mvpMatrix);
       Dsdvg_uniform_4f(shape_u_color_stroke, _strokeR, _strokeG, _strokeB, _strokeA);

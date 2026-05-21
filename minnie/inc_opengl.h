@@ -8,7 +8,7 @@
 #endif // YAC_WIN32
 #ifdef SHADERVG_GLES
 #define GL_GLEXT_PROTOTYPES defined
-#include <GLES3/gl3.h>
+#include <GLES3/gl32.h>
 #include <GLES3/gl2ext.h>
 #include <EGL/egl.h>
 #else

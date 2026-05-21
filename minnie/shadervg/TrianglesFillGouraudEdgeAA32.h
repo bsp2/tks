@@ -137,7 +137,8 @@ class TrianglesFillGouraudEdgeAA32 : public ShaderVG_Shape {
 
       sdvg_BindVBO(_vboId);
 
-      shape_shader.bind();
+      if(!bindShader())
+         return;
 
       Dsdvg_uniform_mat4(shape_u_transform, _mvpMatrix);
       Dsdvg_uniform_1f(shape_u_aa, _bAA ? 1.0f : 0.0f);

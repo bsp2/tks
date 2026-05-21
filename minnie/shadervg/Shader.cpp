@@ -148,8 +148,8 @@ sBool ShaderVG_Shader::create(const char *_sVert, const char *_sFrag
    // Link program
    Dsdvg_glcall(glLinkProgram(prg_id));
    {
+#ifndef SHADERVG_DELAYED_PROGRAM_QUERIES
       GLint val = 0;
-
       Dsdvg_glcall(glGetProgramiv(prg_id, GL_LINK_STATUS, &val));
 
       if(GL_TRUE == val)
@@ -180,6 +180,9 @@ sBool ShaderVG_Shader::create(const char *_sVert, const char *_sFrag
 
          // Failed
       }
+#else
+      ret = YAC_TRUE;
+#endif // SHADERVG_DELAYED_PROGRAM_QUERIES
    }
 
    // (note) decrements ref-count (shaders will still be referenced by program)

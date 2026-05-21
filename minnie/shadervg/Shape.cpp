@@ -29,6 +29,10 @@
 #include <stdarg.h>
 #include <math.h>
 
+#ifdef SHADERVG_OBJECT_LABELS
+#include <string.h>
+#endif // SHADERVG_OBJECT_LABELS
+
 #include "../inc_yac.h"
 
 #define MINNIE_SKIP_TYPEDEFS  defined
@@ -47,6 +51,10 @@
 ShaderVG_Shape::ShaderVG_Shape(void) {
 
    b_builtin = YAC_TRUE;
+
+#ifdef SHADERVG_DELAYED_PROGRAM_QUERIES
+   b_queued_queries = YAC_FALSE;
+#endif // SHADERVG_DELAYED_PROGRAM_QUERIES
 
    shape_a_vertex     = -1;
    shape_a_vertex_n   = -1;
@@ -121,6 +129,14 @@ ShaderVG_Shape::ShaderVG_Shape(void) {
 }
 
 ShaderVG_Shape::~ShaderVG_Shape() {
+}
+
+void ShaderVG_Shape::copyName(const char *_name) {
+#ifdef SHADERVG_OBJECT_LABELS
+   strncpy(name, _name, MAX_SHAPE_NAME_CHARS);
+#else
+   (void)_name;
+#endif // SHADERVG_OBJECT_LABELS
 }
 
 void ShaderVG_Shape::allocScratchBuffer(sSI _aVertex, Dsdvg_buffer_ref_t _scratchBuf, sUI _numBytes) {
@@ -530,19 +546,15 @@ sBool ShaderVG_Shape::validateShapeShader(void) {
       ;
 }
 
-sBool ShaderVG_Shape::createShapeShader(const char *_sVS, const char *_sFS) {
+sBool ShaderVG_Shape::queryLocationsAndValidate(void) {
 
-   Dsdvg_debugprintfvv("[trc] ShaderVG_Shape::createShapeShader: ENTER\n");
-
-   if(!shape_shader.create(_sVS, _sFS
-#ifdef SHADERVG_OBJECT_LABELS
-                           , name
-#endif // SHADERVG_OBJECT_LABELS
-                           ))
+#ifdef SHADERVG_DELAYED_PROGRAM_QUERIES
+   if(b_queued_queries)
    {
-      Dsdvg_errorprintf("[---] ShaderVG_Shape::createShapeShader: failed to create shape_shader\n");
-      return YAC_FALSE;
+      Dsdvg_debugprintf("ShaderVG_Shape::queryLocationsAndValidate: exec queued queries\n");
+      b_queued_queries = YAC_FALSE;
    }
+#endif // SHADERVG_DELAYED_PROGRAM_QUERIES
 
    shape_a_vertex    = shape_shader.getAttribLocation("a_vertex");
    shape_a_vertex_n  = shape_shader.getAttribLocation("a_vertex_n");   // optional
@@ -616,6 +628,35 @@ sBool ShaderVG_Shape::createShapeShader(const char *_sVS, const char *_sFS) {
       Dsdvg_debugprintfvv("[trc] ShaderVG_Shape: shape_a_vertex=%d shape_u_transform=%d\n", shape_a_vertex, shape_u_transform);
       Dsdvg_errorprintf("[---] ShaderVG_Shape::createShapeShader: validateShapeShader() failed\n");
    }
+
+   sdvg_int_debug_print_mem_info();
+
+   return r;
+}
+
+sBool ShaderVG_Shape::createShapeShader(const char *_sVS, const char *_sFS) {
+   sBool r = YAC_TRUE;
+
+   Dsdvg_debugprintfvv("[trc] ShaderVG_Shape::createShapeShader: ENTER\n");
+
+#ifdef SHADERVG_DELAYED_PROGRAM_QUERIES
+   b_queued_queries = YAC_TRUE;
+#endif // SHADERVG_DELAYED_PROGRAM_QUERIES
+
+   if(!shape_shader.create(_sVS, _sFS
+#ifdef SHADERVG_OBJECT_LABELS
+                           , name
+#endif // SHADERVG_OBJECT_LABELS
+                           ))
+   {
+      Dsdvg_errorprintf("[---] ShaderVG_Shape::createShapeShader: failed to create shape_shader\n");
+      return YAC_FALSE;
+   }
+
+#ifndef SHADERVG_DELAYED_PROGRAM_QUERIES
+   r = r && queryLocationsAndValidate();
+#endif // SHADERVG_DELAYED_PROGRAM_QUERIES
+
    return r;
 }
 
@@ -697,9 +738,29 @@ sBool ShaderVG_Shape::onOpen(void) {
    return YAC_FALSE;
 }
 
-sSI ShaderVG_Shape::bindAndReturnVertexAttrib(void) {
-   shape_shader.bind();
-   return shape_a_vertex;
+sBool ShaderVG_Shape::bindShader(void) {
+   sBool r = YAC_TRUE;
+#ifdef SHADERVG_DELAYED_PROGRAM_QUERIES
+   if(0u == shape_shader.prg_id)
+   {
+      Dsdvg_errorprintf("[---] ShaderVG_Shape::bindShader: program is 0 (name=\"%s\")\n", name);
+   }
+   if(b_queued_queries)
+      r = r && queryLocationsAndValidate();
+   if(r)
+#endif // SHADERVG_DELAYED_PROGRAM_QUERIES
+      shape_shader.bind();
+   return r;
+}
+
+sSI ShaderVG_Shape::bindShaderAndReturnVertexAttrib(void) {
+   if(bindShader())
+      return shape_a_vertex;
+   return -1;
+}
+
+void ShaderVG_Shape::unbindShader(void) {
+   shape_shader.unbind();
 }
 
 void ShaderVG_Shape::drawTrianglesFillFlatUniformVBO32Paint(sUI              _vboId,
@@ -718,7 +779,8 @@ void ShaderVG_Shape::drawTrianglesFillFlatUniformVBO32Paint(sUI              _vb
 
    sdvg_BindVBO(_vboId);
 
-   shape_shader.bind();
+   if(!bindShader())
+      return;
 
    Dsdvg_uniform_mat4(shape_u_transform, _mvpMatrix);
    Dsdvg_uniform_4f(shape_u_color_fill, _fillR, _fillG, _fillB, _fillA);
@@ -753,7 +815,8 @@ void ShaderVG_Shape::drawTrianglesFillFlatUniformVBO14_2Paint(sUI              _
 
    sdvg_BindVBO(_vboId);
 
-   shape_shader.bind();
+   if(!bindShader())
+      return;
 
    Dsdvg_uniform_mat4(shape_u_transform, _mvpMatrix);
    Dsdvg_uniform_4f(shape_u_color_fill, _fillR, _fillG, _fillB, _fillA);
@@ -803,7 +866,8 @@ void ShaderVG_Shape::drawRectFillAAVBO32Paint(sUI              _vboId,
    // Outer border
    if(_numVertsBorder > 0u && b_draw_border)
    {
-      shape_shader.bind();
+      if(!bindShader())
+         return;
 
       Dsdvg_uniform_mat4(shape_u_transform, _mvpMatrix);
       Dsdvg_uniform_2f(shape_u_center,   _centerX, _centerY);
@@ -891,7 +955,8 @@ void ShaderVG_Shape::drawRectFillAAPaint(Dsdvg_buffer_ref_t _scratchBuf,
    }
 
    // Outer corners
-   shape_shader.bind();
+   if(!bindShader())
+      return;
 
    Dsdvg_uniform_mat4(shape_u_transform, _mvpMatrix);
    Dsdvg_uniform_2f(shape_u_center,   _centerX, _centerY);
@@ -975,7 +1040,8 @@ void ShaderVG_Shape::drawRectStrokeAAVBO32Paint(sUI              _vboId,
    // Outer border
    if(_numVertsBorder > 0u)
    {
-      shape_shader.bind();
+      if(!bindShader())
+         return;
 
       Dsdvg_uniform_mat4(shape_u_transform, _mvpMatrix);
       Dsdvg_uniform_2f(shape_u_center,   _centerX, _centerY);
@@ -1029,7 +1095,8 @@ void ShaderVG_Shape::drawRectStrokeAAPaint(Dsdvg_buffer_ref_t _scratchBuf,
    sBool bSingle = ((_sizeX*_sizeY) <= RECT_SINGLE_AREA_THRESHOLD);
 
    // Outer corners
-   shape_shader.bind();
+   if(!bindShader())
+      return;
 
    Dsdvg_uniform_mat4(shape_u_transform, _mvpMatrix);
    Dsdvg_uniform_2f(shape_u_center,   _centerX, _centerY);
@@ -1126,7 +1193,8 @@ void ShaderVG_Shape::drawEllipseFillAAVBO32Paint(sUI              _vboId,
    // Outer border
    if(_numVertsBorder > 0u && b_draw_border)
    {
-      shape_shader.bind();
+      if(!bindShader())
+         return;
 
       Dsdvg_uniform_mat4(shape_u_transform, _mvpMatrix);
       Dsdvg_uniform_2f(shape_u_center,        _centerX, _centerY);
@@ -1224,7 +1292,8 @@ void ShaderVG_Shape::drawEllipseFillAAPaint(Dsdvg_buffer_ref_t _scratchBuf,
    }
 
    // Outer border
-   shape_shader.bind();
+   if(!bindShader())
+      return;
 
    Dsdvg_uniform_mat4(shape_u_transform, _mvpMatrix);
    Dsdvg_uniform_2f(shape_u_center,        _centerX, _centerY);
@@ -1335,7 +1404,8 @@ void ShaderVG_Shape::drawEllipseStrokeAAVBO32Paint(sUI              _vboId,
    // Outer border
    if(_numVertsBorder > 0u)
    {
-      shape_shader.bind();
+      if(!bindShader())
+         return;
 
       Dsdvg_uniform_mat4(shape_u_transform, _mvpMatrix);
       Dsdvg_uniform_2f(shape_u_center,   _centerX, _centerY);
@@ -1383,7 +1453,7 @@ void ShaderVG_Shape::drawEllipseStrokeAAVBO32Paint(sUI              _vboId,
 
       Dsdvg_attrib_disable(shape_a_vertex);
 
-      shape_shader.unbind();
+      unbindShader();
    }
 }
 
@@ -1418,7 +1488,8 @@ void ShaderVG_Shape::drawEllipseStrokeAAPaint(Dsdvg_buffer_ref_t _scratchBuf,
       ;
 
    // Outer corners
-   shape_shader.bind();
+   if(!bindShader())
+      return;
 
    Dsdvg_uniform_mat4(shape_u_transform, _mvpMatrix);
    Dsdvg_uniform_2f(shape_u_center,   _centerX, _centerY);
@@ -1550,7 +1621,8 @@ void ShaderVG_Shape::drawRoundRectFillAAVBO32Paint(sUI              _vboId,
    // Outer border
    if(_numVertsBorder > 0u && b_draw_border)
    {
-      shape_shader.bind();
+      if(!bindShader())
+         return;
 
       Dsdvg_uniform_mat4(shape_u_transform, _mvpMatrix);
       Dsdvg_uniform_2f(shape_u_center,        _centerX, _centerY);
@@ -1636,7 +1708,8 @@ void ShaderVG_Shape::drawRoundRectFillAAPaint(Dsdvg_buffer_ref_t _scratchBuf,
    }
 
    // Outer corners
-   shape_shader.bind();
+   if(!bindShader())
+      return;
 
    Dsdvg_uniform_mat4(shape_u_transform, _mvpMatrix);
    Dsdvg_uniform_2f(shape_u_center,        _centerX, _centerY);
@@ -1728,7 +1801,8 @@ void ShaderVG_Shape::drawRoundRectStrokeAAVBO32Paint(sUI              _vboId,
    // Outer border
    if(_numVertsBorder > 0u)
    {
-      shape_shader.bind();
+      if(!bindShader())
+         return;
 
       Dsdvg_uniform_mat4(shape_u_transform, _mvpMatrix);
       Dsdvg_uniform_2f(shape_u_center,   _centerX, _centerY);
@@ -1805,7 +1879,8 @@ void ShaderVG_Shape::drawRoundRectStrokeAAPaint(Dsdvg_buffer_ref_t _scratchBuf,
    sBool bSingle = ((_sizeX*_sizeY) <= 256);
 
    // Outer corners
-   shape_shader.bind();
+   if(!bindShader())
+      return;
 
    Dsdvg_uniform_mat4(shape_u_transform, _mvpMatrix);
    Dsdvg_uniform_2f(shape_u_center,   _centerX, _centerY);
@@ -1909,7 +1984,8 @@ void ShaderVG_Shape::drawPointsRoundAAVBO32Paint(sUI              _vboId,
    if(0u != _vboId)
       sdvg_BindVBO(_vboId);
 
-   shape_shader.bind();
+   if(!bindShader())
+      return;
 
    Dsdvg_uniform_mat4(shape_u_transform, _mvpMatrix);
    if(shape_u_color_fill >= 0)
@@ -1970,7 +2046,8 @@ void ShaderVG_Shape::drawPointsRoundAAVBO14_2Paint(sUI              _vboId,
    if(0u != _vboId)
       sdvg_BindVBO(_vboId);
 
-   shape_shader.bind();
+   if(!bindShader())
+      return;
 
    Dsdvg_uniform_mat4(shape_u_transform, _mvpMatrix);
    if(shape_u_color_fill >= 0)

@@ -236,7 +236,8 @@ class RectFillStrokeAA : public ShaderVG_Shape {
       // Outer border
       if(_numVertsBorder > 0u && b_draw_border)
       {
-         shape_shader.bind();
+         if(!bindShader())
+            return;
 
          Dsdvg_uniform_mat4(shape_u_transform, _mvpMatrix);
          Dsdvg_uniform_2f(shape_u_center,   _centerX, _centerY);
@@ -320,7 +321,8 @@ class RectFillStrokeAA : public ShaderVG_Shape {
       }
 
       // Outer corners
-      shape_shader.bind();
+      if(!bindShader())
+         return;
 
       Dsdvg_uniform_mat4(shape_u_transform, _mvpMatrix);
       Dsdvg_uniform_2f(shape_u_center,   _centerX, _centerY);

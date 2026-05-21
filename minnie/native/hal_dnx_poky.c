@@ -46,6 +46,10 @@
 #include <EGL/egl.h>
 #include "hal.h"
 
+#ifdef GL_TES_spirv_program_loader
+void sdvg_int_find_spirv_program_by_name (const char *_name, const void **retAddr, uint32_t *retSize);
+#endif // GL_TES_spirv_program_loader
+
 static EGLBoolean loc_config_init    (EGLDisplay _display, EGLConfig *_config);
 static EGLBoolean loc_egl_init       (EGLDisplay _display);
 static EGLSurface loc_surface_create (EGLDisplay _display, EGLConfig _config, sUI _w, sUI _h);
@@ -109,6 +113,16 @@ static sU32 loc_map_key_mod(sU32 _mod) {
    return _mod;
 }
 #endif // 0
+
+
+// ---------------------------------------------------------------------------- precompiled SPIR-V test
+#ifdef GL_TES_spirv_program_loader
+#include "all_spirv_shaders.c"
+
+static void loc_spirv_program_loader(const char *programName, const void **retOrNull, uint32_t *retSize) {
+   sdvg_int_find_spirv_program_by_name(programName, retOrNull, retSize);
+}
+#endif // GL_TES_spirv_program_loader
 
 
 // ---------------------------------------------------------------------------- loc_config_init

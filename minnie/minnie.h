@@ -1080,6 +1080,7 @@ void minnie_free(minnie_allocator_handle_t _allocator, void *_ptr) {
    fflush(stdout);
 }
 
+#if 0
 void *minnie_realloc(minnie_allocator_handle_t _allocator, void *_ptr, sU32 _sz) {
    Dallocprintf("[trc] minnie_realloc: ptr=%p sz=%u\n", _ptr, _sz);
 #if MINNIE_ALLOC_DEBUG
@@ -1102,7 +1103,7 @@ void *minnie_realloc(minnie_allocator_handle_t _allocator, void *_ptr, sU32 _sz)
    return ::realloc(_ptr, _sz);
 #endif // MINNIE_ALLOC_DEBUG
 }
-
+#endif
 #endif // MINNIE_CUSTOM_ALLOC
 
 

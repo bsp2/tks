@@ -84,7 +84,8 @@ class TrianglesFillFlat32 : public ShaderVG_Shape {
 
       sdvg_BindVBO(_vboId);
 
-      shape_shader.bind();
+      if(!bindShader())
+         return;
 
       Dsdvg_uniform_mat4(shape_u_transform, _mvpMatrix);
 

@@ -87,7 +87,8 @@ class TrianglesFillFlat14_2 : public ShaderVG_Shape {
 
       sdvg_BindVBO(_vboId);
 
-      shape_shader.bind();
+      if(!bindShader())
+         return;
 
       /* Dyac_host_printf("xxx u_transform=%d a_vertex=%d a_color=%d mvpMatrix=%p\n", shape_u_transform, shape_a_vertex, shape_a_color, _mvpMatrix); */
       Dsdvg_uniform_mat4(shape_u_transform, _mvpMatrix);

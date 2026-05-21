@@ -228,7 +228,8 @@ class EllipseStrokeAA : public ShaderVG_Shape {
       // Outer border
       if(_numVertsBorder > 0u)
       {
-         shape_shader.bind();
+         if(!bindShader())
+            return;
 
          Dsdvg_uniform_mat4(shape_u_transform, _mvpMatrix);
          Dsdvg_uniform_2f(shape_u_center,   _centerX, _centerY);

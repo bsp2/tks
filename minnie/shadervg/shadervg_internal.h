@@ -89,6 +89,12 @@ void sdvg_int_UnsetShapeIfBuiltIn (void);
 void sdvg_unmap_scratch_before_draw (void);
 void sdvg_remap_scratch_after_draw (void);
 #endif // SHADERVG_UNMAP_SCRATCHVBO_DURING_DRAW
+extern "C" {
+#ifdef GL_TES_spirv_program_loader
+void sdvg_int_find_spirv_program_by_name (const char *_name, const void **retAddr, uint32_t *retSize);
+#endif // GL_TES_spirv_program_loader
+void sdvg_int_debug_print_mem_info (void);
+}
 
 // ----------- OpenGL helper macros -----------
 #ifdef SHADERVG_USE_SCRATCHBUFFERSUBDATA

@@ -20,7 +20,7 @@
 // ----          SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 // ----
 // ---- info   : "minnie" test hardware abstraction layer
-// ---- note   : 
+// ---- note   :
 // ----
 // ----
 // ----
@@ -47,6 +47,10 @@
 #include "../inc_opengl.h"
 #include <EGL/egl.h>
 #include "hal.h"
+
+#ifdef GL_TES_spirv_program_loader
+void sdvg_int_find_spirv_program_by_name (const char *_name, const void **retAddr, uint32_t *retSize);
+#endif // GL_TES_spirv_program_loader
 
 static EGLBoolean loc_config_init    (EGLDisplay _display, EGLConfig *_config);
 static EGLBoolean loc_egl_init       (EGLDisplay _display);
@@ -136,6 +140,15 @@ void loc_mouse_handler(int32_t _mouseX, int32_t _mouseY, uint32_t _mouseButtons)
    (void)_mouseY;
    (void)_mouseButtons;
 }
+
+// ---------------------------------------------------------------------------- precompiled SPIR-V test
+#ifdef GL_TES_spirv_program_loader
+#include "all_spirv_shaders.c"
+
+static void loc_spirv_program_loader(const char *programName, const void **retOrNull, uint32_t *retSize) {
+   sdvg_int_find_spirv_program_by_name(programName, retOrNull, retSize);
+}
+#endif // GL_TES_spirv_program_loader
 
 // ---------------------------------------------------------------------------- loc_config_init
 static EGLBoolean loc_config_init(EGLDisplay _display, EGLConfig *_config) {
@@ -252,6 +265,10 @@ sBool hal_window_init(sUI _w, sUI _h) {
    }
 
    eglMakeCurrent(display, surface/*draw*/, surface/*read*/, context);
+
+#ifdef GL_TES_spirv_program_loader
+   glSPIRVProgramLoaderCallbackTES(&loc_spirv_program_loader);
+#endif // GL_TES_spirv_program_loader
 
    printf("GLES version=\"%s\".\n",    (const char*)glGetString(GL_VERSION));
    printf("GLES extensions=\"%s\".\n", (const char*)glGetString(GL_EXTENSIONS));

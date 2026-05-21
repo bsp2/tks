@@ -1143,7 +1143,7 @@ static void Test_36(void) {
       rx = sMIN(rx, ry);
       ry = rx;
 
-      int numSeg = (aOff / (sM_PIf/4.0f)) * (rMax/32.0f);
+      int numSeg = (int)((aOff / (sM_PIf/4.0f)) * (rMax/32.0f));
       // int numSeg = (aOff / (PI/8)) * (rMax/64.0f);
       minSeg(1 + numSeg);
       totalNumSeg += numSeg;
