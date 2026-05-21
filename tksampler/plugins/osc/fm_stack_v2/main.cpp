@@ -1,15 +1,15 @@
 // ----
 // ---- file   : main.cpp
 // ---- author : Bastian Spiegel <bs@tkscript.de>
-// ---- legal  : (c) 2023-2024 by Bastian Spiegel.
+// ---- legal  : (c) 2023-2026 by Bastian Spiegel.
 // ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
 // ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
 // ----
-// ---- info   : 4op FM stack (LORES variant)
+// ---- info   : 4op FM-Stack synth
 // ----
 // ---- created: 21Aug2023
 // ---- changed: 22Aug2023, 23Aug2023, 24Aug2023, 25Aug2023, 26Aug2023, 01Sep2023, 03Sep2023
-// ----          06Sep2023, 19Sep2023, 14Oct2024
+// ----          06Sep2023, 19Sep2023, 14Oct2024, 18May2026, 19May2026
 // ----
 // ----
 // ----
@@ -21,15 +21,15 @@ typedef signed   int sSI;
 typedef signed   int sBool;
 typedef float        sF32;
 
-extern st_plugin_info_t *fm_stack_init_lores     (void);
-extern st_plugin_info_t *fm_stack_init_loresh    (void);
-extern st_plugin_info_t *fm_stack_init_medres    (void);
-extern st_plugin_info_t *fm_stack_init_medres_h  (void);
-extern st_plugin_info_t *fm_stack_init_medres_hpe(void);
-extern st_plugin_info_t *fm_stack_init_hires     (void);
-extern st_plugin_info_t *fm_stack_init_hires_le  (void);
-extern st_plugin_info_t *fm_stack_init_hires_lm  (void);
-extern st_plugin_info_t *fm_stack_init_hires     (void);
+extern "C" st_plugin_info_t *fm_stack_init_lores     (void);
+extern "C" st_plugin_info_t *fm_stack_init_loresh    (void);
+extern "C" st_plugin_info_t *fm_stack_init_medres    (void);
+extern "C" st_plugin_info_t *fm_stack_init_medresh   (void);
+extern "C" st_plugin_info_t *fm_stack_init_medres_hpe(void);
+extern "C" st_plugin_info_t *fm_stack_init_hires     (void);
+extern "C" st_plugin_info_t *fm_stack_init_hires_le  (void);
+extern "C" st_plugin_info_t *fm_stack_init_hires_lm  (void);
+extern "C" st_plugin_info_t *fm_stack_init_hires     (void);
 
 #if 0  // noisy, or quality gains do not justify increased CPU usage
 extern st_plugin_info_t *fm_stack_init_ulores    (void);
@@ -126,7 +126,7 @@ const sF32 *get_env_shape_lut(sF32 _s) {
 }
 
 extern "C" {
-ST_PLUGIN_APICALL st_plugin_info_t *ST_PLUGIN_API st_plugin_init(unsigned int _pluginIdx) {
+ST_PLUGIN_APICALL void fm_stack_init_common(void) {
    static sBool bInit = 1;
 
    if(bInit)
@@ -135,6 +135,12 @@ ST_PLUGIN_APICALL st_plugin_info_t *ST_PLUGIN_API st_plugin_init(unsigned int _p
       loc_init_vel_curve_lut();
       calc_env_shapes(loc_env_shape_lut);
    }
+}
+
+#ifndef STFX_SKIP_MAIN_INIT
+ST_PLUGIN_APICALL st_plugin_info_t *ST_PLUGIN_API st_plugin_init(unsigned int _pluginIdx) {
+
+   fm_stack_init_common();
 
    switch(_pluginIdx)
    {
@@ -148,7 +154,7 @@ ST_PLUGIN_APICALL st_plugin_info_t *ST_PLUGIN_API st_plugin_init(unsigned int _p
          return fm_stack_init_medres();
 
       case 3u:
-         return fm_stack_init_medres_h();
+         return fm_stack_init_medresh();
 
       case 4u:
          return fm_stack_init_medres_hpe();
@@ -178,4 +184,5 @@ ST_PLUGIN_APICALL st_plugin_info_t *ST_PLUGIN_API st_plugin_init(unsigned int _p
    }
    return NULL;
 }
+#endif // STFX_SKIP_MAIN_INIT
 } // extern "C"

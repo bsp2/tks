@@ -12,7 +12,7 @@
 // ----          06Sep2023, 07Sep2023, 08Sep2023, 09Sep2023, 10Sep2023, 11Sep2023, 12Sep2023
 // ----          13Sep2023, 16Sep2023, 19Sep2023, 20Sep2023, 21Sep2023, 11Nov2023, 30Nov2023
 // ----          15Dec2023, 11Jan2024, 21Jan2024, 07Feb2024, 28Apr2024, 14Oct2024, 17Apr2026
-// ----          26Apr2026
+// ----          26Apr2026, 18May2026
 // ----
 // ----
 // ----
@@ -4585,6 +4585,7 @@ static void loc_calc_sine_tbl(void) {
       loc_sine_tbl_f[k++] = -loc_sine_tbl_f[j++];
 }
 
+extern "C" {
 st_plugin_info_t *FMSTACK_INIT(void) {
    FMSTACK_INFO_T *ret = (FMSTACK_INFO_T *)malloc(sizeof(FMSTACK_INFO_T));
 
@@ -5308,3 +5309,4 @@ st_plugin_info_t *FMSTACK_INIT(void) {
 
    return &ret->base;
 }
+} // extern "C"
