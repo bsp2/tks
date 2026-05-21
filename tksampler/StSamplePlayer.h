@@ -18,7 +18,7 @@
 // ----          28Apr2021, 20May2021, 17Jul2021, 01Aug2021, 10Aug2021, 30Aug2021, 10Dec2022
 // ----          20Dec2022, 12Apr2023, 20Aug2023, 07Sep2023, 21Jan2024, 28Sep2024, 01Oct2024
 // ----          03Oct2024, 31Oct2024, 15Nov2024, 14Jan2025, 28May2025, 29May2025, 30May2025
-// ----          13Jun2025, 16Jan2026, 09Apr2026
+// ----          13Jun2025, 16Jan2026, 09Apr2026, 19May2026
 // ----
 // ----
 // ----
@@ -1015,6 +1015,8 @@ YC class StSamplePlayer : public YAC_Object {
    // for poly-pressure (STSAMPLEPLAYER_PERFCTL_PRESSURE)
    YM void updatePerfCtlByKey (sSI _voiceKey, sUI _idx, sF32 _val);
 
+   // for poly-pressure (STSAMPLEPLAYER_PERFCTL_PRESSURE) (in standalone replay)
+   YM void updatePerfCtlByNote (sSI _note, sUI _idx, sF32 _val);
 
    /* @method setSustainPedal,float val
       Update sustain pedal state (0..1) (for zone mod matrix)

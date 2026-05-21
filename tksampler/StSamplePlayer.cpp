@@ -20,6 +20,7 @@
 // ----          10Dec2022, 20Dec2022, 05Feb2023, 12Apr2023, 07Sep2023, 08Sep2023, 17Sep2023
 // ----          21Jan2024, 20Sep2024, 28Sep2024, 01Oct2024, 31Oct2024, 15Nov2024, 11Dec2024
 // ----          14Jan2025, 28May2025, 30May2025, 13Jun2025, 16Jan2026, 09Apr2026, 10Apr2026
+// ----          19May2026
 // ----
 // ----
 // ----
@@ -3084,6 +3085,20 @@ void StSamplePlayer::updatePerfCtlByKey(sSI _key, sUI _idx, sF32 _val) {
       Dbeginloopvoicesbykey;
       v->_updatePerfCtlPolyPressure(_val);
       Dendloopvoicesbykey;
+   }
+}
+
+void StSamplePlayer::updatePerfCtlByNote(sSI _note, sUI _idx, sF32 _val) {
+   if(STSAMPLEPLAYER_PERFCTL_PRESSURE == _idx)
+   {
+      for(sUI i = 0u; i < num_voices; i++)
+      {
+         StSampleVoice *v = voices[i];
+         if(v->isAllocated() && v->note == _note)
+         {
+            v->_updatePerfCtlPolyPressure(_val);
+         }
+      }
    }
 }
 
