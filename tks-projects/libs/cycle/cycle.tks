@@ -28,7 +28,7 @@
 // ----          09Nov2024, 22Nov2024, 03Dec2024, 04Dec2024, 06Dec2024, 12Dec2024, 13Dec2024
 // ----          15Dec2024, 17Dec2024, 19Dec2024, 20Dec2024, 21Dec2024, 22Dec2024, 23Dec2024
 // ----          09Jan2025, 10Jan2025, 11Jan2025, 13Jan2025, 15Jan2025, 29Jan2025, 31Jan2025
-// ----          17Jan2026, 31Jan2026, 25Apr2026, 14May2026, 15May2026
+// ----          17Jan2026, 31Jan2026, 25Apr2026, 14May2026, 15May2026, 22May2026
 // ----
 // ----
 // ----
@@ -50,6 +50,51 @@ boolean b_export_c_no_static;  // workaround for vlink/gcc-compiled-obj "unsuppo
 //  (note) in plugin mode, exported sample data is always stored in 32bit float format
 boolean b_plugin;
 boolean b_have_plugin_id;  // true=plugin id was set to non-empty string (temporary during parseString())
+String s_export_c_all_headers;  // $(HEADER), all patches
+
+// becomes true after emitting utility fxn
+boolean b_have_sine_tbl;
+boolean b_have_sine_tbl_i;
+boolean b_have_win_hse;
+boolean b_have_win_hse_1_36;
+boolean b_have_win_hse_2;
+boolean b_have_win_hse_3;
+boolean b_have_win_hse_5;
+boolean b_have_win_hse_7;
+boolean b_calc_win_hse_done;
+boolean b_have_log;
+boolean b_have_pow;
+boolean b_have_lle;
+boolean b_have_wrapf;
+boolean b_have_foldf;
+boolean b_have_bts;
+boolean b_have_bts_int;
+boolean b_have_int_module;
+boolean b_have_float_fallback;
+boolean b_have_trc;
+
+function ResetHaveFlags() {
+   // becomes true after emitting utility fxn
+   b_have_sine_tbl       = false;
+   b_have_sine_tbl_i     = false;
+   b_have_win_hse        = false;
+   b_have_win_hse_1_36   = false;
+   b_have_win_hse_2      = false;
+   b_have_win_hse_3      = false;
+   b_have_win_hse_5      = false;
+   b_have_win_hse_7      = false;
+   b_calc_win_hse_done   = false;
+   b_have_log            = false;
+   b_have_pow            = false;
+   b_have_lle            = false;
+   b_have_wrapf          = false;
+   b_have_foldf          = false;
+   b_have_bts            = false;
+   b_have_bts_int        = false;
+   b_have_int_module     = false;
+   b_have_float_fallback = false;
+   b_have_trc            = false;
+}
 
 use namespace st2;
 
@@ -1461,9 +1506,14 @@ class CyModule : CyDefs {
                else
                {
                   if(_script.oversample_factor > 1)
+                  {
                      _out.append(_sDstVar+" *= mathPowerf("+sRHS+", "+FloatToString(1.0f / _script.oversample_factor)+");\n");
+                     _script.b_use_pow = true;
+                  }
                   else
+                  {
                      _out.append(_sDstVar+" *= "+sRHS+";\n");
+                  }
                }
             }
             break;
@@ -1798,9 +1848,14 @@ class CyModule : CyDefs {
                if(_script.oversample_factor > 1)
                {
                   if(b_export_c)
+                  {
                      _out.append(_sDstVar+" = Dmulsw_shr("+_sDstVar+", ("+short_type+")powf((float)"+sRHS+", "+FloatToString(1.0f / _script.oversample_factor)+"));\n");
+                  }
                   else
+                  {
                      _out.append(_sDstVar+" = Dmulsw_shr("+_sDstVar+", ("+short_type+")mathPowerf((float)"+sRHS+", "+FloatToString(1.0f / _script.oversample_factor)+"));\n");
+                     _script.b_use_pow = true;
+                  }
                }
                else
                   _out.append(_sDstVar+" *= "+sRHS+";\n");
@@ -9503,6 +9558,7 @@ class CyModuleP2s : CyModule {
          if(b_plugin && inKbd.isConnected())
          {
             _out.append(_sDstVar+" *= (mathPowerf(2.0f, "+sVarExp+") - 1.0f);\n");
+            _script.b_use_pow = true;
             // (todo) assumes that exp=7, need to scale if it is not
             sVarKbd <= _script.allocTmpVar(_out, "kbd");
             inKbd.emitFloat(_script, _out, sVarKbd);
@@ -15025,7 +15081,10 @@ class CyModuleVar : CyModule {
       else
       {
          // hifi/float mode => var is float
-         _out.append(_sDstVar+" = var_"+var_ref.id+";\n");
+         if(b_export_c)
+            _out.append(_sDstVar+" = var_"+var_ref.id+export_c_prefix+";\n");
+         else
+            _out.append(_sDstVar+" = var_"+var_ref.id+";\n");
       }
    }
 
@@ -22853,7 +22912,7 @@ class CyScript : CyDefs {
          else
          {
             if(b_export_c)/////!export_c_prefix.isBlank())
-               s_tmp_var_decl.append("   unsigned short "+sVar+";\n");
+               s_tmp_var_decl.append("   unsigned short "+sVar+" = "+_val+";\n");
             else
                s_tmp_var_decl.append("   UnsignedShort "+sVar+" = "+_val+";\n");
             s_cycle_reset.append("   "+sVar+" = "+_val+";\n");
@@ -23052,6 +23111,8 @@ class CyScript : CyDefs {
       b_export_c_no_static = false;
 
       boolean bFirstPatch = b_plugin || _out.isBlank();
+      if(bFirstPatch)
+         ResetHaveFlags();
 
       b_lofi = false;
       b_stereo = false;
@@ -23095,6 +23156,7 @@ class CyScript : CyDefs {
 
       local String      sInitMain;  // for vpl noteon
       local String      sHeader;
+      local String      sHeaderCurves;
       local String      sStaticInit;
       local String      sPluginParamDefs;
       local String      sPluginParamNames;
@@ -23587,10 +23649,15 @@ class CyScript : CyDefs {
       local String sDeclLUTShared;
       local String sDeclLUTVoice;
 
+      if(b_export_c && !b_plugin)
+         _out.append("$(HEADER_CURVES)\n");
+
       // Curve vars
       String *curveId;
       IntArray *iaCurve;
       int curveIdx = 0;
+      if(b_export_c)
+         trace "xxx emitFloat: curve_aliases="+curve_aliases+" b_export_c="+b_export_c;
       foreach curveId in curve_aliases
       {
          if(!curveId.isBlank())
@@ -23599,9 +23666,19 @@ class CyScript : CyDefs {
             {
                // (note) even though the output is float, curves are stored as signed 16bit fixed point integers
                //         (like in emitInt())
+               if(b_export_c)
+                  trace "xxx emitFloat: export curve_"+curveIdx+export_c_prefix;
                iaCurve <= curve_intarrays.get(curveIdx);
-               sHeader.append("static short curve_"+curveIdx+export_c_prefix/*+export_c_var_prefix*/+"["+iaCurve.numElements+"] = {\n");
-               WriteIntArrayData(sHeader, iaCurve);
+               if(b_plugin)
+               {
+                  sHeader.append("static short curve_"+curveIdx+export_c_prefix/*+export_c_var_prefix*/+"["+iaCurve.numElements+"] = {\n");
+                  WriteIntArrayData(sHeader, iaCurve);
+               }
+               else
+               {
+                  sHeaderCurves.append("static short curve_"+curveIdx+export_c_prefix/*+export_c_var_prefix*/+"["+iaCurve.numElements+"] = {\n");
+                  WriteIntArrayData(sHeaderCurves, iaCurve);
+               }
                // sHeader.append("static const short *cur_curve_"+curveIdx+export_c_prefix+";\n");
                // sHeader.append("static       short *dyn_curve_"+curveIdx+export_c_prefix+" = NULL;\n");
 
@@ -24522,7 +24599,10 @@ class CyScript : CyDefs {
          else
             _out.append("function Calc(FloatArray _d) {\n");
          _out.append("   int off = 0;\n");
-         _out.append("   var_wt_y = 0.0f;\n");
+         if(b_export_c)
+            _out.append("   var_wt_y"+export_c_prefix+" = 0.0f;\n");
+         else
+            _out.append("   var_wt_y = 0.0f;\n");
          _out.append("$(WT_GLOBAL_RESET)");  // see sWtInitGlobalReset
          _out.append(sInitMain);
          _out.append("$(CALL_LUT_SHARED)");
@@ -24556,7 +24636,10 @@ class CyScript : CyDefs {
          }
          _out.append("   loop("+wt_h+")\n");
          _out.append("   {\n");
-         _out.append("      var_wt_x = 0.0f;\n");
+         if(b_export_c)
+            _out.append("      var_wt_x"+export_c_prefix+" = 0.0f;\n");
+         else
+            _out.append("      var_wt_x = 0.0f;\n");
          _out.append("      loop("+wt_w+")\n");
          _out.append("      {\n");
          if(b_export_c)
@@ -24575,11 +24658,21 @@ class CyScript : CyDefs {
             _out.append("         Calc_Cycle(d);\n");
          }
          if(wt_w > 1)
-            _out.append("         var_wt_x += "+(1.0f / (wt_w-1))+";\n");
+         {
+            if(b_export_c)
+               _out.append("         var_wt_x"+export_c_prefix+" += "+(1.0f / (wt_w-1))+";\n");
+            else
+               _out.append("         var_wt_x += "+(1.0f / (wt_w-1))+";\n");
+         }
          _out.append("         off += "+int(num_frames * oversample_factor)+";\n");
          _out.append("      }\n");
          if(wt_h > 1)
-            _out.append("      var_wt_y += "+(1.0f / (wt_h-1))+";\n");
+         {
+            if(b_export_c)
+               _out.append("      var_wt_y"+export_c_prefix+" += "+(1.0f / (wt_h-1))+";\n");
+            else
+               _out.append("      var_wt_y += "+(1.0f / (wt_h-1))+";\n");
+         }
          _out.append("   }\n");
          _out.append("}\n");
       }
@@ -24678,10 +24771,19 @@ class CyScript : CyDefs {
       {
          if(b_use_sine_tbl || b_use_sine_tbl_i)
          {
-            sHeader.append("\n#define USE_CYCLE_SINE_TBL  defined\n");
-            sHeader.append("static float cycle_sine_tbl_f[16384];\n");
-            if(b_use_sine_tbl_i)
+            if(b_use_sine_tbl && !b_have_sine_tbl)
             {
+               b_have_sine_tbl = true;
+               if(b_plugin)  // ?????
+               {
+                  sHeader.append("\n#define USE_CYCLE_SINE_TBL  defined\n");
+                  sHeader.append("static float cycle_sine_tbl_f[16384];\n");
+               }
+            }
+
+            if(b_use_sine_tbl_i && !b_have_sine_tbl_i)
+            {
+               b_have_sine_tbl_i = true;
                sHeader.append("\n#define USE_CYCLE_SINE_TBL_I  defined\n");
                sHeader.append("static "+short_type+" cycle_sine_tbl_i[16384];\n");
             }
@@ -24692,11 +24794,11 @@ class CyScript : CyDefs {
       {
          sStaticInit.append("\n");
 
-         if(b_use_win_hse_1_36 &&
-            (!b_export_c || b_plugin || !current_project.b_export_all_c_calc_win_hse_1_36_done)
+         if(b_use_win_hse_1_36 && 
+            (!b_export_c || b_plugin || !b_have_win_hse_1_36)
             )
          {
-            current_project.b_export_all_c_calc_win_hse_1_36_done = true;
+            b_have_win_hse_1_36 = true;
             if(b_export_c)
                sHeader.append("float cycle_win_hse_1_36[8192];\n");
             else
@@ -24705,10 +24807,10 @@ class CyScript : CyDefs {
          }
 
          if(b_use_win_hse_2 &&
-            (!b_export_c || b_plugin || !current_project.b_export_all_c_calc_win_hse_2_done)
+            (!b_export_c || b_plugin || !b_have_win_hse_2)
             )
          {
-            current_project.b_export_all_c_calc_win_hse_2_done = true;
+            b_have_win_hse_2 = true;
             if(b_export_c)
                sHeader.append("float cycle_win_hse_2[8192];\n");
             else
@@ -24717,10 +24819,10 @@ class CyScript : CyDefs {
          }
 
          if(b_use_win_hse_3 &&
-            (!b_export_c || b_plugin || !current_project.b_export_all_c_calc_win_hse_3_done)
+            (!b_export_c || b_plugin || !b_have_win_hse_3)
             )
          {
-            current_project.b_export_all_c_calc_win_hse_3_done = true;
+            b_have_win_hse_3 = true;
             if(b_export_c)
                sHeader.append("float cycle_win_hse_3[8192];\n");
             else
@@ -24729,10 +24831,10 @@ class CyScript : CyDefs {
          }
 
          if(b_use_win_hse_5 &&
-            (!b_export_c || b_plugin || !current_project.b_export_all_c_calc_win_hse_5_done)
+            (!b_export_c || b_plugin || !b_have_win_hse_5)
             )
          {
-            current_project.b_export_all_c_calc_win_hse_5_done = true;
+            b_have_win_hse_5 = true;
             if(b_export_c)
                sHeader.append("float cycle_win_hse_5[8192];\n");
             else
@@ -24741,10 +24843,10 @@ class CyScript : CyDefs {
          }
 
          if(b_use_win_hse_7 &&
-            (!b_export_c || b_plugin || !current_project.b_export_all_c_calc_win_hse_7_done)
+            (!b_export_c || b_plugin || !b_have_win_hse_7)
             )
          {
-            current_project.b_export_all_c_calc_win_hse_7_done = true;
+            b_have_win_hse_7 = true;
             if(b_export_c)
                sHeader.append("float cycle_win_hse_7[8192];\n");
             else
@@ -24752,9 +24854,9 @@ class CyScript : CyDefs {
             sStaticInit.append("   cycle_calc_win_hse(cycle_win_hse_7, 7.0f);\n");
          }
 
-         if(!b_export_c || b_plugin || !current_project.b_export_all_c_calc_win_hse_done)
+         if(!b_export_c || b_plugin || !b_calc_win_hse_done)
          {
-            current_project.b_export_all_c_calc_win_hse_done = true;
+            b_calc_win_hse_done = true;
             emitCalcWinHSE(sHeader);
          }
       }
@@ -24764,6 +24866,7 @@ class CyScript : CyDefs {
          // mathPowerf, mathLogLinExpf, loc_bipolar_to_scale
          if(b_use_pow)
             b_use_log = true;  // mathLogf() called in mathPowerf()
+
          addFloatUtilityFunctions(sHeader);
 
          _out.replace("$(OVERSAMPLE_FACTOR)", (oversample_factor > 1.0f) ? ("#define OVERSAMPLE_FACTOR  "+FloatToString(oversample_factor))+"\n" : "");
@@ -24941,7 +25044,14 @@ class CyScript : CyDefs {
       if(b_use_bts)
          sHeader += sFxnBipolarToScale;
 
-      _out.replace("$(HEADER)", sHeader);
+      // trace "xxx replace sHeader=<<<"+sHeader+">>>";
+      if(b_export_c && !b_plugin)
+         s_export_c_all_headers.append(sHeader);
+      else
+         _out.replace("$(HEADER)", sHeader);
+
+      if(b_export_c && !b_plugin)
+         _out.replace("$(HEADER_CURVES)", sHeaderCurves);
 
       _out.trim();
       _out.append("\n");
@@ -25079,8 +25189,9 @@ class CyScript : CyDefs {
 
       if(b_export_c)
       {
-         if(b_use_log)
+         if(b_use_log && !b_have_log)
          {
+            b_have_log = true;
             // (note) based on public domain ln() code by Lingdong Huang <https://gist.github.com/LingDong-/7e4c4cae5cbbc44400a05fba65f06f23>
             sHeader.append("\nstatic float mathLogf(const float _x) {\n");
             sHeader.append("   union {\n");
@@ -25104,8 +25215,12 @@ class CyScript : CyDefs {
             sHeader.append("}\n");
          }
 
-         if(b_use_pow)
+         if(b_use_pow && !b_have_pow)
          {
+            b_have_pow = true;
+            sHeader.append("#include <math.h>\n");  // expf
+            if(!b_plugin)
+               sHeader.append("#define Dstplugin_fix_denorm_32(a) ( ((a)+10.0f) - 10.0f )\n");
             sHeader.append("\nstatic float mathPowerf(float _x, float _y) {\n");
             sHeader.append("   float r;\n");
             sHeader.append("   if(_y != 0.0f)\n");
@@ -25131,8 +25246,9 @@ class CyScript : CyDefs {
             sHeader.append("}\n");
          }
 
-         if(b_use_lle)
+         if(b_use_lle && !b_have_lle)
          {
+            b_have_lle = true;
             sHeader.append("\nstatic float mathLogLinExpf(float _f, float _c) {\n");
             sHeader.append("   // c: <0: log\n");
             sHeader.append("   //     0: lin\n");
@@ -25148,8 +25264,9 @@ class CyScript : CyDefs {
             sHeader.append("}\n");
          }
 
-         if(b_use_wrapf)
+         if(b_use_wrapf && !b_have_wrapf)
          {
+            b_have_wrapf = true;
             sHeader.append("\nstatic float mathWrapf(float _a, float _b, float _c) {\n");
             sHeader.append("   float b, c;\n");
             sHeader.append("   if(_b < _c)\n");
@@ -25187,8 +25304,9 @@ class CyScript : CyDefs {
             sHeader.append("}\n");
          }
 
-         if(b_use_foldf)
+         if(b_use_foldf && !b_have_foldf)
          {
+            b_have_foldf = true;
             sHeader.append("\nstatic float mathFoldf(float _a, float _b, float _c) {\n");
             sHeader.append("   float b, c;\n");
             sHeader.append("   if(_b < _c)\n");
@@ -25246,8 +25364,9 @@ class CyScript : CyDefs {
          }
       }
 
-      if(b_use_bts)
+      if(b_use_bts && !b_have_bts)
       {
+         b_have_bts = true;
          if(b_export_c)
          {
             sHeader.append("\nstatic float loc_bipolar_to_scale(const float _t, const float _div, const float _mul) {\n");
@@ -25345,6 +25464,8 @@ class CyScript : CyDefs {
       b_lofi = true;
 
       boolean bFirstPatch = _out.isBlank();
+      if(bFirstPatch)
+         ResetHaveFlags();
 
       local String sDitherTbl;  // $(DITHER_TBL)
 
@@ -25379,6 +25500,7 @@ class CyScript : CyDefs {
       local String sInitMain;  // for VPL noteOn
       local String sStaticInit;
       local String sWtInitGlobalReset;
+      local String sHeaderCurves;
 
       // Tmp var
       if(bFirstPatch)
@@ -25503,9 +25625,13 @@ class CyScript : CyDefs {
          _out.append("//        xfade: "+xfade_frames+"\n");
       _out.append("\n");
 
+      if(b_export_c)
+         _out.append("$(HEADER_CURVES)\n");
+
       // Curve vars
       String *curveId;
       int curveIdx = 0;
+      // trace "xxx emitInt: curve_aliases="+curve_aliases;
       foreach curveId in curve_aliases
       {
          if(!curveId.isBlank())
@@ -25514,9 +25640,9 @@ class CyScript : CyDefs {
             {
                IntArray ia <= curve_intarrays.get(curveIdx);
                if(!b_export_c_no_static)
-                  _out.append("static ");
-               _out.append("short curve_"+curveIdx+export_c_prefix/*+export_c_var_prefix*/+"["+ia.numElements+"] = {\n");
-               WriteIntArrayData(_out, ia);
+                  sHeaderCurves.append("static ");
+               sHeaderCurves.append("short curve_"+curveIdx+export_c_prefix/*+export_c_var_prefix*/+"["+ia.numElements+"] = {\n");
+               WriteIntArrayData(sHeaderCurves, ia);
             }
             else
             {
@@ -26361,8 +26487,10 @@ class CyScript : CyDefs {
       _out.replace("$(WT_GLOBAL_RESET)", sWtInitGlobalReset);
       sWtInitGlobalReset.empty();
 
-      if(b_use_float_fallback)
+      if(b_use_float_fallback && !b_have_float_fallback)
       {
+         b_have_float_fallback = true;
+
          if(b_export_c)
             sFloatFunctions.append("\nstatic float ffrac_s(float _f) { int i; if(_f >= 0.0f) { i = (int)_f; return _f - (float)i; } else { i = (int)-_f; return 1.0f - (-_f - (float)i); } }\n");
          else
@@ -26373,16 +26501,21 @@ class CyScript : CyDefs {
          addFloatUtilityFunctions(sFloatFunctions);
       }
       ////else
-      if(b_use_bts_int)
+      if(b_use_bts_int && !b_have_bts_int)
       {
+         b_have_bts_int = true;
          addBipolarToScale_int(sFloatFunctions);
       }
       _out.replace("$(FLOAT_FUNCTIONS)", sFloatFunctions);
 
       _out.replace("$(DITHER_TBL)", sDitherTbl);
 
+      // (todo) s_export_c_all_headers
+
       if(b_export_c)
       {
+         _out.replace("$(HEADER_CURVES)", sHeaderCurves);
+
          _exportCStaticInit.append(sStaticInit);
       }
 
