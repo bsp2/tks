@@ -1,9 +1,9 @@
 % minnie
 % bsp
-% 21-May-2026
+% 22-May-2026
 >>>
 04Jul2025, 05Jul2025, 06Jul2025, 12Jul2025, 13Jul2025, 02Aug2025, 03Aug2025
-04Aug2025, 16Aug2025, 17Aug2025, 08Jan2026, 22Mar2026, 21May2026
+04Aug2025, 16Aug2025, 17Aug2025, 08Jan2026, 22Mar2026, 21May2026, 22May2026
 <<<
 $(var:header)
 
@@ -24,13 +24,14 @@ Triangle rendering is performed with an antialiased software rasterizer which ca
 - low-level `sdvg` API (immediate mode GL-like API with support for vertex buffer objects, small memory footprint, close to HW)
 - high-level `min` API (OpenVG like, reusable display lists and, optionally, (pre-)tesselation for polygons, lines, arcs and splines)
 - fast analytical antialiasing (blits, points, (round) rectangles, ellipses, lines, polygons)
-- pattern, linear, radial, conic gradient paints
+- pattern, linear, radial, and conic gradient paints
 - 1D and 2D (e.g. diagonal) line patterns (with support for multi-color patterns)
 - textured and gouraud shaded triangles
-- HW accelerated stencil polygons and support for anti-aliased DaveNX hardware n-Polygons
-- support for precompiled shader binaries
+- HW accelerated stencil polygons
+- support for anti-aliased hardware n-Polygons (DaveNX GL extension)
+- support for precompiled shader binaries (DaveNX GL extension)
 - support for custom GLSL shaders
-- multi-instance drawables with 4x4 matrix transformations
+- multi-instance drawables with 4x4 matrix transformations and colorization
 - size-optimized `.mib` vector images (with SVG-subset import)
 - available for Linux, Windows, macOS, FreeRTOS
 - MIT open source license
