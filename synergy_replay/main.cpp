@@ -235,18 +235,6 @@ int main(int argc, char**argv) {
 
    if(bOk)
    {
-#if 1
-      // Calc procedural samples
-      Dinfov("[...] synthesizing procedural samples: begin\n");
-      float *wfDat = sr_proj_get_wf_dat(proj);
-      unsigned int wfSz = sr_proj_get_wf_size(proj) * sizeof(float);
-      unsigned int t = loc_profile_ms_get();
-      cycle_calc_waveform_demo_2_r_sr(wfDat);
-      t = loc_profile_ms_get() - t;
-      Dinfo("[...] cycle: synthesized %4.2fk samples in %u ms\n", (wfSz / 1024.0f), t);
-#endif
-
-
       // bOk = sr_song_load(song, "../tks-projects/flux/export.mid");
       // bOk = sr_song_load(song, "../tks-projects/flux/" SONGNAME ".mid");
       bOk = sr_song_load_file(song, "music/" SONGNAME ".mid");
@@ -254,6 +242,8 @@ int main(int argc, char**argv) {
       if(bOk)
       {
          sr_song_start(song);
+
+         // (note) first MIDI (meta) event sets actual initial tempo 
          sr_proj_set_tempo(proj,
                            sr_song_get_bpm(song),
                            sr_song_get_ppq(song)
@@ -262,6 +252,18 @@ int main(int argc, char**argv) {
          bOk = sr_proj_alloc_mix_buffers(proj);
          if(!bOk)
             return 20;
+
+#if 1
+         // Calc procedural samples
+         {
+            Dinfov("[...] synthesizing procedural samples: begin\n");
+            unsigned int wfSz = sr_proj_get_wf_size(proj) * sizeof(float);
+            unsigned int t = loc_profile_ms_get();
+            sr_calc_cycle_waveforms(proj, song, &cycle_calc_waveform_demo_2_r_sr);
+            t = loc_profile_ms_get() - t;
+            Dinfo("[...] cycle: synthesized %4.2fk samples in %u ms\n", (wfSz / 1024.0f), t);
+         }
+#endif
 
 #ifdef SR_PORTAUDIO
          if(1 == argc)
@@ -347,7 +349,7 @@ int main(int argc, char**argv) {
             for(unsigned int frameOff = 0u; frameOff < totalNumFrames; frameOff += frameSz)
             {
                Dreplay2("[trc] ............ process frame off=%u sz=%u\n", frameOff, frameSz);
-               // sr_process(proj, song, mixBuf, frameSz);
+               sr_process(proj, song, mixBuf, frameSz);
 
 #ifdef SR_SAVE_SONG_WF_DAT
                if(NULL != fh)

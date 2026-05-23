@@ -1,4 +1,4 @@
-// auto-generated on 20260522-155743
+// auto-generated on 20260522-204826
 
 //         name: cycle_rs off=0 num=1139
 //  sample_rate: 16574
@@ -1931,44 +1931,71 @@ static void calc_water_drop_1_0_(float *_d) {
 } /* end calc() */
 
 
+extern void sr_handle_cycle_sample_calc_finished (unsigned int _sampleIdx);
+#define HSCF(a)  sr_handle_cycle_sample_calc_finished(a)
+
 void cycle_calc_waveform_demo_2_r_sr(float *_wfAddr) {
    // smp: "cycle_rs" sz=1139 (1.11k) bProc=1
    calc_cycle_rs_0_rs                           (_wfAddr +      0);  // total=  1139 ( 4.44k)
+   HSCF(0);
    // smp: "fmstack_hh_1" sz=32 (0.03k) bProc=1
+   HSCF(1);
    // smp: "fmstack rubber drum 1" sz=15052 (14.69k) bProc=1
    calc_fmstack_rubber_drum_1_1_                (_wfAddr +   1171);  // total= 15052 (58.79k)
+   HSCF(2);
    // smp: "fmstack rubber drum 2" sz=15052 (14.69k) bProc=1
    calc_fmstack_rubber_drum_2_1_                (_wfAddr +  16223);  // total= 15052 (58.79k)
+   HSCF(3);
    // smp: "fmstack rubber drum 3" sz=15052 (14.69k) bProc=1
    calc_fmstack_rubber_drum_3_1_                (_wfAddr +  31275);  // total= 15052 (58.79k)
+   HSCF(4);
    // smp: "fmstack modfm bass 1" sz=32 (0.03k) bProc=1
+   HSCF(5);
    // smp: "fmstack waveshaper bass 1" sz=32 (0.03k) bProc=1
+   HSCF(6);
    // smp: "fmstack pwm 3" sz=32 (0.03k) bProc=1
+   HSCF(7);
    // smp: "fmstack pwm 3b" sz=32 (0.03k) bProc=1
+   HSCF(8);
    // smp: "fmstack pwm 3c" sz=32 (0.03k) bProc=1
+   HSCF(9);
    // smp: "buzzy pad 1" sz=32 (0.03k) bProc=1
+   HSCF(10);
    // smp: "fmstack stepped ratio 2" sz=32 (0.03k) bProc=1
+   HSCF(11);
    // smp: "fm 1" sz=24000 (23.43k) bProc=1
    calc_fm_1_0_                                 (_wfAddr +  46551);  // total= 24000 (93.75k)
+   HSCF(12);
    // smp: "tr sd 1" sz=72000 (70.31k) bProc=1
    calc_tr_sd_1_0_                              (_wfAddr +  70551);  // total= 72000 (281.25k) wt_3x1x24000
+   HSCF(13);
    // smp: "tr sd 2" sz=72000 (70.31k) bProc=1
    calc_tr_sd_2_0_                              (_wfAddr + 142551);  // total= 72000 (281.25k) wt_3x1x24000
+   HSCF(14);
    // smp: "tr bd 5" sz=36000 (35.15k) bProc=1
    calc_tr_bd_5_0_                              (_wfAddr + 214551);  // total= 36000 (140.62k) wt_3x1x12000
+   HSCF(15);
    // smp: "tr bd 7" sz=150000 (146.48k) bProc=1
    calc_tr_bd_7_0_                              (_wfAddr + 250551);  // total=150000 (585.93k) wt_3x1x50000
+   HSCF(16);
    // smp: "tri rndphase wt 1" sz=8192 (8k) bProc=1
    calc_tri_rndphase_wt_1_0_                    (_wfAddr + 400551);  // total=  8192 (   32k) wt_32x1x256
+   HSCF(17);
    // smp: "tri rndphase wt 2" sz=8192 (8k) bProc=1
    calc_tri_rndphase_wt_2_0_                    (_wfAddr + 408743);  // total=  8192 (   32k) wt_32x1x256
+   HSCF(18);
    // smp: "fmstack_hh_2" sz=32 (0.03k) bProc=1
+   HSCF(19);
    // smp: "noise atk" sz=6525 (6.37k) bProc=1
    calc_noise_atk_0_                            (_wfAddr + 416967);  // total=  6525 (25.48k)
+   HSCF(20);
    // smp: "water drop 1" sz=183 (0.17k) bProc=1
    calc_water_drop_1_0_                         (_wfAddr + 423492);  // total=   183 ( 0.71k)
+   HSCF(21);
    // smp: "rain1" sz=262144 (256k) bProc=1
+   HSCF(22);
    // smp: "rain2" sz=524288 (512k) bProc=1
+   HSCF(23);
    // procedural sample size: 4840428 (4726.98k)
    // static     sample size: 0 (0k)
    // total      sample size: 4840428 (4726.98k)
