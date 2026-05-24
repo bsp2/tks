@@ -1,5 +1,5 @@
 // ----
-// ---- file   : sr_test.cpp
+// ---- file   : main.c
 // ---- author : bsp
 // ---- legal  : Distributed under terms of the MIT LICENSE (MIT).
 // ----
@@ -46,7 +46,7 @@
 // #define SONGNAME "mb_rng_convolve_epiano-27Apr2022b"
 #define SONGNAME "demo_2-r-sr"  // 18May2026
 
-extern "C" void cycle_calc_waveform_demo_2_r_sr (float *_wfAddr);
+extern void cycle_calc_waveform_demo_2_r_sr (float *_wfAddr);
 
 // when defined, add code to render song to mem buffer (+optionally write to file)
 //  (note) if SR_SAVE_SONG_WF_DAT is not defined, no file will be written
@@ -63,18 +63,16 @@ extern "C" void cycle_calc_waveform_demo_2_r_sr (float *_wfAddr);
 #endif // SR_PORTAUDIO
 
 // ------------------------------------ Cycle: common arrays
-extern "C" {
 float cycle_sine_tbl_f[16384];
 short cycle_sine_tbl_i[16384];
 float cycle_xfade_buf[4096];
-}
 
 static void loc_cycle_calc_sine_tbl_f(void) {
    unsigned int i = 0u;
    for(i = 0u; i < 16384u; i++)
    {
       float a = (i*3.14159265359f*2.0f)/16384.0f;
-      cycle_sine_tbl_f[i] = ::sinf(a);
+      cycle_sine_tbl_f[i] = sinf(a);
    }
 }
 
@@ -83,55 +81,53 @@ static void loc_cycle_calc_sine_tbl_i(void) {
    for(i = 0u; i < 16384u; i++)
    {
       float a = (i*3.14159265359f*2.0f)/16384.0f;
-      cycle_sine_tbl_i[i] = (short)(::sinf(a) * 2048.0f/*FX_ONE*/);
+      cycle_sine_tbl_i[i] = (short)(sinf(a) * 2048.0f/*FX_ONE*/);
    }
 }
 
 // ------------------------------------ STFX voice plugins
-extern "C" st_plugin_info_t *amp_init (void);
-extern "C" st_plugin_info_t *biquad_lpf_1_init (void);
-extern "C" st_plugin_info_t *biquad_lpf_2_init (void);
-extern "C" st_plugin_info_t *biquad_hpf_1_init (void);
-extern "C" st_plugin_info_t *biquad_hpf_2_init (void);
-extern "C" st_plugin_info_t *biquad_lsh_1_init (void);
-extern "C" st_plugin_info_t *biquad_lsh_2_init (void);
-extern "C" st_plugin_info_t *biquad_hsh_1_init (void);
-extern "C" st_plugin_info_t *biquad_hsh_2_init (void);
-extern "C" st_plugin_info_t *chorus_tri_1_init (void);
-extern "C" st_plugin_info_t *cycle_rms_comp_stereo_1_init (void);
-extern "C" st_plugin_info_t *dly_2_init (void);
-extern "C" st_plugin_info_t *dly_flt_2_mod_init (void);
-extern "C" st_plugin_info_t *eq3_init (void);
-extern "C" st_plugin_info_t *gain_init (void);
-// extern "C" st_plugin_info_t *gm_rng_convolve_init (void);
-extern "C" st_plugin_info_t *resample_linear_init (void);
-extern "C" st_plugin_info_t *schroederverb_init (void);
-extern "C" st_plugin_info_t *valley_plateau_init (void);
-extern "C" st_plugin_info_t *ws_tanh_asym_init (void);
-extern "C" st_plugin_info_t *ws_fm_init (void);
-extern "C" {
+extern st_plugin_info_t *amp_init (void);
+extern st_plugin_info_t *biquad_lpf_1_init (void);
+extern st_plugin_info_t *biquad_lpf_2_init (void);
+extern st_plugin_info_t *biquad_hpf_1_init (void);
+extern st_plugin_info_t *biquad_hpf_2_init (void);
+extern st_plugin_info_t *biquad_lsh_1_init (void);
+extern st_plugin_info_t *biquad_lsh_2_init (void);
+extern st_plugin_info_t *biquad_hsh_1_init (void);
+extern st_plugin_info_t *biquad_hsh_2_init (void);
+extern st_plugin_info_t *chorus_tri_1_init (void);
+extern st_plugin_info_t *cycle_rms_comp_stereo_1_init (void);
+extern st_plugin_info_t *dly_2_init (void);
+extern st_plugin_info_t *dly_flt_2_mod_init (void);
+extern st_plugin_info_t *eq3_init (void);
+extern st_plugin_info_t *gain_init (void);
+// extern st_plugin_info_t *gm_rng_convolve_init (void);
+extern st_plugin_info_t *resample_linear_init (void);
+extern st_plugin_info_t *schroederverb_init (void);
+extern st_plugin_info_t *valley_plateau_init (void);
+extern st_plugin_info_t *ws_tanh_asym_init (void);
+extern st_plugin_info_t *ws_fm_init (void);
 // extern st_plugin_info_t *noiseplethora_ab_init (void);
 // extern st_plugin_info_t *noiseplethora_cwhite_init (void);
 // extern st_plugin_info_t *noiseplethora_cgrit_init (void);
 extern st_plugin_info_t *np_svf_init (void);
-}
-extern "C" {
-void fm_stack_init_common (void);
-st_plugin_info_t *fm_stack_init_loresh (void);
-st_plugin_info_t *fm_stack_init_medres (void);
-st_plugin_info_t *fm_stack_init_medresh (void);
-st_plugin_info_t *fm_stack_init_hires (void);
-}
+
+extern void fm_stack_init_common (void);
+extern st_plugin_info_t *fm_stack_init_loresh (void);
+extern st_plugin_info_t *fm_stack_init_medres (void);
+extern st_plugin_info_t *fm_stack_init_medresh (void);
+extern st_plugin_info_t *fm_stack_init_hires (void);
+
 
 // ------------------------------------ profiling
 #ifdef SR_PROFILE
 #include <sys/time.h>
 static struct timeval sr_profile_tv_start;
 static void loc_profile_ms_init(void) {
-   ::gettimeofday(&sr_profile_tv_start, 0);
+   gettimeofday(&sr_profile_tv_start, 0);
 }
 static unsigned int loc_profile_ms_get(void) {
-   struct timeval c; ::gettimeofday(&c, 0);
+   struct timeval c; gettimeofday(&c, 0);
    struct timeval *s = &sr_profile_tv_start;
    return (unsigned int) ( (c.tv_sec-s->tv_sec)*1000 + (c.tv_usec-s->tv_usec)/1000 );
 }
@@ -139,10 +135,10 @@ static unsigned int loc_profile_ms_get(void) {
 
 
 #ifdef SR_PORTAUDIO
-struct replay_state_t {
+typedef struct replay_state_s {
    sr_proj_t proj;
    sr_song_t song;
-};
+} replay_state_t;
 static replay_state_t replay_state;
 
 
@@ -339,7 +335,7 @@ int main(int argc, char**argv) {
 #endif // SR_SAVE_SONG_WF_DAT
 
             const unsigned int frameSz = SR_MAX_FRAMES_PER_BLOCK/*64*/;
-            float *mixBuf = (float*)::malloc(frameSz * 2u * sizeof(float));
+            float *mixBuf = (float*)malloc(frameSz * 2u * sizeof(float));
             unsigned int totalNumFrames = (unsigned int)
                (sr_song_get_frames_per_tick(song)
                 * sr_song_get_num_ticks(song)
@@ -367,11 +363,11 @@ int main(int argc, char**argv) {
             }
 #endif // SR_SAVE_SONG_WF_DAT
 
-            ::free((void*)mixBuf);
+            free((void*)mixBuf);
 
 #ifdef SR_PROFILE
             unsigned int tDelta = loc_profile_ms_get() - tStart;
-            float load = ((float(tDelta / 1000.0f) * SR_MIX_RATE) / float(totalNumFrames)) * 100.0f;
+            float load = ((((float)(tDelta / 1000.0f)) * SR_MIX_RATE) / ((float)totalNumFrames)) * 100.0f;
             Dprintf("[pro] song render tDelta=%u ms => load=%3.2f%%\n", tDelta, load);
 #endif // SR_PROFILE
          }
