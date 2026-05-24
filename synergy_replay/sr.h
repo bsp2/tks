@@ -27,7 +27,7 @@
 // ---- changed: 13Apr2023, 14Apr2023, 15Apr2023, 20Apr2023, 21Apr2023, 22Apr2023, 23Apr2023
 // ----          11Aug2023, 08Sep2023, 19Sep2023, 22Sep2023, 18Nov2023, 03Oct2024, 07Dec2024
 // ----          04Jan2025, 09Jan2026, 10Apr2026, 09May2026, 15May2026, 17May2026, 18May2026
-// ----          19May2026, 20May2026, 22May2026
+// ----          19May2026, 20May2026, 22May2026, 24May2026
 // ----
 // ----
 // ----
@@ -175,6 +175,28 @@ void sr_process (sr_proj_t _proj,
                  );
 void sr_song_delete (sr_song_t _song);
 void sr_proj_delete (sr_proj_t _proj);
+
+// external MIDI control API
+//  (note) can be used to modulate song playback, trigger+modulate sounds effects, ..
+//  (note) must be called from the same thread that calls sr_process()
+//  (note) 'port' is in the range 0..15 (dev_idx 'a'..'p')
+//  (note) 'ch' is in the range 0..15 (midi channel)
+//  (note) 'note' is in the range 0..127 (C-0..G-A)
+//  (note) 'vel' is in the range 0..127 (MIDI velocity)
+//  (note) 'pb' is in the range 0..16383 (-8192..0..+8192)
+//  (note) 'cc' is in the range 0..127 (MIDI continuous controller number, e.g. 1=modwheel)
+//  (note) 'rpn' is in the range 0..16383 (MIDI registered-parameter-number, see Synergy remote.msp)
+//           (note) RPN#90 selects sample by unique id (14 bit)
+//           (note) RPN#300..307 changes track output 1..8 level (e.g. FX sends)
+//  (note) 'v' is in the range 0..127 (program,pressure,CC) / 0..16383 (RPN)
+void sr_midi_program_change   (sr_proj_t _proj, unsigned char _port, unsigned char _ch, unsigned char _program);
+void sr_midi_note_on          (sr_proj_t _proj, unsigned char _port, unsigned char _ch, unsigned char _note, unsigned char _vel);
+void sr_midi_note_off         (sr_proj_t _proj, unsigned char _port, unsigned char _ch, unsigned char _note, unsigned char _vel);
+void sr_midi_midi_pitchbend   (sr_proj_t _proj, unsigned char _port, unsigned char _ch, unsigned short _pb);
+void sr_midi_channel_pressure (sr_proj_t _proj, unsigned char _port, unsigned char _ch, unsigned char _v);
+void sr_midi_poly_pressure    (sr_proj_t _proj, unsigned char _port, unsigned char _ch, unsigned char _note, unsigned char _v);
+void sr_midi_cc               (sr_proj_t _proj, unsigned char _port, unsigned char _ch, unsigned char _cc, unsigned char _v);
+void sr_midi_rpn              (sr_proj_t _proj, unsigned char _port, unsigned char _ch, unsigned short _rpn, unsigned short _v);
 
 #if defined(__cplusplus)
 } // extern "C"
