@@ -357,8 +357,8 @@ public:
 
    sBool readString(char *d, sUI dsz) {
       d[0] = 0;
-      sU32 num = u32();
-      sU32 readLen = sMIN(dsz, num);
+      const sU32 num = u32();
+      const sU32 readLen = sMIN(dsz, num);
       sUI i = 0u;
       for(; i < readLen; i++)
          d[i] = (char)u8();
@@ -1134,8 +1134,8 @@ public:
          s->_setSampleRateRatio(ifs.f32());
 
          // Zone name and mutex group
-         char zoneName[1024];
-         ifs.readString(zoneName, 1024);
+         char zoneName[1024-1];
+         ifs.readString(zoneName, 1024-1/*gcc 14.2 issue*/);
          sS8 mtxGrpIdx = ifs.s8();
          StSampleMutexGroup *mtxGrp = (StSampleMutexGroup*)sample_bank._getMutexGroupByIdx(mtxGrpIdx);
          Dtrace("[dbg] SR_Sample::loadZone: ioOff=%u name=\"%s\" mtxGrp=%d (%p)\n", startOff, zoneName, mtxGrpIdx, mtxGrp);
@@ -1648,7 +1648,7 @@ public:
             if(verAndEnable > 0u)
             {
                char pluginId[128];
-               (void)ifs.readString(pluginId, 128);
+               (void)ifs.readString(pluginId, 128-1/*gcc 14.2 issue*/);
                // Dprintf("[trc] SR_Sample::loadZone: read plugin id=\"%s\"\n", pluginId);
 
 #ifdef SR_VOICE_FX
@@ -1746,7 +1746,7 @@ public:
          waveform._setBaseFrequency(261.63f/*c-5 = BASE_FREQ_MIDDLE_C*/);
 
          char smpName[128];
-         ifs.readString(smpName, 128);
+         ifs.readString(smpName, 128-1/*gcc 14.2 issue*/);
 
          Dinfo("[...] SR_Sample::load: smpName=\"%s\" proc=%d #frames=%u #ch=%u rate=%5.2f\n", smpName, b_procedural, wfNumFrames, wfNumCh, wfSampleRate);
 
@@ -3141,7 +3141,7 @@ extern "C" sr_bool_t sr_proj_load_buffer(sr_proj_t _proj,
                   {
                      // STFX plugin (effect)
                      char pluginId[128];
-                     (void)ifs.readString(pluginId, 128);
+                     (void)ifs.readString(pluginId, 128-1/*gcc 14.2 issue*/);
                      Dtrace("[trc] read plugin id=\"%s\"\n", pluginId);
 #ifdef SR_TRACK_FX
                      st_plugin_voice_t *voice = track->addPluginById(pluginId);
