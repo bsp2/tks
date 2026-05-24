@@ -89,8 +89,6 @@ static void loc_cycle_calc_sine_tbl_i(void) {
 
 // ------------------------------------ STFX voice plugins
 extern "C" st_plugin_info_t *amp_init (void);
-extern "C" st_plugin_info_t *dly_2_init (void);
-extern "C" st_plugin_info_t *dly_flt_2_mod_init (void);
 extern "C" st_plugin_info_t *biquad_lpf_1_init (void);
 extern "C" st_plugin_info_t *biquad_lpf_2_init (void);
 extern "C" st_plugin_info_t *biquad_hpf_1_init (void);
@@ -99,16 +97,18 @@ extern "C" st_plugin_info_t *biquad_lsh_1_init (void);
 extern "C" st_plugin_info_t *biquad_lsh_2_init (void);
 extern "C" st_plugin_info_t *biquad_hsh_1_init (void);
 extern "C" st_plugin_info_t *biquad_hsh_2_init (void);
+extern "C" st_plugin_info_t *chorus_tri_1_init (void);
+extern "C" st_plugin_info_t *cycle_rms_comp_stereo_1_init (void);
+extern "C" st_plugin_info_t *dly_2_init (void);
+extern "C" st_plugin_info_t *dly_flt_2_mod_init (void);
 extern "C" st_plugin_info_t *eq3_init (void);
 extern "C" st_plugin_info_t *gain_init (void);
+// extern "C" st_plugin_info_t *gm_rng_convolve_init (void);
 extern "C" st_plugin_info_t *resample_linear_init (void);
-extern "C" st_plugin_info_t *ws_tanh_asym_init (void);
-extern "C" st_plugin_info_t *ws_fm_init (void);
 extern "C" st_plugin_info_t *schroederverb_init (void);
 extern "C" st_plugin_info_t *valley_plateau_init (void);
-extern "C" st_plugin_info_t *cycle_rms_comp_stereo_1_init (void);
-extern "C" st_plugin_info_t *chorus_tri_1_init (void);
-extern "C" st_plugin_info_t *gm_rng_convolve_init (void);
+extern "C" st_plugin_info_t *ws_tanh_asym_init (void);
+extern "C" st_plugin_info_t *ws_fm_init (void);
 extern "C" {
 // extern st_plugin_info_t *noiseplethora_ab_init (void);
 // extern st_plugin_info_t *noiseplethora_cwhite_init (void);
@@ -215,7 +215,7 @@ int main(int argc, char**argv) {
    sr_register_plugin(&valley_plateau_init);
    sr_register_plugin(&cycle_rms_comp_stereo_1_init);
    sr_register_plugin(&chorus_tri_1_init);
-   sr_register_plugin(&gm_rng_convolve_init);
+   // sr_register_plugin(&gm_rng_convolve_init);
    sr_register_plugin(&np_svf_init);
    fm_stack_init_common();
    sr_register_plugin(&fm_stack_init_loresh);
