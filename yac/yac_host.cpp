@@ -1,7 +1,7 @@
 /// ----
 /// ---- file   : yac_host.cpp
 /// ----
-/// ---- author : (c) 2003 - 2025 by bsp
+/// ---- author : (c) 2003 - 2026 by bsp
 /// ----
 /// ---- date   : 21-Nov-2003 / 27-Jun-2003 / 13-Feb-2004 / 17-Feb-2004 / 19-Feb-2004 / 26-Mar-2004
 /// ----          19-Feb-2005 / 24-Feb-2005 / 12-Mar-2005 / 19-Mar-2005 / 07-May-2005 / 28-Aug-2005
@@ -10,7 +10,7 @@
 /// ----          08-Jan-2009 / 05-Mar-2009 / 01-Apr-2009 / 04-Apr-2009 / 18-Apr-2009 / 04-May-2009
 /// ----          01-Jun-2009 / 11-Jul-2010 / 21-Apr-2011 / 21-Dec-2012 / 13-Aug-2013 / 05-Feb-2014
 /// ----          26-Jun-2018 / 15-Dec-2018 / 28-Dec-2018 / 18-May-2019 / 31-Jul-2019 / 26-Jan-2023
-/// ----          12-Apr-2023 / 10-Oct-2024 / 10-Feb-2025 / 01-Oct-2025
+/// ----          12-Apr-2023 / 10-Oct-2024 / 10-Feb-2025 / 01-Oct-2025 / 24-May-2026
 /// ----
 /// ---- info   : YAC - Yet Another Component object model. originally for the "tks" project
 /// ----
@@ -1754,7 +1754,7 @@ void             YAC_VCALL YAC_Iterator::end                          (void)    
 #ifndef YAC_CUST_STRING
 sUI              YAC_strlen                           (const char *_s)            {if(_s){sUI r=0;while(*_s++)r++;return r;}else return 0;}
                  YAC_String::YAC_String               ()                          {class_ID=YAC_CLID_STRING;buflen=0;bflags=0;length=0;chars=0;key=YAC_LOSTKEY;}
-                 YAC_String::~YAC_String              ()                          {free();}
+                 YAC_String::~YAC_String              ()                          {YAC_String::free();}
 void             YAC_String::free                     (void)                      {if(chars){if(bflags&DEL){Dyacfreechars(chars);}chars=0;length=0;buflen=0;bflags=0;key=YAC_LOSTKEY;}}
 void             YAC_String::visit                    (const sChar*_cstring)      {YAC_String::free();chars=(sU8*)_cstring;key=YAC_LOSTKEY;length=YAC_strlen(_cstring)+1;buflen=0u;}
 sBool            YAC_String::compare                  (const sChar*e)             {yacmemptr f;f.u8=(sU8*)e;sBool ret=f.any!=0;if(ret&&*f.u8&&length){sU32 _key=1;do{_key++;}while(*++f.u8);ret=_key==length;if(ret){yacmemptr t;t.u8=chars;f.u8=(sU8*)e;sU32 i=0;sU32 l=(length>>RINT_SIZE_SHIFT);for(;i<l&&(*t.ui==*f.ui);t.ui++,f.ui++,i+=SIZEOF_RINT){}if(i==length)return!f.u8[-1];ret=*t.u8==*f.u8;if(ret){while(*t.u8==*f.u8)if(!(*t.u8++ && *f.u8++))break;ret=(t.u8-length==chars);}}}return ret;}

@@ -1214,7 +1214,7 @@ public:
 #define YAC_CLONE_TEMP(x, a) (a)->yacNewPooled((YAC_ContextHandle)x, YAC_POOL_HINT_TEMPORARY)
 
 #ifdef YAC_NO_HOST
-#define YAC_DELETE(a) delete a
+#define YAC_DELETE(a) ::delete a
 #else
 #define YAC_DELETE(a) yac_host->yacDelete(a)
 #endif // YAC_NO_HOST
