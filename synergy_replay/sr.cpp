@@ -4172,42 +4172,42 @@ extern "C" void sr_calc_cycle_waveforms(sr_proj_t _proj, sr_song_t _song, sr_cyc
    loc_cycle_sr_song = NULL;
 }
 
-void sr_midi_program_change(sr_proj_t _proj, unsigned char _port, unsigned char _ch, unsigned char _program) {
+extern "C" void sr_midi_program_change(sr_proj_t _proj, unsigned char _port, unsigned char _ch, unsigned char _program) {
    SR_Project *proj = (SR_Project*)_proj;
    proj->midiProgramChange(_port, _ch, _program);
 }
 
-void sr_midi_note_on(sr_proj_t _proj, unsigned char _port, unsigned char _ch, unsigned char _note, unsigned char _vel) {
+extern "C" void sr_midi_note_on(sr_proj_t _proj, unsigned char _port, unsigned char _ch, unsigned char _note, unsigned char _vel) {
    SR_Project *proj = (SR_Project*)_proj;
    proj->midiNoteOn(_port, _ch, _note, _vel);
 }
 
-void sr_midi_note_off(sr_proj_t _proj, unsigned char _port, unsigned char _ch, unsigned char _note, unsigned char _vel) {
+extern "C" void sr_midi_note_off(sr_proj_t _proj, unsigned char _port, unsigned char _ch, unsigned char _note, unsigned char _vel) {
    SR_Project *proj = (SR_Project*)_proj;
    proj->midiNoteOff(_port, _ch, _note, _vel);
 }
 
-void sr_midi_midi_pitchbend(sr_proj_t _proj, unsigned char _port, unsigned char _ch, unsigned short _v) {
+extern "C" void sr_midi_midi_pitchbend(sr_proj_t _proj, unsigned char _port, unsigned char _ch, unsigned short _v) {
    SR_Project *proj = (SR_Project*)_proj;
    proj->midiPitchbend(_port, _ch, _v);
 }
 
-void sr_midi_channel_pressure(sr_proj_t _proj, unsigned char _port, unsigned char _ch, unsigned char _v) {
+extern "C" void sr_midi_channel_pressure(sr_proj_t _proj, unsigned char _port, unsigned char _ch, unsigned char _v) {
    SR_Project *proj = (SR_Project*)_proj;
    proj->midiChannelPressure(_port, _ch, _v);
 }
 
-void sr_midi_poly_pressure(sr_proj_t _proj, unsigned char _port, unsigned char _ch, unsigned char _note, unsigned char _pb) {
+extern "C" void sr_midi_poly_pressure(sr_proj_t _proj, unsigned char _port, unsigned char _ch, unsigned char _note, unsigned char _pb) {
    SR_Project *proj = (SR_Project*)_proj;
    proj->midiPolyPressure(_port, _ch, _note, _pb);
 }
 
-void sr_midi_cc(sr_proj_t _proj, unsigned char _port, unsigned char _ch, unsigned char _cc, unsigned char _v) {
+extern "C" void sr_midi_cc(sr_proj_t _proj, unsigned char _port, unsigned char _ch, unsigned char _cc, unsigned char _v) {
    SR_Project *proj = (SR_Project*)_proj;
    proj->midiCC(_port, _ch, _cc, _v);
 }
 
-void sr_midi_rpn(sr_proj_t _proj, unsigned char _port, unsigned char _ch, unsigned short _rpn, unsigned short _v) {
+extern "C" void sr_midi_rpn(sr_proj_t _proj, unsigned char _port, unsigned char _ch, unsigned short _rpn, unsigned short _v) {
    SR_Project *proj = (SR_Project*)_proj;
    proj->midiRPN(_port, _ch, _rpn, _v);
 }
