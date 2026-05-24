@@ -1,4 +1,4 @@
-`tksampler` is a rather sophisticated audio sampler engine.
+`tksampler` is a free and open source audio sampler engine, distributed under terms of the MIT license.
 
 Features:
    - seamless sample switching

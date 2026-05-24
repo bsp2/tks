@@ -1,16 +1,30 @@
 // ----
 // ---- file   : StPluginWrapper.h
 // ---- author : Bastian Spiegel <bs@tkscript.de>
-// ---- legal  : (c) 2020-2024 by Bastian Spiegel.
-// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
-// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ---- legal  : Distributed under terms of the MIT license (https://opensource.org/licenses/MIT)
+// ----          Copyright 2020-2026 by bsp
+// ----
+// ----          Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+// ----          associated documentation files (the "Software"), to deal in the Software without restriction, including
+// ----          without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// ----          copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to
+// ----          the following conditions:
+// ----
+// ----          The above copyright notice and this permission notice shall be included in all copies or substantial
+// ----          portions of the Software.
+// ----
+// ----          THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
+// ----          NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+// ----          IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+// ----          WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+// ----          SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 // ----
 // ---- info   : Plugin descriptor for StSampleVoice plugin
 // ----
 // ---- created: 16May2020
 // ---- changed: 17May2020, 19May2020, 20May2020, 06Jun2020, 03Feb2021, 30Jul2021, 16Aug2023
 // ----          03Sep2023, 30Nov2023, 07Dec2023, 22Dec2023, 06Jan2024, 12Jan2024, 19Jan2024
-// ----          21Jan2024, 10Aug2024, 27Sep2024, 03Oct2024, 07Nov2024
+// ----          21Jan2024, 10Aug2024, 27Sep2024, 03Oct2024, 07Nov2024, 24May2026
 // ----
 // ----
 // ----

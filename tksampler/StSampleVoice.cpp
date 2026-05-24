@@ -8,7 +8,6 @@
 // ---- info   : This is part of the "syntracker" midi sequencer.
 // ----
 // ---- created: 23Sep2009
-// ----
 // ---- changed: 26Dec2009, 27Dec2009, 29Dec2009, 02Jan2010, 05Jan2010, 07Jan2010, 15Jan2010
 // ----          19Jan2010, 21Jan2010, 27Jan2010, 28Feb2010, 01Mar2010, 12Apr2010, 29Apr2010
 // ----          30Apr2010, 02May2010, 04May2010, 11May2010, 14May2010, 28Jun2010, 29Jun2010
@@ -32,7 +31,7 @@
 // ----          14Jan2024, 15Jan2024, 16Jan2024, 19Jan2024, 28Sep2024, 30Sep2024, 03Oct2024
 // ----          31Oct2024, 03Nov2024, 08Nov2024, 09Nov2024, 11Dec2024, 03Jan2025, 04Jan2025
 // ----          12Jan2025, 09Jan2026, 11Jan2026, 10Apr2026, 08May2026, 09May2026, 14May2026
-// ----          15May2026
+// ----          15May2026, 24May2026
 // ----
 // ----
 // ----
