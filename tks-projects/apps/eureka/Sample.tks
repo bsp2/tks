@@ -5649,6 +5649,7 @@ class Sample {
             tblIdx++;
          }
       }
+      // else (todo) export synergy_replay tuning tables
    }
 
    // <save.png>
@@ -6656,6 +6657,86 @@ class Sample {
    }
 
    // <save.png>
+   protected method exportProcSeqSyn(Stream ofs, Track track) {
+      boolean bDebug = 1;
+      int offBegin = ofs.offset;
+      if(bDebug) trace "[>>>] Sample::exportProcSeqSyn: BEGIN ofs.offset="+ofs.offset;
+      local PointerArray aBuffersCmd;
+      local PointerArray aBuffersNote;
+      local Buffer *bufCmd;
+      local Buffer *bufNote;
+      local MIDIPipeRoot pipeRoot;
+      pipeRoot.allocDeviceSlots(16);  // vst_a..vst_p
+      int devIdx = 0;
+      loop(16)
+      {
+         MIDIPipeDevice pipeDev <= pipeRoot.allocDevice(devIdx);
+         bufCmd  <= new Buffer; bufCmd .size = 32*1024;
+         bufNote <= new Buffer; bufNote.size = 32*1024;
+         aBuffersCmd.add(#(deref bufCmd));
+         aBuffersNote.add(#(deref bufNote));
+         pipeDev.setBuffers(bufCmd, bufNote);
+         devIdx++;
+      }
+      local MIDIPipeFrame frProc;
+      MIDIPipeFrame *fr;
+      int frIdx = 0;
+      foreach fr in proc_seq_frames
+      {
+         frProc = fr;
+         frProc.root = pipeRoot;
+
+         ofs.i8 = 0xFE; // abs-time marker
+         ofs.i8 = fr.timeStamp >> 16;
+         ofs.i8 = fr.timeStamp >>  8;
+         ofs.i8 = fr.timeStamp      ;
+
+         devIdx = 0;
+         loop(16)  // (todo) can be skipped ?
+         {
+            bufCmd  <= aBuffersCmd [devIdx];
+            bufNote <= aBuffersNote[devIdx];
+            bufCmd.offset = 0;
+            bufNote.offset = 0;
+            devIdx++;
+         }
+         frProc.replaceDevIdxAndMidiCh(-1/*fltDev*/, -1/*fltCh*/,
+                                       track.dev_idx, mathMaxi(0, track.midi_ch)
+                                       );
+         if(bDebug) trace "[>>>] Sample::exportProcSeqSyn: ["+frIdx+"] #events="+frProc.numEvents+" root="+#(frProc.root);
+         frProc.emit();
+
+         devIdx = 0;
+         loop(16)
+         {
+            bufCmd  <= aBuffersCmd [devIdx];
+            bufNote <= aBuffersNote[devIdx];
+
+            if(bufCmd.offset > 0)
+            {
+               if(bDebug) trace "[>>>] Sample::exportProcSeqSyn: ["+frIdx+"] devIdx="+devIdx+" write frame bufCmd.offset="+bufCmd.offset;
+               ofs.writeBuffer(bufCmd, 0, bufCmd.offset);
+               if(bDebug) bufCmd.hexdump(0, bufCmd.offset);
+            }
+
+            if(bufNote.offset > 0)
+            {
+               if(bDebug) trace "[>>>] Sample::exportProcSeqSyn: ["+frIdx+"] devIdx="+devIdx+" write frame bufNote.offset="+bufNote.offset;
+               ofs.writeBuffer(bufNote, 0, bufNote.offset);
+               if(bDebug) bufNote.hexdump(0, bufNote.offset);
+            }
+
+            devIdx++;
+         }
+
+         // Next frame
+         frIdx++;
+      }
+      if(bDebug) trace "[trc] Sample::exportProcSeqSyn: END ofs.offset="+ofs.offset+" => size="+(ofs.offset - offBegin);
+      pipeRoot.freeDevices();
+   }
+
+   // <save.png>
    protected method saveStateInt(Stream ofs, boolean _bEditor) {
 
       if(_bEditor)
@@ -6788,19 +6869,55 @@ class Sample {
          s <= s.next;
       }
 
+      // (todo) sample bank tuning table
+
       if(_bEditor)
       {
          // Synth patch ("cycle") (v6+)
          cycle_state.saveState(ofs);
       }
 
+      MIDIPipeFrame *fr;
       if(_bEditor)
       {
          // Procedural track sequence events (v18+)
          ofs.i16 = proc_seq_frames.numElements;
-         MIDIPipeFrame *fr;
          foreach fr in proc_seq_frames
             fr.saveState(ofs);
+      }
+      else
+      {
+         // (note) in editor mode, src_track_idx is written in saveState()
+         if(proc_seq_frames.numElements > 0)
+         {
+            Track track <= current_project.getTrackByIdx(src_track_idx);
+            if(null != track)
+            {
+               // orig_src_track_idx
+               ofs.i8 = src_track_idx;
+
+               // bpm
+               trace "[trc] Sample::saveStateInt: export current_project.bpm="+current_project.bpm;
+               ofs.f32 = current_project.bpm;
+
+               // proc_seq MIDI stream
+               int seqOff = ofs.offset;
+               ofs.i32 = 0;
+               exportProcSeqSyn(ofs, track);
+               int seqOffEnd = ofs.offset;
+               ofs.offset = seqOff;
+               ofs.i32 = seqOffEnd - seqOff - 4/*sizeof(i32)*/;
+               ofs.offset = seqOffEnd;
+            }
+            else
+            {
+               ofs.i8 = -1;  // orig_src_track_idx=none
+            }
+         }
+         else
+         {
+            ofs.i8 = -1;  // orig_src_track_idx=none
+         }
       }
    }
 
