@@ -1,8 +1,8 @@
 % Eureka Sampler / DAW
 % bsp
-% 26-Apr-2026
+% 26-May-2026
 >>>
-17Nov2019, 15May2020, 16Oct2020, 06Feb2021, 31May2021, 04Jan2023, 18Mar2023, 24Mar2023, 31Mar2023, 04Aug2023, 05Aug2023, 10Aug2023, 16Aug2023, 18Aug2023, 19Aug2023, 07Dec2023, 14Dec2023, 15Dec2023, 16Dec2023, 03Feb2024, 27Apr2024, 07Jul2024, 04Aug2024, 06Aug2024, 10Aug2024, 12Aug2024, 28Sep2024, 30Sep2024, 03Oct2024, 04Oct2024, 05Oct2024, 28Nov2024, 30Nov2024, 23Dec2024, 26Dec2024, 28Dec2024, 31Dec2024, 04Jan2025, 20Mar2025, 21Mar2025, 22May2025, 28May2025, 29May2025, 30May2025, 07Jun2025, 11Jun2025, 12Jun2025, 15Jun2025, 20Jun2025, 21Jun2025, 11Dec2025, 02Jan2026, 17Jan2026, 26Jan2026, 09Apr2026, 10Apr2026, 15Apr2026, 16Apr2026, 23Apr2026, 26Apr2026
+17Nov2019, 15May2020, 16Oct2020, 06Feb2021, 31May2021, 04Jan2023, 18Mar2023, 24Mar2023, 31Mar2023, 04Aug2023, 05Aug2023, 10Aug2023, 16Aug2023, 18Aug2023, 19Aug2023, 07Dec2023, 14Dec2023, 15Dec2023, 16Dec2023, 03Feb2024, 27Apr2024, 07Jul2024, 04Aug2024, 06Aug2024, 10Aug2024, 12Aug2024, 28Sep2024, 30Sep2024, 03Oct2024, 04Oct2024, 05Oct2024, 28Nov2024, 30Nov2024, 23Dec2024, 26Dec2024, 28Dec2024, 31Dec2024, 04Jan2025, 20Mar2025, 21Mar2025, 22May2025, 28May2025, 29May2025, 30May2025, 07Jun2025, 11Jun2025, 12Jun2025, 15Jun2025, 20Jun2025, 21Jun2025, 11Dec2025, 02Jan2026, 17Jan2026, 26Jan2026, 09Apr2026, 10Apr2026, 15Apr2026, 16Apr2026, 23Apr2026, 26Apr2026, 26May2026
 <<<
 $(var:header)
 
@@ -441,7 +441,9 @@ note: shortcuts assume a US keyboard layout (unless stated otherwise).
 note: see Cycle curve editor for all bezier editor shortcuts
 
 ..in sample modseq curve dialog:
+
 note: LMB-click modseq editor panel to set keyboard focus
+
    |noheader
    |:RMB-click    | 
    |+a            |+show context menu
@@ -467,6 +469,7 @@ note: LMB-click modseq editor panel to set keyboard focus
    ].kbd_table Samples Page ModSeq keyboard shortcuts
 
 ..in Cycle synth patch main dialog:
+
    |noheader
    |:ESC OR F11         |:hide dialog
    |:a                  |:show tools menu
@@ -490,9 +493,10 @@ note: LMB-click modseq editor panel to set keyboard focus
    |:lshift - v         |:paste shared patch from clipboard
    |+lctrl - w          |+rebuild + reload voice plugin or recalc sample
    |:lctrl - lshift - w |: toggle auto-export / auto-recalc
-   ].kbd_table Cycle source editor keyboard shortcuts
+   ].kbd_table Cycle patch dialog keyboard shortcuts
 
 ..in Cycle synth patch machine source editor:
+
    |noheader
    |:ESC             |:
    |+lctrl - SPACE   |+hide source editor (and save source changes)
@@ -515,13 +519,15 @@ note: LMB-click modseq editor panel to set keyboard focus
    |:lalt - RIGHT    |:show next patch-buffer
    ].kbd_table Cycle source editor keyboard shortcuts
 
->>>note_numberedit
-Number-edit (via TAB or RMB-drag) supports value-range annotations which use the 
-"# <min> <max> [<prec> [<stepCoarse> [<stepFine>]]]
+
+>>>notenumberedit
+Number-edit (via TAB or RMB-drag) supports value-range annotations using the
+"\# \<min\> \<max\> \[\<prec\> \[\<stepCoarse\> \[\<stepFine\>\]\]\]" syntax
 <<<
-tip: $(buf!note_numberedit)
+tip: $(buf!notenumberedit)
 
 ..in Cycle curve editor:
+
    |noheader
    |:ESC           |:unzoom envelope or hide editor
    |:c             |:hide editor
@@ -547,6 +553,7 @@ tip: $(buf!note_numberedit)
    ].kbd_table Cycle curve editor keyboard shortcuts
 
 ..in Cycle curve editor or envelope curve editor:
+
    |noheader
    |:TAB                        |: minimize / close editor dialog / refocus machine text editor
    |:lctrl - a                  |:

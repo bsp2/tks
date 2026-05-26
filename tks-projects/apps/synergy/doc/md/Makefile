@@ -1,6 +1,6 @@
 
 .PHONY: md
-md: index keyboard faderport montage twister
+md: index keyboard faderport montage twister replay
 
 # bash (MSYS on Windows)
 .PHONY: screenshots
@@ -30,6 +30,10 @@ montage:
 .PHONY: twister
 twister:
 	tks app:md -il -css index.css twister.md
+
+.PHONY: replay
+replay:
+	tks app:md -il -css index.css replay.md
 
 # cygwin
 .PHONY: thumbs
