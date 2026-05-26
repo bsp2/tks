@@ -27,7 +27,7 @@
 // ---- changed: 13Apr2023, 14Apr2023, 15Apr2023, 20Apr2023, 21Apr2023, 22Apr2023, 23Apr2023
 // ----          11Aug2023, 08Sep2023, 19Sep2023, 22Sep2023, 18Nov2023, 03Oct2024, 07Dec2024
 // ----          04Jan2025, 09Jan2026, 10Apr2026, 09May2026, 15May2026, 17May2026, 18May2026
-// ----          19May2026, 20May2026, 22May2026, 23May2026
+// ----          19May2026, 20May2026, 22May2026, 23May2026, 25May2026, 26May2026
 // ----
 // ----
 // ----
@@ -2731,6 +2731,7 @@ public:
       events     = NULL;
       num_events = 0u;
       ::memset(channels, 0, sizeof(channels));
+      ev_idx = 0u;
    }
 
    ~SR_SongTrack() {
@@ -2743,7 +2744,7 @@ public:
       }
    }
 
-   void start(void) {
+   void restart(void) {
       ev_idx = 0u;
    }
 
@@ -2933,12 +2934,12 @@ public:
       frames_per_tick = loc_sr_mix_rate * secPerTick;
    }
 
-   void start(void) {
+   void restart(void) {
       tick_idx = 0u;
       tick_frames_left = 0.0f;
       for(sUI trackIdx = 0u; trackIdx < num_tracks; trackIdx++)
       {
-         tracks[trackIdx].start();
+         tracks[trackIdx].restart();
       }
    }
 
@@ -2988,7 +2989,7 @@ public:
          if(tick_frames_left <= 0.0f)
          {
             if(tick_idx >= num_ticks)
-               start();
+               restart();
 
             // Play sequence
             for(sUI trackIdx = 0u; trackIdx < num_tracks; trackIdx++)
@@ -3043,7 +3044,8 @@ public:
 extern "C" void sr_process(sr_proj_t _proj,
                            sr_song_t _song,
                            float       *_mixBuf,
-                           unsigned int _numFrames
+                           unsigned int _numFrames,
+                           sr_bool_t    _bClearMixBuf
                            ) {
    SR_Project *proj = (SR_Project*)_proj;
    SR_Song *song = (SR_Song*)_song;
@@ -3052,7 +3054,8 @@ extern "C" void sr_process(sr_proj_t _proj,
    mixBuf.elements     = _mixBuf;
    mixBuf.own_data     = YAC_FALSE;
    mixBuf.num_elements = mixBuf.max_elements = _numFrames * 2u/*stereo*/;
-   ::memset((void*)mixBuf.elements, 0, mixBuf.num_elements * sizeof(sF32));
+   if(_bClearMixBuf)
+      ::memset((void*)mixBuf.elements, 0, mixBuf.num_elements * sizeof(sF32));
    song->process(proj, mixBuf);
 }
 
@@ -3101,7 +3104,10 @@ extern "C" sr_bool_t sr_proj_load_buffer(sr_proj_t _proj,
             ::memset((void*)proj->wf_dat, 0, wfTotal*sizeof(sF32));
 
             proj->num_tracks = ifs.u8();
-            Dinfo("[...] sr_proj_load: #tracks=%u\n", proj->num_tracks);
+            Dinfov("[...] sr_proj_load: #tracks=%u\n", proj->num_tracks);
+
+            sUI totalNumFX = 0u;
+            sUI totalNumSends = 0u;
 
             sUI maxPoly = 0u;
 
@@ -3170,6 +3176,7 @@ extern "C" sr_bool_t sr_proj_load_buffer(sr_proj_t _proj,
                         (void)paramVal;
 #endif // SR_TRACK_FX
                      } // loop params
+                     totalNumFX++;
                   }
                } // loop mods
 
@@ -3204,6 +3211,7 @@ extern "C" sr_bool_t sr_proj_load_buffer(sr_proj_t _proj,
                   {
                      Dprintf("[~~~] track %u/%u output %u/%u exceeds SR_MAX_TRACK_OUTPUTS, skipping..\n", trackIdx+1u, proj->num_tracks, outputIdx+1u, numOutputs);
                   }
+                  totalNumSends++;
 #else
                   // // if(0u/*default*/ == outDest)
                   if(0u == outputIdx)
@@ -3343,7 +3351,7 @@ extern "C" sr_bool_t sr_proj_load_buffer(sr_proj_t _proj,
                wfDat += smpDat->num_elements;
             }
 
-            Dsuccess("[+++] sr_proj_load: finished reading at io_offset=%u/%u. maxPoly=%u\n", ifs.io_offset, ifs.size, maxPoly);
+            Dsuccess("[+++] sr_proj_load: finished reading at io_offset=%u/%u. maxPoly=%u #fx=%u #sends=%u\n", ifs.io_offset, ifs.size, maxPoly, totalNumFX, totalNumSends);
 
 #ifdef SR_SAVE_WF_DAT
             if(1)
@@ -3904,9 +3912,9 @@ extern "C" unsigned int sr_song_get_total_num_ev(sr_song_t _song) {
    return song->total_num_ev;
 }
 
-extern "C" void sr_song_start(sr_song_t _song) {
+extern "C" void sr_song_restart(sr_song_t _song) {
    SR_Song *song = (SR_Song*)_song;
-   song->start();
+   song->restart();
 }
 
 extern "C" float sr_song_get_bpm(sr_song_t _song) {

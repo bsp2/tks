@@ -27,7 +27,7 @@
 // ---- changed: 13Apr2023, 14Apr2023, 15Apr2023, 20Apr2023, 21Apr2023, 22Apr2023, 23Apr2023
 // ----          11Aug2023, 08Sep2023, 19Sep2023, 22Sep2023, 18Nov2023, 03Oct2024, 07Dec2024
 // ----          04Jan2025, 09Jan2026, 10Apr2026, 09May2026, 15May2026, 17May2026, 18May2026
-// ----          19May2026, 20May2026, 22May2026, 24May2026
+// ----          19May2026, 20May2026, 22May2026, 24May2026, 26May2026
 // ----
 // ----
 // ----
@@ -165,13 +165,13 @@ void sr_proj_set_tempo (sr_proj_t    _proj,
 float sr_song_get_frames_per_tick (sr_song_t song);
 unsigned int sr_song_get_num_ticks (sr_song_t song);
 sr_bool_t sr_proj_alloc_mix_buffers (sr_proj_t _proj);
-void sr_song_start (sr_song_t _song);
+void sr_song_restart (sr_song_t _song);
 void sr_calc_cycle_waveforms (sr_proj_t _proj, sr_song_t _song, sr_cycle_calc_waveform_fxn_t _cycleCalcWaveformFxn);
-// (note) clears mixBuf
 void sr_process (sr_proj_t _proj,
                  sr_song_t _song,
                  float        *_mixBuf,
-                 unsigned int  _numFrames
+                 unsigned int  _numFrames,
+                 sr_bool_t     _bClearMixBuf
                  );
 void sr_song_delete (sr_song_t _song);
 void sr_proj_delete (sr_proj_t _proj);
