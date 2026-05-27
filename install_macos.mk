@@ -255,7 +255,11 @@ OPTFLAGS=
 
 ifeq ($(RELEASE),y)
 
+ifeq ($(OPT_SIZE),y)
+OPTFLAGS += -Os
+else
 OPTFLAGS += -O3
+endif
 #OPTFLAGS += -O2
 #OPTFLAGS += -O2 -fsanitize=undefined
 #OPTFLAGS +=

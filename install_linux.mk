@@ -267,7 +267,11 @@ CPPFLAGS+= $(MFLAGS) --sysroot=$(CROSS_ROOT)
 LDFLAGS += $(MFLAGS) --sysroot=$(CROSS_ROOT)
 OPTFLAGS += -O3
 else
+ifeq ($(OPT_SIZE),y)
+OPTFLAGS += -Os
+else
 OPTFLAGS += -O3
+endif
 # for Raspberry Pi or Poky Linux builds
 ifeq ($(BUILD_ARM),y)
 ifeq ($(BUILD_64),n)
