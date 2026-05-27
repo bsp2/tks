@@ -179,9 +179,9 @@ static int stream_callback(const void *input, void *output,
 
 
 // ------------------------------------ loc_open_audio_device
+#ifdef SR_PORTAUDIO
 static PaStream *loc_pa_stream;
 
-#ifdef SR_PORTAUDIO
 static int loc_open_audio_device(void) {
    Pa_Initialize();
    Dtrace("[trc] PA_Initialize() ok\n");

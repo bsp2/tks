@@ -67,7 +67,9 @@ Dyac_std_exid_decl;
 #include "StSampleBank.h"
 #include "StSampleVoice.h"
 #include "StSamplePlayer.h"
+#ifndef LIBSYNERGY_BUILD
 #include "StFFT.h"
+#endif // LIBSYNERGY_BUILD
 
 #include "ying_tksampler.h"
 

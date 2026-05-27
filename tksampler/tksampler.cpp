@@ -72,7 +72,9 @@ void YAC_CALL YAC_Init(YAC_Host *_host) {
    YAC_Init_tksampler(_host);
 
    StSampleVoice::InitLanczosTables();
+#ifndef LIBSYNERGY_BUILD
    StSampleVoice::InitAdditiveTables();
+#endif // LIBSYNERGY_BUILD
    StSampleVoice::InitMMCurveLUT();
 }
 

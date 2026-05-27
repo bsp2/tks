@@ -24,6 +24,7 @@
 // ----          16Aug2023, 14Sep2023, 10Jan2024, 11Jan2024, 13Jan2024, 14Jan2024, 15Jan2024
 // ----          16Jan2024, 05Aug2024, 28Sep2024, 01Oct2024, 02Oct2024, 03Oct2024, 03Nov2024
 // ----          03Jan2025, 04Jan2025, 09Jan2026, 16Jan2026, 14May2026, 16May2026, 24May2026
+// ----          27May2026
 // ----
 // ----
 // ----
@@ -221,9 +222,11 @@ struct tksampler_mmdst_t {
       sF32 aux;
    } env;
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
    sF32 liverec_start;     // >= 0.5: (re-)trigger live recording
    sF32 liverec_continue;  // >= 0.5: (re-)start live recording when not already active
    sF32 liverec_stop;      // >= 0.5: stop live recording
+#endif // TKSAMPLER_SKIP_LIVEREC
 
    sUI  plugin_mod_mask;  // one bit per plugin modulation target (8 bits per plugin, 8*4=32 bits total). 1=plugin modulation changed
    sF32 plugins[STSAMPLE_NUM_PLUGINS][STSAMPLE_NUM_MODS_PER_PLUGIN];
@@ -303,6 +306,7 @@ YC class StSampleVoice : public YAC_Object {
    const sF32 *freq_table;
    sF32        interpolated_freq_table[128];  // STSAMPLE_MM_DST_TUNING_TABLE_REL
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
    // Same format as sample->sample_loops but overrides these
    //  (originally added for Synergy replay)
    //  nowadays [26Feb2020] used for liverec loopdetect sustain mode
@@ -317,6 +321,7 @@ YC class StSampleVoice : public YAC_Object {
    sSI   liverec_copy_loop_len;
    sUI   liverec_copy_doublebuffer_rec_idx;
    sF32  liverec_osc_pitch_factor;  // in osc mode, compensate detected loop cycle pitch change
+#endif // TKSAMPLER_SKIP_LIVEREC
 
    tksampler_lfsr_t lfsr;
 
@@ -565,6 +570,7 @@ YC class StSampleVoice : public YAC_Object {
    sBool b_allow_xfade; // false during attack section of "from start" infinite loop
 
    // for additive/resynth wavetable mode, even and odd
+#ifndef TKSAMPLER_SKIP_ADDITIVE
    sU16 partial_phases[256 * 256];  // one set per wave  (todo) alloc dynamically ?
    sU16 partial_speeds[256 * 2];
    sF32 partial_phase_offset;  // 0..cycle_len
@@ -583,6 +589,7 @@ YC class StSampleVoice : public YAC_Object {
    sF32 *additive_tbl;  // initially null. allocated when using per-voice additive wt osc modulation.
    sF32  mmdst_additive_stereo_spread;
    sF32  mmdst_additive_num_partials;
+#endif // TKSAMPLER_SKIP_ADDITIVE
 
    // optimization hint (no sample playback, (osc) voice plugins only, e.g. FM Stack)
    //  updated in reallyStartVoice()
@@ -626,13 +633,16 @@ YC class StSampleVoice : public YAC_Object {
 
    void calcModMatrix (tksampler_mmdst_t &mmdst);
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
    void lazyAllocOverrideSmpDat (sUI _sz);
+#endif // TKSAMPLER_SKIP_LIVEREC
 
    void adjustPlayOffsetToNextZeroCrossing (const sF32 *_smpDat);
 
   public:
    static sF32 BitReduce (sF32 f, const sF32 _brPreAmp, const sU16 _brMask);
 
+#ifndef TKSAMPLER_SKIP_ADDITIVE
    static sF32 sum_partials (const sF32 *_tbl, sU16 *_phases, const sU16 *_speeds, const sF32 *_amps,
                              const sUI _numPartials, const sF32 _lastPartialAmt
                              );
@@ -660,6 +670,7 @@ YC class StSampleVoice : public YAC_Object {
                                            const sUI _srMask, const sF32 _brPreAmp, const sU16 _brMask,
                                            sF32 &retL, sF32 &retR
                                            );
+#endif // TKSAMPLER_SKIP_ADDITIVE
 
   protected:
 
@@ -685,43 +696,57 @@ YC class StSampleVoice : public YAC_Object {
 
    sBool updateWt2dOffset (void);
 
+#ifndef TKSAMPLER_SKIP_ADDITIVE
    void renderBlockAdditive (sF32 *     buf,
                              sUI        blkSz,
                              sF32 *     smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
                              sF32 *     smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
                              const sF32 a,
                              const sF32 b,
                              sF32       cVolL,
                              sF32       cVolR,
                              const sF32 sVolL,
-                             const sF32 sVolR,
-                             const sF32**_inputsOrNull/*sz=STSAMPLE_MAX_INPUTS*/
+                             const sF32 sVolR
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                             , const sF32**_inputsOrNull/*sz=STSAMPLE_MAX_INPUTS*/
+#endif // TKSAMPLER_SKIP_LIVEREC
                              );
+#endif // TKSAMPLER_SKIP_ADDITIVE
 
    void renderBlockTimestretch (sF32 *     buf,
                                 sUI        blkSz,
                                 sF32 *     smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
                                 sF32 *     smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
                                 const sF32 a,
                                 const sF32 b,
                                 sF32       cVolL,
                                 sF32       cVolR,
                                 const sF32 sVolL,
-                                const sF32 sVolR,
-                                const sF32**_inputsOrNull/*sz=STSAMPLE_MAX_INPUTS*/
+                                const sF32 sVolR
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                , const sF32**_inputsOrNull/*sz=STSAMPLE_MAX_INPUTS*/
+#endif // TKSAMPLER_SKIP_LIVEREC
                                 );
 
    sUI  renderBlockNormal (sF32 *     buf,
                            sUI        blkSz,
                            sF32 *     smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
                            sF32 *     smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
                            const sF32 a,
                            const sF32 b,
                            sF32       cVolL,
                            sF32       cVolR,
                            const sF32 sVolL,
-                           const sF32 sVolR,
-                           const sF32**_inputsOrNull/*sz=STSAMPLE_MAX_INPUTS*/
+                           const sF32 sVolR
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                           , const sF32**_inputsOrNull/*sz=STSAMPLE_MAX_INPUTS*/
+#endif // TKSAMPLER_SKIP_LIVEREC
                            );
 
    sUI renderFragmentOptFwdMonoSimple (sF32 *&    buf,
@@ -730,21 +755,27 @@ YC class StSampleVoice : public YAC_Object {
                                        sF32 *&    smpDat,
                                        sF32 &     cVolL,
                                        sF32 &     cVolR,
-                                       sF32 &     cRate,
-                                       const sF32**_inputsOrNull/*sz=STSAMPLE_MAX_INPUTS*/
+                                       sF32 &     cRate
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                       , const sF32**_inputsOrNull/*sz=STSAMPLE_MAX_INPUTS*/
+#endif // TKSAMPLER_SKIP_LIVEREC
                                        );
 
    sUI renderFragmentGeneric (sF32 *&    buf,
                               const sUI  _fragSize,
                               sF32 *&    smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
                               sF32 *&    smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
                               sF32 &     cVolL,
                               sF32 &     cVolR,
                               const sF32 sVolL,
                               const sF32 sVolR,
                               sF32 &     cRate,
-                              const sF32 sRate,
-                              const sF32**_inputsOrNull/*sz=STSAMPLE_MAX_INPUTS*/
+                              const sF32 sRate
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                              , const sF32**_inputsOrNull/*sz=STSAMPLE_MAX_INPUTS*/
+#endif // TKSAMPLER_SKIP_LIVEREC
                               );
 
    // - infinite sample loop <= 32 frames
@@ -767,11 +798,15 @@ YC class StSampleVoice : public YAC_Object {
    void alignSampleLenToCyclelen (sUI &_sampleLen);
    void calcCurrentOffset (void);
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
    void liveRecCopyToOverride (sF32 *_smpDatBase, sUI _waveOff);
    void liveRecResampleToOverride (sF32 *_smpDatBase, sUI _waveOff);
+#endif // TKSAMPLER_SKIP_LIVEREC
 
    void calcSmpDat(sF32*&_smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
                    sF32*&_smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
                    const sUI _curSampleOffset,
                    const sUI _curOrigSampleLen,
                    const sUI _curSampleLen
@@ -792,7 +827,9 @@ YC class StSampleVoice : public YAC_Object {
 
    YAC_IntArray *getCurrentSampleLoops(void) const;
 
+#ifndef TKSAMPLER_SKIP_ADDITIVE
    void recalcAdditiveTblMix (void);
+#endif // TKSAMPLER_SKIP_ADDITIVE
 
   public:
    StSampleVoice(void);
@@ -818,16 +855,49 @@ YC class StSampleVoice : public YAC_Object {
 
    void prepareToPlay (StSample *_sample, sSI _voiceKey, sUI _voiceAllocIdx); // called after voicealloc
 
-   sUI renderBlock (sF32 *buf, sUI blkSz, sF32 a, sF32 b, sF32 _volScale, const sF32**_inputsOrNull/*sz=STSAMPLE_MAX_INPUTS*/);
+   sUI renderBlock (sF32 *buf, sUI blkSz, sF32 a, sF32 b, sF32 _volScale
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                    , const sF32**_inputsOrNull/*sz=STSAMPLE_MAX_INPUTS*/
+#endif // TKSAMPLER_SKIP_LIVEREC
+                    );
 
-   void handleEndOfLoopOver (const sF32 *_smpDatCur, sUI _frameOffOver, const sF32 **_smpDatNew, sUI *_frameOffNew) const;
-   sBool handleEndOfLoop (sF64 *cOff, sF32**smpDat, sF32**smpDatLRX, sBool _bFromStart, sBool _bAllowCOffReset);
+   void handleEndOfLoopOver (const sF32 *_smpDatCur,
+                             sUI _frameOffOver,
+                             const sF32 **_smpDatNew,
+                             sUI *_frameOffNew
+                             ) const;
+   sBool handleEndOfLoop (sF64 *cOff,
+                          sF32**smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                          sF32**smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                          sBool _bFromStart,
+                          sBool _bAllowCOffReset
+                          );
 
    void calcTSWindowSin (sUI _len);
    void calcTSWindowTri (sUI _len);
 
-   void readWindowedCycleSample (const sF32 *smpDat, const sF32 *smpDatLRX, sUI _off, sF32 _tsOff, sF32 *_l, sF32 *_r, const sUI _curSampleLen);
-   void readWindowedSample (const sF32 *smpDat, const sF32 *smpDatLRX, sF32 _off, sF32 *_l, sF32 *_r, sBool _bAllowInterpol, const sUI _curSampleLen);
+   void readWindowedCycleSample (const sF32 *smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                 const sF32 *smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                 sUI _off,
+                                 sF32 _tsOff,
+                                 sF32 *_l,
+                                 sF32 *_r,
+                                 const sUI _curSampleLen
+                                 );
+   void readWindowedSample (const sF32 *smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                            const sF32 *smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                            sF32 _off,
+                            sF32 *_l,
+                            sF32 *_r,
+                            sBool _bAllowInterpol,
+                            const sUI _curSampleLen
+                            );
 
    sF32 readSample1IntAI (const sF32 *smpDat, sSI _off) /*const*/;  // mono
    sF32 readSample1IntRaw (const sF32 *smpDat, sSI _off) /*const*/;  // mono
@@ -837,11 +907,31 @@ YC class StSampleVoice : public YAC_Object {
    sF32 readSample2IntRaw (const sF32 *smpDat, sSI _off) /*const*/;  // stereo
    sF32 readSample2IntWrap (const sF32 *smpDat, sSI _off) const;  // stereo
 
-   sF32 readSample1LRX(const sF32 *smpDat, const sF32 *smpDatLRX, sSI _off) /*const*/;  // mono
-   sF32 readSample2LRX(const sF32 *smpDat, const sF32 *smpDatLRX, sSI _off) /*const*/;  // stereo
+   sF32 readSample1LRX(const sF32 *smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                       const sF32 *smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                       sSI _off
+                       ) /*const*/;  // mono
+   sF32 readSample2LRX(const sF32 *smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                       const sF32 *smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                       sSI _off
+                       ) /*const*/;  // stereo
 
-   sF32 readSample1(const sF32 *smpDat, const sF32 *smpDatLRX, sSI _off) /*const*/;  // mono
-   sF32 readSample2(const sF32 *smpDat, const sF32 *smpDatLRX, sSI _off) /*const*/;  // stereo
+   sF32 readSample1(const sF32 *smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                    const sF32 *smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                    sSI _off
+                    ) /*const*/;  // mono
+   sF32 readSample2(const sF32 *smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                    const sF32 *smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                    sSI _off
+                    ) /*const*/;  // stereo
 
    void handleReorderVoicePlugins (const sUI *_ia);
 
@@ -1390,7 +1480,11 @@ YC class StSampleVoice : public YAC_Object {
    /* @method render,FloatArray buf
     */
    YM void _render (YAC_Object *_fa, sF32 _volScale); // "add" to stereo buffer
-   void renderInt (YAC_Object *_fa, sF32 _volScale, const sF32**_inputsOrNull/*sz=STSAMPLE_MAX_INPUTS*/);
+   void renderInt (YAC_Object *_fa, sF32 _volScale
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                   , const sF32**_inputsOrNull/*sz=STSAMPLE_MAX_INPUTS*/
+#endif // TKSAMPLER_SKIP_LIVEREC
+                   );
 
 
    /* @method PrintDebugStats
@@ -1401,6 +1495,7 @@ YC class StSampleVoice : public YAC_Object {
    // (todo) unused, remove ?
    YM sF32 _FreqToNote (sF32 _freq, YAC_Object *_freqTable);
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
    // used by liverec sustain mode
    YM void        _allocOverrideSampleLoops       (void);
    YM YAC_Object *_getOrCreateOverrideSampleLoops (void);
@@ -1416,6 +1511,7 @@ YC class StSampleVoice : public YAC_Object {
 
    YM sBool copyOverrideBufferToWaveform (void);
    YM sBool copyOverrideBufferToFloatArray (YAC_Object *_d);
+#endif // TKSAMPLER_SKIP_LIVEREC
 
 
    /* @method setFilterCutOff,float f

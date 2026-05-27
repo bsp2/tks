@@ -31,7 +31,7 @@
 // ----          14Jan2024, 15Jan2024, 16Jan2024, 19Jan2024, 28Sep2024, 30Sep2024, 03Oct2024
 // ----          31Oct2024, 03Nov2024, 08Nov2024, 09Nov2024, 11Dec2024, 03Jan2025, 04Jan2025
 // ----          12Jan2025, 09Jan2026, 11Jan2026, 10Apr2026, 08May2026, 09May2026, 14May2026
-// ----          15May2026, 24May2026
+// ----          15May2026, 24May2026, 27May2026
 // ----
 // ----
 // ----
@@ -119,6 +119,7 @@ void StSampleVoice::InitLanczosTables(void) {
    loc_init_lanczos_tbl(lanczos_tbl_a32, LANCZOS_TSZ_A32, 32);
 }
 
+#ifndef TKSAMPLER_SKIP_ADDITIVE
 sF32 StSampleVoice::additive_sin_tbl[4096];
 
 void StSampleVoice::InitAdditiveTables(void) {
@@ -135,6 +136,7 @@ void StSampleVoice::InitAdditiveTables(void) {
    }
 
 }
+#endif // TKSAMPLER_SKIP_ADDITIVE
 
 sF32 StSampleVoice::mm_curve_lut[32*32*256];
 
@@ -255,17 +257,21 @@ StSampleVoice::StSampleVoice(void) {
    freq_table    = NULL;
    sample_player = NULL;
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
    override_sample_loops = NULL;
    override_smpdat = NULL;
    override_smpdat_sz = 0u;
    b_override_smpdat_copied = YAC_FALSE;
+#endif // TKSAMPLER_SKIP_LIVEREC
 
    memset(plugin_cache_entries, 0, sizeof(plugin_cache_entries));
 
+#ifndef TKSAMPLER_SKIP_ADDITIVE
    memset((void*)partial_phases, 0, sizeof(partial_phases));
    memset((void*)partial_speeds, 0, sizeof(partial_speeds));
 
    additive_tbl = NULL;
+#endif // TKSAMPLER_SKIP_ADDITIVE
 
    adsr_vol.min_level = 0.0f;
 
@@ -273,6 +279,8 @@ StSampleVoice::StSampleVoice(void) {
 }
 
 StSampleVoice::~StSampleVoice() {
+
+#ifndef TKSAMPLER_SKIP_LIVEREC
    YAC_DELETE_SAFE(override_sample_loops);
 
    if(NULL != override_smpdat)
@@ -281,14 +289,18 @@ StSampleVoice::~StSampleVoice() {
       override_smpdat = NULL;
       override_smpdat_sz = 0u;
    }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_ADDITIVE
    if(NULL != additive_tbl)
    {
       delete [] additive_tbl;
       additive_tbl = NULL;
    }
+#endif // TKSAMPLER_SKIP_ADDITIVE
 }
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 void StSampleVoice::lazyAllocOverrideSmpDat(sUI _sz) {
    if((NULL == override_smpdat) || (override_smpdat_sz != _sz))
    {
@@ -304,6 +316,7 @@ void StSampleVoice::lazyAllocOverrideSmpDat(sUI _sz) {
          override_smpdat_sz = 0u;
    }
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
 const sF32 *StSampleVoice::getCurrentFreqTable(void) const {
    const sF32 *ret = NULL;
@@ -490,6 +503,7 @@ void StSampleVoice::_resetVoice(void) {
 
    b_fwd = 1;
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
    if( (NULL == sample) || !(sample->keepInitialOscCopyOverrideBuffer() && b_override_smpdat_copied) )
    {
       b_override_smpdat_copied = YAC_FALSE;
@@ -502,6 +516,7 @@ void StSampleVoice::_resetVoice(void) {
       // Dyac_host_printf("xxx skip liverec osc reset, liverec_copy_loop_len=%u\n", liverec_copy_loop_len);
    }
    liverec_copy_doublebuffer_rec_idx = 0u;
+#endif // TKSAMPLER_SKIP_LIVEREC
 
    // Remove plugin cache refs / mark previous cache entries as unused
    for(sUI pluginIdx = 0u; pluginIdx < STSAMPLE_NUM_PLUGINS; pluginIdx++)
@@ -519,6 +534,7 @@ void StSampleVoice::_resetVoice(void) {
    for(sUI i = 0u; i < STSAMPLEVOICE_MAX_LAYERS; i++)
       voice_bus_buffers_self[i] = sp_voice_bus_null_buffer;
 
+#ifndef TKSAMPLER_SKIP_ADDITIVE
    last_additive_cfg = -1.0f;
    mmdst_additive_cfg = 0.0f;
    mmdst_additive_stereo_spread = 0.0f;
@@ -527,6 +543,7 @@ void StSampleVoice::_resetVoice(void) {
    // // ::memset((void*)slew_partial_phases, 0, sizeof(slew_partial_phases));
    ::memset((void*)slew_partial_speeds, 0, sizeof(slew_partial_speeds));
    ::memset((void*)slew_partial_magnitudes, 0, sizeof(slew_partial_magnitudes));
+#endif // TKSAMPLER_SKIP_ADDITIVE
 
    memset((void*)modmatrix_slewed_src_values, 0, sizeof(sF64) * STSAMPLE_NUM_MODMATRIX_ENTRIES);
 
@@ -1020,6 +1037,7 @@ void StSampleVoice::reallyStartVoice(const StSampleVoiceNoteOnParams *_params,
 
    sample->waveform->ui_last_started_voice = (void*)this;
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
    if( !(b_override_smpdat_copied && sample->keepInitialOscCopyOverrideBuffer() && (liverec_copy_loop_len > 0)) )
    {
       b_override_smpdat_copied = YAC_FALSE;
@@ -1172,6 +1190,7 @@ void StSampleVoice::reallyStartVoice(const StSampleVoiceNoteOnParams *_params,
    liverec_copy_doublebuffer_rec_idx = sample->liverec_doublebuffer_rec_idx;
 
    // Dyac_host_printf("xxx reallyStartVoice: copy_loop off=%d len=%d\n", liverec_copy_loop_offset, liverec_copy_loop_len);
+#endif // TKSAMPLER_SKIP_LIVEREC
 
 
    if(!b_glide || sample->b_glide_retrig_sample)
@@ -1318,10 +1337,12 @@ void StSampleVoice::reallyStartVoice(const StSampleVoiceNoteOnParams *_params,
    b_release = YAC_FALSE;
    b_release_pulse = YAC_FALSE;
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
    if(sample->b_liverec && (STSAMPLE_LIVEREC_DBLBUF_MODE_OFF != sample->liverec_doublebuffer_mode))
    {
       sample->handleLiveRecDeferredBufferSwap();
    }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
    if(!b_glide || sample->b_glide_retrig_sample)
    {
@@ -1333,7 +1354,15 @@ void StSampleVoice::reallyStartVoice(const StSampleVoiceNoteOnParams *_params,
          b_timedloop = sample->b_timedloop && (num_sample_loops > 0);
          timedloop_base = sample->timedloop_base;
 
-         if(!handleEndOfLoop(&current_play_offset, &dummy, &dummy, sample->b_from_start/*bFromStart*/, YAC_TRUE/*bAllowCOffReset*/))
+         if(!handleEndOfLoop(&current_play_offset,
+                             &dummy/*smpDat*/,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                             &dummy/*smpDatLRX*/,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                             sample->b_from_start/*bFromStart*/,
+                             YAC_TRUE/*bAllowCOffReset*/
+                             )
+            )
          {
             // no loops, nothing to play
             return;
@@ -1404,6 +1433,7 @@ void StSampleVoice::reallyStartVoice(const StSampleVoiceNoteOnParams *_params,
 
       ////printf("xxx reallyStartVoice: off=%u len=%u\n", current_sample_offset, current_sample_len);
 
+#ifndef TKSAMPLER_SKIP_ADDITIVE
       if(sample->b_timestretch_additive)
       {
          if(sample->partial_cyclelen_reset >= 8.0f)
@@ -1463,6 +1493,7 @@ void StSampleVoice::reallyStartVoice(const StSampleVoiceNoteOnParams *_params,
 
       b_slew_partial_first = YAC_TRUE;
       fade_partial_amt = 0.0f;
+#endif // TKSAMPLER_SKIP_ADDITIVE
 
       // Lazy fill zero samples array
       if(b_fill_zero_samples)
@@ -1684,7 +1715,12 @@ void StSampleVoice::reallyStartVoice(const StSampleVoiceNoteOnParams *_params,
          pce->voice->layer_idx         = layer_idx;
          pce->voice->voice_idx         = voice_idx;
          pce->voice->active_note_idx   = active_note_idx;
-         pce->voice->note_hz           = noteToFreq(sF32(note)) * liverec_osc_pitch_factor;
+         pce->voice->note_hz           =
+            noteToFreq(sF32(note))
+#ifndef TKSAMPLER_SKIP_LIVEREC
+            * liverec_osc_pitch_factor
+#endif // TKSAMPLER_SKIP_LIVEREC
+            ;
 
          if(NULL != pce->voice->info->note_on)
          {
@@ -1730,6 +1766,7 @@ void StSampleVoice::reallyStartVoice(const StSampleVoiceNoteOnParams *_params,
    // //    return;
    // // }
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
    if(sample->b_liverec)
    {
       sF32 hz = noteToFreq(sample->liverec_osc_tune);
@@ -1745,6 +1782,7 @@ void StSampleVoice::reallyStartVoice(const StSampleVoiceNoteOnParams *_params,
          sample->liverec_ref_cyclelen = 0.0f;
       }
    }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
    updateWt2dOffset();
 
@@ -2241,7 +2279,14 @@ void StSampleVoice::noteOff(sF32 _vel) {
                   // may cause clicks, especially with "single-cycle" waveforms
                   current_loop_countdown = 1;
                   sF32 *dummy;
-                  handleEndOfLoop(&current_play_offset, &dummy, &dummy, YAC_FALSE/*bFromStart*/, YAC_TRUE/*bAllowCOffReset*/);
+                  handleEndOfLoop(&current_play_offset,
+                                  &dummy/*smpDat*/,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                  &dummy/*smpDatLRX*/,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                  YAC_FALSE/*bFromStart*/,
+                                  YAC_TRUE/*bAllowCOffReset*/
+                                  );
                }
             }
          }
@@ -2497,7 +2542,14 @@ void StSampleVoice::calcNextBlockState(sBool _bNext) {
                   // Set initial loop (during reallyStartVoice())
                   sF32 *dummy;
                   // // (void)handleEndOfLoop(&current_play_offset, &dummy, sample->b_from_start/*bFromStart*/);
-                  (void)handleEndOfLoop(&current_play_offset, &dummy, &dummy, YAC_FALSE/*bFromStart*/, YAC_TRUE/*bAllowCOffReset*/);
+                  (void)handleEndOfLoop(&current_play_offset,
+                                        &dummy/*smpDat*/,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                        &dummy/*smpDatLRX*/,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                        YAC_FALSE/*bFromStart*/,
+                                        YAC_TRUE/*bAllowCOffReset*/
+                                        );
                }
                else
                {
@@ -2512,7 +2564,14 @@ void StSampleVoice::calcNextBlockState(sBool _bNext) {
 
                      sF32 *dummy;
                      // // (void)handleEndOfLoop(&current_play_offset, &dummy, sample->b_from_start/*bFromStart*/);
-                     (void)handleEndOfLoop(&current_play_offset, &dummy, &dummy, YAC_FALSE/*bFromStart*/, YAC_TRUE/*bAllowCOffReset*/);
+                     (void)handleEndOfLoop(&current_play_offset,
+                                           &dummy/*smpDat*/,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                           &dummy/*smpDatLRX*/,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                           YAC_FALSE/*bFromStart*/,
+                                           YAC_TRUE/*bAllowCOffReset*/
+                                           );
                      current_play_offset = 0.0;
                   }
                   // else: update when current loop ends
@@ -2532,22 +2591,20 @@ void StSampleVoice::calcNextBlockState(sBool _bNext) {
       }
    }
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
    if((NULL != sample->parent_samplebank) && sample->b_liverec)
    {
       if(mmdst.liverec_stop >= 0.5f)
       {
-#ifndef LIBSYNERGY_BUILD
          // Stop
          sSI smpIdx = sample->parent_samplebank->_getSampleIdx(sample);
          if(smpIdx >= 0)
          {
             sample_player->stopLiveRecording(sUI(smpIdx), YAC_TRUE/*bIndex*/);
          }
-#endif // LIBSYNERGY_BUILD
       }
       if(mmdst.liverec_start >= 0.5f)
       {
-#ifndef LIBSYNERGY_BUILD
          // Always restart
          // Dyac_host_printf("xxx mmdst.liverec_start=%f\n", mmdst.liverec_start);
          sSI smpIdx = sample->parent_samplebank->_getSampleIdx(sample);
@@ -2555,20 +2612,18 @@ void StSampleVoice::calcNextBlockState(sBool _bNext) {
          {
             sample_player->startLiveRecording(sUI(smpIdx), YAC_TRUE/*bIndex*/, YAC_TRUE/*bRestart*/);
          }
-#endif // LIBSYNERGY_BUILD
       }
       else if(mmdst.liverec_continue >= 0.5f)
       {
-#ifndef LIBSYNERGY_BUILD
          // Start when not already started
          sSI smpIdx = sample->parent_samplebank->_getSampleIdx(sample);
          if(smpIdx >= 0)
          {
             sample_player->startLiveRecording(sUI(smpIdx), YAC_TRUE/*bIndex*/, YAC_FALSE/*bRestart*/);
          }
-#endif // LIBSYNERGY_BUILD
       }
    }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
    if(mmdst.looprestart >= 0.5f)
    {
@@ -2582,7 +2637,14 @@ void StSampleVoice::calcNextBlockState(sBool _bNext) {
          mod_jumptoloop = current_loop_idx;
          sF32 *dummy;
          // // (void)handleEndOfLoop(&current_play_offset, &dummy, sample->b_from_start/*bFromStart*/);
-         (void)handleEndOfLoop(&current_play_offset, &dummy, &dummy, YAC_FALSE/*bFromStart*/, YAC_TRUE/*bAllowCOffReset*/);
+         (void)handleEndOfLoop(&current_play_offset,
+                               &dummy/*smpDat*/,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                               &dummy/*smpDatLRX*/,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                               YAC_FALSE/*bFromStart*/,
+                               YAC_TRUE/*bAllowCOffReset*/
+                               );
          current_play_offset = 0.0;
       }
    }
@@ -2759,7 +2821,12 @@ void StSampleVoice::calcNextBlockState(sBool _bNext) {
                {
                   if(nextFreqHz < 0.0f)
                   {
-                     nextFreqHz = noteToFreq(next_freq) * liverec_osc_pitch_factor;
+                     nextFreqHz =
+                        noteToFreq(next_freq)
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                        * liverec_osc_pitch_factor
+#endif // TKSAMPLER_SKIP_LIVEREC
+                        ;
                      if(mmdst.note_2 > 0.0f)
                      {
                         nextFreqHz += noteToFreq(mmdst.note_2*127.0f + mmdst.freq_2) - noteToFreq(5*12/*C-5*/);
@@ -4294,7 +4361,11 @@ void StSampleVoice::_setWavepathIndex(sSI _idx) {
 #endif // TKSAMPLER_WAVEPATH
 }
 
-void StSampleVoice::handleEndOfLoopOver(const sF32 *_smpDatCur, sUI _frameOffOver, const sF32 **_smpDatNew, sUI *_frameOffNew) const {
+void StSampleVoice::handleEndOfLoopOver(const sF32  *_smpDatCur,
+                                        sUI          _frameOffOver,
+                                        const sF32 **_smpDatNew,
+                                        sUI         *_frameOffNew
+                                        ) const {
    // called by readSample*Int() when reading samples beyond current_sample_len
    //  returns new sample address (left channel) or address of zero_samples (when sample playback has finished)
 
@@ -4354,6 +4425,7 @@ void StSampleVoice::handleEndOfLoopOver(const sF32 *_smpDatCur, sUI _frameOffOve
             const sF32 *smpDatBase = sample->waveform->sample_data->elements;
             sUI waveNumFrames = sample->waveform->_getNumFrames();
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
             if(sample->b_liverec)
             {
                if(sample->b_liverec_copy && (STSAMPLE_LIVEREC_OSC_MODE_OFF == sample->liverec_osc_mode))
@@ -4410,6 +4482,7 @@ void StSampleVoice::handleEndOfLoopOver(const sF32 *_smpDatCur, sUI _frameOffOve
                   }
                }
             } // if sample->b_liverec
+#endif // TKSAMPLER_SKIP_LIVEREC
 
             if(newLen > 0u)
             {
@@ -4439,7 +4512,14 @@ void StSampleVoice::handleEndOfLoopOver(const sF32 *_smpDatCur, sUI _frameOffOve
    } // if nextLoopIdx
 }
 
-sBool StSampleVoice::handleEndOfLoop(sF64 *cOff, sF32**smpDat, sF32 **smpDatLRX, sBool _bFromStart, sBool _bAllowCOffReset) {
+sBool StSampleVoice::handleEndOfLoop(sF64 *cOff,
+                                     sF32**smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                     sF32 **smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                     sBool _bFromStart,
+                                     sBool _bAllowCOffReset
+                                     ) {
    //
    // end of sample, begin next loop
    //
@@ -4485,7 +4565,14 @@ sBool StSampleVoice::handleEndOfLoop(sF64 *cOff, sF32**smpDat, sF32 **smpDatLRX,
       if((samples_until_end_of_loopstep > 0) && (-1 == mod_jumptoloop))
       {
          // Repeat same loop again
-         calcSmpDat(*smpDat, *smpDatLRX, current_sample_offset, current_orig_sample_len, current_sample_len);
+         calcSmpDat(*smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                    *smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                    current_sample_offset,
+                    current_orig_sample_len,
+                    current_sample_len
+                    );
          *cOff = 0;
          return YAC_TRUE;
       }
@@ -4580,6 +4667,7 @@ sBool StSampleVoice::handleEndOfLoop(sF64 *cOff, sF32**smpDat, sF32 **smpDatLRX,
 
          if(b_playing)
          {
+#ifndef TKSAMPLER_SKIP_LIVEREC
             if(YAC_MAYBE == sample->b_liverec_copy)
             {
                if(STSAMPLE_LIVEREC_OSC_MODE_OFF != sample->liverec_osc_mode)
@@ -4625,6 +4713,7 @@ sBool StSampleVoice::handleEndOfLoop(sF64 *cOff, sF32**smpDat, sF32 **smpDatLRX,
                   } // if override_smpdat
                } // if liverec_oscmode != OFF
             }
+#endif // TKSAMPLER_SKIP_LIVEREC
          }
 
          calcCurrentSampleLen();
@@ -4653,7 +4742,14 @@ sBool StSampleVoice::handleEndOfLoop(sF64 *cOff, sF32**smpDat, sF32 **smpDatLRX,
          *cOff = sF64(sUI(*cOff));
 #endif
 
-         calcSmpDat(*smpDat, *smpDatLRX, current_sample_offset, current_orig_sample_len, current_sample_len);
+         calcSmpDat(*smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                    *smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                    current_sample_offset,
+                    current_orig_sample_len,
+                    current_sample_len
+                    );
          // Dyac_host_printf("xxx loop smpDat=%p off=%d len=%d\n", *smpDat, current_sample_offset, current_sample_len);
 
          bNextStep = YAC_FALSE;
@@ -4933,7 +5029,14 @@ sBool StSampleVoice::handleEndOfLoop(sF64 *cOff, sF32**smpDat, sF32 **smpDatLRX,
 
                ////Dyac_host_printf("xxx 2 *cOff=%f current_sample_len=%d\n", *cOff, current_sample_len);
                ////Dyac_host_printf("xxx StSampleVoice: start loop off=%d len=%d\n", current_sample_offset, current_sample_len);
-               calcSmpDat(*smpDat, *smpDatLRX, current_sample_offset, current_orig_sample_len, current_sample_len);
+               calcSmpDat(*smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                          *smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                          current_sample_offset,
+                          current_orig_sample_len,
+                          current_sample_len
+                          );
                b_zero = YAC_FALSE;
             }
          }
@@ -4944,7 +5047,9 @@ sBool StSampleVoice::handleEndOfLoop(sF64 *cOff, sF32**smpDat, sF32 **smpDatLRX,
 }
 
 void StSampleVoice::readWindowedCycleSample(const sF32 *smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
                                             const sF32 *smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
                                             sUI         _off,
                                             sF32        _tsOff,
                                             sF32       *_l,
@@ -4961,10 +5066,28 @@ void StSampleVoice::readWindowedCycleSample(const sF32 *smpDat,
       // printf("xxx readcyclesmp: LAST off=%u tsOff=%f tsFrac=%f\n", _off, _tsOff, tsFrac);
 
       // read last cycle sample
-      readWindowedSample(smpDat, NULL/*smpDatLRX*/, _off + _tsOff, &al, &ar, false/*bAllowInterpol*/, _curSampleLen);
+      readWindowedSample(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                         NULL/*smpDatLRX*/,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                         _off + _tsOff,
+                         &al,
+                         &ar,
+                         false/*bAllowInterpol*/,
+                         _curSampleLen
+                         );
 
       // lerp to start of cycle
-      readWindowedSample(smpDat, NULL/*smpDatLRX*/, _off + tsFrac, &bl, &br, false/*bAllowInterpol*/, _curSampleLen);
+      readWindowedSample(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                         NULL/*smpDatLRX*/,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                         _off + tsFrac,
+                         &bl,
+                         &br,
+                         false/*bAllowInterpol*/,
+                         _curSampleLen
+                         );
 
       *_l = (1.0f - tsFrac) * al + tsFrac * bl;
       *_r = (1.0f - tsFrac) * ar + tsFrac * br;
@@ -4984,7 +5107,16 @@ void StSampleVoice::readWindowedCycleSample(const sF32 *smpDat,
       //    // printf("xxx readcyclesmp: CLIP tsoff=%f cyclelen=%f\n", _tsOff, current_cyclelen);
       //    _tsOff = current_cyclelen - 1;
       // }
-      readWindowedSample(smpDat, smpDatLRX, _off + _tsOff, _l, _r, true/*bAllowInterpol*/, _curSampleLen);
+      readWindowedSample(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                         smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                         _off + _tsOff,
+                         _l,
+                         _r,
+                         true/*bAllowInterpol*/,
+                         _curSampleLen
+                         );
 
       // *_l = 0;
       // *_r = 0;
@@ -5022,7 +5154,14 @@ sF32 StSampleVoice::BitReduce(sF32 f, const sF32 _brPreAmp, const sU16 _brMask) 
    return f;
 }
 
-void StSampleVoice::readWindowedSample(const sF32 *smpDat, const sF32 *smpDatLRX, sF32 _off, sF32 *_l, sF32 *_r, sBool _bAllowInterpol, const sUI _curSampleLen) {
+void StSampleVoice::readWindowedSample(const sF32 *smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                       const sF32 *smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                       sF32 _off, sF32 *_l, sF32 *_r,
+                                       sBool _bAllowInterpol,
+                                       const sUI _curSampleLen
+                                       ) {
 
    ////printf("readWindowedSample _off=%f\n", _off);
 
@@ -5068,22 +5207,26 @@ void StSampleVoice::readWindowedSample(const sF32 *smpDat, const sF32 *smpDatLRX
       smpL  = smpDat[smpOff  + 0u];
       smpLn = smpDat[smpOffR + 0u];
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
       if(NULL != smpDatLRX)
       {
          smpL  = smpL  + (smpDatLRX[smpOff  + 0u] - smpL)  * sample->liverec_frame_offset_xfade_amt;
          smpLn = smpLn + (smpDatLRX[smpOffR + 0u] - smpLn) * sample->liverec_frame_offset_xfade_amt;
       }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
       if(numCh > 1)
       {
          smpR  = smpDat[smpOff  + 1u];
          smpRn = smpDat[smpOffR + 1u];
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
          if(NULL != smpDatLRX)
          {
             smpR  = smpR  + (smpDatLRX[smpOff  + 1u] - smpR)  * sample->liverec_frame_offset_xfade_amt;
             smpRn = smpRn + (smpDatLRX[smpOffR + 1u] - smpRn) * sample->liverec_frame_offset_xfade_amt;
          }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
          if(br_mask)
          {
@@ -5121,10 +5264,12 @@ void StSampleVoice::readWindowedSample(const sF32 *smpDat, const sF32 *smpDatLRX
 
       smpL  = smpDat[smpOff  + 0u];
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
       if(NULL != smpDatLRX)
       {
          smpL = smpL + (smpDatLRX[smpOff + 0u] - smpL)  * sample->liverec_frame_offset_xfade_amt;
       }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
       // No interpolation
       if(br_mask)
@@ -5138,10 +5283,12 @@ void StSampleVoice::readWindowedSample(const sF32 *smpDat, const sF32 *smpDatLRX
       {
          smpR = smpDat[smpOff  + 1u];
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
          if(NULL != smpDatLRX)
          {
             smpR = smpR + (smpDatLRX[smpOff + 1u] - smpR)  * sample->liverec_frame_offset_xfade_amt;
          }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
          if(br_mask)
          {
@@ -5161,6 +5308,7 @@ void StSampleVoice::calcCurrentSampleLen(void) {
    // Dyac_host_printf("xxx calcCurrentSampleLen: b_zero=%d current_orig_sample_len=%u\n", b_zero, current_orig_sample_len);
    if(!b_zero)
    {
+#ifndef TKSAMPLER_SKIP_LIVEREC
       if(sample->b_liverec &&
          (STSAMPLE_LIVEREC_OSC_MODE_OFF != sample->liverec_osc_mode) &&  // 30Apr2021 (front_buffer copy)
          (!sample->b_liverec_osc_sustain || (STSAMPLE_LIVEREC_OSC_MODE_OFF == sample->liverec_osc_mode)) &&
@@ -5206,6 +5354,9 @@ void StSampleVoice::calcCurrentSampleLen(void) {
          if(current_play_offset >= current_sample_len)
             current_play_offset = 0;
       }
+#else
+      if(0) { }
+#endif // TKSAMPLER_SKIP_LIVEREC
       else if(sample->b_timestretch)
       {
          current_sample_len = current_orig_sample_len;
@@ -5730,6 +5881,7 @@ void StSampleVoice::handleReorderVoicePlugins(const sUI *_ia) {
    }
 }
 
+#ifndef TKSAMPLER_SKIP_ADDITIVE
 sF32 StSampleVoice::sum_partials(const sF32 *_tbl, sU16 *_phases, const sU16 *_speeds, const sF32 *_amps,
                                  const sUI _numPartials, const sF32 _lastPartialAmt
                                  ) {
@@ -5852,14 +6004,18 @@ void StSampleVoice::sum_partials_stereo_srr_br(const sF32 *_tbl,
 void StSampleVoice::renderBlockAdditive(sF32 *    _buf,
                                         sUI       _blkSz,
                                         sF32 *     smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
                                         sF32 *     smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
                                         const sF32 a,
                                         const sF32 b,
                                         sF32       cVolL,
                                         sF32       cVolR,
                                         const sF32 sVolL,
-                                        const sF32 sVolR,
-                                        const sF32**_inputsOrNull/*sz=STSAMPLE_MAX_INPUTS*/
+                                        const sF32 sVolR
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                        , const sF32**_inputsOrNull/*sz=STSAMPLE_MAX_INPUTS*/
+#endif // TKSAMPLER_SKIP_LIVEREC
                                         ) {
 
    updateWt2dOffset();
@@ -5927,6 +6083,7 @@ void StSampleVoice::renderBlockAdditive(sF32 *    _buf,
    sF32 *buf = _buf;
    sUI blkSz = _blkSz;
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
    const sF32 *inputsTmp[STSAMPLE_MAX_INPUTS] = {0};
    const sF32 **inputs;
    if(NULL != _inputsOrNull)
@@ -5941,6 +6098,7 @@ void StSampleVoice::renderBlockAdditive(sF32 *    _buf,
    {
       inputs = NULL;
    }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
    sUI loopStartOff     = ((smpDat - sample->waveform->sample_data->elements)/sample->waveform->num_channels)/*==current loop offset + smpshift*/;
    sUI waveIdxLoopStart = (sUI)(  loopStartOff                            / sample->timestretch_granularity );
@@ -6317,6 +6475,7 @@ void StSampleVoice::renderBlockAdditive(sF32 *    _buf,
          fade_partial_amt -= (1.0f / 32.0f);
       }
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
       // Add input
       if( (NULL != inputs) && ((YAC_TRUE == sample->b_sum_input) || ((YAC_MAYBE == sample->b_sum_input) && sample->b_liverec_active)) )
       {
@@ -6341,6 +6500,7 @@ void StSampleVoice::renderBlockAdditive(sF32 *    _buf,
             newSmpR = (newSmpR*volSmp) + inputs[sample->liverec_input_idx][0] * volInp;
          }
       }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
       last_sample_l = newSmpL;
       last_sample_r = newSmpR;
@@ -6468,7 +6628,15 @@ void StSampleVoice::renderBlockAdditive(sF32 *    _buf,
    if( ((sUI)cOff) >= current_sample_len )
    {
       // Dyac_host_printf("xxx TS handleEndOfLoop cOff=%f current_sample_len=%u\n", cOff, current_sample_len);
-      if(!handleEndOfLoop(&cOff, &smpDat, &smpDatLRX, YAC_FALSE/*bFromStart*/, YAC_TRUE/*bAllowCOffReset*/))
+      if(!handleEndOfLoop(&cOff,
+                          &smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                          &smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                          YAC_FALSE/*bFromStart*/,
+                          YAC_TRUE/*bAllowCOffReset*/
+                          )
+         )
       {
          // End of sample
          return;
@@ -6479,6 +6647,8 @@ void StSampleVoice::renderBlockAdditive(sF32 *    _buf,
 
    current_play_offset = cOff;
 }
+#endif // TKSAMPLER_SKIP_ADDITIVE
+
 
 void StSampleVoice::applyFragmentInterpol(void) {
    switch(sample->timestretch_interpol_type)
@@ -6711,14 +6881,18 @@ sBool StSampleVoice::updateWt2dOffset(void) {
 void StSampleVoice::renderBlockTimestretch(sF32 *    _buf,
                                            sUI       _blkSz,
                                            sF32 *     smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
                                            sF32 *     smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
                                            const sF32 a,
                                            const sF32 b,
                                            sF32       cVolL,
                                            sF32       cVolR,
                                            const sF32 sVolL,
-                                           const sF32 sVolR,
-                                           const sF32**_inputsOrNull/*sz=STSAMPLE_MAX_INPUTS*/
+                                           const sF32 sVolR
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                           , const sF32**_inputsOrNull/*sz=STSAMPLE_MAX_INPUTS*/
+#endif // TKSAMPLER_SKIP_LIVEREC
                                            )
 {
    // Dyac_host_printf("xxx renderBlockTimestretch cVolL=%f cVolR=%f\n", cVolL, cVolR);
@@ -6762,8 +6936,16 @@ void StSampleVoice::renderBlockTimestretch(sF32 *    _buf,
    sF32 nNoteHz;
    // // // sF32 sNoteHz = (nNoteHz - cNoteHz) / _blkSz;
 
-   cNoteHz = noteToFreq(current_freq + (next_freq - current_freq) * a) * liverec_osc_pitch_factor;
-   nNoteHz = noteToFreq(current_freq + (next_freq - current_freq) * b) * liverec_osc_pitch_factor;
+   cNoteHz = noteToFreq(current_freq + (next_freq - current_freq) * a)
+#ifndef TKSAMPLER_SKIP_LIVEREC
+      * liverec_osc_pitch_factor
+#endif // TKSAMPLER_SKIP_LIVEREC
+      ;
+   nNoteHz = noteToFreq(current_freq + (next_freq - current_freq) * b)
+#ifndef TKSAMPLER_SKIP_LIVEREC
+      * liverec_osc_pitch_factor
+#endif // TKSAMPLER_SKIP_LIVEREC
+      ;
 
    if(mmdst.note_2 > 0.0f)
    {
@@ -6866,6 +7048,7 @@ void StSampleVoice::renderBlockTimestretch(sF32 *    _buf,
    sF32 *buf = _buf;
    sUI blkSz = _blkSz;
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
    const sF32 *inputsTmp[STSAMPLE_MAX_INPUTS] = {0};
    const sF32 **inputs;
    if(NULL != _inputsOrNull)
@@ -6880,12 +7063,15 @@ void StSampleVoice::renderBlockTimestretch(sF32 *    _buf,
    {
       inputs = NULL;
    }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
    while(blkSz > 0u)
    {
       sF32 smpLA, smpRA, smpLB, smpRB;
       sF32 *smpDatNext = smpDat;
+#ifndef TKSAMPLER_SKIP_LIVEREC
       sF32 *smpDatNextLRX = smpDatLRX;
+#endif // TKSAMPLER_SKIP_LIVEREC
       sUI nextSampleLen = current_sample_len;
 
    // Dyac_host_printf("xxx tsOff=%f anticlick_granular_smpoffinterpol_tsoff=%f\n", tsOff, anticlick_granular_smpoffinterpol_tsoff);
@@ -6913,7 +7099,14 @@ void StSampleVoice::renderBlockTimestretch(sF32 *    _buf,
                sUI nextSampleOffset = *(sUI*)&sampleLoops->elements[sloff + 0];
                nextSampleLen        = *(sUI*)&sampleLoops->elements[sloff + 1];
                alignSampleLenToCyclelen(nextSampleLen);
-               calcSmpDat(smpDatNext, smpDatNextLRX, nextSampleOffset, nextSampleLen, nextSampleLen);
+               calcSmpDat(smpDatNext,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                          smpDatNextLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                          nextSampleOffset,
+                          nextSampleLen,
+                          nextSampleLen
+                          );
                // if(! (((sUI)cOff)&15 ) )
                //    Dyac_host_printf("xxx lerpToNextLoop cOff=%f fragIpol=%f winOff=%u curOff=%u curLen=%u nextOff=%u nextLen=%u tsOff=%f\n", cOff, fragment_interpol, winOff, current_sample_offset, current_sample_len, nextSampleOffset, nextSampleLen, tsOff);
             }
@@ -7030,7 +7223,9 @@ void StSampleVoice::renderBlockTimestretch(sF32 *    _buf,
       // Read current fragment (linear sample interpolation)
       {
          readWindowedCycleSample(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
                                  smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
                                  winOff,
                                  tsReadOff,
                                  &smpLA,
@@ -7042,7 +7237,9 @@ void StSampleVoice::renderBlockTimestretch(sF32 *    _buf,
          {
             sF32 l2, r2;
             readWindowedCycleSample(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
                                     smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
                                     winOff,
                                     tsReadOffXFade,
                                     &l2,
@@ -7057,7 +7254,9 @@ void StSampleVoice::renderBlockTimestretch(sF32 *    _buf,
       // Read next fragment (linear sample interpolation)
       {
          readWindowedCycleSample(smpDatNext,
+#ifndef TKSAMPLER_SKIP_LIVEREC
                                  smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
                                  winOffNext,
                                  tsReadOff,
                                  &smpLB,
@@ -7070,7 +7269,9 @@ void StSampleVoice::renderBlockTimestretch(sF32 *    _buf,
             sF32 l2, r2;
             // readWindowedCycleSample(smpDat, winOffNext, ((sUI)current_cyclelen-1)-tsOff, &l2, &r2);
             readWindowedCycleSample(smpDatNext,
+#ifndef TKSAMPLER_SKIP_LIVEREC
                                     smpDatNextLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
                                     winOffNext,
                                     tsReadOffXFade,
                                     &l2,
@@ -7131,7 +7332,9 @@ void StSampleVoice::renderBlockTimestretch(sF32 *    _buf,
             //                  tsOff
             //                  );
             readWindowedCycleSample(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
                                     smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
                                     anticlick_granular_smpoffinterpol_winoff,
                                     anticlick_granular_smpoffinterpol_tsoff,
                                     &lcSmpLA, &lcSmpRA,
@@ -7142,7 +7345,9 @@ void StSampleVoice::renderBlockTimestretch(sF32 *    _buf,
             {
                sF32 l2, r2;
                readWindowedCycleSample(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
                                        smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
                                        anticlick_granular_smpoffinterpol_winoff,
                                        ((sUI)current_cyclelen-1)-anticlick_granular_smpoffinterpol_tsoff,
                                        &l2, &r2,
@@ -7156,7 +7361,9 @@ void StSampleVoice::renderBlockTimestretch(sF32 *    _buf,
          // Read next fragment before modulation (linear sample interpolation)
          {
             readWindowedCycleSample(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
                                     smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
                                     anticlick_granular_smpoffinterpol_nextwinoff,
                                     anticlick_granular_smpoffinterpol_tsoff,
                                     &lcSmpLB, &lcSmpRB,
@@ -7167,7 +7374,9 @@ void StSampleVoice::renderBlockTimestretch(sF32 *    _buf,
             {
                sF32 l2, r2;
                readWindowedCycleSample(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
                                        smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
                                        anticlick_granular_smpoffinterpol_nextwinoff,
                                        ((sUI)current_cyclelen-1)-anticlick_granular_smpoffinterpol_tsoff,
                                        &l2, &r2,
@@ -7210,6 +7419,7 @@ void StSampleVoice::renderBlockTimestretch(sF32 *    _buf,
 
       // printf("xxx w=%u ts=%f n=(%f; %f) v=(%f; %f)\n", winOff, tsOff, newSmpL, newSmpR, cVolL, cVolR);
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
       // Add input
       if( (NULL != _inputsOrNull) && ((YAC_TRUE == sample->b_sum_input) || ((YAC_MAYBE == sample->b_sum_input) && sample->b_liverec_active)) )
       {
@@ -7234,6 +7444,7 @@ void StSampleVoice::renderBlockTimestretch(sF32 *    _buf,
             newSmpR = (newSmpR*volSmp) + _inputsOrNull[sample->liverec_input_idx][0] * volInp;
          }
       }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
       last_sample_l = newSmpL;
       last_sample_r = newSmpR;
@@ -7317,7 +7528,14 @@ void StSampleVoice::renderBlockTimestretch(sF32 *    _buf,
       }
       while( ((sUI)cOff) >= current_sample_len )
       {
-         if(!handleEndOfLoop(&cOff, &smpDat, &smpDatLRX, YAC_FALSE/*bFromStart*/))
+         if(!handleEndOfLoop(&cOff,
+                             &smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                             &smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                             YAC_FALSE/*bFromStart*/
+                             )
+            )
          {
             // End of sample
             return;
@@ -7336,7 +7554,15 @@ void StSampleVoice::renderBlockTimestretch(sF32 *    _buf,
       if( ((sUI)cOff) >= current_sample_len )
       {
          // Dyac_host_printf("xxx TS handleEndOfLoop cOff=%f current_sample_len=%u\n", cOff, current_sample_len);
-         if(!handleEndOfLoop(&cOff, &smpDat, &smpDatLRX, YAC_FALSE/*bFromStart*/, YAC_TRUE/*bAllowCOffReset*/))
+         if(!handleEndOfLoop(&cOff,
+                             &smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                             &smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                             YAC_FALSE/*bFromStart*/,
+                             YAC_TRUE/*bAllowCOffReset*/
+                             )
+            )
          {
             // End of sample
             return;
@@ -7359,6 +7585,7 @@ void StSampleVoice::renderBlockTimestretch(sF32 *    _buf,
       render_buf_sample_offset += 2u;
       blkSz--;
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
       if(NULL != _inputsOrNull)
       {
          for(sUI i = 0u; i < STSAMPLE_MAX_INPUTS; i++)
@@ -7366,6 +7593,8 @@ void StSampleVoice::renderBlockTimestretch(sF32 *    _buf,
             inputs[i]++;
          }
       }
+#endif // TKSAMPLER_SKIP_LIVEREC
+
    } // while blkSz > 0
 
    current_play_offset = cOff;
@@ -7381,8 +7610,10 @@ sUI StSampleVoice::renderFragmentOptFwdMonoSimple(sF32 *&    buf,
                                                   sF32 *&    smpDat,
                                                   sF32 &     cVolL,
                                                   sF32 &     cVolR,
-                                                  sF32 &     cRate,
-                                                  const sF32**_inputsOrNull/*sz=STSAMPLE_MAX_INPUTS*/
+                                                  sF32 &     cRate
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                                  , const sF32**_inputsOrNull/*sz=STSAMPLE_MAX_INPUTS*/
+#endif // TKSAMPLER_SKIP_LIVEREC
                                                   )
 {
    // mono sample, fwd play, constant freq/vol, b_timedloop=0
@@ -7497,6 +7728,7 @@ sUI StSampleVoice::renderFragmentOptFwdMonoSimple(sF32 *&    buf,
 
          float smpR = smpL;
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
          if( (NULL != _inputsOrNull) && ((YAC_TRUE == sample->b_sum_input) || ((YAC_MAYBE == sample->b_sum_input) && sample->b_liverec_active)) )
          {
             if((YAC_MAYBE == sample->b_sum_input) && sample->b_liverec_active)
@@ -7520,6 +7752,7 @@ sUI StSampleVoice::renderFragmentOptFwdMonoSimple(sF32 *&    buf,
                smpR = (smpR*volSmp) + _inputsOrNull[sample->liverec_input_idx][0] * volInp;
             }
          }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
          last_sample_l = smpL * cVolL;
          last_sample_r = smpR * cVolR; // mono to stereo
@@ -7541,6 +7774,7 @@ sUI StSampleVoice::renderFragmentOptFwdMonoSimple(sF32 *&    buf,
          buf += 2;
          render_buf_sample_offset += 2u;
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
          if(NULL != _inputsOrNull)
          {
             for(sUI i = 0u; i < STSAMPLE_MAX_INPUTS; i++)
@@ -7548,6 +7782,7 @@ sUI StSampleVoice::renderFragmentOptFwdMonoSimple(sF32 *&    buf,
                _inputsOrNull[i]++;
             }
          }
+#endif // TKSAMPLER_SKIP_LIVEREC
       }
    }
    else
@@ -7582,6 +7817,7 @@ sUI StSampleVoice::renderFragmentOptFwdMonoSimple(sF32 *&    buf,
          buf += 2;
          render_buf_sample_offset += 2u;
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
          if(NULL != _inputsOrNull)
          {
             for(sUI i = 0u; i < STSAMPLE_MAX_INPUTS; i++)
@@ -7589,6 +7825,7 @@ sUI StSampleVoice::renderFragmentOptFwdMonoSimple(sF32 *&    buf,
                _inputsOrNull[i]++;
             }
          }
+#endif // TKSAMPLER_SKIP_LIVEREC
       }
    }
 
@@ -7596,7 +7833,15 @@ sUI StSampleVoice::renderFragmentOptFwdMonoSimple(sF32 *&    buf,
    {
       // Begin next loop(-iteration)
       //DP("1 handleEndOfLoop pre cOff=%f\n", cOff);
-      if(!handleEndOfLoop(&cOff, &smpDat, NULL/*smpDatLRX*/, YAC_FALSE/*bFromStart*/, YAC_TRUE/*bAllowCOffReset*/))
+      if(!handleEndOfLoop(&cOff,
+                          &smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                          NULL/*smpDatLRX*/,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                          YAC_FALSE/*bFromStart*/,
+                          YAC_TRUE/*bAllowCOffReset*/
+                          )
+         )
       {
          // End of sample
          return 0;
@@ -7760,7 +8005,12 @@ sF32 StSampleVoice::readSample1IntWrap(const sF32 *smpDat, sSI _off) const {
    return r;
 }
 
-sF32 StSampleVoice::readSample1LRX(const sF32 *smpDat, const sF32 *smpDatLRX, sSI _off) /*const*/ {
+sF32 StSampleVoice::readSample1LRX(const sF32 *smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                   const sF32 *smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                   sSI _off
+                                   ) /*const*/ {
    sF32 r;
 
    r =
@@ -7769,6 +8019,7 @@ sF32 StSampleVoice::readSample1LRX(const sF32 *smpDat, const sF32 *smpDatLRX, sS
       : readSample1IntAI(smpDat, _off)
       ;
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
    // (todo) crossfade region around liverec_frame_offset
    if(NULL != smpDatLRX)
    {
@@ -7796,11 +8047,17 @@ sF32 StSampleVoice::readSample1LRX(const sF32 *smpDat, const sF32 *smpDatLRX, sS
       }
 #endif
    }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
    return r;
 }
 
-sF32 StSampleVoice::readSample1(const sF32 *smpDat, const sF32 *smpDatLRX, sSI _off) /*const*/ {
+sF32 StSampleVoice::readSample1(const sF32 *smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                const sF32 *smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                sSI _off
+                                ) /*const*/ {
    // read mono sample
    sF32 r;
 
@@ -7812,39 +8069,79 @@ sF32 StSampleVoice::readSample1(const sF32 *smpDat, const sF32 *smpDatLRX, sSI _
       default:
       case STSAMPLE_PLAY_MODE_FWDNOLOOP:
       case STSAMPLE_PLAY_MODE_FORWARD:
-         r = readSample1LRX(smpDat, smpDatLRX, _off);
+         r = readSample1LRX(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                            smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                            _off
+                            );
          break;
 
       case STSAMPLE_PLAY_MODE_BACKWARD:
-         r = readSample1LRX(smpDat, smpDatLRX, sSI(current_sample_len) - _off - 1);
+         r = readSample1LRX(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                            smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                            sSI(current_sample_len) - _off - 1
+                            );
          break;
 
       case STSAMPLE_PLAY_MODE_PINGPONG:
          if(b_fwd)
-            r = readSample1LRX(smpDat, smpDatLRX, _off);
+            r = readSample1LRX(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                               smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                               _off
+                               );
          else
-            r = readSample1LRX(smpDat, smpDatLRX, sSI(current_sample_len) - _off - 1);
+            r = readSample1LRX(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                               smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                               sSI(current_sample_len) - _off - 1
+                               );
          break;
 
       case STSAMPLE_PLAY_MODE_XFADE_ALL:
-         r = readSample1LRX(smpDat, smpDatLRX, _off);
+         r = readSample1LRX(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                            smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                            _off
+                            );
          if(bAllowXfade)
          {
-            sF32 t = readSample1LRX(smpDat, smpDatLRX, (sSI(current_sample_len) - _off - 1));
+            sF32 t = readSample1LRX(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                    smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                    (sSI(current_sample_len) - _off - 1)
+                                    );
             sF32 amt = sF32(_off) / sF32(current_sample_len);
             r = r + (t - r) * amt;
          }
          break;
 
       case STSAMPLE_PLAY_MODE_XFADE_16:
-         r = readSample1LRX(smpDat, smpDatLRX, _off);
+         r = readSample1LRX(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                            smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                            _off
+                            );
          if(bAllowXfade)
          {
 #define L 16
             if((current_sample_len >= L) && ((current_smpdat_shift + current_sample_offset) >= L) && (_off >= (sSI(current_sample_len) - L)))
             {
                sSI winOff = _off - (((sSI)current_sample_len) - L);
-               sF32 t = readSample1LRX(smpDat - L,  (NULL != smpDatLRX) ? (smpDatLRX - L) : NULL, winOff);
+               sF32 t = readSample1LRX(smpDat - L,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                       (NULL != smpDatLRX) ? (smpDatLRX - L) : NULL,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                       winOff
+                                       );
                sF32 amt = sF32(winOff) / sF32(L);
                r = r + (t - r) * amt;
             }
@@ -7853,14 +8150,24 @@ sF32 StSampleVoice::readSample1(const sF32 *smpDat, const sF32 *smpDatLRX, sSI _
          break;
 
       case STSAMPLE_PLAY_MODE_XFADE_32:
-         r = readSample1LRX(smpDat, smpDatLRX, _off);
+         r = readSample1LRX(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                            smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                            _off
+                            );
          if(bAllowXfade)
          {
 #define L 32
             if((current_sample_len >= L) && ((current_smpdat_shift + current_sample_offset) >= L) && (_off >= (sSI(current_sample_len) - L)))
             {
                sSI winOff = _off - (((sSI)current_sample_len) - L);
-               sF32 t = readSample1LRX(smpDat - L,  (NULL != smpDatLRX) ? (smpDatLRX - L) : NULL, winOff);
+               sF32 t = readSample1LRX(smpDat - L,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                       (NULL != smpDatLRX) ? (smpDatLRX - L) : NULL,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                       winOff
+                                       );
                sF32 amt = sF32(winOff) / sF32(L);
                r = r + (t - r) * amt;
             }
@@ -7869,14 +8176,27 @@ sF32 StSampleVoice::readSample1(const sF32 *smpDat, const sF32 *smpDatLRX, sSI _
          break;
 
       case STSAMPLE_PLAY_MODE_XFADE_64:
-         r = readSample1LRX(smpDat, smpDatLRX, _off);
+         r = readSample1LRX(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                            smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                            _off
+                            );
          if(bAllowXfade)
          {
 #define L 64
-            if((current_sample_len >= L) && ((current_smpdat_shift + current_sample_offset) >= L) && (_off >= (sSI(current_sample_len) - L)))
+            if((current_sample_len >= L) &&
+               ((current_smpdat_shift + current_sample_offset) >= L) &&
+               (_off >= (sSI(current_sample_len) - L))
+               )
             {
                sSI winOff = _off - (((sSI)current_sample_len) - L);
-               sF32 t = readSample1LRX(smpDat - L,  (NULL != smpDatLRX) ? (smpDatLRX - L) : NULL, winOff);
+               sF32 t = readSample1LRX(smpDat - L,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                       (NULL != smpDatLRX) ? (smpDatLRX - L) : NULL,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                       winOff
+                                       );
                sF32 amt = sF32(winOff) / sF32(L);
                r = r + (t - r) * amt;
             }
@@ -7885,14 +8205,27 @@ sF32 StSampleVoice::readSample1(const sF32 *smpDat, const sF32 *smpDatLRX, sSI _
          break;
 
       case STSAMPLE_PLAY_MODE_XFADE_128:
-         r = readSample1LRX(smpDat, smpDatLRX, _off);
+         r = readSample1LRX(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                            smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                            _off
+                            );
          if(bAllowXfade)
          {
 #define L 128
-            if((current_sample_len >= L) && ((current_smpdat_shift + current_sample_offset) >= L) && (_off >= (sSI(current_sample_len) - L)))
+            if((current_sample_len >= L) &&
+               ((current_smpdat_shift + current_sample_offset) >= L) &&
+               (_off >= (sSI(current_sample_len) - L))
+               )
             {
                sSI winOff = _off - (((sSI)current_sample_len) - L);
-               sF32 t = readSample1LRX(smpDat - L,  (NULL != smpDatLRX) ? (smpDatLRX - L) : NULL, winOff);
+               sF32 t = readSample1LRX(smpDat - L,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                       (NULL != smpDatLRX) ? (smpDatLRX - L) : NULL,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                       winOff
+                                       );
                sF32 amt = sF32(winOff) / sF32(L);
                r = r + (t - r) * amt;
             }
@@ -7901,14 +8234,27 @@ sF32 StSampleVoice::readSample1(const sF32 *smpDat, const sF32 *smpDatLRX, sSI _
          break;
 
       case STSAMPLE_PLAY_MODE_XFADE_256:
-         r = readSample1LRX(smpDat, smpDatLRX, _off);
+         r = readSample1LRX(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                            smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                            _off
+                            );
          if(bAllowXfade)
          {
 #define L 256
-            if((current_sample_len >= L) && ((current_smpdat_shift + current_sample_offset) >= L) && (_off >= (sSI(current_sample_len) - L)))
+            if((current_sample_len >= L) &&
+               ((current_smpdat_shift + current_sample_offset) >= L) &&
+               (_off >= (sSI(current_sample_len) - L))
+               )
             {
                sSI winOff = _off - (((sSI)current_sample_len) - L);
-               sF32 t = readSample1LRX(smpDat - L,  (NULL != smpDatLRX) ? (smpDatLRX - L) : NULL, winOff);
+               sF32 t = readSample1LRX(smpDat - L,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                       (NULL != smpDatLRX) ? (smpDatLRX - L) : NULL,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                       winOff
+                                       );
                sF32 amt = sF32(winOff) / sF32(L);
                r = r + (t - r) * amt;
             }
@@ -7917,14 +8263,27 @@ sF32 StSampleVoice::readSample1(const sF32 *smpDat, const sF32 *smpDatLRX, sSI _
          break;
 
       case STSAMPLE_PLAY_MODE_XFADE_512:
-         r = readSample1LRX(smpDat, smpDatLRX, _off);
+         r = readSample1LRX(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                            smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                            _off
+                            );
          if(bAllowXfade)
          {
 #define L 512
-            if((current_sample_len >= L) && ((current_smpdat_shift + current_sample_offset) >= L) && (_off >= (sSI(current_sample_len) - L)))
+            if((current_sample_len >= L) &&
+               ((current_smpdat_shift + current_sample_offset) >= L) &&
+               (_off >= (sSI(current_sample_len) - L))
+               )
             {
                sSI winOff = _off - (((sSI)current_sample_len) - L);
-               sF32 t = readSample1LRX(smpDat - L, (NULL != smpDatLRX) ? (smpDatLRX - L) : NULL, winOff);
+               sF32 t = readSample1LRX(smpDat - L,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                       (NULL != smpDatLRX) ? (smpDatLRX - L) : NULL,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                       winOff
+                                       );
                sF32 amt = sF32(winOff) / sF32(L);
                r = r + (t - r) * amt;
             }
@@ -7933,14 +8292,27 @@ sF32 StSampleVoice::readSample1(const sF32 *smpDat, const sF32 *smpDatLRX, sSI _
          break;
 
       case STSAMPLE_PLAY_MODE_XFADE_1024:
-         r = readSample1LRX(smpDat, smpDatLRX, _off);
+         r = readSample1LRX(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                            smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                            _off
+                            );
          if(bAllowXfade)
          {
 #define L 1024
-            if((current_sample_len >= L) && ((current_smpdat_shift + current_sample_offset) >= L) && (_off >= (sSI(current_sample_len) - L)))
+            if((current_sample_len >= L) &&
+               ((current_smpdat_shift + current_sample_offset) >= L) &&
+               (_off >= (sSI(current_sample_len) - L))
+               )
             {
                sSI winOff = _off - (((sSI)current_sample_len) - L);
-               sF32 t = readSample1LRX(smpDat - L, (NULL != smpDatLRX) ? (smpDatLRX - L) : NULL, winOff);
+               sF32 t = readSample1LRX(smpDat - L,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                       (NULL != smpDatLRX) ? (smpDatLRX - L) : NULL,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                       winOff
+                                       );
                sF32 amt = sF32(winOff) / sF32(L);
                r = r + (t - r) * amt;
             }
@@ -7949,14 +8321,27 @@ sF32 StSampleVoice::readSample1(const sF32 *smpDat, const sF32 *smpDatLRX, sSI _
          break;
 
       case STSAMPLE_PLAY_MODE_XFADE_2048:
-         r = readSample1LRX(smpDat, smpDatLRX, _off);
+         r = readSample1LRX(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                            smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                            _off
+                            );
          if(bAllowXfade)
          {
 #define L 2048
-            if((current_sample_len >= L) && ((current_smpdat_shift + current_sample_offset) >= L) && (_off >= (sSI(current_sample_len) - L)))
+            if((current_sample_len >= L) &&
+               ((current_smpdat_shift + current_sample_offset) >= L) &&
+               (_off >= (sSI(current_sample_len) - L))
+               )
             {
                sSI winOff = _off - (((sSI)current_sample_len) - L);
-               sF32 t = readSample1LRX(smpDat - L,  (NULL != smpDatLRX) ? (smpDatLRX - L) : NULL, winOff);
+               sF32 t = readSample1LRX(smpDat - L,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                       (NULL != smpDatLRX) ? (smpDatLRX - L) : NULL,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                       winOff
+                                       );
                sF32 amt = sF32(winOff) / sF32(L);
                r = r + (t - r) * amt;
             }
@@ -7965,14 +8350,27 @@ sF32 StSampleVoice::readSample1(const sF32 *smpDat, const sF32 *smpDatLRX, sSI _
          break;
 
       case STSAMPLE_PLAY_MODE_XFADE_4096:
-         r = readSample1LRX(smpDat, smpDatLRX, _off);
+         r = readSample1LRX(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                            smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                            _off
+                            );
          if(bAllowXfade)
          {
 #define L 4096
-            if((current_sample_len >= L) && ((current_smpdat_shift + current_sample_offset) >= L) && (_off >= (sSI(current_sample_len) - L)))
+            if((current_sample_len >= L) &&
+               ((current_smpdat_shift + current_sample_offset) >= L) &&
+               (_off >= (sSI(current_sample_len) - L))
+               )
             {
                sSI winOff = _off - (((sSI)current_sample_len) - L);
-               sF32 t = readSample1LRX(smpDat - L, (NULL != smpDatLRX) ? (smpDatLRX - L) : NULL, winOff);
+               sF32 t = readSample1LRX(smpDat - L,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                       (NULL != smpDatLRX) ? (smpDatLRX - L) : NULL,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                       winOff
+                                       );
                sF32 amt = sF32(winOff) / sF32(L);
                r = r + (t - r) * amt;
             }
@@ -7981,19 +8379,31 @@ sF32 StSampleVoice::readSample1(const sF32 *smpDat, const sF32 *smpDatLRX, sSI _
          break;
 
       case STSAMPLE_PLAY_MODE_XFADE_8192:
-         r = readSample1LRX(smpDat, smpDatLRX, _off);
+         r = readSample1LRX(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                            smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                            _off
+                            );
          if(bAllowXfade)
          {
 #define L 8192
-            if((current_sample_len >= L) && ((current_smpdat_shift + current_sample_offset) >= L) && (_off >= (sSI(current_sample_len) - L)))
+            if((current_sample_len >= L) &&
+               ((current_smpdat_shift + current_sample_offset) >= L) &&
+               (_off >= (sSI(current_sample_len) - L))
+               )
             {
-               // abcd
                sSI winOff = _off - (((sSI)current_sample_len) - L);
                // static int xxx = 0;
                // if(0 == (++xxx & 255))
                //    Dyac_host_printf("xxx winOff=%d current_sample_offset=%u current_sample_len=%u smpDat=%p smpDatLRX=%p\n", winOff, current_sample_offset, current_sample_len, smpDat, smpDatLRX);
-               // sF32 t = readSample1LRX(smpDat - L,  (NULL != smpDatLRX) ? (smpDatLRX - L) : NULL, winOff);
-               sF32 t = 0.0f;
+               sF32 t = readSample1LRX(smpDat - L,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                       (NULL != smpDatLRX) ? (smpDatLRX - L) : NULL,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                       winOff
+                                       );
+               // // sF32 t = 0.0f;
                sF32 amt = sF32(winOff) / sF32(L);
                r = r + (t - r) * amt;
             }
@@ -8002,14 +8412,27 @@ sF32 StSampleVoice::readSample1(const sF32 *smpDat, const sF32 *smpDatLRX, sSI _
          break;
 
       case STSAMPLE_PLAY_MODE_XFADE_16384:
-         r = readSample1LRX(smpDat, smpDatLRX, _off);
+         r = readSample1LRX(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                            smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                            _off
+                            );
          if(bAllowXfade)
          {
 #define L 16384
-            if((current_sample_len >= L) && ((current_smpdat_shift + current_sample_offset) >= L) && (_off >= (sSI(current_sample_len) - L)))
+            if((current_sample_len >= L) &&
+               ((current_smpdat_shift + current_sample_offset) >= L) &&
+               (_off >= (sSI(current_sample_len) - L))
+               )
             {
                sSI winOff = _off - (((sSI)current_sample_len) - L);
-               sF32 t = readSample1LRX(smpDat - L,  (NULL != smpDatLRX) ? (smpDatLRX - L) : NULL, winOff);
+               sF32 t = readSample1LRX(smpDat - L,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                       (NULL != smpDatLRX) ? (smpDatLRX - L) : NULL,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                       winOff
+                                       );
                sF32 amt = sF32(winOff) / sF32(L);
                r = r + (t - r) * amt;
             }
@@ -8129,7 +8552,12 @@ sF32 StSampleVoice::readSample2IntWrap(const sF32 *smpDat, sSI _off) const {
    return r;
 }
 
-sF32 StSampleVoice::readSample2LRX(const sF32 *smpDat, const sF32 *smpDatLRX, sSI _off) /*const*/ {
+sF32 StSampleVoice::readSample2LRX(const sF32 *smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                   const sF32 *smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                   sSI _off
+                                   ) /*const*/ {
    sF32 r;
 
    r =
@@ -8138,6 +8566,7 @@ sF32 StSampleVoice::readSample2LRX(const sF32 *smpDat, const sF32 *smpDatLRX, sS
       : readSample2IntAI(smpDat, _off)
       ;
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
    // (todo) crossfade region around liverec_frame_offset
    if(NULL != smpDatLRX)
    {
@@ -8166,10 +8595,17 @@ sF32 StSampleVoice::readSample2LRX(const sF32 *smpDat, const sF32 *smpDatLRX, sS
 #undef L
 #endif
    }
+#endif // TKSAMPLER_SKIP_LIVEREC
+
    return r;
 }
 
-sF32 StSampleVoice::readSample2(const sF32 *smpDat, const sF32 *smpDatLRX, sSI _off) /*const*/ {
+sF32 StSampleVoice::readSample2(const sF32 *smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                const sF32 *smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                sSI _off
+                                ) /*const*/ {
    sF32 r;
 
    sSI frameOff = _off >> 1;
@@ -8183,46 +8619,89 @@ sF32 StSampleVoice::readSample2(const sF32 *smpDat, const sF32 *smpDatLRX, sSI _
       default:
       case STSAMPLE_PLAY_MODE_FWDNOLOOP:
       case STSAMPLE_PLAY_MODE_FORWARD:
-         r = readSample2LRX(smpDat, smpDatLRX, _off);
+         r = readSample2LRX(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                            smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                            _off
+                            );
          break;
 
       case STSAMPLE_PLAY_MODE_BACKWARD:
          revOff = ((sSI(current_sample_len) - frameOff - 1) << 1) + (_off & 1);
-         r = readSample2LRX(smpDat, smpDatLRX, revOff);
+         r = readSample2LRX(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                            smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                            revOff
+                            );
          break;
 
       case STSAMPLE_PLAY_MODE_PINGPONG:
          if(b_fwd)
          {
-            r = readSample2LRX(smpDat, smpDatLRX, _off);
+            r = readSample2LRX(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                               smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                               _off
+                               );
          }
          else
          {
             revOff = ((sSI(current_sample_len) - frameOff - 1) << 1) + (_off & 1);
-            r = readSample2LRX(smpDat, smpDatLRX, revOff);
+            r = readSample2LRX(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                               smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                               revOff
+                               );
          }
          break;
 
       case STSAMPLE_PLAY_MODE_XFADE_ALL:
-         r = readSample2LRX(smpDat, smpDatLRX, _off);
+         r = readSample2LRX(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                            smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                            _off
+                            );
          if(bAllowXfade)
          {
             revOff = ((sSI(current_sample_len) - frameOff - 1) << 1) + (_off & 1);
-            sF32 t = readSample2LRX(smpDat, smpDatLRX, revOff);
+            sF32 t = readSample2LRX(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                    smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                    revOff
+                                    );
             sF32 amt = sF32(frameOff) / sF32(current_sample_len);
             r = r + (t - r) * amt;
          }
          break;
 
       case STSAMPLE_PLAY_MODE_XFADE_16:
-         r = readSample2LRX(smpDat, smpDatLRX, _off);
+         r = readSample2LRX(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                            smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                            _off
+                            );
          if(bAllowXfade)
          {
 #define L 16
-            if((current_sample_len >= L) && ((current_smpdat_shift + current_sample_offset) >= L) && (frameOff >= (sSI(current_sample_len) - L)))
+            if((current_sample_len >= L) &&
+               ((current_smpdat_shift + current_sample_offset) >= L) &&
+               (frameOff >= (sSI(current_sample_len) - L))
+               )
             {
                sSI winOff = frameOff - (((sSI)current_sample_len) - L);
-               sF32 t = readSample2LRX(smpDat - (L<<1),  (NULL != smpDatLRX) ? (smpDatLRX - (L<<1)) : NULL, (winOff<<1) + (_off & 1));
+               sF32 t = readSample2LRX(smpDat - (L<<1),
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                       (NULL != smpDatLRX) ? (smpDatLRX - (L<<1)) : NULL,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                       (winOff<<1) + (_off & 1)
+                                       );
                sF32 amt = sF32(winOff) / sF32(L);
                r = r + (t - r) * amt;
             }
@@ -8231,14 +8710,27 @@ sF32 StSampleVoice::readSample2(const sF32 *smpDat, const sF32 *smpDatLRX, sSI _
          break;
 
       case STSAMPLE_PLAY_MODE_XFADE_32:
-         r = readSample2LRX(smpDat, smpDatLRX, _off);
+         r = readSample2LRX(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                            smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                            _off
+                            );
          if(bAllowXfade)
          {
 #define L 32
-            if((current_sample_len >= L) && ((current_smpdat_shift + current_sample_offset) >= L) && (frameOff >= (sSI(current_sample_len) - L)))
+            if((current_sample_len >= L) &&
+               ((current_smpdat_shift + current_sample_offset) >= L) &&
+               (frameOff >= (sSI(current_sample_len) - L))
+               )
             {
                sSI winOff = frameOff - (((sSI)current_sample_len) - L);
-               sF32 t = readSample2LRX(smpDat - (L<<1),  (NULL != smpDatLRX) ? (smpDatLRX - (L<<1)) : NULL, (winOff<<1) + (_off & 1));
+               sF32 t = readSample2LRX(smpDat - (L<<1),
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                       (NULL != smpDatLRX) ? (smpDatLRX - (L<<1)) : NULL,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                       (winOff<<1) + (_off & 1)
+                                       );
                sF32 amt = sF32(winOff) / sF32(L);
                r = r + (t - r) * amt;
             }
@@ -8247,14 +8739,27 @@ sF32 StSampleVoice::readSample2(const sF32 *smpDat, const sF32 *smpDatLRX, sSI _
          break;
 
       case STSAMPLE_PLAY_MODE_XFADE_64:
-         r = readSample2LRX(smpDat, smpDatLRX, _off);
+         r = readSample2LRX(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                            smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                            _off
+                            );
          if(bAllowXfade)
          {
 #define L 64
-            if((current_sample_len >= L) && ((current_smpdat_shift + current_sample_offset) >= L) && (frameOff >= (sSI(current_sample_len) - L)))
+            if((current_sample_len >= L) &&
+               ((current_smpdat_shift + current_sample_offset) >= L) &&
+               (frameOff >= (sSI(current_sample_len) - L))
+               )
             {
                sSI winOff = frameOff - (((sSI)current_sample_len) - L);
-               sF32 t = readSample2LRX(smpDat - (L<<1),  (NULL != smpDatLRX) ? (smpDatLRX - (L<<1)) : NULL, (winOff<<1) + (_off & 1));
+               sF32 t = readSample2LRX(smpDat - (L<<1),
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                       (NULL != smpDatLRX) ? (smpDatLRX - (L<<1)) : NULL,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                       (winOff<<1) + (_off & 1)
+                                       );
                sF32 amt = sF32(winOff) / sF32(L);
                r = r + (t - r) * amt;
             }
@@ -8263,14 +8768,27 @@ sF32 StSampleVoice::readSample2(const sF32 *smpDat, const sF32 *smpDatLRX, sSI _
          break;
 
       case STSAMPLE_PLAY_MODE_XFADE_128:
-         r = readSample2LRX(smpDat, smpDatLRX, _off);
+         r = readSample2LRX(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                            smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                            _off
+                            );
          if(bAllowXfade)
          {
 #define L 128
-            if((current_sample_len >= L) && ((current_smpdat_shift + current_sample_offset) >= L) && (frameOff >= (sSI(current_sample_len) - L)))
+            if((current_sample_len >= L) &&
+               ((current_smpdat_shift + current_sample_offset) >= L) &&
+               (frameOff >= (sSI(current_sample_len) - L))
+               )
             {
                sSI winOff = frameOff - (((sSI)current_sample_len) - L);
-               sF32 t = readSample2LRX(smpDat - (L<<1),  (NULL != smpDatLRX) ? (smpDatLRX - (L<<1)) : NULL, (winOff<<1) + (_off & 1));
+               sF32 t = readSample2LRX(smpDat - (L<<1),
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                       (NULL != smpDatLRX) ? (smpDatLRX - (L<<1)) : NULL,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                       (winOff<<1) + (_off & 1)
+                                       );
                sF32 amt = sF32(winOff) / sF32(L);
                r = r + (t - r) * amt;
             }
@@ -8279,14 +8797,27 @@ sF32 StSampleVoice::readSample2(const sF32 *smpDat, const sF32 *smpDatLRX, sSI _
          break;
 
       case STSAMPLE_PLAY_MODE_XFADE_256:
-         r = readSample2LRX(smpDat, smpDatLRX, _off);
+         r = readSample2LRX(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                            smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                            _off
+                            );
          if(bAllowXfade)
          {
 #define L 256
-            if((current_sample_len >= L) && ((current_smpdat_shift + current_sample_offset) >= L) && (frameOff >= (sSI(current_sample_len) - L)))
+            if((current_sample_len >= L) &&
+               ((current_smpdat_shift + current_sample_offset) >= L) &&
+               (frameOff >= (sSI(current_sample_len) - L))
+               )
             {
                sSI winOff = frameOff - (((sSI)current_sample_len) - L);
-               sF32 t = readSample2LRX(smpDat - (L<<1),  (NULL != smpDatLRX) ? (smpDatLRX - (L<<1)) : NULL, (winOff<<1) + (_off & 1));
+               sF32 t = readSample2LRX(smpDat - (L<<1),
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                       (NULL != smpDatLRX) ? (smpDatLRX - (L<<1)) : NULL,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                       (winOff<<1) + (_off & 1)
+                                       );
                sF32 amt = sF32(winOff) / sF32(L);
                r = r + (t - r) * amt;
             }
@@ -8295,14 +8826,27 @@ sF32 StSampleVoice::readSample2(const sF32 *smpDat, const sF32 *smpDatLRX, sSI _
          break;
 
       case STSAMPLE_PLAY_MODE_XFADE_512:
-         r = readSample2LRX(smpDat, smpDatLRX, _off);
+         r = readSample2LRX(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                            smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                            _off
+                            );
          if(bAllowXfade)
          {
 #define L 512
-            if((current_sample_len >= L) && ((current_smpdat_shift + current_sample_offset) >= L) && (frameOff >= (sSI(current_sample_len) - L)))
+            if((current_sample_len >= L) &&
+               ((current_smpdat_shift + current_sample_offset) >= L) &&
+               (frameOff >= (sSI(current_sample_len) - L))
+               )
             {
                sSI winOff = frameOff - (((sSI)current_sample_len) - L);
-               sF32 t = readSample2LRX(smpDat - (L<<1),  (NULL != smpDatLRX) ? (smpDatLRX - (L<<1)) : NULL, (winOff<<1) + (_off & 1));
+               sF32 t = readSample2LRX(smpDat - (L<<1),
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                       (NULL != smpDatLRX) ? (smpDatLRX - (L<<1)) : NULL,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                       (winOff<<1) + (_off & 1)
+                                       );
                sF32 amt = sF32(winOff) / sF32(L);
                r = r + (t - r) * amt;
             }
@@ -8311,14 +8855,27 @@ sF32 StSampleVoice::readSample2(const sF32 *smpDat, const sF32 *smpDatLRX, sSI _
          break;
 
       case STSAMPLE_PLAY_MODE_XFADE_1024:
-         r = readSample2LRX(smpDat, smpDatLRX, _off);
+         r = readSample2LRX(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                            smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                            _off
+                            );
          if(bAllowXfade)
          {
 #define L 1024
-            if((current_sample_len >= L) && ((current_smpdat_shift + current_sample_offset) >= L) && (frameOff >= (sSI(current_sample_len) - L)))
+            if((current_sample_len >= L) &&
+               ((current_smpdat_shift + current_sample_offset) >= L) &&
+               (frameOff >= (sSI(current_sample_len) - L))
+               )
             {
                sSI winOff = frameOff - (((sSI)current_sample_len) - L);
-               sF32 t = readSample2LRX(smpDat - (L<<1),  (NULL != smpDatLRX) ? (smpDatLRX - (L<<1)) : NULL, (winOff<<1) + (_off & 1));
+               sF32 t = readSample2LRX(smpDat - (L<<1),
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                       (NULL != smpDatLRX) ? (smpDatLRX - (L<<1)) : NULL,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                       (winOff<<1) + (_off & 1)
+                                       );
                sF32 amt = sF32(winOff) / sF32(L);
                r = r + (t - r) * amt;
             }
@@ -8327,14 +8884,27 @@ sF32 StSampleVoice::readSample2(const sF32 *smpDat, const sF32 *smpDatLRX, sSI _
          break;
 
       case STSAMPLE_PLAY_MODE_XFADE_2048:
-         r = readSample2LRX(smpDat, smpDatLRX, _off);
+         r = readSample2LRX(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                            smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                            _off
+                            );
          if(bAllowXfade)
          {
 #define L 2048
-            if((current_sample_len >= L) && ((current_smpdat_shift + current_sample_offset) >= L) && (frameOff >= (sSI(current_sample_len) - L)))
+            if((current_sample_len >= L) &&
+               ((current_smpdat_shift + current_sample_offset) >= L) &&
+               (frameOff >= (sSI(current_sample_len) - L))
+               )
             {
                sSI winOff = frameOff - (((sSI)current_sample_len) - L);
-               sF32 t = readSample2LRX(smpDat - (L<<1),  (NULL != smpDatLRX) ? (smpDatLRX - (L<<1)) : NULL, (winOff<<1) + (_off & 1));
+               sF32 t = readSample2LRX(smpDat - (L<<1),
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                       (NULL != smpDatLRX) ? (smpDatLRX - (L<<1)) : NULL,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                       (winOff<<1) + (_off & 1)
+                                       );
                sF32 amt = sF32(winOff) / sF32(L);
                r = r + (t - r) * amt;
             }
@@ -8343,14 +8913,27 @@ sF32 StSampleVoice::readSample2(const sF32 *smpDat, const sF32 *smpDatLRX, sSI _
          break;
 
       case STSAMPLE_PLAY_MODE_XFADE_4096:
-         r = readSample2LRX(smpDat, smpDatLRX, _off);
+         r = readSample2LRX(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                            smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                            _off
+                            );
          if(bAllowXfade)
          {
 #define L 4096
-            if((current_sample_len >= L) && ((current_smpdat_shift + current_sample_offset) >= L) && (frameOff >= (sSI(current_sample_len) - L)))
+            if((current_sample_len >= L) &&
+               ((current_smpdat_shift + current_sample_offset) >= L) &&
+               (frameOff >= (sSI(current_sample_len) - L))
+               )
             {
                sSI winOff = frameOff - (((sSI)current_sample_len) - L);
-               sF32 t = readSample2LRX(smpDat - (L<<1),  (NULL != smpDatLRX) ? (smpDatLRX - (L<<1)) : NULL, (winOff<<1) + (_off & 1));
+               sF32 t = readSample2LRX(smpDat - (L<<1),
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                       (NULL != smpDatLRX) ? (smpDatLRX - (L<<1)) : NULL,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                       (winOff<<1) + (_off & 1)
+                                       );
                sF32 amt = sF32(winOff) / sF32(L);
                r = r + (t - r) * amt;
             }
@@ -8359,14 +8942,27 @@ sF32 StSampleVoice::readSample2(const sF32 *smpDat, const sF32 *smpDatLRX, sSI _
          break;
 
       case STSAMPLE_PLAY_MODE_XFADE_8192:
-         r = readSample2LRX(smpDat, smpDatLRX, _off);
+         r = readSample2LRX(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                            smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                            _off
+                            );
          if(bAllowXfade)
          {
 #define L 8192
-            if((current_sample_len >= L) && ((current_smpdat_shift + current_sample_offset) >= L) && (frameOff >= (sSI(current_sample_len) - L)))
+            if((current_sample_len >= L) &&
+               ((current_smpdat_shift + current_sample_offset) >= L) &&
+               (frameOff >= (sSI(current_sample_len) - L))
+               )
             {
                sSI winOff = frameOff - (((sSI)current_sample_len) - L);
-               sF32 t = readSample2LRX(smpDat - (L<<1),  (NULL != smpDatLRX) ? (smpDatLRX - (L<<1)) : NULL, (winOff<<1) + (_off & 1));
+               sF32 t = readSample2LRX(smpDat - (L<<1),
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                       (NULL != smpDatLRX) ? (smpDatLRX - (L<<1)) : NULL,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                       (winOff<<1) + (_off & 1)
+                                       );
                sF32 amt = sF32(winOff) / sF32(L);
                r = r + (t - r) * amt;
             }
@@ -8375,14 +8971,27 @@ sF32 StSampleVoice::readSample2(const sF32 *smpDat, const sF32 *smpDatLRX, sSI _
          break;
 
       case STSAMPLE_PLAY_MODE_XFADE_16384:
-         r = readSample2LRX(smpDat, smpDatLRX, _off);
+         r = readSample2LRX(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                            smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                            _off
+                            );
          if(bAllowXfade)
          {
 #define L 16384
-            if((current_sample_len >= L) && ((current_smpdat_shift + current_sample_offset) >= L) && (frameOff >= (sSI(current_sample_len) - L)))
+            if((current_sample_len >= L) &&
+               ((current_smpdat_shift + current_sample_offset) >= L) &&
+               (frameOff >= (sSI(current_sample_len) - L))
+               )
             {
                sSI winOff = frameOff - (((sSI)current_sample_len) - L);
-               sF32 t = readSample2LRX(smpDat - (L<<1),  (NULL != smpDatLRX) ? (smpDatLRX - (L<<1)) : NULL, (winOff<<1) + (_off & 1));
+               sF32 t = readSample2LRX(smpDat - (L<<1),
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                       (NULL != smpDatLRX) ? (smpDatLRX - (L<<1)) : NULL,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                       (winOff<<1) + (_off & 1)
+                                       );
                sF32 amt = sF32(winOff) / sF32(L);
                r = r + (t - r) * amt;
             }
@@ -8397,14 +9006,18 @@ sF32 StSampleVoice::readSample2(const sF32 *smpDat, const sF32 *smpDatLRX, sSI _
 sUI StSampleVoice::renderFragmentGeneric(sF32 *&    buf,
                                          const sUI  _fragSize,
                                          sF32 *&    smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
                                          sF32 *&    smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
                                          sF32 &     cVolL,
                                          sF32 &     cVolR,
                                          const sF32 sVolL,
                                          const sF32 sVolR,
                                          sF32 &     cRate,
-                                         const sF32 sRate,
-                                         const sF32**_inputsOrNull/*sz=STSAMPLE_MAX_INPUTS*/
+                                         const sF32 sRate
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                         , const sF32**_inputsOrNull/*sz=STSAMPLE_MAX_INPUTS*/
+#endif // TKSAMPLER_SKIP_LIVEREC
                                          )
 {
    // Dyac_host_printf("xxx voice renderFragmentGeneric ENTER\n");
@@ -8520,11 +9133,31 @@ sUI StSampleVoice::renderFragmentGeneric(sF32 *&    buf,
       {
          if(numCh > 1)
          {
-            smpL  = readSample2(smpDat, smpDatLRX, smpOff  + 0);
-            smpLn = readSample2(smpDat, smpDatLRX, smpOffR + 0);
+            smpL  = readSample2(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                smpOff  + 0
+                                );
+            smpLn = readSample2(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                smpOffR + 0
+                                );
 
-            smpR  = readSample2(smpDat, smpDatLRX, smpOff  + 1);
-            smpRn = readSample2(smpDat, smpDatLRX, smpOffR + 1);
+            smpR  = readSample2(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                smpOff  + 1
+                                );
+            smpRn = readSample2(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                smpOffR + 1
+                                );
 
             if(br_mask)
             {
@@ -8540,8 +9173,18 @@ sUI StSampleVoice::renderFragmentGeneric(sF32 *&    buf,
          }
          else
          {
-            smpL  = readSample1(smpDat, smpDatLRX, smpOff  + 0);
-            smpLn = readSample1(smpDat, smpDatLRX, smpOffR + 0);
+            smpL  = readSample1(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                smpOff  + 0
+                                );
+            smpLn = readSample1(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                smpOffR + 0
+                                );
 
             if(br_mask)
             {
@@ -8571,7 +9214,12 @@ sUI StSampleVoice::renderFragmentGeneric(sF32 *&    buf,
                // Mono
                const sUI smpOffC = intOffC;
 
-               sF32 readL = readSample1(smpDat, smpDatLRX, smpOffC + 0u);
+               sF32 readL = readSample1(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                        smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                        smpOffC + 0u
+                                        );
 
                if(br_mask)
                {
@@ -8585,8 +9233,18 @@ sUI StSampleVoice::renderFragmentGeneric(sF32 *&    buf,
                // Stereo
                sUI smpOffC = intOffC * numCh;
 
-               sF32 readL = readSample2(smpDat, smpDatLRX, smpOffC + 0u);
-               sF32 readR = readSample2(smpDat, smpDatLRX, smpOffC + 1u);
+               sF32 readL = readSample2(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                        smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                        smpOffC + 0u
+                                        );
+               sF32 readR = readSample2(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                        smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                        smpOffC + 1u
+                                        );
 
                if(br_mask)
                {
@@ -8633,7 +9291,12 @@ sUI StSampleVoice::renderFragmentGeneric(sF32 *&    buf,
                // Mono
                const sUI smpOffC = intOffC;
 
-               sF32 readL = readSample1(smpDat, smpDatLRX, smpOffC + 0u);
+               sF32 readL = readSample1(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                        smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                        smpOffC + 0u
+                                        );
 
                if(br_mask)
                {
@@ -8647,8 +9310,18 @@ sUI StSampleVoice::renderFragmentGeneric(sF32 *&    buf,
                // Stereo
                sUI smpOffC = intOffC * numCh;
 
-               sF32 readL = readSample2(smpDat, smpDatLRX, smpOffC + 0u);
-               sF32 readR = readSample2(smpDat, smpDatLRX, smpOffC + 1u);
+               sF32 readL = readSample2(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                        smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                        smpOffC + 0u
+                                        );
+               sF32 readR = readSample2(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                        smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                        smpOffC + 1u
+                                        );
 
                if(br_mask)
                {
@@ -8695,7 +9368,12 @@ sUI StSampleVoice::renderFragmentGeneric(sF32 *&    buf,
                // Mono
                const sUI smpOffC = intOffC;
 
-               sF32 readL = readSample1(smpDat, smpDatLRX, smpOffC + 0u);
+               sF32 readL = readSample1(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                        smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                        smpOffC + 0u
+                                        );
 
                if(br_mask)
                {
@@ -8709,8 +9387,18 @@ sUI StSampleVoice::renderFragmentGeneric(sF32 *&    buf,
                // Stereo
                sUI smpOffC = intOffC * numCh;
 
-               sF32 readL = readSample2(smpDat, smpDatLRX, smpOffC + 0u);
-               sF32 readR = readSample2(smpDat, smpDatLRX, smpOffC + 1u);
+               sF32 readL = readSample2(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                        smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                        smpOffC + 0u
+                                        );
+               sF32 readR = readSample2(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                        smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                        smpOffC + 1u
+                                        );
 
                if(br_mask)
                {
@@ -8757,7 +9445,12 @@ sUI StSampleVoice::renderFragmentGeneric(sF32 *&    buf,
                // Mono
                const sUI smpOffC = intOffC;
 
-               sF32 readL = readSample1(smpDat, smpDatLRX, smpOffC + 0u);
+               sF32 readL = readSample1(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                        smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                        smpOffC + 0u
+                                        );
 
                if(br_mask)
                {
@@ -8771,8 +9464,18 @@ sUI StSampleVoice::renderFragmentGeneric(sF32 *&    buf,
                // Stereo
                sUI smpOffC = intOffC * numCh;
 
-               sF32 readL = readSample2(smpDat, smpDatLRX, smpOffC + 0u);
-               sF32 readR = readSample2(smpDat, smpDatLRX, smpOffC + 1u);
+               sF32 readL = readSample2(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                        smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                        smpOffC + 0u
+                                        );
+               sF32 readR = readSample2(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                        smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                        smpOffC + 1u
+                                        );
 
                if(br_mask)
                {
@@ -8819,7 +9522,12 @@ sUI StSampleVoice::renderFragmentGeneric(sF32 *&    buf,
                // Mono
                const sUI smpOffC = intOffC;
 
-               sF32 readL = readSample1(smpDat, smpDatLRX, smpOffC + 0u);
+               sF32 readL = readSample1(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                        smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                        smpOffC + 0u
+                                        );
 
                if(br_mask)
                {
@@ -8833,8 +9541,18 @@ sUI StSampleVoice::renderFragmentGeneric(sF32 *&    buf,
                // Stereo
                sUI smpOffC = intOffC * numCh;
 
-               sF32 readL = readSample2(smpDat, smpDatLRX, smpOffC + 0u);
-               sF32 readR = readSample2(smpDat, smpDatLRX, smpOffC + 1u);
+               sF32 readL = readSample2(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                        smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                        smpOffC + 0u
+                                        );
+               sF32 readR = readSample2(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                        smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                        smpOffC + 1u
+                                        );
 
                if(br_mask)
                {
@@ -8881,7 +9599,12 @@ sUI StSampleVoice::renderFragmentGeneric(sF32 *&    buf,
                // Mono
                const sUI smpOffC = intOffC;
 
-               sF32 readL = readSample1(smpDat, smpDatLRX, smpOffC + 0u);
+               sF32 readL = readSample1(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                        smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                        smpOffC + 0u
+                                        );
 
                if(br_mask)
                {
@@ -8895,8 +9618,18 @@ sUI StSampleVoice::renderFragmentGeneric(sF32 *&    buf,
                // Stereo
                sUI smpOffC = intOffC * numCh;
 
-               sF32 readL = readSample2(smpDat, smpDatLRX, smpOffC + 0u);
-               sF32 readR = readSample2(smpDat, smpDatLRX, smpOffC + 1u);
+               sF32 readL = readSample2(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                        smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                        smpOffC + 0u
+                                        );
+               sF32 readR = readSample2(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                        smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                        smpOffC + 1u
+                                        );
 
                if(br_mask)
                {
@@ -8941,8 +9674,18 @@ sUI StSampleVoice::renderFragmentGeneric(sF32 *&    buf,
             sSI xo = -A;
             for(; xo < A; xo++)
             {
-               sF32 inSmpL = readSample2(smpDat, smpDatLRX, xi+0);
-               sF32 inSmpR = readSample2(smpDat, smpDatLRX, xi+1);
+               sF32 inSmpL = readSample2(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                         smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                         xi+0
+                                         );
+               sF32 inSmpR = readSample2(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                         smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                         xi+1
+                                         );
                sF32 t = TBL[xf];
                // if(0 == (xxx & 4095))
                //    Dyac_host_printf("xxx lanczos4s: inSmp[%d]=(%f; %f), TBL[%u]=%f\n", xi, inSmpL, inSmpR, xf, t);
@@ -8970,7 +9713,12 @@ sUI StSampleVoice::renderFragmentGeneric(sF32 *&    buf,
             sSI xo = -A;
             for(; xo < A; xo++)
             {
-               sF32 inSmp = readSample1(smpDat, smpDatLRX, xi);
+               sF32 inSmp = readSample1(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                        smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                        xi
+                                        );
                sF32 t = TBL[xf];
                // if(0 == (xxx & 4095))
                //    Dyac_host_printf("xxx lanczos4m: inSmp[%d]=%f, TBL[%u]=%f\n", xi, inSmp, xf, t);
@@ -9006,8 +9754,18 @@ sUI StSampleVoice::renderFragmentGeneric(sF32 *&    buf,
             sSI xo = -A;
             for(; xo < A; xo++)
             {
-               sF32 inSmpL = readSample2(smpDat, smpDatLRX, xi+0);
-               sF32 inSmpR = readSample2(smpDat, smpDatLRX, xi+1);
+               sF32 inSmpL = readSample2(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                         smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                         xi+0
+                                         );
+               sF32 inSmpR = readSample2(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                         smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                         xi+1
+                                         );
                sF32 t = TBL[xf];
                // if(0 == (xxx & 4095))
                //    Dyac_host_printf("xxx lanczos8s: inSmp[%d]=(%f; %f), TBL[%u]=%f\n", xi, inSmpL, inSmpR, xf, t);
@@ -9035,7 +9793,12 @@ sUI StSampleVoice::renderFragmentGeneric(sF32 *&    buf,
             sSI xo = -A;
             for(; xo < A; xo++)
             {
-               sF32 inSmp = readSample1(smpDat, smpDatLRX, xi);
+               sF32 inSmp = readSample1(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                        smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                        xi
+                                        );
                sF32 t = TBL[xf];
                // if(0 == (xxx & 4095))
                //    Dyac_host_printf("xxx lanczos8m: inSmp[%d]=%f, TBL[%u]=%f\n", xi, inSmp, xf, t);
@@ -9071,8 +9834,18 @@ sUI StSampleVoice::renderFragmentGeneric(sF32 *&    buf,
             sSI xo = -A;
             for(; xo < A; xo++)
             {
-               sF32 inSmpL = readSample2(smpDat, smpDatLRX, xi+0);
-               sF32 inSmpR = readSample2(smpDat, smpDatLRX, xi+1);
+               sF32 inSmpL = readSample2(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                         smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                         xi+0
+                                         );
+               sF32 inSmpR = readSample2(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                         smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                         xi+1
+                                         );
                sF32 t = TBL[xf];
                // if(0 == (xxx & 4095))
                //    Dyac_host_printf("xxx lanczos16s: inSmp[%d]=(%f; %f), TBL[%u]=%f\n", xi, inSmpL, inSmpR, xf, t);
@@ -9100,7 +9873,12 @@ sUI StSampleVoice::renderFragmentGeneric(sF32 *&    buf,
             sSI xo = -A;
             for(; xo < A; xo++)
             {
-               sF32 inSmp = readSample1(smpDat, smpDatLRX, xi);
+               sF32 inSmp = readSample1(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                        smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                        xi
+                                        );
                sF32 t = TBL[xf];
                // if(0 == (xxx & 4095))
                //    Dyac_host_printf("xxx lanczos16m: inSmp[%d]=%f, TBL[%u]=%f\n", xi, inSmp, xf, t);
@@ -9136,8 +9914,18 @@ sUI StSampleVoice::renderFragmentGeneric(sF32 *&    buf,
             sSI xo = -A;
             for(; xo < A; xo++)
             {
-               sF32 inSmpL = readSample2(smpDat, smpDatLRX, xi+0);
-               sF32 inSmpR = readSample2(smpDat, smpDatLRX, xi+1);
+               sF32 inSmpL = readSample2(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                         smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                         xi+0
+                                         );
+               sF32 inSmpR = readSample2(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                         smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                         xi+1
+                                         );
                sF32 t = TBL[xf];
                // if(0 == (xxx & 4095))
                //    Dyac_host_printf("xxx lanczos32s: inSmp[%d]=(%f; %f), TBL[%u]=%f\n", xi, inSmpL, inSmpR, xf, t);
@@ -9165,7 +9953,12 @@ sUI StSampleVoice::renderFragmentGeneric(sF32 *&    buf,
             sSI xo = -A;
             for(; xo < A; xo++)
             {
-               sF32 inSmp = readSample1(smpDat, smpDatLRX, xi);
+               sF32 inSmp = readSample1(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                        smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                        xi
+                                        );
                sF32 t = TBL[xf];
                // if(0 == (xxx & 4095))
                //    Dyac_host_printf("xxx lanczos32m: inSmp[%d]=%f, TBL[%u]=%f\n", xi, inSmp, xf, t);
@@ -9201,8 +9994,18 @@ sUI StSampleVoice::renderFragmentGeneric(sF32 *&    buf,
             sSI xo = -A;
             for(; xo < A; xo++)
             {
-               sF32 inSmpL = readSample2(smpDat, smpDatLRX, xi+0);
-               sF32 inSmpR = readSample2(smpDat, smpDatLRX, xi+1);
+               sF32 inSmpL = readSample2(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                         smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                         xi+0
+                                         );
+               sF32 inSmpR = readSample2(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                         smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                         xi+1
+                                         );
                sF32 t = TBL[xf];
                // if(0 == (xxx & 4095))
                //    Dyac_host_printf("xxx lanczos32s: inSmp[%d]=(%f; %f), TBL[%u]=%f\n", xi, inSmpL, inSmpR, xf, t);
@@ -9230,7 +10033,12 @@ sUI StSampleVoice::renderFragmentGeneric(sF32 *&    buf,
             sSI xo = -A;
             for(; xo < A; xo++)
             {
-               sF32 inSmp = readSample1(smpDat, smpDatLRX, xi);
+               sF32 inSmp = readSample1(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                        smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                        xi
+                                        );
                sF32 t = TBL[xf];
                // if(0 == (xxx & 4095))
                //    Dyac_host_printf("xxx lanczos32m: inSmp[%d]=%f, TBL[%u]=%f\n", xi, inSmp, xf, t);
@@ -9312,7 +10120,15 @@ sUI StSampleVoice::renderFragmentGeneric(sF32 *&    buf,
                b_queued_delayed_loop = YAC_FALSE;
 
                // End of loop cycle, start new loop
-               if(!handleEndOfLoop(&cOff, &smpDat, &smpDatLRX, YAC_FALSE/*bFromStart*/, YAC_FALSE/*bAllowCOffReset*/))
+               if(!handleEndOfLoop(&cOff,
+                                   &smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                   &smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                   YAC_FALSE/*bFromStart*/,
+                                   YAC_FALSE/*bAllowCOffReset*/
+                                   )
+                  )
                {
                   // End of sample
                   return 0;
@@ -9331,6 +10147,7 @@ sUI StSampleVoice::renderFragmentGeneric(sF32 *&    buf,
          }
       }
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
       // Add input
       if( (NULL != _inputsOrNull) && ((YAC_TRUE == sample->b_sum_input) || ((YAC_MAYBE == sample->b_sum_input) && sample->b_liverec_active)) )
       {
@@ -9355,6 +10172,7 @@ sUI StSampleVoice::renderFragmentGeneric(sF32 *&    buf,
             smpR = (smpR*volSmp) + _inputsOrNull[sample->liverec_input_idx][0] * volInp;
          }
       }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
       // Calc output
       last_sample_l = smpL;
@@ -9461,6 +10279,7 @@ sUI StSampleVoice::renderFragmentGeneric(sF32 *&    buf,
       buf += 2;
       render_buf_sample_offset += 2u;
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
       if(NULL != _inputsOrNull)
       {
          for(sUI i = 0u; i < STSAMPLE_MAX_INPUTS; i++)
@@ -9468,7 +10287,7 @@ sUI StSampleVoice::renderFragmentGeneric(sF32 *&    buf,
             _inputsOrNull[i]++;
          }
       }
-
+#endif // TKSAMPLER_SKIP_LIVEREC
 
       cVolL += sVolL;
       cVolR += sVolR;
@@ -9514,7 +10333,15 @@ sUI StSampleVoice::renderFragmentGeneric(sF32 *&    buf,
                // Dyac_host_printf("xxx start new loop\n");
                if(sample->b_jumptoloop_immediately)
                {
-                  if(!handleEndOfLoop(&cOff, &smpDat, &smpDatLRX, YAC_FALSE/*bFromStart*/, YAC_TRUE/*bAllowCOffReset*/))
+                  if(!handleEndOfLoop(&cOff,
+                                      &smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                      &smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                      YAC_FALSE/*bFromStart*/,
+                                      YAC_TRUE/*bAllowCOffReset*/
+                                      )
+                     )
                   {
                      // End of sample
                      return 0;
@@ -9525,7 +10352,15 @@ sUI StSampleVoice::renderFragmentGeneric(sF32 *&    buf,
                   if( ((sUI)cOff) >= current_sample_len )
                   {
                      // End of loop cycle, start new loop
-                     if(!handleEndOfLoop(&cOff, &smpDat, &smpDatLRX, YAC_FALSE/*bFromStart*/, YAC_TRUE/*bAllowCOffReset*/))
+                     if(!handleEndOfLoop(&cOff,
+                                         &smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                         &smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                         YAC_FALSE/*bFromStart*/,
+                                         YAC_TRUE/*bAllowCOffReset*/
+                                         )
+                        )
                      {
                         // End of sample
                         return 0;
@@ -9630,7 +10465,15 @@ sUI StSampleVoice::renderFragmentGeneric(sF32 *&    buf,
                else
                {
                   // End of loop cycle, start new loop
-                  if(!handleEndOfLoop(&cOff, &smpDat, &smpDatLRX, YAC_FALSE/*bFromStart*/, YAC_TRUE/*bAllowCOffReset*/))
+                  if(!handleEndOfLoop(&cOff,
+                                      &smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                      &smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                      YAC_FALSE/*bFromStart*/,
+                                      YAC_TRUE/*bAllowCOffReset*/
+                                      )
+                     )
                   {
                      // End of sample
                      return 0;
@@ -9802,14 +10645,18 @@ sUI StSampleVoice::renderFragmentOptVoicePluginOsc(sF32 *&    buf,
 sUI StSampleVoice::renderBlockNormal(sF32 *     buf,
                                      sUI        blkSz,
                                      sF32 *     smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
                                      sF32 *     smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
                                      const sF32 a,
                                      const sF32 b,
                                      sF32       cVolL,
                                      sF32       cVolR,
                                      const sF32 sVolL,
-                                     const sF32 sVolR,
-                                     const sF32**_inputsOrNull/*sz=STSAMPLE_MAX_INPUTS*/
+                                     const sF32 sVolR
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                     , const sF32**_inputsOrNull/*sz=STSAMPLE_MAX_INPUTS*/
+#endif // TKSAMPLER_SKIP_LIVEREC
                                      )
 {
    //
@@ -9825,8 +10672,16 @@ sUI StSampleVoice::renderBlockNormal(sF32 *     buf,
    sF32 cNoteHz;
    sF32 nNoteHz;
    // // sF32 sNoteHz = (nNoteHz - cNoteHz) / blkSz;
-   cNoteHz = noteToFreq(current_freq + (next_freq - current_freq) * a) * liverec_osc_pitch_factor;
-   nNoteHz = noteToFreq(current_freq + (next_freq - current_freq) * b) * liverec_osc_pitch_factor;
+   cNoteHz = noteToFreq(current_freq + (next_freq - current_freq) * a)
+#ifndef TKSAMPLER_SKIP_LIVEREC
+      * liverec_osc_pitch_factor
+#endif // TKSAMPLER_SKIP_LIVEREC
+      ;
+   nNoteHz = noteToFreq(current_freq + (next_freq - current_freq) * b)
+#ifndef TKSAMPLER_SKIP_LIVEREC
+      * liverec_osc_pitch_factor
+#endif // TKSAMPLER_SKIP_LIVEREC
+      ;
 
    if(mmdst.note_2 > 0.0f)
    {
@@ -9917,6 +10772,7 @@ sUI StSampleVoice::renderBlockNormal(sF32 *     buf,
       Dyac_host_printf("xxx cRate=%f sRate=%f\n", cRate, sRate);
 
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
    const sF32 *inputsTmp[STSAMPLE_MAX_INPUTS] = {0};
    const sF32 **inputs;
    if(NULL != _inputsOrNull)
@@ -9931,6 +10787,7 @@ sUI StSampleVoice::renderBlockNormal(sF32 *     buf,
    {
       inputs = NULL;
    }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
    while(blkSz > 0)
    {
@@ -9972,14 +10829,22 @@ sUI StSampleVoice::renderBlockNormal(sF32 *     buf,
 
                if(bDebug)
                {
+#ifndef TKSAMPLER_SKIP_LIVEREC
                   Dyac_host_printf("xxx cFreq=%f lrPitchFac=%f cNoteHz=%f cRate=%f invRate=%f cRateOct=%f ai_fc=%f\n", current_freq, liverec_osc_pitch_factor, cNoteHz, cRate, invRate, cRateOct, ai_fc);
+#else
+                  Dyac_host_printf("xxx cFreq=%f cNoteHz=%f cRate=%f invRate=%f cRateOct=%f ai_fc=%f\n", current_freq, cNoteHz, cRate, invRate, cRateOct, ai_fc);
+#endif // TKSAMPLER_SKIP_LIVEREC
                }
             }
             else
             {
                if(bDebug)
                {
+#ifndef TKSAMPLER_SKIP_LIVEREC
                   Dyac_host_printf("xxx cFreq=%f lrPitchFac=%f cNoteHz=%f cRate=%f\n", current_freq, liverec_osc_pitch_factor, cNoteHz, cRate);
+#else
+                  Dyac_host_printf("xxx cFreq=%f cNoteHz=%f cRate=%f\n", current_freq, cNoteHz, cRate);
+#endif // TKSAMPLER_SKIP_LIVEREC
                }
             }
 
@@ -10012,7 +10877,9 @@ sUI StSampleVoice::renderBlockNormal(sF32 *     buf,
             (0u == br_mask) &&
             (sample->interpol_type <= STSAMPLE_INTERPOL_LINEAR) &&
             (0u == looprestart_xfade_frames_left) &&
+#ifndef TKSAMPLER_SKIP_LIVEREC
             !sample->b_liverec &&
+#endif // TKSAMPLER_SKIP_LIVEREC
             ((STSAMPLE_PLAY_MODE_FORWARD == sample->play_mode) || (STSAMPLE_PLAY_MODE_FWDNOLOOP == sample->play_mode)) &&
             !sample->hasPlugins() &&
             ((0u == sample->interpol_order) || (STSAMPLE_INTERPOL_NONE == sample->interpol_type)) &&
@@ -10022,7 +10889,11 @@ sUI StSampleVoice::renderBlockNormal(sF32 *     buf,
             )
          {
             genSizeHint = 0;
-            numDone = renderFragmentOptFwdMonoSimple(buf, blkSz, genSizeHint, smpDat, cVolL, cVolR, cRate, inputs);
+            numDone = renderFragmentOptFwdMonoSimple(buf, blkSz, genSizeHint, smpDat, cVolL, cVolR, cRate
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                                     , inputs
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                                     );
             // Dyac_host_printf("xxx opt: numDone=%d genSizeHint=%d blkSize=%d cVol=(%f; %f) b_playing=%d\n", numDone, genSizeHint, blkSz, cVolL, cVolR, b_playing);
 
             play_offset_actual += cRate * blkSz;
@@ -10037,10 +10908,15 @@ sUI StSampleVoice::renderBlockNormal(sF32 *     buf,
          {
             if(0 != genSizeHint)
             {
-               numDone = renderFragmentGeneric(buf, genSizeHint, smpDat, smpDatLRX,
+               numDone = renderFragmentGeneric(buf, genSizeHint, smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                               smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
                                                cVolL, cVolR, sVolL, sVolR,
-                                               cRate, sRate,
-                                               inputs
+                                               cRate, sRate
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                               , inputs
+#endif // TKSAMPLER_SKIP_LIVEREC
                                                );
                ////printf("xxx gen: numDone=%d genSizeHint=%d blkSize=%d b_playing=%d\n", numDone, genSizeHint, blkSz, b_playing);
             }
@@ -10142,7 +11018,11 @@ void StSampleVoice::adjustPlayOffsetToNextZeroCrossing(const sF32 *_smpDat) {
    }
 }
 
-sUI StSampleVoice::renderBlock(sF32 *buf, sUI blkSz, sF32 a, sF32 b, sF32 _volScale, const sF32**_inputsOrNull/*sz=STSAMPLE_MAX_INPUTS*/) {
+sUI StSampleVoice::renderBlock(sF32 *buf, sUI blkSz, sF32 a, sF32 b, sF32 _volScale
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                               , const sF32**_inputsOrNull/*sz=STSAMPLE_MAX_INPUTS*/
+#endif // TKSAMPLER_SKIP_LIVEREC
+                               ) {
 
     // Dyac_host_printf("xxx voice.renderBlock ENTER\n");
 
@@ -10151,8 +11031,10 @@ sUI StSampleVoice::renderBlock(sF32 *buf, sUI blkSz, sF32 a, sF32 b, sF32 _volSc
    sF32 cVol = current_vol * _volScale;
    sF32 nVol = next_vol * _volScale;
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
    if(sample->b_liverec && (YAC_TRUE == sample->b_liverec_monitor))
       cVol = nVol = 0.0f;
+#endif // TKSAMPLER_SKIP_LIVEREC
 
    if(sample->b_freeze_sampleoff_when_quiet && Dfltzero(cVol) && Dfltzero(nVol))
    {
@@ -10225,15 +11107,26 @@ sUI StSampleVoice::renderBlock(sF32 *buf, sUI blkSz, sF32 a, sF32 b, sF32 _volSc
    // Dyac_host_printf("xxx 1 current_sample_offset=%u current_orig_sample_len=%u current_sample_len=%u\n", current_sample_offset, current_orig_sample_len, current_sample_len);
 
    sF32 *smpDat;
+#ifndef TKSAMPLER_SKIP_LIVEREC
    sF32 *smpDatLRX;  // used for liverec doublebuffer x-fade
+#endif // TKSAMPLER_SKIP_LIVEREC
    if(b_zero)
    {
       smpDat = zero_samples;
+#ifndef TKSAMPLER_SKIP_LIVEREC
       smpDatLRX = NULL;
+#endif // TKSAMPLER_SKIP_LIVEREC
    }
    else
    {
-      calcSmpDat(smpDat, smpDatLRX, current_sample_offset, current_orig_sample_len, current_sample_len);
+      calcSmpDat(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                 smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                 current_sample_offset,
+                 current_orig_sample_len,
+                 current_sample_len
+                 );
    }
 
    // Dyac_host_printf("xxx 2 current_sample_offset=%u current_sample_len=%u\n", current_sample_offset, current_sample_len);
@@ -10261,12 +11154,30 @@ sUI StSampleVoice::renderBlock(sF32 *buf, sUI blkSz, sF32 a, sF32 b, sF32 _volSc
    {
       if(sample->b_timestretch_additive && (NULL != sample->partial_speeds) && (NULL != sample->partial_speeds) )
       {
-         renderBlockAdditive(buf, blkSz, smpDat, smpDatLRX, a, b, cVolL, cVolR, sVolL, sVolR, _inputsOrNull);
+#ifndef TKSAMPLER_SKIP_ADDITIVE
+         renderBlockAdditive(buf, blkSz, smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                             smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                             a, b, cVolL, cVolR, sVolL, sVolR
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                             , _inputsOrNull
+#endif // TKSAMPLER_SKIP_LIVEREC
+                             );
+#endif // TKSAMPLER_SKIP_ADDITIVE
       }
       else
       {
          // Dyac_host_printf("xxx call renderBlockTimestretch a=%f b=%f cVol=(%f; %f) sVol=(%f; %f)\n", a, b, cVolL, cVolR, sVolL, sVolR);
-         renderBlockTimestretch(buf, blkSz, smpDat, smpDatLRX, a, b, cVolL, cVolR, sVolL, sVolR, _inputsOrNull);
+         renderBlockTimestretch(buf, blkSz, smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                a, b, cVolL, cVolR, sVolL, sVolR
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                , _inputsOrNull
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                );
       }
       blkLeft = 0;
    }
@@ -10280,7 +11191,15 @@ sUI StSampleVoice::renderBlock(sF32 *buf, sUI blkSz, sF32 a, sF32 b, sF32 _volSc
       }
 
       // Dyac_host_printf("xxx voice renderBlockNormal 1\n");
-      blkLeft = renderBlockNormal(buf, blkSz, smpDat, smpDatLRX, a, b, cVolL, cVolR, sVolL, sVolR, _inputsOrNull);
+      blkLeft = renderBlockNormal(buf, blkSz, smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                  smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                  a, b, cVolL, cVolR, sVolL, sVolR
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                  , _inputsOrNull
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                  );
       // Dyac_host_printf("xxx voice renderBlockNormal 2\n");
    } // else if b_timestrech
 
@@ -10289,6 +11208,7 @@ sUI StSampleVoice::renderBlock(sF32 *buf, sUI blkSz, sF32 a, sF32 b, sF32 _volSc
    return blkLeft;
 }
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 void StSampleVoice::liveRecCopyToOverride(sF32 *_smpDatBase, sUI _waveOff) {
 
    sUI numCh = sample->waveform->num_channels;
@@ -10334,7 +11254,9 @@ void StSampleVoice::liveRecCopyToOverride(sF32 *_smpDatBase, sUI _waveOff) {
 
    // Dyac_host_printf("xxx liverec copy from off=%u waveOff=%u num=%u #ch=%u\n", liverec_copy_loop_offset, waveOff, liverec_copy_loop_len, numCh);
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 void StSampleVoice::liveRecResampleToOverride(sF32 *_smpDatBase, sUI _waveOff) {
 
    sUI numCh = sample->waveform->num_channels;
@@ -10380,9 +11302,12 @@ void StSampleVoice::liveRecResampleToOverride(sF32 *_smpDatBase, sUI _waveOff) {
 
    // Dyac_host_printf("xxx liverec copy from off=%u waveOff=%u num=%u #ch=%u\n", liverec_copy_loop_offset, waveOff, liverec_copy_loop_len, numCh);
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
 void StSampleVoice::calcSmpDat(sF32*&smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
                                sF32*&smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
                                const sUI _curSampleOffset,
                                const sUI _curOrigSampleLen,
                                const sUI _curSampleLen
@@ -10404,6 +11329,7 @@ void StSampleVoice::calcSmpDat(sF32*&smpDat,
       Dyac_host_printf("xxx _curSampleOffset=%u _curSampleLen=%u liveRecOff=%d liveRecLen=%d\n", _curSampleOffset, _curSampleLen, sample->liverec_override_loop_offset, sample->liverec_override_loop_len);
 #endif
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
    if(sample->b_liverec)
    {
       if(sample->b_liverec_copy && (STSAMPLE_LIVEREC_OSC_MODE_OFF == sample->liverec_osc_mode))
@@ -10488,6 +11414,7 @@ void StSampleVoice::calcSmpDat(sF32*&smpDat,
          }
       }
    } // if sample->b_liverec
+#endif // TKSAMPLER_SKIP_LIVEREC
 
    sSI smpLeft;
    if(sample->b_modshiftorig)
@@ -10525,18 +11452,23 @@ void StSampleVoice::calcSmpDat(sF32*&smpDat,
 
    if(-1 == waveOffNext)
    {
+#ifndef TKSAMPLER_SKIP_LIVEREC
       smpDatLRX = NULL;
+#endif // TKSAMPLER_SKIP_LIVEREC
    }
    else
    {
       waveOffNext += smpShift;
+#ifndef TKSAMPLER_SKIP_LIVEREC
       smpDatLRX = smpDatBase + ( waveOffNext * sample->waveform->num_channels );
+#endif // TKSAMPLER_SKIP_LIVEREC
    }
 
    if((void*)this == sample->waveform->ui_last_started_voice)
    {
       if(b_used && (_curOrigSampleLen == current_orig_sample_len)) // false after softStopVoice() (volrampdown)
       {
+#ifndef TKSAMPLER_SKIP_LIVEREC
          if(sample->b_liverec && sample->b_liverec_copy && (liverec_copy_loop_offset >= 0) && (STSAMPLE_LIVEREC_OSC_MODE_OFF != sample->liverec_osc_mode))
          {
             // Show copied area
@@ -10559,6 +11491,7 @@ void StSampleVoice::calcSmpDat(sF32*&smpDat,
             }
          }
          else
+#endif // TKSAMPLER_SKIP_LIVEREC
          {
             // Show live area
             if(sample->b_timestretch && sample->b_timestretch_additive)
@@ -10612,7 +11545,11 @@ sUI StSampleVoice::handleNextBlock(void) {
    return blkSz;
 }
 
-void StSampleVoice::renderInt(YAC_Object *_buf, sF32 _volScale, const sF32**_inputsOrNull/*sz=STSAMPLE_MAX_INPUTS*/) {
+void StSampleVoice::renderInt(YAC_Object *_buf, sF32 _volScale
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                              , const sF32**_inputsOrNull/*sz=STSAMPLE_MAX_INPUTS*/
+#endif // TKSAMPLER_SKIP_LIVEREC
+                              ) {
 
    // Dyac_host_printf("xxx StSampleVoice::_render: b_playing=%i anticlick_fadeout_countdown=%u volScale=%f\n", b_playing, anticlick_fadeout_countdown,_volScale);
 
@@ -10702,6 +11639,7 @@ void StSampleVoice::renderInt(YAC_Object *_buf, sF32 _volScale, const sF32**_inp
                   buf                      += (blkSz << 1); // *2 for stereo
                   render_buf_sample_offset += (blkSz << 1);
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
                   // Advance inputs
                   if(NULL != _inputsOrNull)
                   {
@@ -10711,6 +11649,7 @@ void StSampleVoice::renderInt(YAC_Object *_buf, sF32 _volScale, const sF32**_inp
                            _inputsOrNull[i] += blkSz;
                      }
                   }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
                   blkSz = handleNextBlock();
                   continue;
@@ -10735,7 +11674,11 @@ void StSampleVoice::renderInt(YAC_Object *_buf, sF32 _volScale, const sF32**_inp
                if(b_playing)
                {
                   // Dyac_host_printf("xxx voice renderBlock 1\n");
-                  blkSz = blkSz - renderBlock(buf, blkSz, a, b, _volScale, _inputsOrNull);
+                  blkSz = blkSz - renderBlock(buf, blkSz, a, b, _volScale
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                              , _inputsOrNull
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                              );
                   // Dyac_host_printf("xxx voice renderBlock 2\n");
                }
                else
@@ -10751,6 +11694,7 @@ void StSampleVoice::renderInt(YAC_Object *_buf, sF32 _volScale, const sF32**_inp
             buf                      += (blkSz << 1); // *2 for stereo
             // (note) render_buf_sample_offset is inc'd in renderBlock()
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
             // Advance inputs
             if(NULL != _inputsOrNull)
             {
@@ -10760,7 +11704,9 @@ void StSampleVoice::renderInt(YAC_Object *_buf, sF32 _volScale, const sF32**_inp
                      _inputsOrNull[i] += blkSz;
                }
             }
-         }
+#endif // TKSAMPLER_SKIP_LIVEREC
+
+         } // while numFrames > 0
 
       } // if b_playing
 
@@ -10846,7 +11792,11 @@ void StSampleVoice::renderInt(YAC_Object *_buf, sF32 _volScale, const sF32**_inp
 }
 
 void StSampleVoice::_render(YAC_Object *_buf, sF32 _volScale) {
-   renderInt(_buf, _volScale, NULL/*inputsOrNull*/);
+   renderInt(_buf, _volScale
+#ifndef TKSAMPLER_SKIP_LIVEREC
+             , NULL/*inputsOrNull*/
+#endif // TKSAMPLER_SKIP_LIVEREC
+             );
 }
 
 void StSampleVoice::_PrintDebugStats(void) {
@@ -10899,10 +11849,13 @@ sF32 StSampleVoice::_getTimedLoopBase(void) {
    return timedloop_base;
 }
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 YAC_Object *StSampleVoice::_getOverrideSampleLoops(void) {
    return override_sample_loops;
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 YAC_Object *StSampleVoice::_getOrCreateOverrideSampleLoops(void) {
    if(NULL == override_sample_loops)
    {
@@ -10910,7 +11863,9 @@ YAC_Object *StSampleVoice::_getOrCreateOverrideSampleLoops(void) {
    }
    return override_sample_loops;
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 void StSampleVoice::_allocOverrideSampleLoops(void) {
    _freeOverrideSampleLoops();
    if(NULL == override_sample_loops)
@@ -10918,18 +11873,23 @@ void StSampleVoice::_allocOverrideSampleLoops(void) {
       override_sample_loops = YAC_New_IntArray();
    }
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 void StSampleVoice::_freeOverrideSampleLoops(void) {
    YAC_DELETE_SAFE(override_sample_loops);
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
 YAC_IntArray *StSampleVoice::getCurrentSampleLoops(void) const {
    YAC_IntArray *ret = NULL;
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
    if(NULL != override_sample_loops)
    {
       ret = override_sample_loops;
    }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
    if(NULL == ret)
    {
@@ -10945,6 +11905,7 @@ YAC_IntArray *StSampleVoice::getCurrentSampleLoops(void) const {
    return ret;
 }
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 sBool StSampleVoice::_verifyOverrideSampleAreas(void) {
    //
    // - return true if one or more sample areas had to be clipped
@@ -10991,23 +11952,33 @@ sBool StSampleVoice::_verifyOverrideSampleAreas(void) {
       return 0;
    }
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 sSI StSampleVoice::_liveRecGetOverrideLoopOffset(void) {
    return liverec_copy_loop_offset;
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 sSI StSampleVoice::_liveRecGetOverrideLoopLen(void) {
    return liverec_copy_loop_len;
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 sSI StSampleVoice::_liveRecGetOverridePlayBufIdx(void) {
    return sSI(liverec_copy_doublebuffer_rec_idx ^ 1u);
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 sUI StSampleVoice::_liveRecGetOverrideSmpDatSz(void) {
    return override_smpdat_sz;
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 sBool StSampleVoice::copyOverrideBufferToWaveform(void) {
    if((NULL != sample) && (NULL != sample->waveform) && (NULL != sample->waveform->sample_data))
    {
@@ -11065,7 +12036,9 @@ sBool StSampleVoice::copyOverrideBufferToWaveform(void) {
    }
    return YAC_FALSE;
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 sBool StSampleVoice::copyOverrideBufferToFloatArray(YAC_Object *_d) {
    if((NULL != sample) && YAC_Is_FloatArray(_d))
    {
@@ -11119,6 +12092,7 @@ sBool StSampleVoice::copyOverrideBufferToFloatArray(YAC_Object *_d) {
    }
    return YAC_FALSE;
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
 void StSampleVoice::_setFilterCutOff(sF32 _f) {
    if(queued_noteon.b_valid)
@@ -11690,6 +12664,7 @@ sF32 StSampleVoiceBiquad2::filterNoStepNoDenorm(const sF32 _inSmp) {
    return sF32(out);
 }
 
+#ifndef TKSAMPLER_SKIP_ADDITIVE
 void StSampleVoice::recalcAdditiveTblMix(void) {
    if(NULL == additive_tbl)
    {
@@ -11698,6 +12673,7 @@ void StSampleVoice::recalcAdditiveTblMix(void) {
    sample->recalcAdditiveTbl_int(999999/*mix only*/, additive_tbl, mmdst_additive_cfg);
    last_additive_cfg = mmdst_additive_cfg;
 }
+#endif // TKSAMPLER_SKIP_ADDITIVE
 
 sUI StSampleVoice::_mmVarGetLastSeenIdx(void) {
    return mmvar_last_seen_var_idx;

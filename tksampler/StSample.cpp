@@ -113,6 +113,7 @@ StSample::StSample(void) {
    plugin_alg_outer      = 0u;
    plugin_alg_int        = 0u;
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
    liverec_front_buffer = NULL;
    liverec_front_buffer_sz = 0u;
 
@@ -120,6 +121,7 @@ StSample::StSample(void) {
 
    liverec_skip_input_num_frames  = 64;
    liverec_skip_input_frames_left = 0;
+#endif // TKSAMPLER_SKIP_LIVEREC
 
    b_ui_autoselect = YAC_TRUE;
 
@@ -281,6 +283,7 @@ void StSample::reinit(void) {
    mm_keyboard_max    = 24.0f;
    ::memset((void*)modmatrix, 0, sizeof(modmatrix));
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
    b_liverec                           = YAC_FALSE;
    b_liverec_active                    = YAC_FALSE;
    b_liverec_pause                     = YAC_FALSE;
@@ -310,7 +313,6 @@ void StSample::reinit(void) {
    liverec_last_osc_ring_frame_offset  = 0u;
    b_liverec_threshold_reached         = YAC_FALSE;
    b_liverec_silence_reached           = YAC_TRUE;
-   ui_redraw_queued                    = YAC_FALSE;
    b_liverec_doublebuffer_swap_queued  = YAC_FALSE;
    liverec_frame_offset_xfade_amt      = 0.0f;
    liverec_override_loop_offset        = -1;
@@ -326,6 +328,9 @@ void StSample::reinit(void) {
 
    b_sum_input     = YAC_FALSE;
    sum_input_xfade = 0.0f;
+#endif // TKSAMPLER_SKIP_LIVEREC
+
+   ui_redraw_queued                    = YAC_FALSE;
 
    b_enable_fx = YAC_TRUE;
 
@@ -345,6 +350,7 @@ void StSample::reinit(void) {
       voice_calibration_enable[i] = YAC_FALSE;
    }
 
+#ifndef TKSAMPLER_SKIP_ADDITIVE
    additive_edit_cfg = 0.0f;
    b_force_additive_edit_cfg = YAC_TRUE;
 
@@ -377,6 +383,7 @@ void StSample::reinit(void) {
    additive_stereo_spread = 0.0f;
    partial_cyclelen_reset = 128.0f;
    b_partial_phase_0      = YAC_TRUE;
+#endif // TKSAMPLER_SKIP_ADDITIVE
 
    ai_num_poles = 0u;
    ai_q         = 0.5f;
@@ -425,10 +432,12 @@ void StSample::free(void) {
       YAC_DELETE_SAFE(waveform);
    }
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
    freeLiveRecSustainSampleLoops();
 
    YAC_DELETE_ARRAY_SAFE(liverec_front_buffer);
    YAC_DELETE_ARRAY_SAFE(liverec_osc_pre_filter_buffer);
+#endif // TKSAMPLER_SKIP_LIVEREC
 
    freePlugins();
 
@@ -436,6 +445,7 @@ void StSample::free(void) {
    _freeTuningTablesMetaData();
 }
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 void StSample::freeLiveRecSustainSampleLoops(void) {
    for(sUI i = 0u; i < 2u; i++)
    {
@@ -446,6 +456,7 @@ void StSample::freeLiveRecSustainSampleLoops(void) {
       }
    }
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
 YAC_Object *StSample::_getNext(void) {
    return next;
@@ -848,6 +859,7 @@ sBool StSample::_verifySampleAreas(void) {
          }
       }
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
       // // if(b_liverec && (-1 != liverec_override_loop_offset) && (STSAMPLE_LIVEREC_DBLBUF_MODE_COPY != liverec_mode))
       if(b_liverec && (-1 != liverec_override_loop_offset) && !b_liverec_copy)
       {
@@ -859,6 +871,7 @@ sBool StSample::_verifySampleAreas(void) {
             liverec_override_loop_len    = 0;
          }
       }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
       return r;
    }
@@ -2600,129 +2613,190 @@ sSI StSample::_findUnusedMMEntry(sUI _startIdx) {
    return -1;
 }
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 void StSample::_setLiveRecEnable(sBool _bEnable) {
    b_liverec = _bEnable;
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 sBool StSample::_getLiveRecEnable(void) {
    return b_liverec;
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 void StSample::_setLiveRecPause(sBool _bEnable) {
    b_liverec_pause = _bEnable;
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 sBool StSample::_getLiveRecPause(void) {
    return b_liverec_pause;
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 void StSample::_setLiveRecMonitor(sBool _bEnable) {
    b_liverec_monitor = _bEnable;
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 sBool StSample::_getLiveRecMonitor(void) {
    return b_liverec_monitor;
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 void StSample::_setLiveRecInput(sUI _idx) {
    if(_idx < STSAMPLE_MAX_INPUTS)
       liverec_input_idx = _idx;
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 sUI StSample::_getLiveRecInput(void) {
    return liverec_input_idx;
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 void StSample::_setLiveRecInputPan(sF32 _pan) {
    liverec_input_pan = _pan;
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 sF32 StSample::_getLiveRecInputPan(void) {
    return liverec_input_pan;
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 void StSample::_setLiveRecStereo(sBool _bEnable) {
    b_liverec_stereo = _bEnable;
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 sBool StSample::_getLiveRecStereo(void) {
    return b_liverec_stereo;
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 void StSample::_setLiveRecCopy(sBool _bEnable) {
    b_liverec_copy = _bEnable;
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 sBool StSample::_getLiveRecCopy(void) {
    return b_liverec_copy;
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 void StSample::_setLiveRecClear(sBool _bEnable) {
    b_liverec_clear = _bEnable;
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 sBool StSample::_getLiveRecClear(void) {
    return b_liverec_clear;
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 void StSample::_setLiveRecDoubleBufferXFade(sBool _bEnable) {
    b_liverec_doublebuffer_xfade = _bEnable;
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 sBool StSample::_getLiveRecDoubleBufferXFade(void) {
    return b_liverec_doublebuffer_xfade;
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 void StSample::_setLiveRecOscMode(sUI _mode) {
    liverec_osc_mode = _mode;
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 sUI StSample::_getLiveRecOscMode(void) {
    return liverec_osc_mode;
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 void StSample::_setLiveRecOscSingleCycle(sBool _bEnable) {
    b_liverec_osc_singlecycle = _bEnable;
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 sBool StSample::_getLiveRecOscSingleCycle(void) {
    return b_liverec_osc_singlecycle;
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 void StSample::_setLiveRecOscTune(sF32 _tune) {
    liverec_osc_tune = _tune;
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 sF32 StSample::_getLiveRecOscTune(void) {
    return liverec_osc_tune;
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 void StSample::_setLiveRecOscFadeAmt(sF32 _newAmt) {
    liverec_osc_fade_amt = _newAmt;
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 sF32 StSample::_getLiveRecOscFadeAmt(void) {
    return liverec_osc_fade_amt;
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 void StSample::_setLiveRecSkipInputNumFrames(sUI _numFrames) {
    if(_numFrames > 4096u)
       _numFrames = 4096u;
    liverec_skip_input_num_frames = (sSI)_numFrames;
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 sUI StSample::_getLiveRecSkipInputNumFrames(void) {
    return sUI(liverec_skip_input_num_frames);
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 void StSample::_setLiveRecOscPreFilter(sF32 _cutoff01) {
    liverec_osc_pre_filter = _cutoff01;
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 sF32 StSample::_getLiveRecOscPreFilter(void) {
    return liverec_osc_pre_filter;
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 sBool StSample::keepInitialOscCopyOverrideBuffer(void) const {
    return
       !b_liverec_clear                                    &&
@@ -2731,70 +2805,102 @@ sBool StSample::keepInitialOscCopyOverrideBuffer(void) const {
       (liverec_osc_fade_amt < 0.99999f)
       ;
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 void StSample::_setLiveRecOscResample(sBool _bEnable) {
    b_liverec_osc_resample = _bEnable;
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 sBool StSample::_getLiveRecOscResample(void) {
    return b_liverec_osc_resample;
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 void StSample::_setLiveRecOscSustain(sBool _bEnable) {
    b_liverec_osc_sustain = _bEnable;
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 sBool StSample::_getLiveRecOscSustain(void) {
    return b_liverec_osc_sustain;
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 void StSample::_setLiveRecLoopIdx(sUI _idx) {
    liverec_loop_idx = _idx;
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 sUI StSample::_getLiveRecLoopIdx(void) {
    return liverec_loop_idx;
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 void StSample::_setLiveRecDoubleBufferMode(sUI _mode) {
    liverec_doublebuffer_mode = _mode;
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 sUI StSample::_getLiveRecDoubleBufferMode(void) {
    return liverec_doublebuffer_mode;
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 void StSample::_setLiveRecMode(sUI _mode) {
    liverec_mode = _mode;
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 sUI StSample::_getLiveRecMode(void) {
    return liverec_mode;
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 void StSample::_setLiveRecThresholdOn(sF32 _threshold) {
    liverec_threshold_on = _threshold;
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 sF32 StSample::_getLiveRecThresholdOn(void) {
    return liverec_threshold_on;
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 void StSample::_setLiveRecThresholdOff(sF32 _threshold) {
    liverec_threshold_off = _threshold;
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 sF32 StSample::_getLiveRecThresholdOff(void) {
    return liverec_threshold_off;
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 sBool StSample::isLiveRecActive(void) {
    return b_liverec && (b_liverec_active ||
                         (STSAMPLE_LIVEREC_MODE_WAIT_REPEAT         == liverec_mode) ||
                         (STSAMPLE_LIVEREC_MODE_WAIT_SILENCE_REPEAT == liverec_mode)
                         );
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 void StSample::_startLiveRecording(void) {
    if(b_liverec)
    {
@@ -2905,7 +3011,9 @@ void StSample::_startLiveRecording(void) {
       ui_redraw_queued = YAC_TRUE;
    }
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 void StSample::liveRecSwapBuffers(void) {
 
    liverec_override_loop_offset = liverec_queued_override_loop_offset;
@@ -2916,7 +3024,9 @@ void StSample::liveRecSwapBuffers(void) {
    liverec_frame_offset_xfade_amt = 0.0f;
    ui_redraw_queued = YAC_TRUE;
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 void StSample::_stopLiveRecording(void) {
    if(isLiveRecActive())
    {
@@ -2929,7 +3039,9 @@ void StSample::_stopLiveRecording(void) {
       // (todo) ? optionally zero remaining samples ?
    }
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 void StSample::handleLiveRecEnd(sBool _bRestart) {
 
    // Dyac_host_printf("xxx handleLiveRecEnd\n");
@@ -2999,7 +3111,9 @@ void StSample::handleLiveRecEnd(sBool _bRestart) {
    }
    ui_redraw_queued = YAC_TRUE;
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 void StSample::handleLiveRecDeferredBufferSwap(void) {
    // called by StSampleVoice::reallyStartVoice()
    if(b_liverec_doublebuffer_swap_queued)
@@ -3012,7 +3126,9 @@ void StSample::handleLiveRecDeferredBufferSwap(void) {
       }
    }
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 sSI StSample::liveRecFindThresholdIdx(const sF32 *_input, sUI _numFrames, sF32 _threshold) {
    // (todo) require "n" frames to exceed threshold ?
    for(sUI i = 0u; i < _numFrames; i++)
@@ -3023,7 +3139,9 @@ sSI StSample::liveRecFindThresholdIdx(const sF32 *_input, sUI _numFrames, sF32 _
    }
    return -1;
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 void StSample::handleLiveRecording(sF32 *_out, const sF32*const*_inputs, sUI _numFrames, sSI _loopShift) {
    if(isLiveRecActive() && !b_liverec_pause)
    {
@@ -3684,7 +3802,9 @@ void StSample::handleLiveRecording(sF32 *_out, const sF32*const*_inputs, sUI _nu
 
    // yac_host->printf("xxx StSample::handleLiveRecording: LEAVE\n");
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 void StSample::liveRecCopyInputToOutput(sF32 *_out, const sF32*const*_inputs, sUI _numFrames) {
    const sF32 *inputL = _inputs[liverec_input_idx];
    const sF32 *inputR = inputL;
@@ -3745,6 +3865,7 @@ void StSample::liveRecCopyInputToOutput(sF32 *_out, const sF32*const*_inputs, sU
       }
    }
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
 sBool StSample::uiCheckResetRedrawFlag(void) {
    sBool r = ui_redraw_queued;
@@ -3752,6 +3873,7 @@ sBool StSample::uiCheckResetRedrawFlag(void) {
    return r;
 }
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 sBool StSample::hasLiveRecAdaptiveLoopSize(void) {
    return
       b_liverec                                           &&
@@ -3759,28 +3881,36 @@ sBool StSample::hasLiveRecAdaptiveLoopSize(void) {
       (STSAMPLE_LIVEREC_OSC_MODE_OFF != liverec_osc_mode) &&
       (-1 != liverec_override_loop_offset)                ;
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 sUI StSample::liveRecGetCurrentRecBufIdx(void) {
    if(STSAMPLE_LIVEREC_DBLBUF_MODE_OFF != liverec_doublebuffer_mode)
       return liverec_doublebuffer_rec_idx;
    else
       return 0u;
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 sUI StSample::liveRecGetCurrentPlayBufIdx(void) {
    if(STSAMPLE_LIVEREC_DBLBUF_MODE_OFF != liverec_doublebuffer_mode)
       return liverec_doublebuffer_rec_idx ^ 1u;
    else
       return 0u;
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 YAC_IntArray *StSample::getSampleLoopsOverride(void) {
    if(b_liverec && b_liverec_osc_sustain)
       return &liverec_sustain_sample_loops[liveRecGetCurrentPlayBufIdx()];
    else
       return NULL;
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 void StSample::liveRecUpdateSustainModeSampleLoops(void) {
    // Dyac_host_printf("xxx liveRecUpdateSustainModeSampleLoops: ENTER\n");
 
@@ -3866,7 +3996,9 @@ void StSample::liveRecUpdateSustainModeSampleLoops(void) {
 
    // Dyac_host_printf("xxx liveRecUpdateSustainModeSampleLoops: LEAVE\n");
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 void StSample::liveRecAdjustOscLoopSize(void) {
 
    sUI inputOffset = liverec_loop_offset;  // == zone loop offset
@@ -3885,7 +4017,9 @@ void StSample::liveRecAdjustOscLoopSize(void) {
                                inputLen
                                );
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 void StSample::liveRecAdjustOscLoopSizeInt(sSI &_overrideLoopOffset,
                                            sSI &_overrideLoopLen,
                                            sUI _inputOffset,
@@ -4259,7 +4393,9 @@ void StSample::liveRecAdjustOscLoopSizeInt(sSI &_overrideLoopOffset,
       // Dyac_host_printf("xxx liveRecAdjustOscLoopSizeInt: loopOffset=%u loopLen=%u\n", _inputOffset, _inputLen);
    }
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 void StSample::liveRecAdjustOscLoopSizeRing(void) {
 
    liverec_queued_override_loop_offset = -1;
@@ -4867,7 +5003,9 @@ void StSample::liveRecAdjustOscLoopSizeRing(void) {
       liverec_queued_override_loop_len    = liverec_loop_len;
    }
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 void StSample::liveRecCopyRingToOverride(sF32 *_smpDatDest,
                                          sUI   _waveOff,
                                          sUI   _copyLoopOffset,
@@ -4899,7 +5037,9 @@ void StSample::liveRecCopyRingToOverride(sF32 *_smpDatDest,
       Dyac_host_printf("[!!!] liverec_num_frames < curSampleLen (%u < %u)\n", liverec_num_frames, _curSampleLen);
    }
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 void StSample::liveRecFadeRingToOverride(sF32 *_smpDatDest,
                                          sUI   _waveOff,
                                          sUI   _copyLoopOffset,  // srcOffset
@@ -4940,7 +5080,9 @@ void StSample::liveRecFadeRingToOverride(sF32 *_smpDatDest,
       }
    }
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 void StSample::liveRecResampleAndFadeRingToOverride(sF32 *_smpDatDest,
                                                     sUI   _waveOff,
                                                     sUI   _srcOffset,
@@ -4994,22 +5136,31 @@ void StSample::liveRecResampleAndFadeRingToOverride(sF32 *_smpDatDest,
       Dyac_host_printf("[!!!] srcLen=%u dstLen=%u\n", _srcLen, _dstLen);
    }
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 void StSample::_setEnableSumInput(sBool _bEnable) {
    b_sum_input = _bEnable;
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 sBool StSample::_getEnableSumInput(void) {
    return b_sum_input;
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 void StSample::_setSumInputXFade(sF32 _xfade) {
    sum_input_xfade = _xfade;
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 sF32 StSample::_getSumInputXFade(void) {
    return sum_input_xfade;
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
 void StSample::_setVoicePluginShared(sUI _pluginIdx, YAC_Object *_pluginShared) {
    if(_pluginIdx < STSAMPLE_NUM_PLUGINS)
@@ -5537,46 +5688,67 @@ sBool StSample::getVoiceCalibrationEnable(sUI _laneIdx) {
    return voice_calibration_enable[_laneIdx];
 }
 
+#ifndef TKSAMPLER_SKIP_ADDITIVE
 void StSample::setAdditiveCfgValid(sUI _cfgIdx, sBool _bEnable) {
    if(_cfgIdx >= STSAMPLE_ADDITIVE_CFG_NUM)
       _cfgIdx = STSAMPLE_ADDITIVE_CFG_NUM - 1u;
    additive_cfg_valid[_cfgIdx] = _bEnable;
 }
+#endif // TKSAMPLER_SKIP_ADDITIVE
 
+#ifndef TKSAMPLER_SKIP_ADDITIVE
 sBool StSample::getAdditiveCfgValid(sUI _cfgIdx) {
    if(_cfgIdx >= STSAMPLE_ADDITIVE_CFG_NUM)
       _cfgIdx = STSAMPLE_ADDITIVE_CFG_NUM - 1u;
    return additive_cfg_valid[_cfgIdx];
 }
+#endif // TKSAMPLER_SKIP_ADDITIVE
 
+#ifndef TKSAMPLER_SKIP_ADDITIVE
 void StSample::setAdditiveEditCfg(sF32 _cfgIdx) {
    additive_edit_cfg = _cfgIdx;
 }
+#endif // TKSAMPLER_SKIP_ADDITIVE
 
+#ifndef TKSAMPLER_SKIP_ADDITIVE
 sF32 StSample::getAdditiveEditCfg(void) {
+#ifndef TKSAMPLER_SKIP_ADDITIVE
    return additive_edit_cfg;
+#else
+   return 0.0f;
+#endif // TKSAMPLER_SKIP_ADDITIVE
 }
+#endif // TKSAMPLER_SKIP_ADDITIVE
 
+#ifndef TKSAMPLER_SKIP_ADDITIVE
 void StSample::setEnableForceAdditiveEditCfg(sBool _bEnable) {
    b_force_additive_edit_cfg = _bEnable;
 }
+#endif // TKSAMPLER_SKIP_ADDITIVE
 
+#ifndef TKSAMPLER_SKIP_ADDITIVE
 sBool StSample::getEnableForceAdditiveEditCfg(void) {
    return b_force_additive_edit_cfg;
 }
+#endif // TKSAMPLER_SKIP_ADDITIVE
 
+#ifndef TKSAMPLER_SKIP_ADDITIVE
 void StSample::setAdditiveNormalize(sUI _cfgIdx, sBool _bEnable) {
    if(_cfgIdx >= STSAMPLE_ADDITIVE_CFG_NUM)
       _cfgIdx = STSAMPLE_ADDITIVE_CFG_NUM - 1u;
    additive_normalize[_cfgIdx] = _bEnable;
 }
+#endif // TKSAMPLER_SKIP_ADDITIVE
 
+#ifndef TKSAMPLER_SKIP_ADDITIVE
 sBool StSample::getAdditiveNormalize(sUI _cfgIdx) {
    if(_cfgIdx >= STSAMPLE_ADDITIVE_CFG_NUM)
       _cfgIdx = STSAMPLE_ADDITIVE_CFG_NUM - 1u;
    return additive_normalize[_cfgIdx];
 }
+#endif // TKSAMPLER_SKIP_ADDITIVE
 
+#ifndef TKSAMPLER_SKIP_ADDITIVE
 void StSample::setAdditiveLevel(sUI _cfgIdx, sUI _oscIdx, sF32 _lvl) {
    if(_cfgIdx >= STSAMPLE_ADDITIVE_CFG_NUM)
       _cfgIdx = STSAMPLE_ADDITIVE_CFG_NUM - 1u;
@@ -5584,7 +5756,9 @@ void StSample::setAdditiveLevel(sUI _cfgIdx, sUI _oscIdx, sF32 _lvl) {
       _oscIdx = STSAMPLE_ADDITIVE_OSC_NUM - 1u;
    additive_osc_lvl[_cfgIdx][_oscIdx] = _lvl;
 }
+#endif // TKSAMPLER_SKIP_ADDITIVE
 
+#ifndef TKSAMPLER_SKIP_ADDITIVE
 sF32 StSample::getAdditiveLevel(sUI _cfgIdx, sUI _oscIdx) {
    if(_cfgIdx >= STSAMPLE_ADDITIVE_CFG_NUM)
       _cfgIdx = STSAMPLE_ADDITIVE_CFG_NUM - 1u;
@@ -5592,7 +5766,9 @@ sF32 StSample::getAdditiveLevel(sUI _cfgIdx, sUI _oscIdx) {
       _oscIdx = STSAMPLE_ADDITIVE_OSC_NUM - 1u;
    return additive_osc_lvl[_cfgIdx][_oscIdx];
 }
+#endif // TKSAMPLER_SKIP_ADDITIVE
 
+#ifndef TKSAMPLER_SKIP_ADDITIVE
 void StSample::setAdditivePhase(sUI _cfgIdx, sUI _oscIdx, sF32 _phase) {
    if(_cfgIdx >= STSAMPLE_ADDITIVE_CFG_NUM)
       _cfgIdx = STSAMPLE_ADDITIVE_CFG_NUM - 1u;
@@ -5600,7 +5776,9 @@ void StSample::setAdditivePhase(sUI _cfgIdx, sUI _oscIdx, sF32 _phase) {
       _oscIdx = STSAMPLE_ADDITIVE_OSC_NUM - 1u;
    additive_osc_pha[_cfgIdx][_oscIdx] = _phase;
 }
+#endif // TKSAMPLER_SKIP_ADDITIVE
 
+#ifndef TKSAMPLER_SKIP_ADDITIVE
 sF32 StSample::getAdditivePhase(sUI _cfgIdx, sUI _oscIdx) {
    if(_cfgIdx >= STSAMPLE_ADDITIVE_CFG_NUM)
       _cfgIdx = STSAMPLE_ADDITIVE_CFG_NUM - 1u;
@@ -5608,7 +5786,9 @@ sF32 StSample::getAdditivePhase(sUI _cfgIdx, sUI _oscIdx) {
       _oscIdx = STSAMPLE_ADDITIVE_OSC_NUM - 1u;
    return additive_osc_pha[_cfgIdx][_oscIdx];
 }
+#endif // TKSAMPLER_SKIP_ADDITIVE
 
+#ifndef TKSAMPLER_SKIP_ADDITIVE
 void StSample::setAdditiveExpA(sUI _cfgIdx, sUI _oscIdx, sF32 _exp) {
    if(_cfgIdx >= STSAMPLE_ADDITIVE_CFG_NUM)
       _cfgIdx = STSAMPLE_ADDITIVE_CFG_NUM - 1u;
@@ -5616,7 +5796,9 @@ void StSample::setAdditiveExpA(sUI _cfgIdx, sUI _oscIdx, sF32 _exp) {
       _oscIdx = STSAMPLE_ADDITIVE_OSC_NUM - 1u;
    additive_osc_exa[_cfgIdx][_oscIdx] = _exp;
 }
+#endif // TKSAMPLER_SKIP_ADDITIVE
 
+#ifndef TKSAMPLER_SKIP_ADDITIVE
 sF32 StSample::getAdditiveExpA(sUI _cfgIdx, sUI _oscIdx) {
    if(_cfgIdx >= STSAMPLE_ADDITIVE_CFG_NUM)
       _cfgIdx = STSAMPLE_ADDITIVE_CFG_NUM - 1u;
@@ -5624,7 +5806,9 @@ sF32 StSample::getAdditiveExpA(sUI _cfgIdx, sUI _oscIdx) {
       _oscIdx = STSAMPLE_ADDITIVE_OSC_NUM - 1u;
    return additive_osc_exa[_cfgIdx][_oscIdx];
 }
+#endif // TKSAMPLER_SKIP_ADDITIVE
 
+#ifndef TKSAMPLER_SKIP_ADDITIVE
 void StSample::setAdditiveFilter(sUI _cfgIdx, sUI _oscIdx, sF32 _f) {
    if(_cfgIdx >= STSAMPLE_ADDITIVE_CFG_NUM)
       _cfgIdx = STSAMPLE_ADDITIVE_CFG_NUM - 1u;
@@ -5632,7 +5816,9 @@ void StSample::setAdditiveFilter(sUI _cfgIdx, sUI _oscIdx, sF32 _f) {
       _oscIdx = STSAMPLE_ADDITIVE_OSC_NUM - 1u;
    additive_osc_flt[_cfgIdx][_oscIdx] = _f;
 }
+#endif // TKSAMPLER_SKIP_ADDITIVE
 
+#ifndef TKSAMPLER_SKIP_ADDITIVE
 sF32 StSample::getAdditiveFilter(sUI _cfgIdx, sUI _oscIdx) {
    if(_cfgIdx >= STSAMPLE_ADDITIVE_CFG_NUM)
       _cfgIdx = STSAMPLE_ADDITIVE_CFG_NUM - 1u;
@@ -5640,7 +5826,9 @@ sF32 StSample::getAdditiveFilter(sUI _cfgIdx, sUI _oscIdx) {
       _oscIdx = STSAMPLE_ADDITIVE_OSC_NUM - 1u;
    return additive_osc_flt[_cfgIdx][_oscIdx];
 }
+#endif // TKSAMPLER_SKIP_ADDITIVE
 
+#ifndef TKSAMPLER_SKIP_ADDITIVE
 void StSample::setAdditiveExpL(sUI _cfgIdx, sUI _oscIdx, sF32 _exp) {
    if(_cfgIdx >= STSAMPLE_ADDITIVE_CFG_NUM)
       _cfgIdx = STSAMPLE_ADDITIVE_CFG_NUM - 1u;
@@ -5648,7 +5836,9 @@ void StSample::setAdditiveExpL(sUI _cfgIdx, sUI _oscIdx, sF32 _exp) {
       _oscIdx = STSAMPLE_ADDITIVE_OSC_NUM - 1u;
    additive_osc_exl[_cfgIdx][_oscIdx] = _exp;
 }
+#endif // TKSAMPLER_SKIP_ADDITIVE
 
+#ifndef TKSAMPLER_SKIP_ADDITIVE
 sF32 StSample::getAdditiveExpL(sUI _cfgIdx, sUI _oscIdx) {
    if(_cfgIdx >= STSAMPLE_ADDITIVE_CFG_NUM)
       _cfgIdx = STSAMPLE_ADDITIVE_CFG_NUM - 1u;
@@ -5656,76 +5846,101 @@ sF32 StSample::getAdditiveExpL(sUI _cfgIdx, sUI _oscIdx) {
       _oscIdx = STSAMPLE_ADDITIVE_OSC_NUM - 1u;
    return additive_osc_exl[_cfgIdx][_oscIdx];
 }
+#endif // TKSAMPLER_SKIP_ADDITIVE
 
+#ifndef TKSAMPLER_SKIP_ADDITIVE
 void StSample::_setAdditiveBitReductionPreAmp(sUI _cfgIdx, sF32 _amp) {
    if(_cfgIdx >= STSAMPLE_ADDITIVE_CFG_NUM)
       _cfgIdx = STSAMPLE_ADDITIVE_CFG_NUM - 1u;
    additive_br_preamp[_cfgIdx] = _amp;
 }
+#endif // TKSAMPLER_SKIP_ADDITIVE
 
+#ifndef TKSAMPLER_SKIP_ADDITIVE
 sF32 StSample::_getAdditiveBitReductionPreAmp(sUI _cfgIdx) {
    if(_cfgIdx >= STSAMPLE_ADDITIVE_CFG_NUM)
       _cfgIdx = STSAMPLE_ADDITIVE_CFG_NUM - 1u;
    return additive_br_preamp[_cfgIdx];
 }
+#endif // TKSAMPLER_SKIP_ADDITIVE
 
+#ifndef TKSAMPLER_SKIP_ADDITIVE
 void StSample::_setAdditiveBitReduction(sUI _cfgIdx, sUI _shift) {
    if(_cfgIdx >= STSAMPLE_ADDITIVE_CFG_NUM)
       _cfgIdx = STSAMPLE_ADDITIVE_CFG_NUM - 1u;
    additive_br_bits[_cfgIdx] = _shift;
    additive_br_mask[_cfgIdx] = ((1u << _shift) - 1u);
 }
+#endif // TKSAMPLER_SKIP_ADDITIVE
 
+#ifndef TKSAMPLER_SKIP_ADDITIVE
 sUI StSample::_getAdditiveBitReduction(sUI _cfgIdx) {
    if(_cfgIdx >= STSAMPLE_ADDITIVE_CFG_NUM)
       _cfgIdx = STSAMPLE_ADDITIVE_CFG_NUM - 1u;
    return additive_br_bits[_cfgIdx];
 }
+#endif // TKSAMPLER_SKIP_ADDITIVE
 
+#ifndef TKSAMPLER_SKIP_ADDITIVE
 void  StSample::_setAdditiveBitReductionMask(sUI _cfgIdx, sUI _mask) {
    if(_cfgIdx >= STSAMPLE_ADDITIVE_CFG_NUM)
       _cfgIdx = STSAMPLE_ADDITIVE_CFG_NUM - 1u;
    additive_br_mask[_cfgIdx] = (sU16)_mask;
 }
+#endif // TKSAMPLER_SKIP_ADDITIVE
 
+#ifndef TKSAMPLER_SKIP_ADDITIVE
 sUI StSample::_getAdditiveBitReductionMask(sUI _cfgIdx) {
    if(_cfgIdx >= STSAMPLE_ADDITIVE_CFG_NUM)
       _cfgIdx = STSAMPLE_ADDITIVE_CFG_NUM - 1u;
    return (sU16)additive_br_mask[_cfgIdx];
 }
+#endif // TKSAMPLER_SKIP_ADDITIVE
 
+#ifndef TKSAMPLER_SKIP_ADDITIVE
 void StSample::_setAdditiveRateReduction(sUI _cfgIdx, sUI _shift) {
    if(_cfgIdx >= STSAMPLE_ADDITIVE_CFG_NUM)
       _cfgIdx = STSAMPLE_ADDITIVE_CFG_NUM - 1u;
    additive_smpoff_bits[_cfgIdx] = _shift;
    additive_smpoff_mask[_cfgIdx] = ~((1u << _shift) - 1u);
 }
+#endif // TKSAMPLER_SKIP_ADDITIVE
 
+#ifndef TKSAMPLER_SKIP_ADDITIVE
 sUI  StSample::_getAdditiveRateReduction(sUI _cfgIdx) {
    if(_cfgIdx >= STSAMPLE_ADDITIVE_CFG_NUM)
       _cfgIdx = STSAMPLE_ADDITIVE_CFG_NUM - 1u;
    return additive_smpoff_bits[_cfgIdx];
 }
+#endif // TKSAMPLER_SKIP_ADDITIVE
 
+#ifndef TKSAMPLER_SKIP_ADDITIVE
 void StSample::_setAdditiveRateReductionMask(sUI _cfgIdx, sUI _mask) {
    if(_cfgIdx >= STSAMPLE_ADDITIVE_CFG_NUM)
       _cfgIdx = STSAMPLE_ADDITIVE_CFG_NUM - 1u;
    additive_smpoff_mask[_cfgIdx] = ~_mask;
 }
+#endif // TKSAMPLER_SKIP_ADDITIVE
 
+#ifndef TKSAMPLER_SKIP_ADDITIVE
 sUI StSample::_getAdditiveRateReductionMask(sUI _cfgIdx) {
    if(_cfgIdx >= STSAMPLE_ADDITIVE_CFG_NUM)
       _cfgIdx = STSAMPLE_ADDITIVE_CFG_NUM - 1u;
    return ~additive_smpoff_mask[_cfgIdx];
 }
+#endif // TKSAMPLER_SKIP_ADDITIVE
 
+#ifndef TKSAMPLER_SKIP_ADDITIVE
 void StSample::_setAdditiveStereoSpread(sF32 _amt) {
    additive_stereo_spread = _amt;
 }
+#endif // TKSAMPLER_SKIP_ADDITIVE
 
+#ifndef TKSAMPLER_SKIP_ADDITIVE
 sF32 StSample::_getAdditiveStereoSpread(void) {
    return additive_stereo_spread;
 }
+#endif // TKSAMPLER_SKIP_ADDITIVE
 
 #if 0
 struct ChamberlinFlt {
@@ -5758,6 +5973,7 @@ struct ChamberlinFlt {
 };
 #endif
 
+#ifndef TKSAMPLER_SKIP_ADDITIVE
 void StSample::recalcAdditiveTblCfg(sUI _cfgIdx) {
    if(_cfgIdx >= STSAMPLE_ADDITIVE_CFG_NUM)
       _cfgIdx = STSAMPLE_ADDITIVE_CFG_NUM - 1u;
@@ -6056,7 +6272,9 @@ void StSample::recalcAdditiveTblCfg(sUI _cfgIdx) {
 
    additive_tbl_cfg[_cfgIdx] = d;
 }
+#endif // TKSAMPLER_SKIP_ADDITIVE
 
+#ifndef TKSAMPLER_SKIP_ADDITIVE
 void StSample::recalcAdditiveTbl_int(sSI _cfgIdx, sF32 *_dOrNull, sF32 _fIdx) {
    // (note) 'fIdx' must be valid when 'dOrNull' is not NULL
 
@@ -6090,11 +6308,15 @@ void StSample::recalcAdditiveTbl_int(sSI _cfgIdx, sF32 *_dOrNull, sF32 _fIdx) {
    if(d == additive_tbl_mix)
       additive_tbl = additive_tbl_mix;
 }
+#endif // TKSAMPLER_SKIP_ADDITIVE
 
+#ifndef TKSAMPLER_SKIP_ADDITIVE
 void StSample::recalcAdditiveTbl(sSI _cfgIdx) {
    recalcAdditiveTbl_int(_cfgIdx, NULL/*dOrNull*/, additive_edit_cfg);
 }
+#endif // TKSAMPLER_SKIP_ADDITIVE
 
+#ifndef TKSAMPLER_SKIP_ADDITIVE
 void StSample::exportAdditiveWavetable(YAC_FloatArray *_d, sUI _numCh, sUI _outCycleLen, sF32 _rateFactor, sUI _numWaves) {
    if(NULL != partial_magnitudes && NULL != partial_speeds && NULL != partial_phases && _outCycleLen >= 64u)
    {
@@ -6312,6 +6534,7 @@ void StSample::exportAdditiveWavetable(YAC_FloatArray *_d, sUI _numCh, sUI _outC
 
    }
 }
+#endif // TKSAMPLER_SKIP_ADDITIVE
 
 void StSample::_setAiNumPoles(sUI _numPoles) {
    ai_num_poles = _numPoles;

@@ -41,7 +41,7 @@
 // ----          22Sep2023, 17Nov2023, 18Nov2023, 08Jan2024, 10Jan2024, 13Jan2024, 14Jan2024
 // ----          15Jan2024, 16Jan2024, 19Apr2024, 04Aug2024, 15Aug2024, 28Sep2024, 30Sep2024
 // ----          02Oct2024, 03Oct2024, 13Oct2024, 09Nov2024, 03Jan2025, 09Jan2026, 16Jan2026
-// ----          26Jan2026, 10Apr2026, 14May2026, 15May2026, 24May2026
+// ----          26Jan2026, 10Apr2026, 14May2026, 15May2026, 24May2026, 27May2026
 // ----
 // ----
 // ----
@@ -922,6 +922,7 @@ YC class StSample : public YAC_Object {
 
    tksampler_lfsr_t lfsr;
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 #define STSAMPLE_MAX_INPUTS  YCI 4
    sBool b_liverec;
    sBool b_liverec_active;
@@ -939,7 +940,6 @@ YC class StSample : public YAC_Object {
 #define STSAMPLE_LIVEREC_DBLBUF_MODE_VOICE  YCI 2
 #define STSAMPLE_LIVEREC_DBLBUF_MODE_REC    YCI 3
 #define STSAMPLE_LIVEREC_DBLBUF_MODE_PARAM  YCI 4
-
 
    sUI   liverec_doublebuffer_mode;
 #define STSAMPLE_LIVEREC_MODE_TRIG         YCI 0
@@ -979,7 +979,6 @@ YC class StSample : public YAC_Object {
    sUI   liverec_ring_size;                   // counts from 0..dstLen-1  (ring cycle detection)
    sBool b_liverec_threshold_reached;
    sBool b_liverec_silence_reached;
-   sBool ui_redraw_queued;  // for live-recording
    sBool b_liverec_doublebuffer_swap_queued;
    sF32  liverec_frame_offset_xfade_amt;
    sSI   liverec_override_loop_offset;
@@ -1002,6 +1001,9 @@ YC class StSample : public YAC_Object {
    // maybe=add inputs and mute regular sample playback while liverecording is active
    sBool b_sum_input;
    sF32  sum_input_xfade;  // -1=sample, 0=both, 1=input
+#endif // TKSAMPLER_SKIP_LIVEREC
+
+   sBool ui_redraw_queued;  // e.g. for live-recording
 
 #define STSAMPLE_NUM_PLUGINS                YCI 4
 #define STSAMPLE_NUM_MODS_PER_PLUGIN        YCI 8
@@ -1027,15 +1029,18 @@ YC class StSample : public YAC_Object {
 
    sBool ui_b_auxtowav;  // 1=render aux attack/decay spline to waveform when curve is edited (e.g. modular envs via ES-3) (editor hint)
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 #define LIVEREC_OSC_PRE_FILTER_BUFFER_SZ  (16384u)
    sF32 *liverec_osc_pre_filter_buffer;  // lazy-alloc, up to LIVEREC_OSC_PRE_FILTER_BUFFER_SZ mono frames
    StSampleVoiceBiquad liverec_osc_pre_filter_biquad;
+#endif // TKSAMPLER_SKIP_LIVEREC
 
    sF32  voice_calibration[6/*lane*/][8/*voiceIdx*/];  // -1..1 range. 6 lanes, 8 voices max. voiceIdx=voice_key%voice_calibration_modulo.
    sUI   voice_calibration_modulo[6/*lane*/];  // 1..8 (table len).
    sF32  voice_calibration_amount[6/*lane*/];  // hard-wired mod dest: 1=fine tune, 2=pan, 3=vol, 4=cutoff, 5=pan env lvl, 6=aux env lvl
    sBool voice_calibration_enable[6/*lane*/];
 
+#ifndef TKSAMPLER_SKIP_ADDITIVE
 #define STSAMPLE_ADDITIVE_OSC_SIN  YCI 0
 #define STSAMPLE_ADDITIVE_OSC_TRI  YCI 1
 #define STSAMPLE_ADDITIVE_OSC_SUP  YCI 2
@@ -1067,6 +1072,7 @@ YC class StSample : public YAC_Object {
    sUI  additive_smpoff_mask[STSAMPLE_ADDITIVE_CFG_NUM];  // ~0 = full res, ~1=/2 sample-rate reduction, ~3=/4 reduction, ~7=/8 reduction, ..
 
    sF32 additive_stereo_spread;
+#endif // TKSAMPLER_SKIP_ADDITIVE
 
    // anti-imaging/aliasing filter settings
    sUI  ai_num_poles; // 0=AI off
@@ -1102,6 +1108,7 @@ YC class StSample : public YAC_Object {
 
    StSample *getNextAltRandSample (void);
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
    sUI liveRecGetCurrentRecBufIdx (void);
    sUI liveRecGetCurrentPlayBufIdx (void);
    void handleLiveRecording (sF32 *_out, const sF32*const*_inputs, sUI _numFrames, sSI _loopShift);
@@ -1140,7 +1147,9 @@ YC class StSample : public YAC_Object {
                                               );
    void liveRecUpdateSustainModeSampleLoops (void);
    void freeLiveRecSustainSampleLoops (void);
+
    YAC_IntArray *getSampleLoopsOverride (void);
+#endif // TKSAMPLER_SKIP_LIVEREC
 
    sF32 calcMMNoteRel (sF32 _note) const;
    sF32 calcMMNoteAbs (sF32 _note) const;
@@ -1642,6 +1651,7 @@ YC class StSample : public YAC_Object {
 
    YM sSI _findUnusedMMEntry (sUI _startIdx);
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
    YM void  _setLiveRecEnable (sBool _bEnable);
    YM sBool _getLiveRecEnable (void);
 
@@ -1718,6 +1728,7 @@ YC class StSample : public YAC_Object {
 
    YM void _setSumInputXFade (sF32 _xfade);
    YM sF32 _getSumInputXFade (void);
+#endif // TKSAMPLER_SKIP_LIVEREC
 
    YM sBool hasPlugins  (void) const;
    YM sBool hasPluginsEnabled (void) const;
@@ -1800,6 +1811,7 @@ YC class StSample : public YAC_Object {
    YM void setTimestretchAdditiveXFade (sF32 _amt);
    YM sF32 getTimestretchAdditiveXFade (void);
 
+#ifndef TKSAMPLER_SKIP_ADDITIVE
    YM void  setAdditiveCfgValid (sUI _cfgIdx, sBool _bEnable);
    YM sBool getAdditiveCfgValid (sUI _cfgIdx);
 
@@ -1852,6 +1864,7 @@ YC class StSample : public YAC_Object {
    YM void recalcAdditiveTbl (sSI _cfgIdx);
 
    YM void exportAdditiveWavetable (YAC_FloatArray *_d, sUI _numCh, sUI _outCycleLen, sF32 _rateFactor, sUI _numWaves);
+#endif // TKSAMPLER_SKIP_ADDITIVE
 
    YM void  _setAiNumPoles (sUI _num);
    YM sBool _getAiNumPoles (void);

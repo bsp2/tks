@@ -103,6 +103,7 @@ extern void sr_printf(const char *_fmt, ...);
 #endif // SR_REPLAYTRACE
 
 #else
+extern void sr_printf(const char *_fmt, ...);  // stub
 #define Dprintf     if(1) ; else sr_printf
 #define Derror      if(1) ; else sr_printf
 #define Dinfo       if(1) ; else sr_printf
@@ -112,6 +113,8 @@ extern void sr_printf(const char *_fmt, ...);
 #define Dsongtrace  if(1) ; else sr_printf
 #define Dsong       if(1) ; else sr_printf
 #define Dreplay     if(1) ; else sr_printf
+#define Dreplay2    if(1) ; else sr_printf
+#define Ddtor       if(1) ; else sr_printf
 #endif // SR_STDIO
 
 // ---------------------------------------- private

@@ -56,8 +56,10 @@
 #include "../tksampler/ying_tksampler_StSampleVoice.cpp"
 #include "../tksampler/ying_tksampler_StSampleMutexGroup.cpp"
 #include "../tksampler/ying_tksampler_StSamplePlayer.cpp"
+#ifndef LIBSYNERGY_BUILD
 #include "../tksampler/ying_tksampler_StFFT.cpp"
 #include "../tksampler/ying_tksampler_StFFT_BandParams.cpp"
+#endif // LIBSYNERGY_BUILD
 #include "../tksampler/ying_tksampler_StPluginInfo.cpp"
 #include "../tksampler/ying_tksampler_StPluginShared.cpp"
 #include "../tksampler/ying_tksampler_StPluginSharedMissing.cpp"
@@ -68,7 +70,7 @@
 
 #ifdef SR_STDIO
 void sr_printf(const char *_fmt, ...) {
-   static char buf[8*1024];
+   static char buf[1024];
    va_list va;
    va_start(va, _fmt);
 #ifdef YAC_VC
@@ -83,6 +85,8 @@ void sr_printf(const char *_fmt, ...) {
    ::fputs(buf, stdout);
    ::fflush(stdout);
 }
+#else
+void sr_printf(const char *_fmt, ...) { (void)_fmt; }
 #endif // SR_STDIO
 
 static YAC_FloatArray loc_sr_freq_table;
@@ -284,7 +288,10 @@ static void loc_sr_init_freq_table(void) {
 
 void sr_init(void) {
    StSampleVoice::InitLanczosTables();
+#ifndef LIBSYNERGY_BUILD
+   // (note) not used in synergy_replay
    StSampleVoice::InitAdditiveTables();
+#endif // LIBSYNERGY_BUILD
    StSampleVoice::InitMMCurveLUT();
    loc_sr_init_freq_table();
 }

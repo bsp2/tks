@@ -37,7 +37,7 @@
 // ----          27Dec2022, 30Dec2022, 07Apr2023, 12Apr2023, 18Jul2023, 01Sep2023, 08Sep2023
 // ----          19Sep2023, 18Nov2023, 08Jan2024, 10Jan2024, 15Jan2024, 16Jan2024, 26Apr2024
 // ----          30Sep2024, 02Oct2024, 03Jan2025, 04Jan2025, 28May2025, 16Jan2026, 09Apr2026
-// ----          10Apr2026, 23Apr2026, 24Apr2026, 24May2026
+// ----          10Apr2026, 23Apr2026, 24Apr2026, 24May2026, 27May2026
 // ----
 // ----
 // ----
@@ -346,9 +346,11 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
    mmdst_timestretch = 0.0f;
    mmdst_timestretch_bend = 0.0f;
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
    mmdst.liverec_start    = 0.0f;
    mmdst.liverec_continue = 0.0f;
    mmdst.liverec_stop     = 0.0f;
+#endif // TKSAMPLER_SKIP_LIVEREC
 
    mmdst.plugin_mod_mask = 0u;
    memset((void*)mmdst.plugins, 0, sizeof(mmdst.plugins));
@@ -419,9 +421,11 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
       mmdst.plugin_levels[pluginIdx] = 1.0f;
    }
 
+#ifndef LIBSYNERGY_BUILD
    mmdst_additive_cfg           = 0.0f;
    mmdst_additive_stereo_spread = 0.0f;
    mmdst_additive_num_partials  = 0.0f;
+#endif // LIBSYNERGY_BUILD
 
    sUI signalTapIdx = 0u;
 
@@ -1998,7 +2002,7 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
                      mmVarIdxF = sF32(sample->mmvar_num);
 
                   mmVarIdx = sUI(mmVarIdxF);
-                  
+
                   if(sample->b_mmvar_smooth)
                   {
                      sUI mmVarIdxB = mmVarIdx + 1u;
@@ -3889,30 +3893,36 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
                break;
 
                case STSAMPLE_MM_DST_LIVEREC_START:
+#ifndef TKSAMPLER_SKIP_LIVEREC
                if(bAutoAdd)
                   mmdst.liverec_start += srcValDef;
                else if(bAutoMul)
                   mmdst.liverec_start *= srcValDef;
                Delse_mm_lerp_scl(mmdst.liverec_start, 1.0f);
                Dsignaltap(mmdst.liverec_start);
+#endif // TKSAMPLER_SKIP_LIVEREC
                break;
 
                case STSAMPLE_MM_DST_LIVEREC_CONTINUE:
+#ifndef TKSAMPLER_SKIP_LIVEREC
                if(bAutoAdd)
                   mmdst.liverec_continue += srcValDef;
                else if(bAutoMul)
                   mmdst.liverec_continue *= srcValDef;
                Delse_mm_lerp(mmdst.liverec_continue);
                Dsignaltap(mmdst.liverec_continue);
+#endif // TKSAMPLER_SKIP_LIVEREC
                break;
 
                case STSAMPLE_MM_DST_LIVEREC_STOP:
+#ifndef TKSAMPLER_SKIP_LIVEREC
                if(bAutoAdd)
                   mmdst.liverec_stop += srcValDef;
                else if(bAutoMul)
                   mmdst.liverec_stop *= srcValDef;
                Delse_mm_lerp_scl(mmdst.liverec_stop, 1.0f);
                Dsignaltap(mmdst.liverec_stop);
+#endif // TKSAMPLER_SKIP_LIVEREC
                break;
 
                case STSAMPLE_MM_DST_PLUGIN_1_MOD_1:
@@ -4308,30 +4318,36 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
                break;
 
                case STSAMPLE_MM_DST_WT_ADDITIVE_CFG:
+#ifndef LIBSYNERGY_BUILD
                if(bAutoAdd)
                   mmdst_additive_cfg += srcValDef;
                else if(bAutoMul)
                   mmdst_additive_cfg *= srcValDef;
                Delse_mm_lerp(mmdst_additive_cfg);
                Dsignaltap(mmdst_additive_cfg);
+#endif // LIBSYNERGY_BUILD
                break;
 
                case STSAMPLE_MM_DST_WT_ADDITIVE_STEREO_SPREAD:
+#ifndef LIBSYNERGY_BUILD
                if(bAutoAdd)
                   mmdst_additive_stereo_spread += srcValDef;
                else if(bAutoMul)
                   mmdst_additive_stereo_spread *= srcValDef;
                Delse_mm_lerp(mmdst_additive_stereo_spread);
                Dsignaltap(mmdst_additive_stereo_spread);
+#endif // LIBSYNERGY_BUILD
                break;
 
                case STSAMPLE_MM_DST_WT_ADDITIVE_PARTIALS:
+#ifndef LIBSYNERGY_BUILD
                   if(bAutoAdd)
                      mmdst_additive_num_partials += srcValDef;
                   else if(bAutoMul)
                      mmdst_additive_num_partials *= srcValDef;
                   Delse_mm_lerp(mmdst_additive_num_partials);
                   Dsignaltap(mmdst_additive_num_partials);
+#endif // LIBSYNERGY_BUILD
                   break;
 
                case STSAMPLE_MM_DST_VARIATION:

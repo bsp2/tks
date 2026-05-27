@@ -33,7 +33,7 @@
 // ----          10Dec2022, 20Dec2022, 05Feb2023, 12Apr2023, 07Sep2023, 08Sep2023, 17Sep2023
 // ----          21Jan2024, 20Sep2024, 28Sep2024, 01Oct2024, 31Oct2024, 15Nov2024, 11Dec2024
 // ----          14Jan2025, 28May2025, 30May2025, 13Jun2025, 16Jan2026, 09Apr2026, 10Apr2026
-// ----          19May2026, 24May2026
+// ----          19May2026, 24May2026, 27May2026
 // ----
 // ----
 // ----
@@ -306,9 +306,9 @@ void StSamplePlayer::resetModulators(void) {
       mod_modseq[i].advance  = 0.0f;
    }
 
-#ifndef LIBSYNERGY_BUILD
+#ifndef TKSAMPLER_SKIP_LIVEREC
    mod_liverec_loop_shift = 0;
-#endif // LIBSYNERGY_BUILD
+#endif // TKSAMPLER_SKIP_LIVEREC
 
    // // ::memset((void*)perf_ctl, 0, sizeof(perf_ctl));
    for(sUI i = 0u; i < STSAMPLEPLAYER_NUM_PERFCTL; i++)
@@ -1740,7 +1740,7 @@ sSI StSamplePlayer::startSampleBank(YAC_Object *_sampleBank, YAC_Object *_freqTa
                            v->prepareToPlay(c, next_voice_key, next_voice_alloc_idx++);
                         }
                      }
-                     
+
                      if(NULL == v)
                      {
                         // Allocate new voice (calls prepareToPlay() and assigns voice key)
@@ -2173,7 +2173,9 @@ void StSamplePlayer::_renderWithInputs(YAC_Object *_fa, YAC_Object *_paInputs, s
             inputs[i] = NULL;
          }
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
          handleLiveRecording(buf->elements, inputs, numFrames, _processTickNr);
+#endif // TKSAMPLER_SKIP_LIVEREC
 
          if(_bRender)
          {
@@ -2235,6 +2237,7 @@ void StSamplePlayer::renderInt(YAC_FloatArray *buf, const sF32*const*_inputsOrNu
             {
                // Dyac_host_printf("xxx render voice %u\n", i);
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
                if(NULL != _inputsOrNull)
                {
                   // Create copy of input buffer pointers
@@ -2247,8 +2250,14 @@ void StSamplePlayer::renderInt(YAC_FloatArray *buf, const sF32*const*_inputsOrNu
                   v->renderInt(buf, volume, inputs);
                }
                else
+#endif // TKSAMPLER_SKIP_LIVEREC
                {
-                  v->renderInt(buf, volume, NULL/*inputsOrNull*/);
+                  (void)_inputsOrNull;
+                  v->renderInt(buf, volume
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                               , NULL/*inputsOrNull*/
+#endif // TKSAMPLER_SKIP_LIVEREC
+                               );
                }
 
                // Dyac_host_printf("xxx END render voice %u\n", i);
@@ -3191,7 +3200,7 @@ void StSamplePlayer::setTempo(sF32 _bpm, sSI _ppq) {
    bpm_audiotick_scl = ((1000.0f * 60.0f) / (_bpm * _ppq));
 }
 
-#ifndef LIBSYNERGY_BUILD
+#ifndef TKSAMPLER_SKIP_LIVEREC
 void StSamplePlayer::stopOtherLiveRecordingsExceptFor(StSample *_c) {
    StSample *o = last_started_samplebank->first_sample;
    while(NULL != o)
@@ -3207,10 +3216,10 @@ void StSamplePlayer::stopOtherLiveRecordingsExceptFor(StSample *_c) {
       o = o->next;
    }
 }
-#endif // LIBSYNERGY_BUILD
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 void StSamplePlayer::startLiveRecording(sUI _zoneMaskOrIndex, sBool _bIndex, sBool _bRestart) {
-#ifndef LIBSYNERGY_BUILD
 //    Dyac_host_printf("xxx StSamplePlayer::startLiveRecording: zoneMaskOrIndex=%u bIndex=%d bRestart=%d last_started_sampleba
 // nk=%p\n", _zoneMaskOrIndex, _bIndex, _bRestart, last_started_samplebank);
    if(NULL != last_started_samplebank)
@@ -3242,15 +3251,11 @@ void StSamplePlayer::startLiveRecording(sUI _zoneMaskOrIndex, sBool _bIndex, sBo
          i++;
       }
    }
-#else
-   (void)_zoneMaskOrIndex;
-   (void)_bIndex;
-   (void)_bRestart;
-#endif // LIBSYNERGY_BUILD
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 void StSamplePlayer::stopLiveRecording(sUI _zoneMaskOrIndex, sBool _bIndex) {
-#ifndef LIBSYNERGY_BUILD
    if(NULL != last_started_samplebank)
    {
       sUI i = 0u;
@@ -3273,11 +3278,8 @@ void StSamplePlayer::stopLiveRecording(sUI _zoneMaskOrIndex, sBool _bIndex) {
          i++;
       }
    }
-#else
-   (void)_zoneMaskOrIndex;
-   (void)_bIndex;
-#endif // LIBSYNERGY_BUILD
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
 #ifndef LIBSYNERGY_BUILD
 void StSamplePlayer::mtxLazyInitProcessTickNr(void) {
@@ -3304,7 +3306,7 @@ void StSamplePlayer::mtxUnlockProcessTickNr(void) {
 }
 #endif // LIBSYNERGY_BUILD
 
-#ifndef LIBSYNERGY_BUILD
+#ifndef TKSAMPLER_SKIP_LIVEREC
 void StSamplePlayer::handleLiveRecording(sF32 *_out, const sF32*const*_inputs, sUI _numFrames, sUI _processTickNr) {
    if(NULL != last_started_samplebank)
    {
@@ -3332,17 +3334,16 @@ void StSamplePlayer::handleLiveRecording(sF32 *_out, const sF32*const*_inputs, s
       }
    }
 }
-#endif // LIBSYNERGY_BUILD
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 void StSamplePlayer::setLiveRecLoopShift(sSI _shift) {
-#ifndef LIBSYNERGY_BUILD
    // Dyac_host_printf("xxx StSamplePlayer::setLiveRecLoopShift(%d)\n", _shift);
    mod_liverec_loop_shift = _shift;
-#else
-   (void)_shift;
-#endif // LIBSYNERGY_BUILD
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 void StSamplePlayer::setLiveRecSampleBank(YAC_Object *_sampleBank) {
    if(YAC_CHK(_sampleBank, clid_StSampleBank))
    {
@@ -3353,7 +3354,9 @@ void StSamplePlayer::setLiveRecSampleBank(YAC_Object *_sampleBank) {
       last_started_samplebank = NULL;
    }
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
 void StSamplePlayer::setLiveRecDoubleBufferIndex(sUI _idx) {
    if(NULL != last_started_samplebank)
    {
@@ -3372,6 +3375,7 @@ void StSamplePlayer::setLiveRecDoubleBufferIndex(sUI _idx) {
       }
    }
 }
+#endif // TKSAMPLER_SKIP_LIVEREC
 
 sBool StSamplePlayer::uiCheckResetAnyRedrawFlag(void) {
    sBool r = YAC_FALSE;

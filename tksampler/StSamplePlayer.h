@@ -31,7 +31,7 @@
 // ----          28Apr2021, 20May2021, 17Jul2021, 01Aug2021, 10Aug2021, 30Aug2021, 10Dec2022
 // ----          20Dec2022, 12Apr2023, 20Aug2023, 07Sep2023, 21Jan2024, 28Sep2024, 01Oct2024
 // ----          03Oct2024, 31Oct2024, 15Nov2024, 14Jan2025, 28May2025, 29May2025, 30May2025
-// ----          13Jun2025, 16Jan2026, 09Apr2026, 19May2026, 24May2026
+// ----          13Jun2025, 16Jan2026, 09Apr2026, 19May2026, 24May2026, 27May2026
 // ----
 // ----
 // ----
@@ -168,9 +168,9 @@ YC class StSamplePlayer : public YAC_Object {
       sF32 advance;   // +
    } mod_modseq[STSAMPLE_NUM_MODSEQ];
 
-#ifndef LIBSYNERGY_BUILD
+#ifndef TKSAMPLER_SKIP_LIVEREC
    sSI mod_liverec_loop_shift; // +
-#endif // LIBSYNERGY_BUILD
+#endif // TKSAMPLER_SKIP_LIVEREC
 
    sF32 perf_ctl[STSAMPLEPLAYER_NUM_PERFCTL];  // see StSampleVoice
    sUI  perf_ctl_reset_mask;  // valid during render(), used for MM_SRC_CC*_TRIG
@@ -239,10 +239,12 @@ YC class StSamplePlayer : public YAC_Object {
 
    void renderInt (YAC_FloatArray *buf, const sF32*const*_inputsOrNull);
 
-#ifndef LIBSYNERGY_BUILD
+#ifndef TKSAMPLER_SKIP_LIVEREC
    void handleLiveRecording (sF32 *_out, const sF32 *const*_inputs, sUI _numFrames, sUI _processTickNr);
    void stopOtherLiveRecordingsExceptFor (StSample *_c);
+#endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef LIBSYNERGY_BUILD
    void mtxLazyInitProcessTickNr (void);
    void mtxLockProcessTickNr (void);
    void mtxUnlockProcessTickNr (void);
@@ -1056,6 +1058,7 @@ YC class StSamplePlayer : public YAC_Object {
    // Update BPM+PPQ (for tempo-based mod sequencers)
    YM void setTempo (sF32 _bpm, sSI _ppq);
 
+#ifndef TKSAMPLER_SKIP_LIVEREC
    // Start live recording (find samples by last started sample bank)
    YM void startLiveRecording (sUI _zoneMaskOrIndex, sBool _bIndex, sBool _bRestart);
 
@@ -1070,6 +1073,7 @@ YC class StSamplePlayer : public YAC_Object {
 
    // Set live recording double buffer index (0 or 1) (in DBLBUF_MODE_PARAM)
    YM void setLiveRecDoubleBufferIndex (sUI _idx);
+#endif // TKSAMPLER_SKIP_LIVEREC
 
    // Iterate all samples/zones and check for redraw (live rec)
    YM sBool uiCheckResetAnyRedrawFlag (void);
