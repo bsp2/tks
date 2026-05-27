@@ -50,7 +50,7 @@ endif
 # Install plugin
 #  (Note: cannot depend on "bin" target since this would overwrite the UPX compressed file..)
 #
-ifneq ($(PLUGIN),"")
+ifneq ("$(PLUGIN)","")
 .PHONY: install
 install: $(INSTALL_RULES)
 	$(CP) $(TARGET) "$(TKS_SITE_PREFIX)/plugins/"
@@ -74,21 +74,20 @@ clean_static_target:
 	@echo "clean_static_target"
 	rm -f $(STATIC_TARGET) $(STATIC_TARGET_OBJ)
 else
-ifeq ("$(CUSTOM_BIN_TARGET)",y)
+ifeq ($(CUSTOM_BIN_TARGET),y)
 else
 .PHONY: bin
 bin: $(BIN_RULES) $(ALL_OBJ)
 	$(CPP) -dynamiclib -o $(TARGET) $(ALL_OBJ) $(LDFLAGS) $(EXTRALIBS)
 #-install_name "$(TKS_SITE_PREFIX)/plugins/$(TARGET)"
-endif
-endif
-
 ifneq ($(DEBUG),y)
 ifneq ("$(PLUGIN)","")
 	$(STRIP) "$(TARGET)"
 endif
 endif
 	@echo "Build finished at `date +%H:%M`."
+endif
+endif
 
 
 .cpp.o:
@@ -107,7 +106,7 @@ endif
 #
 # Create YAC interface code
 #
-ifneq ($(PLUGIN),"")
+ifneq ("$(PLUGIN)","")
 .PHONY: yac
 yac: $(YAC_RULES)
 	tks app:ying *.h $(YAC_EXTRA_HEADERS)

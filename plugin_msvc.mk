@@ -35,7 +35,7 @@ clean_static_target:
 	@echo "clean_static_target"
 	rm -f $(STATIC_TARGET) $(STATIC_TARGET_OBJ)
 else
-ifeq ("$(CUSTOM_BIN_TARGET)",y)
+ifeq ($(CUSTOM_BIN_TARGET),y)
 else
 .PHONY: bin
 bin: $(BIN_RULES) $(ALL_OBJ)
