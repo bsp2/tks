@@ -106,7 +106,6 @@ A detailed changelog is available [here](CHANGELOG.txt).
   |cols=140,40
   |:File                                                                                                    |:Description
   | [synergy-miditracker-26May2026-macos_arm64.dmg](files/synergy-miditracker-26May2026-macos_arm64.dmg)    | Latest (stable) Release
-  | [synergy-miditracker-26May2026-macos_x86_64.dmg](files/synergy-miditracker-26May2026-macos_x86_64.dmg)  | Latest (stable) Release
   ].table_noborder
 
 >>>mac_quarantine
@@ -118,7 +117,7 @@ A detailed changelog is available [here](CHANGELOG.txt).
 <<<
 note: $(buf!mac_quarantine) 
 
-note: tested on arm64 macOS 13.5, 14.7, and x86_64 10.12+
+note: tested on arm64 macOS 26.4
 
 
 ## Windows
@@ -126,11 +125,12 @@ note: tested on arm64 macOS 13.5, 14.7, and x86_64 10.12+
   |cols=140,40
   |:File                                                                                       |:Description
   | [synergy-miditracker-26May2026-win64.7z](files/synergy-miditracker-26May2026-win64.7z)     | Latest (stable) Release
+  | [synergy-miditracker-26May2026c-win64.7z](files/synergy-miditracker-26May2026c-win64.7z)   | same but w/ Tranzistow workaround
   ].table_noborder
 
 important: when upgrading to a new release, backup your `synergy_config_local.tks` and then replace the default local config
 
-note: tested on x86\_64 Windows 10
+note: tested on x86\_64 Windows 11
 
 
 ## Linux
@@ -138,6 +138,10 @@ note: tested on x86\_64 Windows 10
 ## Source Code
 
 see [GitHub](https://github.com/bsp2/tks.git) for latest sources
+
+note: download the Windows release and copy the `mProjects` folder to your `$HOME` directory
+
+note: tested on x86\_64 Debian GNU/Linux 13.4
 
 
 # Audio Clips

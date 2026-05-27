@@ -35,7 +35,7 @@ The average CPU load is ~`14%` on a single M2pro CPU core, and the (multi-)sampl
 
 # History
 
-With the rise of arcade machines, home computers and video game console in the 1980ies, and their ever increasing audio capabilities due to synth chips like the Commodore 64's SID 6581/8580, Ricoh's 2A0x (NES), Atari's POKEY, General Instruments' AY-3-8912 (CPC, ZX Spectrum), Yamaha's YM (arcades and Sega Genesis) and OPL series (MS-DOS PCs and MSX), Hudson Soft's HuC6280 (PC-Engine), Commodore Amiga's Paula, and Sony's SPC700 (SNES), came a slew of music players and editors for producing sound effects and music for video games.
+With the rise of arcade machines, home computers and video game consoles in the 1980ies, and their ever increasing audio capabilities due to synth chips like the Commodore 64's SID 6581/8580, Ricoh's 2A0x (NES), Atari's POKEY, General Instruments' AY-3-8912 (CPC, ZX Spectrum), Yamaha's YM (arcades and Sega Genesis) and OPL series (MS-DOS PCs and MSX), Hudson Soft's HuC6280 (PC-Engine), Commodore Amiga's Paula, and Sony's SPC700 (SNES), came a slew of music players and editors for producing sound effects and music for video games.
 
 At the same time, aided by the popularity and affordability of the C64, Atari ST, and Amiga home computers in particular, people, mostly in Europe, began to form non-profit *demoscene* groups who produced (non-interactive) programs with stunning graphics and sound, often rivaling, or even exceeding the quality of commercial games [-][^origins].
 
@@ -102,7 +102,7 @@ Here's a technical feature list summary:
    - up to 255 tracks / lanes
    - up to 8 outputs per track
    - up to 4 FX modules per track
-   - automatable track and lane sends
+   - automatable track sends
    - track note and velocity filters (+ automatic drumkit conversion in editor)
    - up to 16 MIDI ports + 16 MIDI channels per port (=> 256 channels total)
    - pitchbend, CC, RPN, program change, channel + poly pressure MIDI controllers
@@ -124,6 +124,8 @@ The following features are currently not supported by the standalone replay (som
 - additive synthesis wavetable mode
 - MPE (MIDI polyphonic expression)
 - sample-bank and sample-zone tuning tables
+- non-sequential voice plugin routing
+- audio input / live recording
 The default configuration uses the following (configurable) limits:
 - max. number of tracks: 48
 - max. number of outputs per track: 8
