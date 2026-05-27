@@ -1,6 +1,6 @@
 /// VSTPlugin.cpp
 ///
-/// (c) 2010-2023 Bastian Spiegel <bs@tkscript.de>
+/// (c) 2010-2026 Bastian Spiegel <bs@tkscript.de>
 ///     - Distributed under terms of the Lesser GNU General Public License (LGPL).
 ///       See COPYING and <http://www.gnu.org/licenses/licenses.html#LGPL> for further information.
 ///
@@ -8,6 +8,7 @@
 /// created: 02Oct2010
 /// changed: 03Oct2010, 04Oct2010, 05Oct2010, 09Oct2010, 10Oct2010, 13Oct2010, 15Oct2010
 ///          16Oct2010, 20Oct2010, 09Feb2014, 31Dec2021, 06Feb2023, 18Jul2023, 24Oct2023
+///          26May2026
 ///
 ///
 ///
@@ -22,8 +23,8 @@
 #include <math.h>
 
 
-// (note) resume() >> startProcess() >> processReplacing() 
-// (note) processReplacing() >> stopProcess() >> suspend() 
+// (note) resume() >> startProcess() >> processReplacing()
+// (note) processReplacing() >> stopProcess() >> suspend()
 
 
 void *tkvst2_audio_master_signal_funs[VST2PLUGIN_NUM_SIGNALS];
@@ -109,7 +110,7 @@ void VST2Plugin::setSampleRate(sF32 _rate) {
 
 void VST2Plugin::setBlockSize(sUI _blkSize) {
    block_size = _blkSize;
-   
+
    reallocateIOBuffers();
 }
 
@@ -160,7 +161,7 @@ void VST2Plugin::freeIOBuffers(void) {
 void VST2Plugin::reallocateIOBuffers(void) {
    // called by setBlockSize and audioMasterIOChanged host opcode dispatcher
 
-   // Free old I/O buffers 
+   // Free old I/O buffers
    freeIOBuffers();
 
    // (Re-) allocate sample buffers
@@ -186,7 +187,7 @@ void VST2Plugin::reallocateIOBuffers(void) {
             }
          }
       }
-      
+
       // Allocate output buffers
       num_output_buffers = 2;//effect->numOutputs;
       printf("[dbg] VST2Plugin::reallocateIOBuffers: allocating %d output buffers (%d frames)\n", num_output_buffers, block_size);
@@ -584,4 +585,8 @@ void VST2Plugin::windowToFront(void) {
 }
 
 void VST2Plugin::callEffEditIdle(void) {
+}
+
+void VST2Plugin::setEnableWindowProc(sBool _bEnable) {
+   (void)_bEnable;
 }

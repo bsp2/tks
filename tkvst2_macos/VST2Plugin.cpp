@@ -32,8 +32,8 @@ typedef void *NSView;
 
 #include <math.h>
 
-// (note) resume() >> startProcess() >> processReplacing() 
-// (note) processReplacing() >> stopProcess() >> suspend() 
+// (note) resume() >> startProcess() >> processReplacing()
+// (note) processReplacing() >> stopProcess() >> suspend()
 
 // If defined, check whether plugin tries to write beyond specified string boundaries (some buggy plugins do)
 #define PARANOIA_CHECK_DISPATCH_STRING_OVERFLOW defined
@@ -304,7 +304,7 @@ static VstIntPtr VSTCALLBACK HostCallback (AEffect* effect, VstInt32 opcode, Vst
          }
       }
       break;
-         
+
       case audioMasterVersion: // 1, Allowed before VstPluginMain returns
          // plugin requests host VST-specification version, currently 2 (0 for older)
          // x[return]: Host VST version (for example 2400 for VST2.4)
@@ -380,14 +380,14 @@ static VstIntPtr VSTCALLBACK HostCallback (AEffect* effect, VstInt32 opcode, Vst
       case audioMasterGetTime: // 7
          // e[value]: request mask, should contain a mask indicating which fields are required (see valid masks above), as some items may require extensive
          // conversions. For valid masks see VstTimeInfo.Flags
-         // e[ptr]: returns VstTimeInfo* or null if not supported 
+         // e[ptr]: returns VstTimeInfo* or null if not supported
 
          // (note) Some plugins seem to call this for each sample during processReplacing() (??!!!)
 
          if((lastOpcode != audioMasterGetTime) || (lastTimeMask != value))
          {
             lastTimeMask = value;
-            //yac_host->printf("[dbg] tkvst2::HostCallback: rcvd audioMasterGetTime requestMask=0x%08x\n", value); 
+            //yac_host->printf("[dbg] tkvst2::HostCallback: rcvd audioMasterGetTime requestMask=0x%08x\n", value);
          }
 
          if(NULL != plugin)
@@ -479,7 +479,7 @@ static VstIntPtr VSTCALLBACK HostCallback (AEffect* effect, VstInt32 opcode, Vst
             Dopprintf("[dbg] tkvst2::HostCallback: rcvd audioMasterGetParameterQuantization (**deprecated**)\n");
          }
          break;
-         
+
       case audioMasterIOChanged:
       {
          // plugin notifies host the numInputs and/or numOutputs of plugin has changed
@@ -582,7 +582,7 @@ static VstIntPtr VSTCALLBACK HostCallback (AEffect* effect, VstInt32 opcode, Vst
          break;
 
       case audioMasterGetCurrentProcessLevel:
-         // x[return]: currentProcessLevel 
+         // x[return]: currentProcessLevel
          //yac_host->printf("[dbg] tkvst2::HostCallback: rcvd audioMasterGetCurrentProcessLevel\n");
          break;
 
@@ -747,7 +747,7 @@ static VstIntPtr VSTCALLBACK HostCallback (AEffect* effect, VstInt32 opcode, Vst
             {
                Dopprintf("[dbg] tkvst2::HostCallback: rcvd audioMasterCanDo (canDo=\"%s\")\n", (const char*)ptr);
             }
-            // 
+            //
          }
          break;
 
@@ -812,7 +812,7 @@ static VstIntPtr VSTCALLBACK HostCallback (AEffect* effect, VstInt32 opcode, Vst
       break;
 
       case audioMasterBeginEdit:
-         // plugin calls this before a setParameterAutomated with mouse move (one per Mouse Down). It tells the host that if it needs to, it has to record 
+         // plugin calls this before a setParameterAutomated with mouse move (one per Mouse Down). It tells the host that if it needs to, it has to record
          // automation data for this control
          // e[index]: parameter index
          // x[return]: 1 = supported by host
@@ -1239,7 +1239,7 @@ sBool VST2Plugin::loadPlugin(YAC_String *_pathName, sUI _selectShellPluginUID) {
          yac_host->printf("[---] VST2Plugin::loadPlugin: failed to create CFURLRef for plugin path\n");
          return YAC_FALSE;
       }
-    
+
       cf_bundle_ref = CFBundleCreate(kCFAllocatorDefault, bundleUrl);
       CFRelease(pluginPathStringRef);
       CFRelease(bundleUrl);
@@ -1248,7 +1248,7 @@ sBool VST2Plugin::loadPlugin(YAC_String *_pathName, sUI _selectShellPluginUID) {
          yac_host->printf("[---] VST2Plugin::loadPlugin: failed to create bundle reference\n");
          return YAC_FALSE;
       }
-     
+
       PluginEntryProc mainProc = (PluginEntryProc) CFBundleGetFunctionPointerForName(cf_bundle_ref,
                                                                                      CFSTR("VSTPluginMain")
 
@@ -1694,8 +1694,8 @@ sBool VST2Plugin::setExtOutputBuffer(sUI _idx, YAC_Object *_fa) {
 
 void VST2Plugin::reallocateIOBuffers(void) {
    // called by setBlockSize and audioMasterIOChanged host opcode dispatcher
-   
-   // Free old I/O buffers 
+
+   // Free old I/O buffers
    freeIOBuffers();
 
    // (Re-) allocate sample buffers
@@ -1778,7 +1778,7 @@ void VST2Plugin::reallocateIOBuffersCollect(void) {
             collect_input_buffers[i] = new sF32[block_size * collect_num_chunks * 2];
             memset(collect_input_buffers[i], 0, sizeof(sF32) * block_size * collect_num_chunks * 2);
          }
-         
+
          for(sUI i = 0u; i < num_output_buffers; i++)
          {
             collect_output_buffers[i] = new sF32[block_size * collect_num_chunks * 2];
@@ -1839,8 +1839,8 @@ void VST2Plugin::dispatchGetString(sSI _opcode, sSI _idx, sSI _maxLen, YAC_Value
             break;
          }
       }
-#endif // PARANOIA_CHECK_DISPATCH_STRING_OVERFLOW 
-      
+#endif // PARANOIA_CHECK_DISPATCH_STRING_OVERFLOW
+
       _r->initString(s, 1);
    }
 }
@@ -2044,10 +2044,10 @@ void VST2Plugin::queueEvent(sU8 _0, sU8 _1, sU8 _2, sU8 _3) {
       ev->midiData[2] = (char) _2;
       ev->midiData[3] = (char) _3;
 
-      // yac_host->printf("xxx VST2Plugin::queueEvent: data= 0x%02x 0x%02x 0x%02x 0x%02x\n", 
-      //        (sU8) ev->midiData[0], 
-      //        (sU8) ev->midiData[1], 
-      //        (sU8) ev->midiData[2], 
+      // yac_host->printf("xxx VST2Plugin::queueEvent: data= 0x%02x 0x%02x 0x%02x 0x%02x\n",
+      //        (sU8) ev->midiData[0],
+      //        (sU8) ev->midiData[1],
+      //        (sU8) ev->midiData[2],
       //        (sU8) ev->midiData[3]
       //        );
 
@@ -2264,7 +2264,7 @@ sUI VST2Plugin::queueHostMIDIEventsByFlt(YAC_Object *_hostMIDIEvents,
          endEvents();
       }
    }
-   
+
    return r;
 }
 
@@ -2281,10 +2281,10 @@ void VST2Plugin::processEvents(void) {
          for(i=0; i<next_event; i++)
          {
             // VstMidiEvent *ev = (VstMidiEvent*) events->events[i];
-            // yac_host->printf("xxx VST2Plugin::processEvents: event[%u]: 0x%02x 0x%02x 0x%02x 0x%02x\n", 
-            //        (sU8) ev->midiData[0], 
-            //        (sU8) ev->midiData[1], 
-            //        (sU8) ev->midiData[2], 
+            // yac_host->printf("xxx VST2Plugin::processEvents: event[%u]: 0x%02x 0x%02x 0x%02x 0x%02x\n",
+            //        (sU8) ev->midiData[0],
+            //        (sU8) ev->midiData[1],
+            //        (sU8) ev->midiData[2],
             //        (sU8) ev->midiData[3]
             //        );
          }
@@ -2540,7 +2540,7 @@ void VST2Plugin::processReplacing(sUI _numFrames, sUI _off) {
          _numFrames = block_size;
       }
       ////yac_host->printf("xxx process output_buffers[0]=0x%p [1]=0x%p\n", output_buffers[0], output_buffers[1]);
-     
+
       sBool bCanReplacing = (effFlagsCanReplacing == (effect->flags & effFlagsCanReplacing));
       // yac_host->printf("VST2Plugin::processReplacing: 3, bCanReplacing=%d\n", bCanReplacing);
 
@@ -2827,8 +2827,8 @@ void VST2Plugin::setChunk(YAC_Object *_buffer, sBool _bProgram) {
 
 static void BuildWindowTitle(VST2Plugin *thiz) {
    // Generate window title (also used as class name)
-  
-   Dyac_snprintf(init_windowTitle, TKVST2_MAX_WINDOWTITLE_SIZE, 
+
+   Dyac_snprintf(init_windowTitle, TKVST2_MAX_WINDOWTITLE_SIZE,
                  "%s / %s -- VST editor (thiz=%p)",
                  thiz->effect_vendor, thiz->effect_name, thiz
                  );
@@ -2937,7 +2937,7 @@ static TKVST2Window *CreateVST2Window(VST2Plugin *thiz) {
    }
 
    yac_host->printf("[dbg] tkvst2::CreateVST2Window: LEAVE.\n");
-   
+
    return vw;
 }
 
@@ -2953,7 +2953,7 @@ void VST2Plugin::showEditor(void) {
       // Open editor if it is not already open
       TKVST2Window *vw = FindVST2WindowByPlugin(this, 1/*bLock*/);
 
-      if(NULL == vw) 
+      if(NULL == vw)
       {
          // (note) Pianoteq seems to require the VST window (and messageloop) to be located in the main thread, otherwise
          //         effEditOpen() will hang
@@ -2961,7 +2961,7 @@ void VST2Plugin::showEditor(void) {
          TKVST2Window *vw = CreateVST2Window(this);
          yac_host->printf("[dbg] VST2Plugin::showEditor: END CreateVST2Window(this=%p)\n", this);
          (void)vw;
-         
+
          return;
       }
       else
@@ -3192,7 +3192,7 @@ sUI VST2Plugin::dataBridgeGetNumChunksAvail(void) {
    return 0u;
 #endif // YAC_WIN32
 }
-  
+
 void VST2Plugin::SetEnableHideVSTEditorWhenClosed(sBool _bEnable) {
    b_hide_vst_window_when_closed = (YAC_FALSE != _bEnable);
 }
@@ -3223,4 +3223,8 @@ void VST2Plugin::callEffEditIdle(void) {
    {
       effect->dispatcher(effect, effEditIdle, 0, 0, 0, 0);
    }
+}
+
+void VST2Plugin::setEnableWindowProc(sBool _bEnable) {
+   (void)_bEnable;
 }

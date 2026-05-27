@@ -12,7 +12,7 @@
 ///          31Jan2018, 12Feb2018, 14Feb2018, 15Feb2018, 23Feb2018, 27Feb2018, 28Feb2018
 ///          02Mar2018, 03Apr2018, 22Jun2018, 29Jun2018, 06Jul2018, 19Aug2018, 07Jul2019
 ///          17Jul2019, 30Jul2019, 05Aug2019, 26Aug2019, 20May2021, 31Dec2021, 08Jan2022
-///          11Jan2022, 27Feb2022, 01Jul2024, 07Apr2026
+///          11Jan2022, 27Feb2022, 01Jul2024, 07Apr2026, 26May2026
 ///
 ///
 ///
@@ -38,8 +38,8 @@
 
 #include <math.h>
 
-// (note) resume() >> startProcess() >> processReplacing() 
-// (note) processReplacing() >> stopProcess() >> suspend() 
+// (note) resume() >> startProcess() >> processReplacing()
+// (note) processReplacing() >> stopProcess() >> suspend()
 
 
 // If defined, check whether plugin tries to write beyond specified string boundaries (some buggy plugins do)
@@ -1366,7 +1366,7 @@ static VstIntPtr VSTCALLBACK HostCallback (AEffect* effect, VstInt32 opcode, Vst
          }
       }
       break;
-         
+
       case audioMasterVersion: // 1, Allowed before VstPluginMain returns
          // plugin requests host VST-specification version, currently 2 (0 for older)
          // x[return]: Host VST version (for example 2400 for VST2.4)
@@ -1442,14 +1442,14 @@ static VstIntPtr VSTCALLBACK HostCallback (AEffect* effect, VstInt32 opcode, Vst
       case audioMasterGetTime: // 7
          // e[value]: request mask, should contain a mask indicating which fields are required (see valid masks above), as some items may require extensive
          // conversions. For valid masks see VstTimeInfo.Flags
-         // e[ptr]: returns VstTimeInfo* or null if not supported 
+         // e[ptr]: returns VstTimeInfo* or null if not supported
 
          // (note) Some plugins seem to call this for each sample during processReplacing() (??!!!)
 
          if((lastOpcode != audioMasterGetTime) || (lastTimeMask != value))
          {
             lastTimeMask = value;
-            //yac_host->printf("[dbg] tkvst2::HostCallback: rcvd audioMasterGetTime requestMask=0x%08x\n", value); 
+            //yac_host->printf("[dbg] tkvst2::HostCallback: rcvd audioMasterGetTime requestMask=0x%08x\n", value);
          }
 
          if(NULL != plugin)
@@ -1541,7 +1541,7 @@ static VstIntPtr VSTCALLBACK HostCallback (AEffect* effect, VstInt32 opcode, Vst
             Dopprintf("[dbg] tkvst2::HostCallback: rcvd audioMasterGetParameterQuantization (**deprecated**)\n");
          }
          break;
-         
+
       case audioMasterIOChanged:
       {
          // plugin notifies host the numInputs and/or numOutputs of plugin has changed
@@ -1643,7 +1643,7 @@ static VstIntPtr VSTCALLBACK HostCallback (AEffect* effect, VstInt32 opcode, Vst
          break;
 
       case audioMasterGetCurrentProcessLevel:
-         // x[return]: currentProcessLevel 
+         // x[return]: currentProcessLevel
          //yac_host->printf("[dbg] tkvst2::HostCallback: rcvd audioMasterGetCurrentProcessLevel\n");
          break;
 
@@ -1808,7 +1808,7 @@ static VstIntPtr VSTCALLBACK HostCallback (AEffect* effect, VstInt32 opcode, Vst
             {
                Dopprintf("[dbg] tkvst2::HostCallback: rcvd audioMasterCanDo (canDo=\"%s\")\n", (const char*)ptr);
             }
-            // 
+            //
          }
          break;
 
@@ -1875,7 +1875,7 @@ static VstIntPtr VSTCALLBACK HostCallback (AEffect* effect, VstInt32 opcode, Vst
       break;
 
       case audioMasterBeginEdit:
-         // plugin calls this before a setParameterAutomated with mouse move (one per Mouse Down). It tells the host that if it needs to, it has to record 
+         // plugin calls this before a setParameterAutomated with mouse move (one per Mouse Down). It tells the host that if it needs to, it has to record
          // automation data for this control
          // e[index]: parameter index
          // x[return]: 1 = supported by host
@@ -2026,6 +2026,8 @@ VST2Plugin::VST2Plugin(void) {
 
    last_tkvst2_song_playing = YAC_FALSE;
    b_report_transport_playing = YAC_TRUE;
+
+   b_enable_window_proc = YAC_TRUE;
 }
 
 VST2Plugin::~VST2Plugin() {
@@ -2033,8 +2035,8 @@ VST2Plugin::~VST2Plugin() {
    // yac_host->->printf("xxx VST2Plugin::~VST2Plugin: DTOR effect=0x%p\n", effect);
    close();
 
-   ::DeleteCriticalSection(&mtx_dispatcher); 
-   ::DeleteCriticalSection(&mtx_events); 
+   ::DeleteCriticalSection(&mtx_dispatcher);
+   ::DeleteCriticalSection(&mtx_events);
 
    freeShellPlugins();
 }
@@ -2738,8 +2740,8 @@ sBool VST2Plugin::setExtOutputBuffer(sUI _idx, YAC_Object *_fa) {
 
 void VST2Plugin::reallocateIOBuffers(void) {
    // called by setBlockSize and audioMasterIOChanged host opcode dispatcher
-   
-   // Free old I/O buffers 
+
+   // Free old I/O buffers
    freeIOBuffers();
 
    // (Re-) allocate sample buffers
@@ -2822,7 +2824,7 @@ void VST2Plugin::reallocateIOBuffersCollect(void) {
             collect_input_buffers[i] = new sF32[block_size * collect_num_chunks * 2];
             memset(collect_input_buffers[i], 0, sizeof(sF32) * block_size * collect_num_chunks * 2);
          }
-         
+
          for(sUI i = 0u; i < num_output_buffers; i++)
          {
             collect_output_buffers[i] = new sF32[block_size * collect_num_chunks * 2];
@@ -2883,8 +2885,8 @@ void VST2Plugin::dispatchGetString(sSI _opcode, sSI _idx, sSI _maxLen, YAC_Value
             break;
          }
       }
-#endif // PARANOIA_CHECK_DISPATCH_STRING_OVERFLOW 
-      
+#endif // PARANOIA_CHECK_DISPATCH_STRING_OVERFLOW
+
       _r->initString(s, 1);
    }
 }
@@ -3088,10 +3090,10 @@ void VST2Plugin::queueEvent(sU8 _0, sU8 _1, sU8 _2, sU8 _3) {
       ev->midiData[2] = (char) _2;
       ev->midiData[3] = (char) _3;
 
-      // yac_host->printf("xxx VST2Plugin::queueEvent: data= 0x%02x 0x%02x 0x%02x 0x%02x\n", 
-      //        (sU8) ev->midiData[0], 
-      //        (sU8) ev->midiData[1], 
-      //        (sU8) ev->midiData[2], 
+      // yac_host->printf("xxx VST2Plugin::queueEvent: data= 0x%02x 0x%02x 0x%02x 0x%02x\n",
+      //        (sU8) ev->midiData[0],
+      //        (sU8) ev->midiData[1],
+      //        (sU8) ev->midiData[2],
       //        (sU8) ev->midiData[3]
       //        );
 
@@ -3308,7 +3310,7 @@ sUI VST2Plugin::queueHostMIDIEventsByFlt(YAC_Object *_hostMIDIEvents,
          endEvents();
       }
    }
-   
+
    return r;
 }
 
@@ -3325,10 +3327,10 @@ void VST2Plugin::processEvents(void) {
          for(i=0; i<next_event; i++)
          {
             VstMidiEvent *ev = (VstMidiEvent*) events->events[i];
-            // yac_host->printf("xxx VST2Plugin::processEvents: event[%u]: 0x%02x 0x%02x 0x%02x 0x%02x\n", 
-            //        (sU8) ev->midiData[0], 
-            //        (sU8) ev->midiData[1], 
-            //        (sU8) ev->midiData[2], 
+            // yac_host->printf("xxx VST2Plugin::processEvents: event[%u]: 0x%02x 0x%02x 0x%02x 0x%02x\n",
+            //        (sU8) ev->midiData[0],
+            //        (sU8) ev->midiData[1],
+            //        (sU8) ev->midiData[2],
             //        (sU8) ev->midiData[3]
             //        );
          }
@@ -3584,7 +3586,7 @@ void VST2Plugin::processReplacing(sUI _numFrames, sUI _off) {
          _numFrames = block_size;
       }
       ////yac_host->printf("xxx process output_buffers[0]=0x%p [1]=0x%p\n", output_buffers[0], output_buffers[1]);
-     
+
       sBool bCanReplacing = (effFlagsCanReplacing == (effect->flags & effFlagsCanReplacing));
       // yac_host->printf("VST2Plugin::processReplacing: 3, bCanReplacing=%d\n", bCanReplacing);
 
@@ -3877,7 +3879,7 @@ LRESULT CALLBACK WndProcedure_Sub(HWND hWnd, UINT Msg,
    Dwmprintf("[dbg] tkvst2::WndProcedure_Sub: hWnd=%p Msg=0x%08x wParam=%p lParam=%p\n", hWnd, Msg, wParam, lParam);
 
    // Retrieve original window handler
-   WNDPROC childWndProc = (WNDPROC) GetPropA(hWnd, TEXT("__eureka_wndproc"));   
+   WNDPROC childWndProc = (WNDPROC) GetPropA(hWnd, TEXT("__eureka_wndproc"));
    Dwmprintf("[dbg] tksvt::WndProcedure_Sub:   childWndProc=%p\n", childWndProc);
 
    switch(Msg)
@@ -3896,7 +3898,7 @@ LRESULT CALLBACK WndProcedure_Sub(HWND hWnd, UINT Msg,
 
       case WM_KEYDOWN:
       {
-         HWND vstHWND = (HWND) GetPropA(hWnd, TEXT("__eureka_hwnd"));   
+         HWND vstHWND = (HWND) GetPropA(hWnd, TEXT("__eureka_hwnd"));
          Dwmprintf("[dbg] tkvst2::WndProcedure_Sub: received WM_KEYDOWN lParam=0x%08x vstHWND=%p\n", lParam, vstHWND);
          SetWindowLongPtrA(vstHWND, 0/*OFF_bSubClassed*/, LONG_PTR(1));  // don't process again in WndProcedure()
          TKVST2Window *vw = FindVST2WindowByHandle(vstHWND);
@@ -3913,7 +3915,7 @@ LRESULT CALLBACK WndProcedure_Sub(HWND hWnd, UINT Msg,
       case WM_KEYUP:
       {
          Dwmprintf("[dbg] tkvst2::WndProcedure_Sub: received WM_KEYUP lParam=0x%08x\n", lParam);
-         HWND vstHWND = (HWND) GetPropA(hWnd, TEXT("__eureka_hwnd"));   
+         HWND vstHWND = (HWND) GetPropA(hWnd, TEXT("__eureka_hwnd"));
          SetWindowLongPtrA(vstHWND, 0/*OFF_bSubClassed*/, LONG_PTR(1));
          TKVST2Window *vw = FindVST2WindowByHandle(vstHWND);
          if(NULL != vw)
@@ -3922,6 +3924,16 @@ LRESULT CALLBACK WndProcedure_Sub(HWND hWnd, UINT Msg,
          }
       }
       break;
+   }
+
+   {
+      HWND vstHWND = (HWND) GetPropA(hWnd, TEXT("__eureka_hwnd"));
+      TKVST2Window *vw = FindVST2WindowByHandle(vstHWND);
+      if(NULL != vw)
+      {
+         if(!vw->plugin->b_enable_window_proc)
+            return 0u;  // [26May2026] workaround for Tranzistow stack overflow exception
+      }
    }
 
    // Call original window handler
@@ -3987,7 +3999,7 @@ LRESULT CALLBACK WndProcedure(HWND hWnd, UINT Msg,
             {
                // Stop effIdle timer
                KillTimer (hWnd, 1);
-            
+
                // Destroy window and remove it from window list
                RemoveVST2WindowByHandle(hWnd);
             }
@@ -4069,7 +4081,7 @@ static ATOM TKVST2_RegisterClass(HINSTANCE _dllHandle, const char *_className) {
    WndClsEx.lpszClassName = _className;
    WndClsEx.hInstance     = _dllHandle;/*hInstance;*/
    WndClsEx.hIconSm       = LoadIcon(NULL, IDI_APPLICATION);
-      
+
    // Register the application
    retAtom = RegisterClassEx(&WndClsEx);
 
@@ -4083,7 +4095,7 @@ static ATOM TKVST2_RegisterClass(HINSTANCE _dllHandle, const char *_className) {
 
 static void BuildWindowTitle(VST2Plugin *thiz) {
    // Generate window title (also used as class name)
-  
+
    sprintf(init_windowTitle, "%s / %s -- VST editor (thiz=%p)\000", thiz->effect_vendor, thiz->effect_name, thiz);
 }
 
@@ -4148,7 +4160,7 @@ static TKVST2Window *InitVST2Window(VST2Plugin *thiz, HWND hWnd, sBool bAddWindo
             {
                height = 566;
             }
-         
+
             RECT wRect;
             ::SetRect(&wRect, 0, 0, width, height);
             ::AdjustWindowRectEx(&wRect, ::GetWindowLong(hWnd, GWL_STYLE), FALSE, ::GetWindowLong(hWnd, GWL_EXSTYLE));
@@ -4168,10 +4180,10 @@ static TKVST2Window *InitVST2Window(VST2Plugin *thiz, HWND hWnd, sBool bAddWindo
 
                ::SetWindowPos(hWnd, HWND_TOP, 0, 0, width, height, SWP_NOMOVE);
 
-               ::MoveWindow(hWnd, 
-                            thiz->ui_window_left, 
-                            thiz->ui_window_top, 
-                            (thiz->ui_window_right - thiz->ui_window_left), 
+               ::MoveWindow(hWnd,
+                            thiz->ui_window_left,
+                            thiz->ui_window_top,
+                            (thiz->ui_window_right - thiz->ui_window_left),
                             (thiz->ui_window_bottom - thiz->ui_window_top),
                             TRUE /* repaint*/
                             );
@@ -4302,7 +4314,7 @@ static TKVST2Window *CreateVST2Window(VST2Plugin *thiz, sBool bAddWindow, sBool 
                                  // //|WS_DISABLED
                                  // //|WS_ICONIC  // => initial window is too large
                                  |WS_SYSMENU  // add close button
-                                 //| WS_EX_NOPARENTNOTIFY 
+                                 //| WS_EX_NOPARENTNOTIFY
                                  ,
                                  CW_USEDEFAULT/*x*/,
                                  CW_USEDEFAULT/*y*/,
@@ -4315,7 +4327,7 @@ static TKVST2Window *CreateVST2Window(VST2Plugin *thiz, sBool bAddWindow, sBool 
                                  );
 
       yac_host->printf("[dbg] tkvst2::CreateVST2Window 5 hWnd=0x%p\n", hWnd);
-	
+
       if(NULL != hWnd )
       {
          sBool bOK = 1;
@@ -4358,7 +4370,7 @@ static TKVST2Window *CreateVST2Window(VST2Plugin *thiz, sBool bAddWindow, sBool 
             // <nehe> If we managed to get a Device Context for our OpenGL window we'll try to find a pixel format that matches the one we described above. If Windows can't find a matching pixel format, an error message will pop onto the screen and the program will quit (return FALSE).
 
             sU32 PixelFormat;  // <nehe> Holds The Results After Searching For A Match
-            
+
             if(PixelFormat = ChoosePixelFormat(hDC, &pfd))  // Did Windows Find A Matching Pixel Format?
             {
                // <nehe> If windows found a matching pixel format we'll try setting the pixel format. If the pixel format cannot be set, an error message will pop up on the screen and the program will quit (return FALSE).
@@ -4404,7 +4416,7 @@ static TKVST2Window *CreateVST2Window(VST2Plugin *thiz, sBool bAddWindow, sBool 
    }
 
    yac_host->printf("[dbg] tkvst2::CreateVST2Window: LEAVE.\n");
-   
+
    return vw;
 }
 
@@ -4465,14 +4477,14 @@ void VST2Plugin::showEditor(void) {
       // Open editor if it is not already open
       TKVST2Window *vw = FindVST2WindowByPlugin(this, 1/*bLock*/);
 
-      if(NULL == vw) 
+      if(NULL == vw)
       {
          // (note) Pianoteq seems to require the VST window (and messageloop) to be located in the main thread, otherwise
          //         effEditOpen() will hang
          yac_host->printf("[dbg] VST2Plugin::showEditor: call CreateVST2Window(this=%p)\n", this);
          TKVST2Window *vw = CreateVST2Window(this, 1/*bAddWindow*/, 1/*bShowWindow*/);
          yac_host->printf("[dbg] VST2Plugin::showEditor: END CreateVST2Window(this=%p)\n", this);
-         
+
          return;
       }
       else
@@ -4595,7 +4607,7 @@ sUI VST2Plugin::GetNumOpenWindows(void) {
 
 void VST2Plugin::PumpEvents(void) {
    MSG msg;
-   
+
    while(::PeekMessage(&msg, NULL, 0, 0, 1))
    {
       ::TranslateMessage(&msg);
@@ -4780,7 +4792,7 @@ sUI VST2Plugin::dataBridgeGetNumChunksAvail(void) {
    endDispatch();
    return r;
 }
-  
+
 void VST2Plugin::SetEnableHideVSTEditorWhenClosed(sBool _bEnable) {
    b_hide_vst_window_when_closed = (YAC_FALSE != _bEnable);
 }
@@ -4811,4 +4823,8 @@ void VST2Plugin::callEffEditIdle(void) {
    {
       effect->dispatcher(effect, effEditIdle, 0, 0, 0, 0);
    }
+}
+
+void VST2Plugin::setEnableWindowProc(sBool _bEnable) {
+   b_enable_window_proc = _bEnable;
 }

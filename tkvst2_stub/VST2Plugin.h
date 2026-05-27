@@ -1,6 +1,6 @@
 /// VST2Plugin.h
 ///
-/// (c) 2010-2024 Bastian Spiegel <bs@tkscript.de>
+/// (c) 2010-2026 Bastian Spiegel <bs@tkscript.de>
 ///     - Distributed under terms of the Lesser GNU General Public License (LGPL).
 ///       See COPYING and <http://www.gnu.org/licenses/licenses.html#LGPL> for further information.
 ///
@@ -8,12 +8,12 @@
 /// created: 01Oct2010
 /// changed: 02Oct2010, 03Oct2010, 04Oct2010, 05Oct2010, 06Oct2010, 08Oct2010, 09Oct2010
 ///          10Oct2010, 13Oct2010, 15Oct2010, 16Oct2010, 09Feb2014, 01Nov2021, 31Dec2021
-///          18Jul2023, 24Oct2023, 01Jul2024
+///          18Jul2023, 24Oct2023, 01Jul2024, 26May2026
 ///
 ///
 
-#ifndef __VST2PLUGIN_H__
-#define __VST2PLUGIN_H__
+#ifndef VST2PLUGIN_H__
+#define VST2PLUGIN_H__
 
 
 /** WARNING: This is a DUMMY PLUGIN **/
@@ -61,7 +61,7 @@ YC class VST2Plugin : public YAC_Object {
    sF32 **output_buffers;
 
   protected:
-   
+
    sUI block_size; // (maximum) block size (#sample frames)
    sUI num_input_buffers;
    sUI num_output_buffers;
@@ -216,7 +216,10 @@ public:
    YM void windowToFront (void);
 
    YM void callEffEditIdle (void);
+
+   // bEnable=0: workaround for Transistow stack overflow exception. def=1
+   YM void setEnableWindowProc (sBool _bEnable);
 };
 
 
-#endif // __VST2PLUGIN_H__
+#endif // VST2PLUGIN_H__

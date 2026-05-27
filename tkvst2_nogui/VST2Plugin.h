@@ -1,6 +1,6 @@
 /// VST2Plugin.h
 ///
-/// (c) 2010-2024 Bastian Spiegel <bs@tkscript.de>
+/// (c) 2010-2026 Bastian Spiegel <bs@tkscript.de>
 ///     - Distributed under terms of the Lesser GNU General Public License (LGPL).
 ///       See COPYING and <http://www.gnu.org/licenses/licenses.html#LGPL> for further information.
 ///
@@ -11,13 +11,13 @@
 ///          08Mar2014, 20Jan2018, 24Jan2018, 25Jan2018, 26Jan2018, 27Jan2018, 28Jan2018
 ///          29Jan2018, 31Jan2018, 12Feb2018, 23Feb2018, 27Feb2018, 28Feb2018, 02Mar2018
 ///          03Apr2018, 22Jun2018, 29Jun2018, 26Aug2019, 31Dec2021, 27Feb2022, 14Feb2023
-///          24Oct2023, 01Jul2024
+///          24Oct2023, 01Jul2024, 26May2026
 ///
 ///
 ///
 
-#ifndef __VST2PLUGIN_H__
-#define __VST2PLUGIN_H__
+#ifndef VST2PLUGIN_H__
+#define VST2PLUGIN_H__
 
 
 YG("vst2");
@@ -113,7 +113,7 @@ YC class VST2Plugin : public YAC_Object {
 
 
   protected:
-   
+
    sUI block_size; // (maximum) block size (#sample frames)
    sUI num_input_buffers;
    sUI num_output_buffers;
@@ -315,4 +315,4 @@ public:
 };
 
 
-#endif // __VST2PLUGIN_H__
+#endif // VST2PLUGIN_H__
