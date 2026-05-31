@@ -42,9 +42,6 @@ else
 EXTRALIBS += -L/usr/local/homebrew/lib
 endif
 
-#CPPFLAGS += -I$(CROSS_ROOT)/usr/include
-#CFLAGS += -I$(CROSS_ROOT)/usr/include
-
 
 #
 # Install plugin
@@ -88,7 +85,6 @@ endif
 	@echo "Build finished at `date +%H:%M`."
 endif
 endif
-
 
 .cpp.o:
 	$(CPP) $(CPPFLAGS) $(OPTFLAGS) $(DBGFLAGS) -c $< -o $@
