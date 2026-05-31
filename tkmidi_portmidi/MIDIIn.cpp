@@ -8,7 +8,7 @@
 /// changed: 09Sep2006, 02Jan2008, 04Jan2008, 13Jan2008, 09Nov2012, 13Nov2012, 23Mar2013
 ///          14Apr2013, 23May2013, 04Feb2014, 05Feb2014, 24Feb2014, 20Aug2014, 22Aug2014
 ///          11Feb2015, 12Aug2017, 19Jan2018, 22Jan2019, 20Jan2023, 04Mar2023, 18Jul2023
-///          22Jul2023, 01Aug2023, 17Sep2023, 06May2026
+///          22Jul2023, 01Aug2023, 17Sep2023, 06May2026, 31May2026
 ///
 ///
 ///
@@ -30,8 +30,12 @@
 #endif // YAC_WIN32
 
 
-// #define DP if(0);else yac_host->printf
-#define DP if(1);else yac_host->printf
+#define Dinfo  if(!1);else yac_host->printf
+#define Dwarn  if(!1);else yac_host->printf
+#define Derror if(!1);else yac_host->printf
+#define DP     if( 1);else yac_host->printf
+#define DPv    if( 1);else yac_host->printf
+#define DPvv   if( 1);else yac_host->printf
 
 
 // ----------------------------------------------------------------------------
@@ -86,7 +90,7 @@ void RecordedMIDIEvent::copyToStream(YAC_Object *_stream) {
    }
    else
    {
-      yac_host->printf("[---] RecordedMIDIEvent::copyToStream: invalid stream object.\n");
+      Derror("[---] RecordedMIDIEvent::copyToStream: invalid stream object.\n");
    }
 }
 
@@ -594,66 +598,25 @@ void MIDIIn::consumeMessage(const sU32 _msg) {
    sU8 readOff = 0u;
    RecordedMIDIEvent *ev;
 
-   DP("[trc] MIDIIn<portmidi>::consumeMessage: msg=0x%08x\n", _msg);
-
-   sU8 c = (_msg & 255u);
-
-   if(0u != (c & 0x80u))
+   if(0x000000F8 != _msg)  // filter out timing clock
    {
-      if(0xF7u == c)
-      {
-         // end of sysex (handled below)
-         if(!state.b_sysex)
-         {
-            yac_host->printf("[~~~] MIDIIn<portmidi>::consumeMessage: found $F7 outside of sysex message, skipping..\n");
-         }
-      }
-      else if(0xF0u != c)
-      {
-         // 1..3 byte message
+      DP("[trc] MIDIIn<portmidi>::consumeMessage: msg=0x%08x\n", _msg);
+   }
 
-         state.b_sysex = YAC_FALSE;
+   if(0xF0u == (_msg & 0xFFu))
+   {
+      // Start of SysEx message
+      state.b_sysex = YAC_TRUE;
 
-         ev = beginRecordedEvent();
+      state.ev = ev = beginRecordedEvent();
 
-         ev->b_long     = YAC_FALSE;
-         ev->millisec   = yac_host->yacMilliSeconds();
-         ev->data.u32   = _msg;
-
-         // Determine size, midimapType, filter, ..
-         sBool bFiltered = YAC_FALSE;
-         ev->classifyShortMessage(this, &bFiltered);
-
-         if(!bFiltered)
-         {
-            if(0xB0u == (ev->data.u32 & 0xF0u))
-            {
-               ev->classifyCtlChange(this, &bFiltered);
-            }
-
-            if(!bFiltered)
-            {
-               ev->data_entry = data_entry[c & 15u];
-
-               endRecordedEvent(ev);
-            }
-         }
-      }
-      else
-      {
-         // Start of SysEx message
-         state.b_sysex = YAC_TRUE;
-
-         state.ev = ev = beginRecordedEvent();
-
-         ev->b_long   = YAC_TRUE;
-         ev->millisec = yac_host->yacMilliSeconds();
-         ev->data.ptr = getNextSysExBuffer();
-         ev->size     = 0u;
-         ev->midimap_event_type = 7/*MIDIMapDefs.TYPE_SYSEX*/;
-         readOff = 1u;
-      }
-   }  // if status byte
+      ev->b_long   = YAC_TRUE;
+      ev->millisec = yac_host->yacMilliSeconds();
+      ev->data.ptr = getNextSysExBuffer();
+      ev->size     = 0u;
+      ev->midimap_event_type = 7/*MIDIMapDefs.TYPE_SYSEX*/;
+      readOff = 1u;
+   }
 
    if(state.b_sysex)
    {
@@ -674,7 +637,7 @@ void MIDIIn::consumeMessage(const sU32 _msg) {
          if(0xF7u == c)
          {
             // End of SysEx message
-            DP("[trc] MIDIIn<portmidi>::consumeMessage: end of sysex msg: ev->size=%u b_filter_sysex=%d\n", ev->size, b_filter_sysex);
+            Dinfo("[trc] MIDIIn<portmidi>::consumeMessage: end of sysex msg: ev->size=%u b_filter_sysex=%d\n", ev->size, b_filter_sysex);
             if(ev->size > 0u)
             {
                if(!b_filter_sysex)
@@ -682,12 +645,12 @@ void MIDIIn::consumeMessage(const sU32 _msg) {
             }
             else
             {
-               yac_host->printf("[~~~] MIDIIn<portmidi>::consumeMessage: SysEx buffer size is 0, discarding message\n");
+               Dwarn("[~~~] MIDIIn<portmidi>::consumeMessage: SysEx buffer size is 0, discarding message\n");
             }
             state.b_sysex = YAC_FALSE;
             break;
          }
-         else
+         else if(c < 0xF0u)
          {
             // Data byte
             if(ev->size < MIDIIN_BLOCKSIZE)
@@ -697,12 +660,63 @@ void MIDIIn::consumeMessage(const sU32 _msg) {
             else
             {
                // SysEx buffer size overflow, discard event
-               yac_host->printf("[~~~] MIDIIn<portmidi>::consumeMessage: SysEx buffer size overflow (%u bytes)\n", MIDIIN_BLOCKSIZE);
+               Dwarn("[~~~] MIDIIn<portmidi>::consumeMessage: SysEx buffer size overflow (%u bytes)\n", MIDIIN_BLOCKSIZE);
                state.b_sysex = YAC_FALSE;
             }
          }
+         else
+         {
+            // filter out realtime msg (e.g. 0xF8 timing clock)
+            Dwarn("[~~~] MIDIIn<portmidi>::consumeMessage: filter 0x%02x msg within SysEx block\n", c);
+         }
       }
    } // if state.b_sysex
+   else
+   {
+      sU8 c = (_msg & 255u);
+      if(0u != (c & 0x80u))
+      {
+         if(0xF7u == c)
+         {
+            // end of sysex (handled below)
+            if(!state.b_sysex)
+            {
+               Dwarn("[~~~] MIDIIn<portmidi>::consumeMessage: found $F7 outside of sysex message, skipping..\n");
+            }
+         }
+         else if(0xF0u != c)
+         {
+            // 1..3 byte message
+
+            state.b_sysex = YAC_FALSE;
+
+            ev = beginRecordedEvent();
+
+            ev->b_long     = YAC_FALSE;
+            ev->millisec   = yac_host->yacMilliSeconds();
+            ev->data.u32   = _msg;
+
+            // Determine size, midimapType, filter, ..
+            sBool bFiltered = YAC_FALSE;
+            ev->classifyShortMessage(this, &bFiltered);
+
+            if(!bFiltered)
+            {
+               if(0xB0u == (ev->data.u32 & 0xF0u))
+               {
+                  ev->classifyCtlChange(this, &bFiltered);
+               }
+
+               if(!bFiltered)
+               {
+                  ev->data_entry = data_entry[c & 15u];
+
+                  endRecordedEvent(ev);
+               }
+            }
+         }
+      }
+   }  // if status byte
 
 }
 
@@ -710,9 +724,9 @@ void MIDIIn::readPMEvents(void) {
    for(;;)
    {
       PmEvent pmEv;
-      DP("[trc] MIDIIn<portmidi>::readPMEvents: call\n");
+      DPvv("[>>>] MIDIIn<portmidi>::readPMEvents: call\n");
       int numRead = Pm_Read(pm_stream, &pmEv, 1);
-      DP("[trc] MIDIIn<portmidi>::readPMEvents: numRead=%d\n", numRead);
+      DPvv("[>>>] MIDIIn<portmidi>::readPMEvents: numRead=%d\n", numRead);
       if(1 == numRead)
       {
          consumeMessage(pmEv.message);
@@ -773,7 +787,7 @@ YAC_Object *MIDIIn::_waitNextEvent(sUI _timeout) {
    }
    else
    {
-      yac_host->printf("[---] MIDIIn::waitNextEvent: device is not open!\n");
+      Derror("[---] MIDIIn::waitNextEvent: device is not open!\n");
    }
 
    return NULL;
@@ -857,13 +871,13 @@ sBool MIDIIn::_openByName(YAC_Object *_devName) {
 
                   if(yac_host->yacGetDebugLevel() > 1)
                   {
-                     yac_host->printf("[trc] MIDIIn::open: MIDI device \"%s\" opened.\n", devNameChars);
+                     Dinfo("[trc] MIDIIn::open: MIDI device \"%s\" opened.\n", devNameChars);
                   }
                   return YAC_TRUE;
                }
                else
                {
-                  yac_host->printf("[---] MIDIIn::openByName: failed to open devName=\"%s\" error=\"%s\"\n", devNameChars, Pm_GetErrorText(err));
+                  Derror("[---] MIDIIn::openByName: failed to open devName=\"%s\" error=\"%s\"\n", devNameChars, Pm_GetErrorText(err));
                }
             }
 
@@ -911,13 +925,13 @@ sBool MIDIIn::_openByIdx(sUI _idx) {
 
                if(yac_host->yacGetDebugLevel() > 1)
                {
-                  yac_host->printf("[trc] MIDIIn::open: MIDI device idx=%d name=\"%s\" opened.\n", inIdx, info->name);
+                  Dinfo("[trc] MIDIIn::open: MIDI device idx=%d name=\"%s\" opened.\n", inIdx, info->name);
                }
                return YAC_TRUE;
             }
             else
             {
-               yac_host->printf("[---] MIDIIn::openByName: failed to open MIDI device idx=%d error=\"%s\"\n", inIdx, Pm_GetErrorText(err));
+               Derror("[---] MIDIIn::openByName: failed to open MIDI device idx=%d error=\"%s\"\n", inIdx, Pm_GetErrorText(err));
             }
          }
 
@@ -1401,14 +1415,14 @@ void MIDIIn::parseMIDIByte(const sU8 c, midiin_reader_state_t &st) {
             {
                // Single-byte Realtime message in the middle of a shortmsg
                //  (todo) parse/add realtime message, then resume shortmsg
-               yac_host->printf("[~~~] midiin_reader: RT msg 0x%02x during shortmsg, ignoring..\n", c);
+               Dwarn("[~~~] midiin_reader: RT msg 0x%02x during shortmsg, ignoring..\n", c);
             }
             else
             {
-               yac_host->printf("[---] midiin_reader: unexpected status byte 0x%02x during shortmsg1 %02x, discarding event.\n",
-                                c,
-                                st.ev->data.u8[0]
-                                );
+               Derror("[---] midiin_reader: unexpected status byte 0x%02x during shortmsg1 %02x, discarding event.\n",
+                      c,
+                      st.ev->data.u8[0]
+                      );
 
                st.running_status = 0u;
                st.state = ST_ANY;
@@ -1447,14 +1461,14 @@ void MIDIIn::parseMIDIByte(const sU8 c, midiin_reader_state_t &st) {
             {
                // Single-byte Realtime message in the middle of a shortmsg
                //  (todo) parse/add realtime message, then resume shortmsg
-               yac_host->printf("[~~~] midiin_reader: RT msg 0x%02x during shortmsg, ignoring..\n", c);
+               Dwarn("[~~~] midiin_reader: RT msg 0x%02x during shortmsg, ignoring..\n", c);
             }
             else
             {
-               yac_host->printf("[---] midiin_reader: unexpected status byte 0x%02x during shortmsg2 %02x, discarding event.\n",
-                                c,
-                                st.ev->data.u8[0]
-                                );
+               Derror("[---] midiin_reader: unexpected status byte 0x%02x during shortmsg2 %02x, discarding event.\n",
+                      c,
+                      st.ev->data.u8[0]
+                      );
                st.running_status = 0u;
                st.state = ST_ANY;
                goto restart_msg;
@@ -1478,7 +1492,7 @@ void MIDIIn::parseMIDIByte(const sU8 c, midiin_reader_state_t &st) {
             {
                // Single-byte Realtime message in the middle of a sysex transfer
                //  (todo) parse/add realtime message event, then resume sysex
-               yac_host->printf("[~~~] midiin_reader: RT msg 0x%02x during sysex transfer, ignoring..\n", c);
+               Dwarn("[~~~] midiin_reader: RT msg 0x%02x during sysex transfer, ignoring..\n", c);
             }
             else
             {
@@ -1490,10 +1504,10 @@ void MIDIIn::parseMIDIByte(const sU8 c, midiin_reader_state_t &st) {
                }
                else if(st.ev->size > MIDIIN_BLOCKSIZE)
                {
-                  yac_host->printf("[dbg] midiin_reader: found end of discarded SysEx event (size %u exceeded %u)\n",
-                                   st.ev->size,
-                                   MIDIIN_BLOCKSIZE
-                                   );
+                  Dinfo("[dbg] midiin_reader: found end of discarded SysEx event (size %u exceeded %u)\n",
+                        st.ev->size,
+                        MIDIIN_BLOCKSIZE
+                        );
                }
 
                st.state = ST_ANY;
@@ -1511,9 +1525,9 @@ void MIDIIn::parseMIDIByte(const sU8 c, midiin_reader_state_t &st) {
             {
                if(MIDIIN_BLOCKSIZE == st.ev->size)
                {
-                  yac_host->printf("[~~~] midiin_reader: SysEx buffer size (%u) exceeded, discarding event.\n",
-                                   MIDIIN_BLOCKSIZE
-                                   );
+                  Dwarn("[~~~] midiin_reader: SysEx buffer size (%u) exceeded, discarding event.\n",
+                        MIDIIN_BLOCKSIZE
+                        );
 
                   st.b_filtered = YAC_TRUE;
                }
