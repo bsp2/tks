@@ -1,7 +1,7 @@
 // ----
 // ---- file   : ui.tks
 // ---- author : Bastian Spiegel <bs@tkscript.de>
-// ---- legal  : (c) 2005-2025 by Bastian Spiegel.
+// ---- legal  : (c) 2005-2026 by Bastian Spiegel.
 // ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
 // ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
 // ----
@@ -39,7 +39,7 @@
 // ----          23Jul2024, 16Aug2024, 13Sep2024, 24Sep2024, 05Oct2024, 09Oct2024, 15Dec2024
 // ----          26Dec2024, 08Jan2025, 08Feb2025, 18Feb2025, 22Feb2025, 15Mar2025, 27Mar2025
 // ----          09Sep2025, 10Sep2025, 11Sep2025, 14Sep2025, 16Sep2025, 17Sep2025, 20Sep2025
-// ----          10Oct2025
+// ----          10Oct2025, 02Jun2026
 // ----
 // ----
 // ----
@@ -689,6 +689,12 @@ class UI : ActionProvider, UIConstants {
       return b_redraw_windowmoveresize;
    }
 
+   // 1=begin/end mouse drag when LMETA is pressed/released
+   public static boolean b_mouse_drag_meta_key = true;
+
+   public static SetEnableMouseDragMetaKey(boolean _bEnable) {
+      b_mouse_drag_meta_key = _bEnable;
+   }
 
    public static boolean b_touch_mode;
 
@@ -1716,12 +1722,14 @@ class UI : ActionProvider, UIConstants {
       last_mouseclick_button   = 0;
    }
 
+   private   static MouseEvent last_mouse_ev;  // continously tracks last seen mouse event (e.g. for lmeta-drag)
    private   static MouseEvent drag_last_mouse_ev;
    private   static int        drag_start_mouse_button; // used to determine cancel button
    namespace static Layer     *drag_layer;
    public    static Layer     *drag_layer_candidate;    // Layer under mouse when LMB was first pressed
    private   static Point2f    drag_layer_abspos;       // at drag start. used for calculating relative mouse positions.
    public    static boolean    b_try_drag = false;
+   public    static boolean    b_lmeta_drag = false;    // while forcing mouse-drag with LMETA
    private   static int        drag_threshold = UIConstants.MOUSE_DRAG_THRESHOLD;
 
    module static MouseHoldAction mousehold_timerAction;
@@ -2113,7 +2121,7 @@ class UI : ActionProvider, UIConstants {
          }
       }
 
-      if(_ev.isLeftButtonDown() || _ev.isRightButtonDown()) // button held down ?
+      if(_ev.isLeftButtonDown() || _ev.isRightButtonDown() || b_lmeta_drag) // button held down ?
       {
          // trace "xxx HandleMouse: l/r down, b_try_drag="+b_try_drag;
          if(b_try_drag)
@@ -2639,6 +2647,8 @@ class UI : ActionProvider, UIConstants {
    }
 
    module static OnMouse(MouseEvent _ev) {
+
+      last_mouse_ev = _ev;
 
       if(global_redraw_num_frames > 0)
          global_redraw_frames_left = global_redraw_num_frames;
@@ -3718,6 +3728,56 @@ class UI : ActionProvider, UIConstants {
       {
          if(mouse_layer.onMouseKey(_k))
             return;
+      }
+
+      if(b_mouse_drag_meta_key)
+      {
+         MouseEvent dragEv;
+
+         if(VKEY_LMETA == _k.pressed)
+         {
+            // trace "xxx press LMETA";
+            if(null == drag_layer)
+            {
+               if(mouse_layer instanceof Layer)
+               {
+                  // trace "xxx lmeta begin drag";
+                  drag_start_mouse_button = MOUSE_RBUTTON;
+                  dragEv = last_mouse_ev;
+                  dragEv.current_state = MOUSE_RBUTTON;
+                  dragEv.changed_state = 0;
+                  dragEv.calcRelForLayer(mouse_layer);
+                  if(mouse_layer.onMouseBeginDrag(dragEv/*dragStart*/, dragEv))
+                  {
+                     drag_layer <= mouse_layer;
+                     b_try_drag = false;
+                     b_lmeta_drag = true;
+                  }
+                  else
+                  {
+                     drag_layer <= null;
+                  }
+                  return;
+               }
+            }
+         }
+         else if(VKEY_LMETA == _k.released)
+         {
+            // trace "xxx release LMETA";
+            if(null != drag_layer)
+            {
+               // trace "xxx lmeta end drag";
+               dragEv = last_mouse_ev;
+               dragEv.current_state = 0;
+               dragEv.changed_state = MOUSE_RBUTTON;
+               dragEv.calcRelForLayer(drag_layer);
+               drag_layer.onMouseEndDrag(dragEv);
+               drag_layer <= null;
+               b_try_drag = false;
+               b_lmeta_drag = false;
+               return;
+            }
+         }
       }
 
       // Handle triad key wait release mode
