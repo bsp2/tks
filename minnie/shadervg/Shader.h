@@ -46,10 +46,10 @@ class ShaderVG_Shader {
 #endif // SHADERVG_OBJECT_LABELS
                 );
 
-   void bind(void);
-   void unbind(void);
+   void bind (void);
+   void unbind (void);
 
-   void destroy(void);
+   void destroy (void);
 
    sSI getUniformLocation (const char *_name);
    sSI getAttribLocation (const char *_name);

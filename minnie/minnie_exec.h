@@ -490,6 +490,7 @@ void minExecDrawListEx(YAC_Buffer *_bufDraw, sUI _glBufId, sBool _bDebug, sU32 _
                                                           );
             }
             sdvg_PolygonFillFlatUniformVBO32_End();
+#ifdef SHADERVG_POLYGON_AA_OUTLINES
             // Draw AA outlines
             //  (todo) skip when GPU has AA n-polygon rasterizer
             for(sUI subPathIdx = 0u; subPathIdx < polySubIdx; subPathIdx++)
@@ -500,6 +501,7 @@ void minExecDrawListEx(YAC_Buffer *_bufDraw, sUI _glBufId, sBool _bDebug, sU32 _
                                                              numVerts
                                                              );
             }
+#endif // SHADERVG_POLYGON_AA_OUTLINES
             numOpsPolyEndAA++;
             break;
 
@@ -532,6 +534,7 @@ void minExecDrawListEx(YAC_Buffer *_bufDraw, sUI _glBufId, sBool _bDebug, sU32 _
                                                             );
             }
             sdvg_PolygonFillFlatUniformVBO14_2_End();
+#ifdef SHADERVG_POLYGON_AA_OUTLINES
             // Draw AA outlines
             //  (todo) skip when GPU has AA n-polygon rasterizer
             for(sUI subPathIdx = 0u; subPathIdx < polySubIdx; subPathIdx++)
@@ -542,6 +545,7 @@ void minExecDrawListEx(YAC_Buffer *_bufDraw, sUI _glBufId, sBool _bDebug, sU32 _
                                                                numVerts
                                                                );
             }
+#endif // SHADERVG_POLYGON_AA_OUTLINES
             numOpsPolyEndAA++;
             break;
 

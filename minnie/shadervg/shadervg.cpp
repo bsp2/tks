@@ -745,7 +745,7 @@ void sdvg_int_find_spirv_program_by_name(const char *_name, const void **retAddr
    {
       const char *name = _name + 6;
       int nameLen = strlen(name) - 4/*.prg*/;
-      int nameLenOrig = strlen(_name);
+      // // int nameLenOrig = strlen(_name);
       if(nameLen > 0)
       {
          shadervg_shape_t *shapeType = all_shapes;
@@ -2064,13 +2064,6 @@ static ShaderVG_Shape *loc_get_default_line_strip_flat_aa_shape_32(void) {
    return shape;
 }
 
-// #if !defined(SHADERVG_USE_DEFAULT_TRIANGLE_14_2) || (defined(SHADERVG_STENCIL_POLYGONS) && !defined(SHADERVG_USE_DEFAULT_POLYGON_14_2))
-// static void loc_bind_default_line_strip_flat_aa_shape_32(void) {
-//    ShaderVG_Shape *shape = loc_get_default_line_strip_flat_aa_shape_32();
-//    sdvg_int_BindShape(shape);
-// }
-// #endif
-
 static ShaderVG_Shape *loc_get_default_line_strip_flat_aa_shape_14_2(void) {
    ShaderVG_Shape *shape;
    Dsdvg_debugprintfv("[trc] loc_get_default_line_strip_flat_aa_shape_14_2: paint.mode=%d\n", paint.mode);
@@ -2088,11 +2081,6 @@ static ShaderVG_Shape *loc_get_default_line_strip_flat_aa_shape_14_2(void) {
    }
    return shape;
 }
-
-// static void loc_bind_default_line_strip_flat_aa_shape_14_2(void) {
-//    ShaderVG_Shape *shape = loc_get_default_line_strip_flat_aa_shape_14_2();
-//    sdvg_int_BindShape(shape);
-// }
 
 static ShaderVG_Shape *loc_get_default_line_strip_flat_bevel_aa_uniform_shape_32(void) {
    ShaderVG_Shape *shape;
@@ -2300,6 +2288,7 @@ static sBool loc_UpdateShaderUniforms(void) {
    return YAC_FALSE;
 }
 
+#ifndef GL_TES_npolygons
 static void loc_drawStencilPolygonEvenOdd(sUI _numVerts) {
    // (note) for use with sdvg_BeginFilledPolygon()
    // (note) shader is selected in loc_bind_default_triangles_fill_flat_uniform_shape_*() (or use custom shader)
@@ -2327,6 +2316,20 @@ static void loc_drawStencilPolygonNonZero(sUI _numVerts) {
 
    Dsdvg_stencil_poly_end();
 }
+#endif // !GL_TES_npolygons
+
+#ifdef GL_TES_npolygons
+static void loc_drawTESDaveNXPolygon(sUI _numVerts) {
+   // (note) TES D/AVE NX GPU-specific n-polygon GL extension
+   // (note) supports arbitrary n-polygons with self-intersections and even-odd / non-zero fill rules
+
+   glPolygonFillTES(b_fillrule_nonzero ? GL_NON_ZERO_TES : GL_EVEN_ODD_TES);
+
+   glPolygonBeginTES();
+   glDrawArrays(GL_POLYGON_TES, 0, _numVerts);
+   glPolygonEndTES();
+}
+#endif // GL_TES_npolygons
 
 static void loc_DrawLineStripFlatAAVBOPaint(sUI _vboId,
                                             ShaderVG_Shape *_shape,
@@ -3069,9 +3072,8 @@ void YAC_CALL sdvg_DrawPolygonFillFlatUniformVBO32(sUI _vboId, sUI _byteOffset, 
    //   +0 f32 x
    //   +4 f32 y
    //
-   // (note) stencil buffer must initially be cleared to 0
+   // (note) SHADERVG_STENCIL_POLYGONS: stencil buffer must initially be cleared to 0
    //
-#ifdef SHADERVG_STENCIL_POLYGONS
    triangles_fill_flat_uniform_32.drawPolygonFillFlatUniformVBO32(_vboId,
                                                                   _byteOffset,
                                                                   _numVerts,
@@ -3079,16 +3081,6 @@ void YAC_CALL sdvg_DrawPolygonFillFlatUniformVBO32(sUI _vboId, sUI _byteOffset, 
                                                                   fill_r, fill_g, fill_b, fill_a * global_a,
                                                                   b_fillrule_nonzero/*bNonZero*/
                                                                   );
-#else
-#error polygon rasterizer n/a
-   polygon_fill_flat_uniform_32.drawPolygonFillFlatUniformVBO32(_vboId,
-                                                                _byteOffset,
-                                                                _numVerts,
-                                                                mvp_matrix,
-                                                                fill_r, fill_g, fill_b, fill_a * global_a,
-                                                                b_fillrule_nonzero/*bNonZero*/
-                                                                );
-#endif // SHADERVG_STENCIL_POLYGONS
 }
 
 void YAC_CALL sdvg_DrawPolygonFillFlatUniformVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numVerts) {
@@ -3097,9 +3089,8 @@ void YAC_CALL sdvg_DrawPolygonFillFlatUniformVBO14_2(sUI _vboId, sUI _byteOffset
    //   +0 s14.2 x
    //   +2 s14.2 y
    //
-   // (note) stencil buffer must initially be cleared to 0
+   // (note) SHADERVG_STENCIL_POLYGONS: stencil buffer must initially be cleared to 0
    //
-#ifdef SHADERVG_STENCIL_POLYGONS
    triangles_fill_flat_uniform_14_2.drawPolygonFillFlatUniformVBO14_2(_vboId,
                                                                       _byteOffset,
                                                                       _numVerts,
@@ -3107,16 +3098,6 @@ void YAC_CALL sdvg_DrawPolygonFillFlatUniformVBO14_2(sUI _vboId, sUI _byteOffset
                                                                       fill_r, fill_g, fill_b, fill_a * global_a,
                                                                       b_fillrule_nonzero/*bNonZero*/
                                                                       );
-#else
-#error polygon rasterizer n/a
-   polygon_fill_flat_uniform_14_2.drawPolygonFillFlatUniformVBO14_2(_vboId,
-                                                                    _byteOffset,
-                                                                    _numVerts,
-                                                                    mvp_matrix,
-                                                                    fill_r, fill_g, fill_b, fill_a * global_a,
-                                                                    b_fillrule_nonzero/*bNonZero*/
-                                                                    );
-#endif // SHADERVG_STENCIL_POLYGONS
 }
 
 void YAC_CALL sdvg_DrawPolygonFillFlatUniformAAVBO32(sUI _vboId, sUI _byteOffset, sUI _numVerts) {
@@ -3125,20 +3106,28 @@ void YAC_CALL sdvg_DrawPolygonFillFlatUniformAAVBO32(sUI _vboId, sUI _byteOffset
    //   +0 f32 x
    //   +4 f32 y
    //
-   // (note) AA outlines won't work with complex polygons and non-solid paints
-   // (note) stencil buffer must initially be cleared to 0
+   // (note) AA outlines won't work with non-solid paints
+   // (note) SHADERVG_STENCIL_POLYGONS: stencil buffer must initially be cleared to 0
    //
-#ifdef SHADERVG_STENCIL_POLYGONS
    if(_numVerts >= (3u + 2u))
    {
       // Draw interior
       sdvg_BindVBO(_vboId);
       loc_bind_default_triangles_fill_flat_uniform_shape_32();
       sdvg_VertexOffset2f();
+
+#if defined(GL_TES_npolygons)
+      loc_drawTESDaveNXPolygon(_numVerts - 1u);
+#elif defined(SHADERVG_STENCIL_POLYGONS)
       if(b_fillrule_nonzero)
          loc_drawStencilPolygonNonZero(_numVerts - 1u);
       else
          loc_drawStencilPolygonEvenOdd(_numVerts - 1u);
+#else
+#error SHADERVG_STENCIL_POLYGONS is not enabled and GL_TES_npolygons is not available
+#endif // GL_TES_npolygons
+
+#ifdef SHADERVG_POLYGON_AA_OUTLINES
       // Draw AA outline
       const sF32 oldStrokeW = stroke_w;
       const sF32 oldStrokeWScale = stroke_w_scale;
@@ -3157,16 +3146,9 @@ void YAC_CALL sdvg_DrawPolygonFillFlatUniformAAVBO32(sUI _vboId, sUI _byteOffset
                                       );
       stroke_w = oldStrokeW;
       stroke_w_scale = oldStrokeWScale;
+#endif // SHADERVG_POLYGON_AA_OUTLINES
+
       loc_RebindCurrentShape();
-#else
-#error polygon rasterizer n/a
-      polygon_fill_flat_uniform_32.drawPolygonFillFlatUniformVBO32(_vboId,
-                                                                   _byteOffset,
-                                                                   _numVerts - 1u,
-                                                                   mvp_matrix,
-                                                                   fill_r, fill_g, fill_b, fill_a * global_a
-                                                                   );
-#endif // SHADERVG_STENCIL_POLYGONS
    }
 }
 
@@ -3176,10 +3158,9 @@ void YAC_CALL sdvg_DrawPolygonFillFlatUniformAAVBO14_2(sUI _vboId, sUI _byteOffs
    //   +0 s14.2 x
    //   +4 s14.2 y
    //
-   // (note) AA outlines won't work with complex polygons and non-solid paints
-   // (note) stencil buffer must initially be cleared to 0
+   // (note) AA outlines won't work with non-solid paints
+   // (note) SHADERVG_STENCIL_POLYGONS: stencil buffer must initially be cleared to 0
    //
-#ifdef SHADERVG_STENCIL_POLYGONS
    Dsdvg_debugprintfv("[trc] sdvg_DrawPolygonFillFlatUniformAAVBO14_2: stroke_w_scale=%f Dsdvg_pixel_scl=%f\n", stroke_w_scale, Dsdvg_pixel_scl(1.0f));
    // Draw interior
    if(_numVerts >= (3u + 2u))
@@ -3192,20 +3173,29 @@ void YAC_CALL sdvg_DrawPolygonFillFlatUniformAAVBO14_2(sUI _vboId, sUI _byteOffs
       {
          Dsdvg_attrib_offset(a, 2/*size*/, GL_SHORT, GL_FALSE/*normalize*/, 4, _byteOffset);
          Dsdvg_attrib_enable(a);
-         // Dprintf("xxx call loc_drawStencilPolygon*(numVerts=%u)\n", (_numVerts - 1u));
+
+#if defined(GL_TES_npolygons)
+         loc_drawTESDaveNXPolygon(_numVerts - 1u);
+#elif defined(SHADERVG_STENCIL_POLYGONS)
+         // // Dprintf("xxx call loc_drawStencilPolygon*(numVerts=%u)\n", (_numVerts - 1u));
          if(b_fillrule_nonzero)
             loc_drawStencilPolygonNonZero(_numVerts - 1u);
          else
             loc_drawStencilPolygonEvenOdd(_numVerts - 1u);
+#else
+#error SHADERVG_STENCIL_POLYGONS is not enabled and GL_TES_npolygons is not available
+#endif // GL_TES_npolygons
+
          Dsdvg_attrib_disable(a);
       }
       current_shape = oldShape;
 
+#ifdef SHADERVG_POLYGON_AA_OUTLINES
       // Draw AA outline
       const sF32 oldStrokeW = stroke_w;
       const sF32 oldStrokeWScale = stroke_w_scale;
       stroke_w_scale = 1.0f;
-      // ShaderVG_Shape *shape = loc_get_default_line_strip_flat_aa_shape_14_2();
+      // // ShaderVG_Shape *shape = loc_get_default_line_strip_flat_aa_shape_14_2();
       ShaderVG_Shape *shape = loc_get_default_line_strip_flat_bevel_aa_uniform_shape_14_2();
       stroke_w = SHADERVG_POLYGON_AA_STROKE_W;
       loc_DrawLineStripFlatAAVBOPaint(0u/*vboId*/,
@@ -3220,22 +3210,13 @@ void YAC_CALL sdvg_DrawPolygonFillFlatUniformAAVBO14_2(sUI _vboId, sUI _byteOffs
                                       );
       stroke_w = oldStrokeW;
       stroke_w_scale = oldStrokeWScale;
+#endif // SHADERVG_POLYGON_AA_OUTLINES
 
       loc_RebindCurrentShape();
-#else
-#error polygon rasterizer n/a
-      polygon_fill_flat_uniform_14_2.drawPolygonFillFlatUniformVBO14_2(_vboId,
-                                                                       _byteOffset,
-                                                                       _numVerts - 1u,
-                                                                       mvp_matrix,
-                                                                       fill_r, fill_g, fill_b, fill_a * global_a
-                                                                       );
-#endif // SHADERVG_STENCIL_POLYGONS
    } // if numVerts >= 3
 }
 
 void YAC_CALL sdvg_PolygonFillFlatUniformVBO32_BeginPass1(sUI _vboId) {
-#ifdef SHADERVG_STENCIL_POLYGONS
    // Bind VBO, bind shader, update uniforms, enable vertex attribute, setup pass1 stencil test
    sdvg_BindVBO(_vboId);
    ShaderVG_Shape *oldShape = current_shape;
@@ -3245,6 +3226,10 @@ void YAC_CALL sdvg_PolygonFillFlatUniformVBO32_BeginPass1(sUI _vboId) {
    {
       Dsdvg_attrib_enable(a);
 
+#if defined(GL_TES_npolygons)
+      glPolygonFillTES(b_fillrule_nonzero ? GL_NON_ZERO_TES : GL_EVEN_ODD_TES);
+      glPolygonBeginTES();
+#elif defined(SHADERVG_STENCIL_POLYGONS)
       if(b_fillrule_nonzero)
       {
          Dsdvg_stencil_poly_non_zero_pass1();
@@ -3253,15 +3238,14 @@ void YAC_CALL sdvg_PolygonFillFlatUniformVBO32_BeginPass1(sUI _vboId) {
       {
          Dsdvg_stencil_poly_even_odd_pass1();
       }
+#else
+#error SHADERVG_STENCIL_POLYGONS is not enabled and GL_TES_npolygons is not available
+#endif // GL_TES_npolygons
    }
    current_shape = oldShape;
-#else
-#error polygon rasterizer n/a
-#endif // SHADERVG_STENCIL_POLYGONS
 }
 
 void YAC_CALL sdvg_PolygonFillFlatUniformVBO14_2_BeginPass1(sUI _vboId) {
-#ifdef SHADERVG_STENCIL_POLYGONS
    // Bind VBO, bind shader, update uniforms, enable vertex attribute, setup pass1 stencil test
    sdvg_BindVBO(_vboId);
    ShaderVG_Shape *oldShape = current_shape;
@@ -3271,6 +3255,10 @@ void YAC_CALL sdvg_PolygonFillFlatUniformVBO14_2_BeginPass1(sUI _vboId) {
    {
       Dsdvg_attrib_enable(a);
 
+#if defined(GL_TES_npolygons)
+      glPolygonFillTES(b_fillrule_nonzero ? GL_NON_ZERO_TES : GL_EVEN_ODD_TES);
+      glPolygonBeginTES();
+#elif defined(SHADERVG_STENCIL_POLYGONS)
       if(b_fillrule_nonzero)
       {
          Dsdvg_stencil_poly_non_zero_pass1();
@@ -3279,11 +3267,11 @@ void YAC_CALL sdvg_PolygonFillFlatUniformVBO14_2_BeginPass1(sUI _vboId) {
       {
          Dsdvg_stencil_poly_even_odd_pass1();
       }
+#else
+#error SHADERVG_STENCIL_POLYGONS is not enabled and GL_TES_npolygons is not available
+#endif // GL_TES_npolygons
    }
    current_shape = oldShape;
-#else
-#error polygon rasterizer n/a
-#endif // SHADERVG_STENCIL_POLYGONS
 }
 
 void YAC_CALL sdvg_PolygonFillFlatUniformVBO32_DrawPass1(sUI _byteOffset, sUI _numVerts) {
@@ -3292,18 +3280,20 @@ void YAC_CALL sdvg_PolygonFillFlatUniformVBO32_DrawPass1(sUI _byteOffset, sUI _n
    //   +0 f32 x
    //   +4 f32 y
    //
-   // (note) stencil buffer must initially be cleared to 0
+   // (note) SHADERVG_STENCIL_POLYGONS: stencil buffer must initially be cleared to 0
    //
-#ifdef SHADERVG_STENCIL_POLYGONS
    if(_numVerts >= (3u + 0u))
    {
       ShaderVG_Shape *shape = loc_get_default_triangles_fill_flat_uniform_shape_32();
       Dsdvg_attrib_offset(shape->shape_a_vertex, 2/*size*/, GL_SHORT, GL_FALSE/*normalize*/, 4, _byteOffset);
+#if defined(GL_TES_npolygons)
+      glDrawArrays(GL_POLYGON_TES, 0, _numVerts);
+#elif defined(SHADERVG_STENCIL_POLYGONS)
       Dsdvg_draw_triangle_fan_vbo(0, _numVerts);
-   }
 #else
-#error polygon rasterizer n/a
-#endif // SHADERVG_STENCIL_POLYGONS
+#error SHADERVG_STENCIL_POLYGONS is not enabled and GL_TES_npolygons is not available
+#endif // GL_TES_npolygons
+   }
 }
 
 void YAC_CALL sdvg_PolygonFillFlatUniformVBO14_2_DrawPass1(sUI _byteOffset, sUI _numVerts) {
@@ -3312,22 +3302,26 @@ void YAC_CALL sdvg_PolygonFillFlatUniformVBO14_2_DrawPass1(sUI _byteOffset, sUI 
    //   +0 s14.2 x
    //   +2 s14.2 y
    //
-   // (note) stencil buffer must initially be cleared to 0
+   // (note) SHADERVG_STENCIL_POLYGONS: stencil buffer must initially be cleared to 0
    //
-#ifdef SHADERVG_STENCIL_POLYGONS
    if(_numVerts >= (3u + 0u))
    {
       ShaderVG_Shape *shape = loc_get_default_triangles_fill_flat_uniform_shape_14_2();
       Dsdvg_attrib_offset(shape->shape_a_vertex, 2/*size*/, GL_SHORT, GL_FALSE/*normalize*/, 4, _byteOffset);
+#if defined(GL_TES_npolygons)
+      glDrawArrays(GL_POLYGON_TES, 0, _numVerts);
+#elif defined(SHADERVG_STENCIL_POLYGONS)
       Dsdvg_draw_triangle_fan_vbo(0, _numVerts);
-   }
 #else
-#error polygon rasterizer n/a
-#endif // SHADERVG_STENCIL_POLYGONS
+#error SHADERVG_STENCIL_POLYGONS is not enabled and GL_TES_npolygons is not available
+#endif // GL_TES_npolygons
+   }
 }
 
 void YAC_CALL sdvg_PolygonFillFlatUniformVBO32_BeginPass2(void) {
-#ifdef SHADERVG_STENCIL_POLYGONS
+#if defined(GL_TES_npolygons)
+   // (note) nothing to do here
+#elif defined(SHADERVG_STENCIL_POLYGONS)
    // setup pass2 stencil test
    if(b_fillrule_nonzero)
    {
@@ -3338,12 +3332,14 @@ void YAC_CALL sdvg_PolygonFillFlatUniformVBO32_BeginPass2(void) {
       Dsdvg_stencil_poly_even_odd_pass2();
    }
 #else
-#error polygon rasterizer n/a
-#endif // SHADERVG_STENCIL_POLYGONS
+#error SHADERVG_STENCIL_POLYGONS is not enabled and GL_TES_npolygons is not available
+#endif // GL_TES_npolygons
 }
 
 void YAC_CALL sdvg_PolygonFillFlatUniformVBO14_2_BeginPass2(void) {
-#ifdef SHADERVG_STENCIL_POLYGONS
+#if defined(GL_TES_npolygons)
+   // (note) nothing to do here
+#elif defined(SHADERVG_STENCIL_POLYGONS)
    // setup pass2 stencil test
    if(b_fillrule_nonzero)
    {
@@ -3354,8 +3350,8 @@ void YAC_CALL sdvg_PolygonFillFlatUniformVBO14_2_BeginPass2(void) {
       Dsdvg_stencil_poly_even_odd_pass2();
    }
 #else
-#error polygon rasterizer n/a
-#endif // SHADERVG_STENCIL_POLYGONS
+#error SHADERVG_STENCIL_POLYGONS is not enabled and GL_TES_npolygons is not available
+#endif // GL_TES_npolygons
 }
 
 void YAC_CALL sdvg_PolygonFillFlatUniformVBO32_DrawPass2(sUI _byteOffset, sUI _numVerts) {
@@ -3364,7 +3360,9 @@ void YAC_CALL sdvg_PolygonFillFlatUniformVBO32_DrawPass2(sUI _byteOffset, sUI _n
    //   +0 f32 x
    //   +4 f32 y
    //
-#ifdef SHADERVG_STENCIL_POLYGONS
+#if defined(GL_TES_npolygons)
+   // (note) nothing to do here
+#elif defined(SHADERVG_STENCIL_POLYGONS)
    if(_numVerts >= 3u)
    {
       ShaderVG_Shape *shape = loc_get_default_triangles_fill_flat_uniform_shape_32();
@@ -3372,8 +3370,8 @@ void YAC_CALL sdvg_PolygonFillFlatUniformVBO32_DrawPass2(sUI _byteOffset, sUI _n
       Dsdvg_draw_triangle_fan_vbo(0, _numVerts);
    }
 #else
-#error polygon rasterizer n/a
-#endif // SHADERVG_STENCIL_POLYGONS
+#error SHADERVG_STENCIL_POLYGONS is not enabled and GL_TES_npolygons is not available
+#endif // GL_TES_npolygons
 }
 
 void YAC_CALL sdvg_PolygonFillFlatUniformVBO14_2_DrawPass2(sUI _byteOffset, sUI _numVerts) {
@@ -3382,16 +3380,16 @@ void YAC_CALL sdvg_PolygonFillFlatUniformVBO14_2_DrawPass2(sUI _byteOffset, sUI 
    //   +0 s14.2 x
    //   +2 s14.2 y
    //
-#ifdef SHADERVG_STENCIL_POLYGONS
+#if defined(GL_TES_npolygons)
+   // nothing to do here
+#elif defined(SHADERVG_STENCIL_POLYGONS)
    if(_numVerts >= 3u)
    {
       ShaderVG_Shape *shape = loc_get_default_triangles_fill_flat_uniform_shape_14_2();
       Dsdvg_attrib_offset(shape->shape_a_vertex, 2/*size*/, GL_SHORT, GL_FALSE/*normalize*/, 4, _byteOffset);
       Dsdvg_draw_triangle_fan_vbo(0, _numVerts);
    }
-#else
-#error polygon rasterizer n/a
-#endif // SHADERVG_STENCIL_POLYGONS
+#endif // GL_TES_npolygons
 }
 
 void YAC_CALL sdvg_PolygonFillFlatUniformVBO32_DrawPass3_AA(sUI _byteOffset, sUI _numVerts) {
@@ -3437,25 +3435,29 @@ void YAC_CALL sdvg_PolygonFillFlatUniformVBO14_2_DrawPass3_AA(sUI _byteOffset, s
 }
 
 void YAC_CALL sdvg_PolygonFillFlatUniformVBO32_End(void) {
-#ifdef SHADERVG_STENCIL_POLYGONS
    // Disable vertex attribute and stencil test
    ShaderVG_Shape *shape = loc_get_default_triangles_fill_flat_uniform_shape_32();
    Dsdvg_attrib_disable(shape->shape_a_vertex);
+#if defined(GL_TES_npolygons)
+      glPolygonEndTES();
+#elif defined(SHADERVG_STENCIL_POLYGONS)
    Dsdvg_stencil_poly_end();
 #else
-#error polygon rasterizer n/a
-#endif // SHADERVG_STENCIL_POLYGONS
+#error SHADERVG_STENCIL_POLYGONS is not enabled and GL_TES_npolygons is not available
+#endif // GL_TES_npolygons
 }
 
 void YAC_CALL sdvg_PolygonFillFlatUniformVBO14_2_End(void) {
-#ifdef SHADERVG_STENCIL_POLYGONS
    // Disable vertex attribute and stencil test
    ShaderVG_Shape *shape = loc_get_default_triangles_fill_flat_uniform_shape_14_2();
    Dsdvg_attrib_disable(shape->shape_a_vertex);
+#if defined(GL_TES_npolygons)
+   glPolygonEndTES();
+#elif defined(SHADERVG_STENCIL_POLYGONS)
    Dsdvg_stencil_poly_end();
 #else
-#error polygon rasterizer n/a
-#endif // SHADERVG_STENCIL_POLYGONS
+#error SHADERVG_STENCIL_POLYGONS is not enabled and GL_TES_npolygons is not available
+#endif // GL_TES_npolygons
 }
 
 void YAC_CALL sdvg_SetupRectFillAAVBO32(YAC_Buffer *_vb, YAC_Buffer *_dl,
@@ -9483,8 +9485,6 @@ static sBool loc_BeginFilledPolygon(sUI _numVertices, sBool _bAA) {
 #else
       loc_bind_default_triangles_fill_flat_uniform_shape_32();
 #endif // SHADERVG_USE_DEFAULT_POLYGON_14_2
-#else
-#error polygon rasterizer n/a
 #endif // SHADERVG_STENCIL_POLYGONS
    }
 
@@ -10332,28 +10332,36 @@ void YAC_CALL sdvg_End(void) {
                case DRAW_MODE_POLYGON_14_2:
                   if(loc_UpdateShaderUniforms())
                   {
-#ifdef SHADERVG_STENCIL_POLYGONS
+#if defined(GL_TES_npolygons)
+                     loc_drawTESDaveNXPolygon(current_draw_vertex_index/*numVerts*/);
+#elif defined(SHADERVG_STENCIL_POLYGONS)
                      if(b_fillrule_nonzero)
                         loc_drawStencilPolygonNonZero(current_draw_vertex_index/*numVerts*/);
                      else
                         loc_drawStencilPolygonEvenOdd(current_draw_vertex_index/*numVerts*/);
 #else
-#error polygon rasterizer n/a
-#endif // SHADERVG_STENCIL_POLYGONS
+#error SHADERVG_STENCIL_POLYGONS is not enabled and GL_TES_npolygons is not available
+#endif // GL_TES_npolygons
                   }
                   break;
 
                case DRAW_MODE_POLYGON_AA:
                   if(loc_UpdateShaderUniforms())
                   {
-#ifdef SHADERVG_STENCIL_POLYGONS
                      if(current_draw_vertex_index >= 4u)
                      {
                         // Draw interior
+#if defined(GL_TES_npolygons)
+                        loc_drawTESDaveNXPolygon(current_draw_vertex_index - 1u/*numVerts*/);
+#elif defined(SHADERVG_STENCIL_POLYGONS)
                         if(b_fillrule_nonzero)
                            loc_drawStencilPolygonNonZero(current_draw_vertex_index - 1u/*numVerts*/);
                         else
                            loc_drawStencilPolygonEvenOdd(current_draw_vertex_index - 1u/*numVerts*/);
+#else
+#error SHADERVG_STENCIL_POLYGONS is not enabled and GL_TES_npolygons is not available
+#endif // GL_TES_npolygons
+#ifdef SHADERVG_POLYGON_AA_OUTLINES
                         // Draw AA outline
                         const sF32 oldStrokeW = stroke_w;
                         const sF32 oldStrokeWScale = stroke_w_scale;
@@ -10380,25 +10388,29 @@ void YAC_CALL sdvg_End(void) {
                                                         );
                         stroke_w = oldStrokeW;
                         stroke_w_scale = oldStrokeWScale;
+#endif // SHADERVG_POLYGON_AA_OUTLINES
                         loc_RebindCurrentShape();
                      }
-#else
-#error polygon rasterizer n/a
-#endif // SHADERVG_STENCIL_POLYGONS
                   }
                   break;
 
                case DRAW_MODE_POLYGON_AA_32:
                   if(loc_UpdateShaderUniforms())
                   {
-#ifdef SHADERVG_STENCIL_POLYGONS
                      if(current_draw_vertex_index >= 4u)
                      {
                         // Draw interior
+#if defined(GL_TES_npolygons)
+                        loc_drawTESDaveNXPolygon(current_draw_vertex_index - 1u/*numVerts*/);
+#elif defined(SHADERVG_STENCIL_POLYGONS)
                         if(b_fillrule_nonzero)
                            loc_drawStencilPolygonNonZero(current_draw_vertex_index - 1u/*numVerts*/);
                         else
                            loc_drawStencilPolygonEvenOdd(current_draw_vertex_index - 1u/*numVerts*/);
+#else
+#error SHADERVG_STENCIL_POLYGONS is not enabled and GL_TES_npolygons is not available
+#endif // GL_TES_npolygons
+#ifdef SHADERVG_POLYGON_AA_OUTLINES
                         // Draw AA outline
                         const sF32 oldStrokeW = stroke_w;
                         const sF32 oldStrokeWScale = stroke_w_scale;
@@ -10417,25 +10429,29 @@ void YAC_CALL sdvg_End(void) {
                                                         );
                         stroke_w = oldStrokeW;
                         stroke_w_scale = oldStrokeWScale;
+#endif // SHADERVG_POLYGON_AA_OUTLINES
                         loc_RebindCurrentShape();
                      }
-#else
-#error polygon rasterizer n/a
-#endif // SHADERVG_STENCIL_POLYGONS
                   }
                   break;
 
                case DRAW_MODE_POLYGON_AA_14_2:
                   if(loc_UpdateShaderUniforms())
                   {
-#ifdef SHADERVG_STENCIL_POLYGONS
                      if(current_draw_vertex_index >= 4u)
                      {
                         // Draw interior
+#if defined(GL_TES_npolygons)
+                        loc_drawTESDaveNXPolygon(current_draw_vertex_index - 1u/*numVerts*/);
+#elif defined(SHADERVG_STENCIL_POLYGONS)
                         if(b_fillrule_nonzero)
                            loc_drawStencilPolygonNonZero(current_draw_vertex_index - 1u/*numVerts*/);
                         else
                            loc_drawStencilPolygonEvenOdd(current_draw_vertex_index - 1u/*numVerts*/);
+#else
+#error SHADERVG_STENCIL_POLYGONS is not enabled and GL_TES_npolygons is not available
+#endif // GL_TES_npolygons
+#ifdef SHADERVG_POLYGON_AA_OUTLINES
                         // Draw AA outline
                         const sF32 oldStrokeW = stroke_w;
                         const sF32 oldStrokeWScale = stroke_w_scale;
@@ -10454,11 +10470,9 @@ void YAC_CALL sdvg_End(void) {
                                                         );
                         stroke_w = oldStrokeW;
                         stroke_w_scale = oldStrokeWScale;
+#endif // SHADERVG_POLYGON_AA_OUTLINES
                         loc_RebindCurrentShape();
                      }
-#else
-#error polygon rasterizer n/a
-#endif // SHADERVG_STENCIL_POLYGONS
                   }
                   break;
 

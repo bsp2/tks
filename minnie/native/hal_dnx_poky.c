@@ -241,6 +241,10 @@ sBool hal_window_init(sUI _w, sUI _h) {
 
    eglMakeCurrent(display, surface/*draw*/, surface/*read*/, context);
 
+#ifdef GL_TES_spirv_program_loader
+   glSPIRVProgramLoaderCallbackTES(&loc_spirv_program_loader);
+#endif // GL_TES_spirv_program_loader
+
    printf("GLES version=\"%s\".\n",    (const char*)glGetString(GL_VERSION));
    printf("GLES extensions=\"%s\".\n", (const char*)glGetString(GL_EXTENSIONS));
 

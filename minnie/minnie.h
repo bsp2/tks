@@ -11142,6 +11142,10 @@ namespace setup {
 
             case 0x0Eu:  // h <join> <cap>
                cur_join_cap = ifs.getU8();
+#ifdef MINNIE_FORCE_MITER_TO_BEVEL_LINE_JOIN
+               if((cur_join_cap & 15u) == MINNIE_LINEJOIN_MITER)
+                  cur_join_cap = (cur_join_cap & 0xF0u) | MINNIE_LINEJOIN_BEVEL;
+#endif // MINNIE_FORCE_MITER_TO_BEVEL_LINE_JOIN
                /* Dprintf("xxx h joincap=0x%02x\n", cur_join_cap); */
                if(!b_render_join_cap)
                   cur_join_cap = 0u;

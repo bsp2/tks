@@ -38,11 +38,18 @@
 #include <stdarg.h>
 #include <math.h>
 
+#if 1
 #define DISPLAY_WIDTH   640
 #define DISPLAY_HEIGHT  480
-
+#define VP_W  DISPLAY_WIDTH
+#define VP_H  DISPLAY_HEIGHT
+#else
+#define DISPLAY_WIDTH   320
+#define DISPLAY_HEIGHT  240
 #define VP_W  640
 #define VP_H  480
+#endif
+
 
 #include "../inc_minnie.h"
 #include "hal.h"
@@ -2047,7 +2054,7 @@ void SetupPaintRadialCenter(void) {
    sF32 px = sinf(ang_w*2.0f)*(VP_W*0.01f);
    sF32 py = sinf(ang_h*2.0f)*(VP_H*0.01f);
 
-   sdvg_PaintRadial(px, py, VP_W*0.45, VP_H*0.45);
+   sdvg_PaintRadial(px, py, VP_W*0.45f, VP_H*0.45f);
    sdvg_BindTexture2D(tex_gradient_id, YAC_TRUE/*bRepeat*/, YAC_TRUE/*bFilter*/);
 }
 
