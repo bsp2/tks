@@ -782,6 +782,28 @@ typedef struct Matrix4f_s {
       _v->w = t[3];
    }
 
+   void project2f(const sF32 _x, const sF32 _y,
+                  const sUI _vpX, const sUI _vpY, const sUI _vpW, const sUI _vpH,
+                  sF32 &_retX, sF32 &_retY
+                  ) const {
+      // to NDC
+      sF32 t[2];
+      for(sUI y = 0u; y < 2u; y++)
+      {
+         t[y] =
+            TM4F(y,0) * _x +
+            TM4F(y,1) * _y +
+            /* TM4F(y,2) * 0.0f + */
+            TM4F(y,3) * 1.0f ;
+      }
+      /* Dprintf("xxx project2f: p=(%f;%f) => t=(%f;%f)  (vp=(%u,%u,%u,%u))\n", _x, _y, t[0], t[1], _vpX, _vpY, _vpW, _vpH); */
+      // to WDC
+      const sF32 vpWh = _vpW * 0.5f;
+      const sF32 vpHh = _vpH * 0.5f;
+      _retX = t[0] * vpWh + vpWh + _vpX;
+      _retY = t[1] * vpHh + vpHh + _vpY;
+   }
+
    static void MulrA(const sF32 *_floats, const sF32 *_oFloats, sF32 *_rFloats) {
       // Multiply by matrix o (this * o) and store in r
       for(sUI y = 0u; y < 4u; y++)
@@ -842,6 +864,39 @@ typedef struct Matrix4f_s {
    void rotatef(sF32 _x, sF32 _y, sF32 _z) {
       RotatefA(floats, _x, _y, _z);
    }
+
+   // by eelstork (MIT license) <https://github.com/eelstork/Matrix-Inversion/blob/master/4x4-matrix-inversion.c>
+   static float invf(int i, int j, const float* m) {
+      int o = 2+(j-i);
+      i += 4+o;
+      j += 4-o;
+#define De(a,b) m[ ((j+b)%4)*4 + ((i+a)%4) ]
+      float inv =
+         + De( 1,-1) * De( 0, 0) * De(-1, 1)
+         + De( 1, 1) * De( 0,-1) * De(-1, 0)
+         + De(-1,-1) * De( 1, 0) * De( 0, 1)
+         - De(-1,-1) * De( 0, 0) * De( 1, 1)
+         - De(-1, 1) * De( 0,-1) * De( 1, 0)
+         - De( 1,-1) * De(-1, 0) * De( 0, 1);
+      return (o%2)?inv : -inv;
+#undef De
+   }
+
+   static bool inverseMatrix4x4(const float *m, float *out) {
+      float inv[16];
+      for(int i=0;i<4;i++) for(int j=0;j<4;j++) inv[j*4+i] = invf(i,j,m);
+      double D = 0;
+      for(int k=0;k<4;k++) D += m[k] * inv[k*4];
+      if (D == 0) return false;
+      D = 1.0 / D;
+      for (int i = 0; i < 16; i++)
+         out[i] = (float)(inv[i] * D);
+      return true;
+   }
+
+   void invert(Matrix4f *o) const {
+      inverseMatrix4x4(floats, o->floats);
+   }
 #endif // __cplusplus
 
 #if defined(__cplusplus)
@@ -853,6 +908,7 @@ extern void minnie_matrix4f_mulr (const Matrix4f *_this, const Matrix4f *_o, Mat
 extern void minnie_matrix4f_scalef (Matrix4f *_this, sF32 _x, sF32 _y, sF32 _z);
 extern void minnie_matrix4f_translatef (Matrix4f *_this, sF32 _x, sF32 _y, sF32 _z);
 extern void minnie_matrix4f_rotatef (Matrix4f *_this, sF32 _x, sF32 _y, sF32 _z);
+extern void minnie_matrix4f_invert (Matrix4f *_this, Matrix4f *_dest);
 }
 #else
 } Matrix4f;
@@ -862,7 +918,19 @@ extern void minnie_matrix4f_mulr (const Matrix4f *_this, const Matrix4f *_o, Mat
 extern void minnie_matrix4f_scalef (Matrix4f *_this, sF32 _x, sF32 _y, sF32 _z);
 extern void minnie_matrix4f_translatef (Matrix4f *_this, sF32 _x, sF32 _y, sF32 _z);
 extern void minnie_matrix4f_rotatef (Matrix4f *_this, sF32 _x, sF32 _y, sF32 _z);
+extern void minnie_matrix4f_invert (Matrix4f *_this, Matrix4f *_dest);
 #endif
+
+typedef void *minnie_allocator_handle_t;
+
+#ifdef __cplusplus
+extern "C" {
+#endif // __cplusplus
+extern void *minnie_alloc (minnie_allocator_handle_t _allocator, sU32 _sz);
+extern void minnie_free (minnie_allocator_handle_t _allocator, void *_ptr);
+#ifdef __cplusplus
+}
+#endif // __cplusplus
 
 
 #ifdef MINNIE_IMPLEMENTATION  // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1005,8 +1073,6 @@ typedef union memptr_u {
    sF32 *f32;
 } memptr_t;
 
-typedef void *minnie_allocator_handle_t;
-
 #if MINNIE_ALLOC_DEBUG
 static sSI g_minnie_alloc_num;
 static sSI g_minnie_alloc_cur;
@@ -1031,6 +1097,9 @@ static sUI debug_num_stroke_closed_paths;
 static sUI debug_num_stroke_closed_path_points;
 
 #ifndef MINNIE_CUSTOM_ALLOC
+#ifdef __cplusplus
+extern "C" {
+#endif // __cplusplus
 void *minnie_alloc(minnie_allocator_handle_t _allocator, sU32 _sz) {
    void *ret = NULL;
    (void)_allocator;
@@ -1079,6 +1148,9 @@ void minnie_free(minnie_allocator_handle_t _allocator, void *_ptr) {
 #endif // MINNIE_ALLOC_DEBUG
    fflush(stdout);
 }
+#ifdef __cplusplus
+}
+#endif // __cplusplus
 
 #if 0
 void *minnie_realloc(minnie_allocator_handle_t _allocator, void *_ptr, sU32 _sz) {
@@ -6849,6 +6921,7 @@ namespace setup {
       return beginDrawListOp(op);
    }
 
+#if MINNIE_EXPORT_TRIS_EDGEAA
    static sBool beginDrawListOpTriEdgeAA(void) {
       sUI op;
       lazyUnbindLinePattern();
@@ -6867,6 +6940,7 @@ namespace setup {
 
       return beginDrawListOp(op);
    }
+#endif // MINNIE_EXPORT_TRIS_EDGEAA
 
    static sBool beginDrawListOpTriTex(sUI _op) {
       // (todo) continue
