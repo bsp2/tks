@@ -31,6 +31,7 @@ class TrianglesFillFlatUniform32Radial : public ShaderVG_Shape {
    const char *vs_src =
       "uniform mat4 u_transform; \n"
       "uniform vec2 u_paint_start; \n"
+      "uniform vec2 u_paint_ob_size; \n"
       " \n"
       "ATTRIBUTE vec2 a_vertex; \n"
       " \n"
@@ -38,7 +39,7 @@ class TrianglesFillFlatUniform32Radial : public ShaderVG_Shape {
       " \n"
       "void main(void) { \n"
       "  gl_Position = u_transform * vec4(a_vertex,0,1); \n"
-      "  v_paint_pos = (a_vertex - u_paint_start); \n"
+      "  v_paint_pos = (a_vertex - u_paint_start) * u_paint_ob_size; \n"
       "} \n"
       ;
 
@@ -46,12 +47,11 @@ class TrianglesFillFlatUniform32Radial : public ShaderVG_Shape {
    const char *fs_src =
       "uniform vec4 u_color_fill; \n"
       "uniform sampler2D u_paint_tex; \n"
-      "uniform float u_paint_ob_len; \n"
       " \n"
       "VARYING_IN vec2 v_paint_pos; \n"
       " \n"
       "void main(void) { \n"
-      "  float d = length(v_paint_pos) * u_paint_ob_len; \n"
+      "  float d = length(v_paint_pos); \n"
       "  vec4 c = TEXTURE2D(u_paint_tex, vec2(d, 0.0)); \n"
       "  FRAGCOLOR = c * u_color_fill; \n"
       "} \n"
@@ -64,7 +64,7 @@ class TrianglesFillFlatUniform32Radial : public ShaderVG_Shape {
          && (-1 != shape_u_color_fill)
          && (-1 != shape_u_paint_tex)
          && (-1 != shape_u_paint_start)
-         && (-1 != shape_u_paint_ob_len)
+         && (-1 != shape_u_paint_ob_size)
          ;
    }
 

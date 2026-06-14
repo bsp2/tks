@@ -748,3 +748,9 @@ See [here](../tkminnie/README.md) for `TKS` language bindings and script version
 - test_236_begin_line_strip_miter_aa_conic_closed
   
   ![screenhots](../tkminnie/tests/screenshots/test_236_begin_line_strip_miter_aa_conic_closed.png)
+
+# Acknowledgments
+
+The matrix 4x4 inversion code was written by [eelstork on GitHub](https://github.com/eelstork/Matrix-Inversion/blob/master/4x4-matrix-inversion.c) (MIT license).
+
+The polygon tesselation code was originally written by SGI (see `VG_tesselator/` files) (SGI Free Software License B).

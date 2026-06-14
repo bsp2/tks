@@ -32,7 +32,6 @@ class TrianglesFillFlatUniform14_2Pattern : public ShaderVG_Shape {
       "uniform mat4 u_transform; \n"
       "uniform vec2 u_paint_start; \n"
       "uniform vec2 u_paint_ob_size; \n"
-      "uniform float u_paint_ob_len; \n"
       " \n"
       "ATTRIBUTE vec2 a_vertex; \n"
       " \n"
@@ -41,7 +40,7 @@ class TrianglesFillFlatUniform14_2Pattern : public ShaderVG_Shape {
       "void main(void) { \n"
       "  vec2 v = a_vertex * 0.25; \n"
       "  gl_Position = u_transform * vec4(v,0,1); \n"
-      "  v_paint_uv  = (v - u_paint_start) * u_paint_ob_size * u_paint_ob_len; \n"
+      "  v_paint_uv  = (v - u_paint_start) * u_paint_ob_size; \n"
       "} \n"
       ;
 
@@ -69,7 +68,6 @@ class TrianglesFillFlatUniform14_2Pattern : public ShaderVG_Shape {
          && (-1 != shape_u_color_fill)
          && (-1 != shape_u_paint_start)
          && (-1 != shape_u_paint_ob_size)
-         && (-1 != shape_u_paint_ob_len)
          && (-1 != shape_u_paint_ndir)
          && (-1 != shape_u_paint_tex)
          ;

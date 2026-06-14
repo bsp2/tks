@@ -306,7 +306,10 @@ void _MinnieDrawable::draw(void) {
 #ifndef MINNIE_SKIP_DRAWABLE_C_API
 
 MinnieDrawable *minDrawableNew(void) {
-   return (MinnieDrawable*)new(std::nothrow)_MinnieDrawable();
+   // // return (MinnieDrawable*)new(std::nothrow)_MinnieDrawable();
+   _MinnieDrawable *r = (_MinnieDrawable *)minnie_alloc(NULL/*allocator*/, sizeof(MinnieDrawable));
+   new(r)_MinnieDrawable();
+   return (MinnieDrawable*)r;
 }
 
 void minDrawableInit(MinnieDrawable *_drawable) {
@@ -316,7 +319,10 @@ void minDrawableInit(MinnieDrawable *_drawable) {
 void minDrawableDelete(MinnieDrawable *_drawable) {
    if(NULL != _drawable)
    {
-      delete _drawable;
+      // // delete _drawable;
+      _MinnieDrawable *drawable = (_MinnieDrawable*)_drawable;
+      drawable->~_MinnieDrawable();
+      minnie_free(NULL/*allocator*/, (void*)_drawable);
    }
 }
 

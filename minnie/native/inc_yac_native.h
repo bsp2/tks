@@ -45,6 +45,20 @@
 
 #include <yac.h>
 
+#ifdef MINNIE_LIB
+#if defined(__cplusplus)
+extern "C" {
+typedef void *minnie_allocator_handle_t;
+extern void *minnie_alloc (minnie_allocator_handle_t _allocator, sU32 _sz);
+extern void minnie_free (minnie_allocator_handle_t _allocator, void *_ptr);
+}
+#else
+typedef void *minnie_allocator_handle_t;
+extern void *minnie_alloc (minnie_allocator_handle_t _allocator, sU32 _sz);
+extern void minnie_free (minnie_allocator_handle_t _allocator, void *_ptr);
+#endif // __cplusplus
+#endif // MINNIE_LIB
+
 #if defined(__cplusplus)
 struct YAC_String {
 #else
@@ -417,7 +431,11 @@ typedef struct YAC_Buffer_s {
       {
          if(deleteme)
          {
+#ifdef MINNIE_LIB
+            minnie_free(NULL/*allocator*/, (void*)buffer);
+#else
             delete [] buffer;
+#endif // MINNIE_LIB
             deleteme = YAC_FALSE;
          }
          buffer = NULL;
@@ -441,7 +459,11 @@ typedef struct YAC_Buffer_s {
       if(!deleteme || size != _size)
       {
          free();
+#ifdef MINNIE_LIB
+         buffer = (sU8*)minnie_alloc(NULL/*allocator*/, _size);
+#else
          buffer = new(std::nothrow)sU8[_size];
+#endif // MINNIE_LIB
          if(NULL != buffer)
          {
             deleteme = YAC_TRUE;

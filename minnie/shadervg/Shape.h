@@ -66,56 +66,58 @@ class ShaderVG_Shape {
    sSI shape_a_uv;         // optional
 
    sSI shape_u_transform;
-   sSI shape_u_last_instance;    // optional
-   sSI shape_u_aa;               // optional
-   sSI shape_u_aa_range;         // optional for non-AA shader
+   sSI shape_u_last_instance;        // optional
+   sSI shape_u_aa;                   // optional
+   sSI shape_u_aa_range;             // optional for non-AA shader
 #ifdef SHADERVG_AA_EXP
-   sSI shape_u_aa_exp;           // optional
+   sSI shape_u_aa_exp;               // optional
 #endif // SHADERVG_AA_EXP
-   sSI shape_u_center;           // optional for non-AA shader
-   sSI shape_u_size;             // optional
-   sSI shape_u_size_i;           // optional
-   sSI shape_u_size_o;           // optional
-   sSI shape_u_radius;           // optional
-   sSI shape_u_radius_i;         // optional
-   sSI shape_u_radius_o;         // optional
-   sSI shape_u_ob_radius_i;      // optional
-   sSI shape_u_ob_radius_o;      // optional
-   sSI shape_u_ob_radius_i_max;  // optional
-   sSI shape_u_ob_radius_o_max;  // optional
-   sSI shape_u_radius_i_max;     // optional
-   sSI shape_u_radius_o_max;     // optional
-   sSI shape_u_ob_radius;        // optional
-   sSI shape_u_ob_radius_max;    // optional
-   sSI shape_u_radius_max;       // optional
-   sSI shape_u_point_radius;     // optional
-   sSI shape_u_color_fill;       // optional
-   sSI shape_u_color_stroke;     // optional
-   sSI shape_u_global_alpha;     // optional
-   sSI shape_u_decal_alpha;      // optional
-   sSI shape_u_sampler;          // optional
-   sSI shape_u_stroke_w;         // optional
-   sSI shape_u_line_pattern_scl; // optional
-   sSI shape_u_line_pattern_off; // optional
-   sSI shape_u_line_miter_limit; // optional
+   sSI shape_u_center;               // optional for non-AA shader
+   sSI shape_u_size;                 // optional
+   sSI shape_u_size_i;               // optional
+   sSI shape_u_size_o;               // optional
+   sSI shape_u_radius;               // optional
+   sSI shape_u_radius_i;             // optional
+   sSI shape_u_radius_o;             // optional
+   sSI shape_u_ob_radius_i;          // optional
+   sSI shape_u_ob_radius_o;          // optional
+   sSI shape_u_ob_radius_i_max;      // optional
+   sSI shape_u_ob_radius_o_max;      // optional
+   sSI shape_u_radius_i_max;         // optional
+   sSI shape_u_radius_o_max;         // optional
+   sSI shape_u_ob_radius;            // optional
+   sSI shape_u_ob_radius_max;        // optional
+   sSI shape_u_radius_max;           // optional
+   sSI shape_u_point_radius;         // optional
+   sSI shape_u_color_fill;           // optional
+   sSI shape_u_color_stroke;         // optional
+   sSI shape_u_global_alpha;         // optional
+   sSI shape_u_decal_alpha;          // optional
+   sSI shape_u_sampler;              // optional
+   sSI shape_u_stroke_w;             // optional
+   sSI shape_u_line_pattern_scl;     // optional
+   sSI shape_u_line_pattern_off;     // optional
+   sSI shape_u_line_miter_limit;     // optional
 #ifdef SHADERVG_DEBUG_FRAG
-   sSI shape_u_debug;            // optional
+   sSI shape_u_debug;                // optional
 #endif // SHADERVG_DEBUG_FRAG
-   sSI shape_u_tex_0;            // optional
-   sSI shape_u_tex_1;            // optional
-   sSI shape_u_a_min;            // optional
-   sSI shape_u_a_max;            // optional
-   sSI shape_u_a_maxmin_scale;   // optional
-   sSI shape_u_a_exp;            // optional
-   sSI shape_u_paint_tex;        // optional
-   sSI shape_u_paint_start;      // optional
-   sSI shape_u_paint_scale;      // optional
-   sSI shape_u_paint_ndir;       // optional
-   sSI shape_u_paint_ob_len;     // optional
-   sSI shape_u_paint_angle01;    // optional
-   sSI shape_u_paint_ob_size;    // optional
+   sSI shape_u_tex_0;                // optional
+   sSI shape_u_tex_1;                // optional
+   sSI shape_u_a_min;                // optional
+   sSI shape_u_a_max;                // optional
+   sSI shape_u_a_maxmin_scale;       // optional
+   sSI shape_u_a_exp;                // optional
+   sSI shape_u_paint_tex;            // optional
+   sSI shape_u_paint_start;          // optional
+   sSI shape_u_paint_ndir;           // optional
+   sSI shape_u_paint_ob_len;         // optional
+   sSI shape_u_paint_angle01;        // optional
+   sSI shape_u_paint_size;           // optional
+   sSI shape_u_paint_ob_size;        // optional
+   sSI shape_u_paint_mat_unproject;  // optional (n-polygon shaders)
+   sSI shape_u_paint_vp_unproject;   // optional (n-polygon shaders)
 #ifdef SHADERVG_UNIFORM_ARRAY
-   sSI shape_u_a_offset;         // optional
+   sSI shape_u_a_offset;             // optional
 #endif // SHADERVG_UNIFORM_ARRAY
 
    // debug:
@@ -178,7 +180,12 @@ class ShaderVG_Shape {
   public:
    sBool createShapeShader (const char *_sVS, const char *_sFS);
 
-   void updatePaintUniforms (const shadervg_paint_t *_paint);
+   void updatePaintUniforms (const shadervg_paint_t *_paint,
+                             const sBool _bPolygon,
+                             Dsdvg_mat4_ref_t _mvpMatrix,
+                             sUI _vpX, sUI _vpY, sUI _vpW, sUI _vpH,
+                             Dsdvg_mat4_ref_t _mvpMatrixUnproject
+                             );
 
    virtual sBool onOpen (void);
 

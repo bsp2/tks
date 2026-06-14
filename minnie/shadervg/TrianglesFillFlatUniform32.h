@@ -115,7 +115,7 @@ class TrianglesFillFlatUniform32 : public ShaderVG_Shape {
       Dsdvg_attrib_offset(shape_a_vertex, 2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/, 8/*stride*/, _byteOffset);
       Dsdvg_attrib_enable(shape_a_vertex);
       
-#if defined(GL_TES_npolygons)
+#if defined(SHADERVG_HW_NPOLYGONS) && defined(GL_TES_npolygons)
       glPolygonFillTES(_bNonZero ? GL_NON_ZERO_TES : GL_EVEN_ODD_TES);
       glPolygonBeginTES();
       glDrawArrays(GL_POLYGON_TES, 0, _numVerts);
@@ -146,7 +146,7 @@ class TrianglesFillFlatUniform32 : public ShaderVG_Shape {
       Dsdvg_stencil_poly_end();
 #else
 #error SHADERVG_STENCIL_POLYGONS is not enabled and GL_TES_npolygons is not available
-#endif // GL_TES_npolygons
+#endif // SHADERVG_HW_NPOLYGONS && GL_TES_npolygons
 
       Dsdvg_attrib_disable(shape_a_vertex);
    }

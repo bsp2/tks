@@ -52,6 +52,9 @@ class LineStripFlatMiterAA14_2 : public ShaderVG_Shape {
       "  h = dot(vG, vP) / h; \n"
       "  _r = vF * h; \n"
       "  _r += _v2s; \n"
+#ifdef SHADERVG_DIV_PRECISION_NAN_WORKAROUND
+      "  if(isnan(_r.x) || isnan(_r.y)) _r = _v2s; \n"
+#endif // SHADERVG_DIV_PRECISION_NAN_WORKAROUND
       "} \n"
       " \n"
       "void main(void) { \n"
@@ -227,6 +230,9 @@ class LineStripFlatMiterAA14_2 : public ShaderVG_Shape {
       "  h = dot(vG, vP) / h; \n"
       "  _r = vF * h; \n"
       "  _r += _v2s; \n"
+#ifdef SHADERVG_DIV_PRECISION_NAN_WORKAROUND
+      "  if(isnan(_r.x) || isnan(_r.y)) _r = _v2s; \n"
+#endif // SHADERVG_DIV_PRECISION_NAN_WORKAROUND
       "  return h; \n"  // (todo) remove return value
       "} \n"
       " \n"

@@ -41,11 +41,11 @@
 #if 1
 #define DISPLAY_WIDTH   640
 #define DISPLAY_HEIGHT  480
-#define VP_W  DISPLAY_WIDTH
-#define VP_H  DISPLAY_HEIGHT
+#define VP_W  640
+#define VP_H  480
 #else
-#define DISPLAY_WIDTH   320
-#define DISPLAY_HEIGHT  240
+#define DISPLAY_WIDTH   454
+#define DISPLAY_HEIGHT  454
 #define VP_W  640
 #define VP_H  480
 #endif
@@ -2032,122 +2032,226 @@ static void TestGradientToTexture(void) {
 void SetupPaintLinear(void) {
    sF32 pdx = VP_W;
    sF32 pdy = VP_H;
-   sF32 sa = sinf(ang_w*0.5f);
-   sF32 ca = cosf(ang_w*0.5f);
+   sF32 a = ang_w * 0.5f;
+   sF32 sa = sinf(a);
+   sF32 ca = cosf(a);
    sF32 rx = pdx * ca - pdy * sa;
    sF32 ry = pdx * sa + pdy * ca;
 
-   sdvg_PaintLinear(VP_W*0.5f, VP_H*0.5f, rx, ry);
+   a = ang_c * 0.5f;
+   sa = sinf(a);
+   ca = cosf(a);
+   pdx = VP_W*0.5f;
+   pdy = VP_H*0.5f;
+   sF32 cx = pdx * ca - pdy * sa;
+   sF32 cy = pdx * sa + pdy * ca;
+
+   // sdvg_PaintLinear(VP_W*0.5f, VP_H*0.5f, rx, ry);
+   sdvg_PaintLinear(cx, cy, rx, ry);
    sdvg_BindTexture2D(tex_gradient_id, YAC_TRUE/*bRepeat*/, YAC_TRUE/*bFilter*/);
 }
 
 void SetupPaintRadial(void) {
-   sF32 px = sinf(ang_w*2.0f)*(VP_W*0.5f) + (VP_W*0.5f);
-   sF32 py = sinf(ang_h*2.0f)*(VP_H*0.5f) + (VP_H*0.5f);
 
-   sdvg_PaintRadial(px, py, VP_W, VP_H);
+   sF32 cx = sinf(ang_w*2.0f)*(VP_W*0.5f) + (VP_W*0.5f);
+   sF32 cy = sinf(ang_h*2.0f)*(VP_H*0.5f) + (VP_H*0.5f);
+
+   sF32 rx = sinf(ang_x*0.5f)*(VP_W*0.35f) + (VP_W*0.65f);
+   sF32 ry = sinf(ang_c*4.0f)*(VP_H*0.35f) + (VP_H*0.65f);
+
+#if 0
+   cx = VP_W*0.5f;
+   cy = VP_H*0.5f;
+
+   rx = VP_W*0.5f;
+   ry = VP_H*0.2f;
+#endif
+
+   sdvg_PaintRadial(cx, cy, rx, ry);
    sdvg_BindTexture2D(tex_gradient_id, YAC_TRUE/*bRepeat*/, YAC_TRUE/*bFilter*/);
 }
 
 void SetupPaintRadialCenter(void) {
    // tests 202+203
-   sF32 px = sinf(ang_w*2.0f)*(VP_W*0.01f);
-   sF32 py = sinf(ang_h*2.0f)*(VP_H*0.01f);
+   sF32 cx = sinf(ang_w*2.0f)*(VP_W*0.01f);
+   sF32 cy = sinf(ang_h*2.0f)*(VP_H*0.01f);
 
-   sdvg_PaintRadial(px, py, VP_W*0.45f, VP_H*0.45f);
+   sdvg_PaintRadial(cx, cy, VP_W*0.6f, VP_H*0.7f);
    sdvg_BindTexture2D(tex_gradient_id, YAC_TRUE/*bRepeat*/, YAC_TRUE/*bFilter*/);
 }
 
 void SetupPaintConic(void) {
-   sF32 px = sinf(ang_w*2.0f)*(VP_W*0.5f) + (VP_W*0.5f);
-   sF32 py = sinf(ang_h*2.0f)*(VP_H*0.5f) + (VP_H*0.5f);
+
+   sF32 cx = sinf(ang_w*2.0f)*(VP_W*0.5f) + (VP_W*0.5f);
+   sF32 cy = sinf(ang_h*2.0f)*(VP_H*0.5f) + (VP_H*0.5f);
+
+   sF32 rx = sinf(ang_x*0.5f)*(VP_W*0.35f) + (VP_W*0.65f);
+   sF32 ry = sinf(ang_c*4.0f)*(VP_H*0.35f) + (VP_H*0.65f);
 
    sF32 ang = sWRAP((ang_c * 8.0f) / sM_2PIf, 0.0f, 1.0f);
 
-   sdvg_PaintConic(px, py, VP_W, VP_H, ang);
+#if 0
+   cx = VP_W*0.5f;
+   cy = VP_H*0.5f;
+
+   rx = VP_W*0.5f;
+   ry = VP_H*0.2f;
+
+   ang = 0.0f;
+#endif
+
+   sdvg_PaintConic(cx, cy, rx, ry, ang);
    sdvg_BindTexture2D(tex_gradient_id, YAC_TRUE/*bRepeat*/, YAC_TRUE/*bFilter*/);
 }
 
 void SetupPaintPattern(void) {
-   sF32 zoom = sinf(ang_y*0.5f) * 7.0f + 8.0f;
-   sF32 rx = sinf(ang_x*0.5f) * zoom;
-   sF32 ry = cosf(ang_x*0.5f) * zoom;
 
-   sF32 x = VP_W*0.5f;
-   sF32 y = VP_H*0.5f;
+   sF32 cx = sinf(ang_w)*VP_W*0.5f + VP_W*0.5f;
+   sF32 cy = cosf(ang_w)*VP_H*0.5f + VP_H*0.5f;
 
-   sdvg_PaintPattern(x, y, rx, ry, 256.0f, 256.0f);
+   sF32 dx = sinf(ang_x*0.5f) * 100.0f;
+   sF32 dy = cosf(ang_x*0.5f) * 100.0f;
+
+   sF32 sx = (sinf(ang_y*0.5f) * 7.0f + 8.0f) * 256.0f;
+   sF32 sy = (sinf(ang_y*0.5f) * 7.0f + 8.0f) * 256.0f;
+
+#if 0
+   // cx = VP_W*0.5f;
+   // cy = VP_H*0.5f;
+
+   cx = 0.0f;
+   cy = 0.0f;
+
+   dx = 1.0f;
+   dy = 0.0f;
+
+   // sx = 256.0f;
+   // sy = 256.0f;
+
+   sx = 640.0f;
+   sy = 480.0f;
+#endif
+
+   sdvg_PaintPattern(cx, cy, dx, dy, sx, sy);
    sdvg_BindTexture2D(tex_id, YAC_TRUE/*bRepeat*/, YAC_TRUE/*bFilter*/);
 }
 
 void SetupPaintPatternAlpha(void) {
-   sF32 zoom = sinf(ang_y*0.5f) * 2.0f + 3.0f;
-   sF32 rx = sinf(ang_x*0.5f) * zoom;
-   sF32 ry = cosf(ang_x*0.5f) * zoom;
 
-   sF32 x = VP_W*0.5f;
-   sF32 y = VP_H*0.5f;
+   sF32 cx = sinf(ang_w)*VP_W*0.5f + VP_W*0.5f;
+   sF32 cy = cosf(ang_w)*VP_H*0.5f + VP_H*0.5f;
 
-   sdvg_PaintPatternAlpha(x, y, rx, ry, 256.0f, 256.0f);
+   sF32 dx = sinf(ang_x*0.5f) * 100.0f;
+   sF32 dy = cosf(ang_x*0.5f) * 100.0f;
+
+   sF32 sx = (sinf(ang_y*0.5f) * 7.0f + 8.0f) * 256.0f;
+   sF32 sy = (sinf(ang_y*0.5f) * 7.0f + 8.0f) * 256.0f;
+
+#if 0
+   // cx = VP_W*0.5f;
+   // cy = VP_H*0.5f;
+
+   cx = 0.0f;
+   cy = 0.0f;
+
+   dx = 1.0f;
+   dy = 0.0f;
+
+   // sx = 256.0f;
+   // sy = 256.0f;
+
+   sx = 640.0f;
+   sy = 480.0f;
+#endif
+
+   sdvg_PaintPatternAlpha(cx, cy, dx, dy, sx, sy);
    sdvg_BindTexture2D(tex_pattern_1_alpha_id, YAC_TRUE/*bRepeat*/, YAC_TRUE/*bFilter*/);
 }
 
 void SetupPaintPatternDecal(void) {
-   sF32 zoom = sinf(ang_y*0.5f) * 7.0f + 8.0f;
-   sF32 rx = sinf(ang_x*0.5f) * zoom;
-   sF32 ry = cosf(ang_x*0.5f) * zoom;
 
-   sF32 x = VP_W*0.5f;
-   sF32 y = VP_H*0.5f;
+   sF32 cx = sinf(ang_w)*VP_W*0.5f + VP_W*0.5f;
+   sF32 cy = cosf(ang_w)*VP_H*0.5f + VP_H*0.5f;
 
-   sdvg_PaintPatternDecal(x, y, rx, ry, 256.0f, 256.0f);
+   sF32 dx = sinf(ang_x*0.5f) * 100.0f;
+   sF32 dy = cosf(ang_x*0.5f) * 100.0f;
+
+   sF32 sx = (sinf(ang_y*0.5f) * 7.0f + 8.0f) * 256.0f;
+   sF32 sy = (sinf(ang_y*0.5f) * 7.0f + 8.0f) * 256.0f;
+
+#if 0
+   // cx = VP_W*0.5f;
+   // cy = VP_H*0.5f;
+
+   cx = 0.0f;
+   cy = 0.0f;
+
+   dx = 1.0f;
+   dy = 0.0f;
+
+   // sx = 256.0f;
+   // sy = 256.0f;
+
+   sx = 640.0f;
+   sy = 480.0f;
+#endif
+
+   sdvg_PaintPatternDecal(cx, cy, dx, dy, sx, sy);
    sdvg_BindTexture2D(tex_id, YAC_TRUE/*bRepeat*/, YAC_TRUE/*bFilter*/);
    sdvg_SetDecalAlpha(decal_alpha);
 }
 
 void SetupPaintPatternDecalAlpha(void) {
-   sF32 zoom = sinf(ang_y*0.5f) * 2.0f + 3.5f;
-   sF32 rx = sinf(ang_x*0.5f) * zoom;
-   sF32 ry = cosf(ang_x*0.5f) * zoom;
 
-   sF32 x = VP_W*0.5f;
-   sF32 y = VP_H*0.5f;
+   sF32 cx = sinf(ang_w)*VP_W*0.5f + VP_W*0.5f;
+   sF32 cy = cosf(ang_w)*VP_H*0.5f + VP_H*0.5f;
 
-   sdvg_PaintPatternDecalAlpha(x, y, rx, ry, 256.0f, 256.0f);
+   sF32 dx = sinf(ang_x*0.5f) * 100.0f;
+   sF32 dy = cosf(ang_x*0.5f) * 100.0f;
+
+   sF32 sx = (sinf(ang_y*0.5f) * 7.0f + 8.0f) * 256.0f;
+   sF32 sy = (sinf(ang_y*0.5f) * 7.0f + 8.0f) * 256.0f;
+
+#if 0
+   // cx = VP_W*0.5f;
+   // cy = VP_H*0.5f;
+
+   cx = 0.0f;
+   cy = 0.0f;
+
+   dx = 1.0f;
+   dy = 0.0f;
+
+   // sx = 256.0f;
+   // sy = 256.0f;
+
+   sx = 640.0f;
+   sy = 480.0f;
+#endif
+
+   sdvg_PaintPatternDecalAlpha(cx, cy, dx, dy, sx, sy);
    sdvg_BindTexture2D(tex_pattern_1_alpha_id, YAC_TRUE/*bRepeat*/, YAC_TRUE/*bFilter*/);
    sdvg_SetDecalAlpha(decal_alpha);
 }
 
 void SetupPaintPatternGradientStatic(void) {
-   sF32 rx = VP_W;
-   sF32 ry = 0.0f;
+   sF32 dx = 1.0f;
+   sF32 dy = 0.0f;
 
    sF32 x = 0.0f;
    sF32 y = 0.0f;
 
-   sdvg_PaintPattern(x, y, rx, ry, 1.0f, 1.0f);
+   sdvg_PaintPattern(x, y, dx, dy, VP_W, VP_H);
    sdvg_BindTexture2D(tex_gradient_id, YAC_FALSE/*bRepeat*/, YAC_TRUE/*bFilter*/);
 }
 
 void SetupPaintPatternStatic(void) {
-   sF32 rx = 1.0f;
-   sF32 ry = 0.0f;
-
-   sF32 x = 0.0f;
-   sF32 y = 0.0f;
-
-   sdvg_PaintPattern(x, y, rx, ry, VP_W, VP_H);
+   sdvg_PaintPattern(0.0f, 0.0f, 1.0f, 0.0f, VP_W, VP_H);
    sdvg_BindTexture2D(tex_id, YAC_FALSE/*bRepeat*/, YAC_TRUE/*bFilter*/);
 }
 
 void SetupPaintPatternGradientStaticDiagonal(void) {
-   sF32 rx = VP_W;
-   sF32 ry = VP_W;
-
-   sF32 x = 0.0f;
-   sF32 y = 0.0f;
-
-   sdvg_PaintPattern(x, y, rx, ry, 1.0f, 1.0f);
+   sdvg_PaintPattern(0.0f, 0.0f, 1.0f, 1.0f, VP_W, VP_H);
    sdvg_BindTexture2D(tex_gradient_id, YAC_FALSE/*bRepeat*/, YAC_TRUE/*bFilter*/);
 }
 
@@ -2271,6 +2375,7 @@ static void SetupRotateMVP(void) {
    minnie_matrix4f_translatef(m, VP_W*0.5f, VP_H*0.5f, 0.0f);
    minnie_matrix4f_rotatef(m, 0.0f, 0.0f, ang_w);
    minnie_matrix4f_translatef(m, -VP_W*0.5f, -VP_H*0.5f, 0.0f);
+   sdvg_TransformChanged();
 }
 
 // ---------------------------------------------------------------------------- TestPolygon_VBO (66)
@@ -3139,17 +3244,41 @@ static void SelectRenderMode(sSI _mode) {
    }
 }
 
+// ---------------------------------------------------------------------------- loc_load_aspect_ratio_transform
+static Matrix4f *loc_load_aspect_ratio_transform(void) {
+   Matrix4f *mProj = sdvg_GetTransformRef();
+   sF32 extraX = 0.0f;
+   sF32 extraY = 0.0f;
+#if 1
+   // correct aspect ratio (4:3)
+   sF32 aspect = (((sF32)(DISPLAY_WIDTH)) / DISPLAY_HEIGHT) / 1.333f;
+   if(aspect >= 1.0f)
+   {
+      extraX = ((VP_W*aspect) - VP_W) * 0.5f;
+   }
+   else
+   {
+      aspect = 1.333f / (((sF32)(DISPLAY_WIDTH)) / DISPLAY_HEIGHT);
+      extraY = ((VP_H*aspect) - VP_H) * 0.5f;
+   }
+#else
+   // fit to window (ignore aspect)
+   extraX = 0.0f;
+   extraY = 0.0f;
+#endif
+   minnie_matrix4f_initOrtho(mProj,
+                             0.0f-extraX/*left*/, VP_W+extraX/*right*/,
+                             VP_H+extraY/*bottom*/,  0.0f-extraY/*top*/,
+                             0.0f/*znear*/,  10.0f/*zfar*/
+                             );
+   sdvg_TransformChanged();
+   return mProj;
+}
+
 // ---------------------------------------------------------------------------- DrawTest
 static void DrawTest(void) {
 
-   Matrix4f *mProj = sdvg_GetTransformRef();
-   sF32 aspect = (((sF32)(VP_W)) / VP_H) / 1.333f;
-   sF32 extra = ((VP_W*aspect) - VP_W) * 0.5f;
-   minnie_matrix4f_initOrtho(mProj,
-                             0.0f-extra/*left*/, VP_W+extra/*right*/,
-                             VP_H/*bottom*/,  0.0f/*top*/,
-                             0.0f/*znear*/,  10.0f/*zfar*/
-                             );
+   Matrix4f *mProj = loc_load_aspect_ratio_transform();
 
    sF32 centerX = VP_W * 0.5f;
    sF32 centerY = VP_H * 0.5f;
@@ -5234,7 +5363,7 @@ void hal_on_draw(void) {
 
    for(sUI iter = 0u; iter < numIter; iter++)
    {
-      sdvg_SetFramebufferSize(VP_W, VP_H);
+      sdvg_SetFramebufferSize(DISPLAY_WIDTH, DISPLAY_HEIGHT);
       sdvg_BeginFrame();
 
       sdvg_SetEnableAA(b_aa);

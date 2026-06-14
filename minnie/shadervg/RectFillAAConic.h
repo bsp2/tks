@@ -31,7 +31,7 @@ class RectFillAAConic : public ShaderVG_Shape {
    const char *vs_src =
       "uniform mat4 u_transform; \n"
       "uniform vec2 u_paint_start; \n"
-      "uniform vec2 u_paint_scale; \n"
+      "uniform vec2 u_paint_ob_size; \n"
       " \n"
       "ATTRIBUTE vec2 a_vertex; \n"
       " \n"
@@ -41,7 +41,7 @@ class RectFillAAConic : public ShaderVG_Shape {
       "void main(void) { \n"
       "  v_p = a_vertex; \n"
       "  gl_Position = u_transform * vec4(a_vertex,0,1); \n"
-      "  v_paint_pos = (a_vertex - u_paint_start) * u_paint_scale; \n"
+      "  v_paint_pos = (a_vertex - u_paint_start) * u_paint_ob_size; \n"
       "} \n"
       ;
 

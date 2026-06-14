@@ -157,3 +157,7 @@ void minnie_matrix4f_translatef(Matrix4f *_this, sF32 _x, sF32 _y, sF32 _z) {
 void minnie_matrix4f_rotatef(Matrix4f *_this, sF32 _x, sF32 _y, sF32 _z) {
    _this->rotatef(_x, _y, _z);
 }
+
+void minnie_matrix4f_invert(Matrix4f *_this, Matrix4f *_dest) {
+   _this->invert(_dest);
+}

@@ -2,7 +2,7 @@
 // ---- file   : EllipseStrokeAARadial.h
 // ---- author : Bastian Spiegel <bs@tkscript.de>
 // ---- legal  : Distributed under terms of the MIT license (https://opensource.org/licenses/MIT)
-// ----          Copyright 2014-2025 by bsp
+// ----          Copyright 2014-2026 by bsp
 // ----
 // ----          Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 // ----          associated documentation files (the "Software"), to deal in the Software without restriction, including
@@ -31,6 +31,7 @@ class EllipseStrokeAARadial : public ShaderVG_Shape {
    const char *vs_src =
       "uniform mat4 u_transform; \n"
       "uniform vec2 u_paint_start; \n"
+      "uniform vec2 u_paint_ob_size; \n"
       " \n"
       "ATTRIBUTE vec2 a_vertex; \n"
       " \n"
@@ -40,7 +41,7 @@ class EllipseStrokeAARadial : public ShaderVG_Shape {
       "void main(void) { \n"
       "  v_p = a_vertex; \n"
       "  gl_Position = u_transform * vec4(a_vertex,0,1); \n"
-      "  v_paint_pos = (a_vertex - u_paint_start); \n"
+      "  v_paint_pos = (a_vertex - u_paint_start) * u_paint_ob_size; \n"
       "} \n"
       ;
 
@@ -133,7 +134,7 @@ class EllipseStrokeAARadial : public ShaderVG_Shape {
       "  aO = pow(aO, u_aa_exp); \n"
 #endif // SHADERVG_AA_EXP
       " \n"
-      "  float d = length(v_paint_pos) * u_paint_ob_len; \n"
+      "  float d = length(v_paint_pos); \n"
       "  vec4 c = TEXTURE2D(u_paint_tex, vec2(d, 0.0)); \n"
       "  FRAGCOLOR = vec4(c.rgb * color.rgb, c.a * color.a * aO); \n"
 #ifdef SHADERVG_DEBUG_FRAG

@@ -31,6 +31,7 @@ class EllipseFillAARadial : public ShaderVG_Shape {
    const char *vs_src =
       "uniform mat4 u_transform; \n"
       "uniform vec2 u_paint_start; \n"
+      "uniform vec2 u_paint_ob_size; \n"
       " \n"
       "ATTRIBUTE vec2 a_vertex; \n"
       " \n"
@@ -40,7 +41,7 @@ class EllipseFillAARadial : public ShaderVG_Shape {
       "void main(void) { \n"
       "  v_p = a_vertex; \n"
       "  gl_Position = u_transform * vec4(a_vertex,0,1); \n"
-      "  v_paint_pos = (a_vertex - u_paint_start); \n"
+      "  v_paint_pos = (a_vertex - u_paint_start) * u_paint_ob_size; \n"
       "} \n"
       ;
 
@@ -60,7 +61,6 @@ class EllipseFillAARadial : public ShaderVG_Shape {
       "uniform float u_debug; \n"
 #endif // SHADERVG_DEBUG_FRAG
       "uniform sampler2D u_paint_tex; \n"
-      "uniform float u_paint_ob_len; \n"
       " \n"
       "VARYING_IN vec2 v_p; \n"
       "VARYING_IN vec2 v_paint_pos; \n"
@@ -96,7 +96,7 @@ class EllipseFillAARadial : public ShaderVG_Shape {
       "  a = pow(a, u_aa_exp); \n"
 #endif // SHADERVG_AA_EXP
       " \n"
-      "  float d = length(v_paint_pos) * u_paint_ob_len; \n"
+      "  float d = length(v_paint_pos); \n"
       "  vec4 c = TEXTURE2D(u_paint_tex, vec2(d, 0.0)); \n"
       "  FRAGCOLOR = vec4(c.rgb * color.rgb, c.a * color.a * a); \n"
 #ifdef SHADERVG_DEBUG_FRAG

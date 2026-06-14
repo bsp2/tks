@@ -35,7 +35,7 @@ class PointsRoundAA32Conic : public ShaderVG_Shape {
       "uniform vec2  u_a_offset[6]; \n"
 #endif // SHADERVG_UNIFORM_ARRAY
       "uniform vec2  u_paint_start; \n"
-      "uniform vec2  u_paint_scale; \n"
+      "uniform vec2  u_paint_ob_size; \n"
       " \n"
       "ATTRIBUTE vec2 a_vertex; \n"
       " \n"
@@ -73,7 +73,7 @@ class PointsRoundAA32Conic : public ShaderVG_Shape {
       " \n"
       "  gl_Position = u_transform * vec4(v,0,1); \n"
       "  v_vertex_mp = v - vCtr; \n"
-      "  v_paint_pos = (v - u_paint_start) * u_paint_scale; \n"
+      "  v_paint_pos = (v - u_paint_start) * u_paint_ob_size; \n"
       "} \n"
       ;
 
@@ -133,6 +133,7 @@ class PointsRoundAA32Conic : public ShaderVG_Shape {
 #endif // SHADERVG_UNIFORM_ARRAY
          && (-1 != shape_u_aa_range)
          && (-1 != shape_u_paint_start)
+         && (-1 != shape_u_paint_ob_size)
          && (-1 != shape_u_paint_tex)
          && (-1 != shape_u_paint_angle01)
          ;

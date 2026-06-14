@@ -33,6 +33,7 @@ class LineStripFlatBevelAA14_2Radial : public ShaderVG_Shape {
       "uniform float u_stroke_w; \n"
       "uniform int   u_last_instance; \n"
       "uniform vec2  u_paint_start; \n"
+      "uniform vec2  u_paint_ob_size; \n"
       " \n"
       "ATTRIBUTE vec2  a_vertex; \n"
       "ATTRIBUTE vec2  a_vertex_n; \n"
@@ -133,7 +134,7 @@ class LineStripFlatBevelAA14_2Radial : public ShaderVG_Shape {
       "      v_join = 0.0; \n"
       "    } \n"
       "  } \n"
-      "  v_paint_pos = (v - u_paint_start); \n"
+      "  v_paint_pos = (v - u_paint_start) * u_paint_ob_size; \n"
       "} \n"
 #else
       "  if(index > 7.9) { \n"
@@ -180,7 +181,7 @@ class LineStripFlatBevelAA14_2Radial : public ShaderVG_Shape {
       "      v_join = 0.0; \n"
       "    } \n"
       "  } \n"
-      "  v_paint_pos = (v - u_paint_start); \n"
+      "  v_paint_pos = (v - u_paint_start) * u_paint_ob_size; \n"
       "} \n"
 #endif // SHADERVG_HIRES_GEO
       ;
@@ -194,7 +195,6 @@ class LineStripFlatBevelAA14_2Radial : public ShaderVG_Shape {
       "uniform float     u_debug; \n"
 #endif // SHADERVG_DEBUG_FRAG
       "uniform sampler2D u_paint_tex; \n"
-      "uniform float     u_paint_ob_len; \n"
       " \n"
       "VARYING_IN vec2  v_vertex_mp; \n"
       "flat VARYING_IN vec2  v_plane_n; \n"
@@ -210,7 +210,7 @@ class LineStripFlatBevelAA14_2Radial : public ShaderVG_Shape {
       "  else { \n"
       "    a = 1.0 - smoothstep(u_stroke_w - u_aa_range, u_stroke_w, d); \n"
       "  } \n"
-      "  float dp = length(v_paint_pos) * u_paint_ob_len; \n"
+      "  float dp = length(v_paint_pos); \n"
       "  vec4 cp = TEXTURE2D(u_paint_tex, vec2(dp, 0.0)); \n"
       "  FRAGCOLOR = vec4(u_color_stroke.rgb * cp.rgb, u_color_stroke.a * cp.a * a); \n"
 #ifdef SHADERVG_DEBUG_FRAG
@@ -232,7 +232,7 @@ class LineStripFlatBevelAA14_2Radial : public ShaderVG_Shape {
          && (-1 != shape_u_stroke_w)
          && (-1 != shape_u_aa_range)
          && (-1 != shape_u_paint_start)
-         && (-1 != shape_u_paint_ob_len)
+         && (-1 != shape_u_paint_ob_size)
          && (-1 != shape_u_paint_tex)
          ;
    }

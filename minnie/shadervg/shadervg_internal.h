@@ -39,6 +39,7 @@ class ShaderVG_Shape;
 #define Dsdvg_debugprintf       if(!MINNIE_PRINTF);else Dsdvg_printf
 #define Dsdvg_debugprintfv      if( MINNIE_PRINTF);else Dsdvg_printf
 #define Dsdvg_debugprintfvv     if( MINNIE_PRINTF);else Dsdvg_printf
+#define Dsdvg_transformprintf   if( MINNIE_PRINTF);else Dsdvg_printf
 
 #include <stdlib.h>
 #include <new>
@@ -57,11 +58,11 @@ typedef struct shadervg_paint_s {
    sSI  mode;
    sF32 start_x;
    sF32 start_y;
-   sF32 dir_x;
+   sF32 dir_x;    // PAINT_LINEAR
    sF32 dir_y;
-   sF32 angle01;    // 0..1 => 0..2PI
-   sF32 ob_size_x;  // PAINT_PATTERN*
-   sF32 ob_size_y;  // PAINT_PATTERN*
+   sF32 angle01;  // 0..1 => 0..2PI
+   sF32 size_x;   // PAINT_RADIAL/CONIC/PATTERN*
+   sF32 size_y;   // PAINT_RADIAL/CONIC/PATTERN*
 } shadervg_paint_t;
 
 // -----------  internal -----------

@@ -50,11 +50,11 @@
 #define VP_W  800
 #define VP_H  600
 #else
-#define DISPLAY_WIDTH   454
-#define DISPLAY_HEIGHT  454
+#define DISPLAY_WIDTH   400
+#define DISPLAY_HEIGHT  300
 
-#define VP_W  454
-#define VP_H  454
+#define VP_W  800
+#define VP_H  600
 #endif
 
 #include "../inc_minnie.h"

@@ -49,6 +49,8 @@ extern "C" {
       // -------- transform --------
       void        (YAC_CALL *sdvg_SetTransform)    (YAC_Object *_mat4);
       YAC_Object *(YAC_CALL *sdvg_GetTransformRef) (void);
+      // (todo) sdvg_UpdateTransform (void)
+      // (todo) sdvg_TransformChanged (void)
       // -------- transform (matrix stack) --------
       void (YAC_CALL *sdvg_PushProjMatrix)    (void);
       void (YAC_CALL *sdvg_PopProjMatrix)     (void);

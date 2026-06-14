@@ -35,6 +35,7 @@ class PointsRoundAA14_2Radial : public ShaderVG_Shape {
       "uniform vec2  u_a_offset[6]; \n"
 #endif // SHADERVG_UNIFORM_ARRAY
       "uniform vec2  u_paint_start; \n"
+      "uniform vec2  u_paint_ob_size; \n"
       " \n"
       "ATTRIBUTE vec2 a_vertex; \n"
       " \n"
@@ -72,7 +73,7 @@ class PointsRoundAA14_2Radial : public ShaderVG_Shape {
       " \n"
       "  gl_Position = u_transform * vec4(v,0,1); \n"
       "  v_vertex_mp = v - vCtr; \n"
-      "  v_paint_pos = (v - u_paint_start); \n"
+      "  v_paint_pos = (v - u_paint_start) * u_paint_ob_size; \n"
       "} \n"
       ;
 
@@ -85,7 +86,6 @@ class PointsRoundAA14_2Radial : public ShaderVG_Shape {
       "uniform float u_debug; \n"
 #endif // SHADERVG_DEBUG_FRAG
       "uniform sampler2D u_paint_tex; \n"
-      "uniform float     u_paint_ob_len; \n"
       " \n"
       "VARYING_IN vec2 v_vertex_mp; \n"
       "VARYING_IN vec2 v_paint_pos; \n"
@@ -95,7 +95,7 @@ class PointsRoundAA14_2Radial : public ShaderVG_Shape {
       "  float d = length(vd); \n"
       // aa
       "  float a = 1.0 - smoothstep(u_point_radius - u_aa_range, u_point_radius, d); \n"
-      "  float dp = length(v_paint_pos) * u_paint_ob_len; \n"
+      "  float dp = length(v_paint_pos); \n"
       "  vec4 cp = TEXTURE2D(u_paint_tex, vec2(dp, 0.0)); \n"
       "  FRAGCOLOR = vec4(u_color_stroke.rgb * cp.rgb, u_color_stroke.a * cp.a * a); \n"
 #ifdef SHADERVG_DEBUG_FRAG
@@ -117,8 +117,8 @@ class PointsRoundAA14_2Radial : public ShaderVG_Shape {
 #endif // SHADERVG_UNIFORM_ARRAY
          && (-1 != shape_u_aa_range)
          && (-1 != shape_u_paint_start)
+         && (-1 != shape_u_paint_ob_size)
          && (-1 != shape_u_paint_tex)
-         && (-1 != shape_u_paint_ob_len)
          ;
    }
 

@@ -57,3 +57,9 @@ $ ./test_shadervg 177 5 50000
 ~~~
 
 Note: vertical blank synchronisation will automatically be disabled in benchmark mode.
+
+# Acknowledgments
+
+The matrix 4x4 inversion code was written by [eelstork on GitHub](https://github.com/eelstork/Matrix-Inversion/blob/master/4x4-matrix-inversion.c) (MIT license).
+
+The polygon tesselation code was originally written by SGI (see `VG_tesselator/` files) (SGI Free Software License B).

@@ -32,7 +32,6 @@ class TrianglesFillFlatUniform32PatternDecalAlpha : public ShaderVG_Shape {
       "uniform mat4  u_transform; \n"
       "uniform vec2  u_paint_start; \n"
       "uniform vec2  u_paint_ob_size; \n"
-      "uniform float u_paint_ob_len; \n"
       " \n"
       "ATTRIBUTE vec2 a_vertex; \n"
       " \n"
@@ -40,7 +39,7 @@ class TrianglesFillFlatUniform32PatternDecalAlpha : public ShaderVG_Shape {
       " \n"
       "void main(void) { \n"
       "  gl_Position = u_transform * vec4(a_vertex,0,1); \n"
-      "  v_paint_uv  = (a_vertex - u_paint_start) * u_paint_ob_size * u_paint_ob_len; \n"
+      "  v_paint_uv  = (a_vertex - u_paint_start) * u_paint_ob_size; \n"
       "} \n"
       ;
 
@@ -72,7 +71,6 @@ class TrianglesFillFlatUniform32PatternDecalAlpha : public ShaderVG_Shape {
          && (-1 != shape_u_decal_alpha)
          && (-1 != shape_u_paint_start)
          && (-1 != shape_u_paint_ob_size)
-         && (-1 != shape_u_paint_ob_len)
          && (-1 != shape_u_paint_ndir)
          && (-1 != shape_u_paint_tex)
          ;

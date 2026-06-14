@@ -35,7 +35,7 @@ class LineStripFlatMiterAA32Conic : public ShaderVG_Shape {
       "uniform int   u_last_instance; \n"
       "uniform float u_line_miter_limit; \n"
       "uniform vec2  u_paint_start; \n"
-      "uniform vec2  u_paint_scale; \n"
+      "uniform vec2  u_paint_ob_size; \n"
       " \n"
       "ATTRIBUTE vec2  a_vertex; \n"
       "ATTRIBUTE vec2  a_vertex_n; \n"
@@ -55,6 +55,9 @@ class LineStripFlatMiterAA32Conic : public ShaderVG_Shape {
       "  h = dot(vG, vP) / h; \n"
       "  _r = vF * h; \n"
       "  _r += _v2s; \n"
+#ifdef SHADERVG_DIV_PRECISION_NAN_WORKAROUND
+      "  if(isnan(_r.x) || isnan(_r.y)) _r = _v2s; \n"
+#endif // SHADERVG_DIV_PRECISION_NAN_WORKAROUND
       "} \n"
       " \n"
       "void main(void) { \n"
@@ -202,7 +205,7 @@ class LineStripFlatMiterAA32Conic : public ShaderVG_Shape {
       "      v_join = 0.0; \n"
       "    } \n"
       "  } \n"
-      "  v_paint_pos = (v - u_paint_start) * u_paint_scale; \n"
+      "  v_paint_pos = (v - u_paint_start) * u_paint_ob_size; \n"
       "} \n"
 #else
    const char *vs_src =
@@ -211,7 +214,6 @@ class LineStripFlatMiterAA32Conic : public ShaderVG_Shape {
       "uniform float u_stroke_w; \n"
       "uniform float u_line_miter_limit; \n"
       "uniform vec2  u_paint_start; \n"
-      "uniform vec2  u_paint_scale; \n"
       " \n"
       "ATTRIBUTE vec2  a_vertex; \n"
       "ATTRIBUTE vec2  a_vertex_n; \n"
@@ -231,6 +233,9 @@ class LineStripFlatMiterAA32Conic : public ShaderVG_Shape {
       "  h = dot(vG, vP) / h; \n"
       "  _r = vF * h; \n"
       "  _r += _v2s; \n"
+#ifdef SHADERVG_DIV_PRECISION_NAN_WORKAROUND
+      "  if(isnan(_r.x) || isnan(_r.y)) _r = _v2s; \n"
+#endif // SHADERVG_DIV_PRECISION_NAN_WORKAROUND
       "  return h; \n"  // (todo) remove return value
       "} \n"
       " \n"
@@ -363,7 +368,7 @@ class LineStripFlatMiterAA32Conic : public ShaderVG_Shape {
       "      v_join = 0.0; \n"
       "    } \n"
       "  } \n"
-      "  v_paint_pos = (v - u_paint_start) * u_paint_scale; \n"
+      "  v_paint_pos = (v - u_paint_start) * u_paint_ob_size; \n"
       "} \n"
 #endif // SHADERVG_HIRES_GEO
       ;
@@ -431,6 +436,7 @@ class LineStripFlatMiterAA32Conic : public ShaderVG_Shape {
          && (-1 != shape_u_aa_range)
          && (-1 != shape_u_line_miter_limit)
          && (-1 != shape_u_paint_start)
+         && (-1 != shape_u_paint_ob_size)
          && (-1 != shape_u_paint_tex)
          && (-1 != shape_u_paint_angle01)
          ;

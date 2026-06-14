@@ -33,7 +33,7 @@ class LineStripFlatBevelAA32Conic : public ShaderVG_Shape {
       "uniform float u_stroke_w; \n"
       "uniform int   u_last_instance; \n"
       "uniform vec2  u_paint_start; \n"
-      "uniform vec2  u_paint_scale; \n"
+      "uniform vec2  u_paint_ob_size; \n"
       " \n"
       "ATTRIBUTE vec2  a_vertex; \n"
       "ATTRIBUTE vec2  a_vertex_n; \n"
@@ -134,7 +134,7 @@ class LineStripFlatBevelAA32Conic : public ShaderVG_Shape {
       "      v_join = 0.0; \n"
       "    } \n"
       "  } \n"
-      "  v_paint_pos = (v - u_paint_start) * u_paint_scale; \n"
+      "  v_paint_pos = (v - u_paint_start) * u_paint_ob_size; \n"
       "} \n"
 #else
       "  if(index > 7.9) { \n"
@@ -181,7 +181,7 @@ class LineStripFlatBevelAA32Conic : public ShaderVG_Shape {
       "      v_join = 0.0; \n"
       "    } \n"
       "  } \n"
-      "  v_paint_pos = (v - u_paint_start) * u_paint_scale; \n"
+      "  v_paint_pos = (v - u_paint_start) * u_paint_ob_size; \n"
       "} \n"
 #endif // SHADERVG_HIRES_GEO
       ;
@@ -248,6 +248,7 @@ class LineStripFlatBevelAA32Conic : public ShaderVG_Shape {
          && (-1 != shape_u_stroke_w)
          && (-1 != shape_u_aa_range)
          && (-1 != shape_u_paint_start)
+         && (-1 != shape_u_paint_ob_size)
          && (-1 != shape_u_paint_tex)
          && (-1 != shape_u_paint_angle01)
          ;

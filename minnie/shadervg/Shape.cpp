@@ -69,57 +69,59 @@ ShaderVG_Shape::ShaderVG_Shape(void) {
    shape_a_bc         = -1;
    shape_a_uv         = -1;
 
-   shape_u_transform        = -1;
-   shape_u_last_instance    = -1;
-   shape_u_aa               = -1;
-   shape_u_aa_range         = -1;
+   shape_u_transform           = -1;
+   shape_u_last_instance       = -1;
+   shape_u_aa                  = -1;
+   shape_u_aa_range            = -1;
 #ifdef SHADERVG_AA_EXP
-   shape_u_aa_exp           = -1;
+   shape_u_aa_exp              = -1;
 #endif // SHADERVG_AA_EXP
-   shape_u_center           = -1;
-   shape_u_size             = -1;
-   shape_u_size_i           = -1;
-   shape_u_size_o           = -1;
-   shape_u_radius           = -1;
-   shape_u_radius_i         = -1;
-   shape_u_radius_o         = -1;
-   shape_u_ob_radius_i      = -1;
-   shape_u_ob_radius_o      = -1;
-   shape_u_ob_radius_i_max  = -1;
-   shape_u_ob_radius_o_max  = -1;
-   shape_u_radius_i_max     = -1;
-   shape_u_radius_o_max     = -1;
-   shape_u_ob_radius        = -1;
-   shape_u_ob_radius_max    = -1;
-   shape_u_radius_max       = -1;
-   shape_u_point_radius     = -1;
-   shape_u_color_fill       = -1;
-   shape_u_color_stroke     = -1;
-   shape_u_global_alpha     = -1;
-   shape_u_decal_alpha      = -1;
-   shape_u_sampler          = -1;
-   shape_u_stroke_w         = -1;
-   shape_u_line_pattern_scl = -1;
-   shape_u_line_pattern_off = -1;
-   shape_u_line_miter_limit = -1;
+   shape_u_center              = -1;
+   shape_u_size                = -1;
+   shape_u_size_i              = -1;
+   shape_u_size_o              = -1;
+   shape_u_radius              = -1;
+   shape_u_radius_i            = -1;
+   shape_u_radius_o            = -1;
+   shape_u_ob_radius_i         = -1;
+   shape_u_ob_radius_o         = -1;
+   shape_u_ob_radius_i_max     = -1;
+   shape_u_ob_radius_o_max     = -1;
+   shape_u_radius_i_max        = -1;
+   shape_u_radius_o_max        = -1;
+   shape_u_ob_radius           = -1;
+   shape_u_ob_radius_max       = -1;
+   shape_u_radius_max          = -1;
+   shape_u_point_radius        = -1;
+   shape_u_color_fill          = -1;
+   shape_u_color_stroke        = -1;
+   shape_u_global_alpha        = -1;
+   shape_u_decal_alpha         = -1;
+   shape_u_sampler             = -1;
+   shape_u_stroke_w            = -1;
+   shape_u_line_pattern_scl    = -1;
+   shape_u_line_pattern_off    = -1;
+   shape_u_line_miter_limit    = -1;
 #ifdef SHADERVG_DEBUG_FRAG
-   shape_u_debug            = -1;
+   shape_u_debug               = -1;
 #endif // SHADERVG_DEBUG_FRAG
-   shape_u_tex_0            = -1;
-   shape_u_tex_1            = -1;
-   shape_u_a_min            = -1;
-   shape_u_a_max            = -1;
-   shape_u_a_maxmin_scale   = -1;
-   shape_u_a_exp            = -1;
-   shape_u_paint_tex        = -1;
-   shape_u_paint_start      = -1;
-   shape_u_paint_scale      = -1;
-   shape_u_paint_ndir       = -1;
-   shape_u_paint_ob_len     = -1;
-   shape_u_paint_angle01    = -1;
-   shape_u_paint_ob_size    = -1;
+   shape_u_tex_0               = -1;
+   shape_u_tex_1               = -1;
+   shape_u_a_min               = -1;
+   shape_u_a_max               = -1;
+   shape_u_a_maxmin_scale      = -1;
+   shape_u_a_exp               = -1;
+   shape_u_paint_tex           = -1;
+   shape_u_paint_start         = -1;
+   shape_u_paint_ndir          = -1;
+   shape_u_paint_ob_len        = -1;
+   shape_u_paint_angle01       = -1;
+   shape_u_paint_size          = -1;
+   shape_u_paint_ob_size       = -1;
+   shape_u_paint_mat_unproject = -1;
+   shape_u_paint_vp_unproject  = -1;
 #ifdef SHADERVG_UNIFORM_ARRAY
-   shape_u_a_offset         = -1;
+   shape_u_a_offset            = -1;
 #endif // SHADERVG_DEBUG_FRAG
 
    // debug:
@@ -133,7 +135,14 @@ ShaderVG_Shape::~ShaderVG_Shape() {
 
 void ShaderVG_Shape::copyName(const char *_name) {
 #ifdef SHADERVG_OBJECT_LABELS
-   strncpy(name, _name, MAX_SHAPE_NAME_CHARS);
+   if(NULL != _name)
+   {
+      strncpy(name, _name, MAX_SHAPE_NAME_CHARS-1);
+   }
+   else
+   {
+      name[0] = 0;
+   }
 #else
    (void)_name;
 #endif // SHADERVG_OBJECT_LABELS
@@ -570,56 +579,58 @@ sBool ShaderVG_Shape::queryLocationsAndValidate(void) {
    shape_a_uv        = shape_shader.getAttribLocation("a_uv");         // optional
 
    shape_u_transform        = shape_shader.getUniformLocation("u_transform");
-   shape_u_last_instance    = shape_shader.getUniformLocation("u_last_instance");     // optional
-   shape_u_aa               = shape_shader.getUniformLocation("u_aa");                // optional
-   shape_u_aa_range         = shape_shader.getUniformLocation("u_aa_range");          // optional for non-AA shader
+   shape_u_last_instance    = shape_shader.getUniformLocation("u_last_instance");           // optional
+   shape_u_aa               = shape_shader.getUniformLocation("u_aa");                      // optional
+   shape_u_aa_range         = shape_shader.getUniformLocation("u_aa_range");                // optional for non-AA shader
 #ifdef SHADERVG_AA_EXP
-   shape_u_aa_exp           = shape_shader.getUniformLocation("u_aa_exp");            // optional
+   shape_u_aa_exp           = shape_shader.getUniformLocation("u_aa_exp");                  // optional
 #endif // SHADERVG_AA_EXP
-   shape_u_center           = shape_shader.getUniformLocation("u_center");            // optional for non-AA shader
-   shape_u_size             = shape_shader.getUniformLocation("u_size");              // optional
-   shape_u_size_i           = shape_shader.getUniformLocation("u_size_i");            // optional
-   shape_u_size_o           = shape_shader.getUniformLocation("u_size_o");            // optional
-   shape_u_radius           = shape_shader.getUniformLocation("u_radius");            // optional
-   shape_u_radius_i         = shape_shader.getUniformLocation("u_radius_i");          // optional
-   shape_u_radius_o         = shape_shader.getUniformLocation("u_radius_o");          // optional
-   shape_u_ob_radius_i      = shape_shader.getUniformLocation("u_ob_radius_i");       // optional
-   shape_u_ob_radius_o      = shape_shader.getUniformLocation("u_ob_radius_o");       // optional
-   shape_u_ob_radius_i_max  = shape_shader.getUniformLocation("u_ob_radius_i_max");   // optional
-   shape_u_ob_radius_o_max  = shape_shader.getUniformLocation("u_ob_radius_o_max");   // optional
-   shape_u_radius_i_max     = shape_shader.getUniformLocation("u_radius_i_max");      // optional
-   shape_u_radius_o_max     = shape_shader.getUniformLocation("u_radius_o_max");      // optional
-   shape_u_ob_radius        = shape_shader.getUniformLocation("u_ob_radius");         // optional
-   shape_u_ob_radius_max    = shape_shader.getUniformLocation("u_ob_radius_max");     // optional
-   shape_u_radius_max       = shape_shader.getUniformLocation("u_radius_max");        // optional
-   shape_u_point_radius     = shape_shader.getUniformLocation("u_point_radius");      // optional
-   shape_u_color_fill       = shape_shader.getUniformLocation("u_color_fill");        // optional
-   shape_u_color_stroke     = shape_shader.getUniformLocation("u_color_stroke");      // optional
-   shape_u_global_alpha     = shape_shader.getUniformLocation("u_global_alpha");      // optional
-   shape_u_decal_alpha      = shape_shader.getUniformLocation("u_decal_alpha");       // optional
-   shape_u_sampler          = shape_shader.getUniformLocation("u_sampler");           // optional
-   shape_u_stroke_w         = shape_shader.getUniformLocation("u_stroke_w");          // optional
-   shape_u_line_pattern_scl = shape_shader.getUniformLocation("u_line_pattern_scl");  // optional
-   shape_u_line_pattern_off = shape_shader.getUniformLocation("u_line_pattern_off");  // optional
-   shape_u_line_miter_limit = shape_shader.getUniformLocation("u_line_miter_limit");  // optional
+   shape_u_center           = shape_shader.getUniformLocation("u_center");                  // optional for non-AA shader
+   shape_u_size             = shape_shader.getUniformLocation("u_size");                    // optional
+   shape_u_size_i           = shape_shader.getUniformLocation("u_size_i");                  // optional
+   shape_u_size_o           = shape_shader.getUniformLocation("u_size_o");                  // optional
+   shape_u_radius           = shape_shader.getUniformLocation("u_radius");                  // optional
+   shape_u_radius_i         = shape_shader.getUniformLocation("u_radius_i");                // optional
+   shape_u_radius_o         = shape_shader.getUniformLocation("u_radius_o");                // optional
+   shape_u_ob_radius_i      = shape_shader.getUniformLocation("u_ob_radius_i");             // optional
+   shape_u_ob_radius_o      = shape_shader.getUniformLocation("u_ob_radius_o");             // optional
+   shape_u_ob_radius_i_max  = shape_shader.getUniformLocation("u_ob_radius_i_max");         // optional
+   shape_u_ob_radius_o_max  = shape_shader.getUniformLocation("u_ob_radius_o_max");         // optional
+   shape_u_radius_i_max     = shape_shader.getUniformLocation("u_radius_i_max");            // optional
+   shape_u_radius_o_max     = shape_shader.getUniformLocation("u_radius_o_max");            // optional
+   shape_u_ob_radius        = shape_shader.getUniformLocation("u_ob_radius");               // optional
+   shape_u_ob_radius_max    = shape_shader.getUniformLocation("u_ob_radius_max");           // optional
+   shape_u_radius_max       = shape_shader.getUniformLocation("u_radius_max");              // optional
+   shape_u_point_radius     = shape_shader.getUniformLocation("u_point_radius");            // optional
+   shape_u_color_fill       = shape_shader.getUniformLocation("u_color_fill");              // optional
+   shape_u_color_stroke     = shape_shader.getUniformLocation("u_color_stroke");            // optional
+   shape_u_global_alpha     = shape_shader.getUniformLocation("u_global_alpha");            // optional
+   shape_u_decal_alpha      = shape_shader.getUniformLocation("u_decal_alpha");             // optional
+   shape_u_sampler          = shape_shader.getUniformLocation("u_sampler");                 // optional
+   shape_u_stroke_w         = shape_shader.getUniformLocation("u_stroke_w");                // optional
+   shape_u_line_pattern_scl = shape_shader.getUniformLocation("u_line_pattern_scl");        // optional
+   shape_u_line_pattern_off = shape_shader.getUniformLocation("u_line_pattern_off");        // optional
+   shape_u_line_miter_limit = shape_shader.getUniformLocation("u_line_miter_limit");        // optional
 #ifdef SHADERVG_DEBUG_FRAG
-   shape_u_debug            = shape_shader.getUniformLocation("u_debug");             // optional
+   shape_u_debug            = shape_shader.getUniformLocation("u_debug");                   // optional
 #endif // SHADERVG_DEBUG_FRAG
-   shape_u_tex_0            = shape_shader.getUniformLocation("u_tex_0");             // optional
-   shape_u_tex_1            = shape_shader.getUniformLocation("u_tex_1");             // optional
-   shape_u_a_min            = shape_shader.getUniformLocation("u_a_min");             // optional
-   shape_u_a_max            = shape_shader.getUniformLocation("u_a_max");             // optional
-   shape_u_a_maxmin_scale   = shape_shader.getUniformLocation("u_a_maxmin_scale");    // optional
-   shape_u_a_exp            = shape_shader.getUniformLocation("u_a_exp");             // optional
-   shape_u_paint_tex        = shape_shader.getUniformLocation("u_paint_tex");         // optional
-   shape_u_paint_start      = shape_shader.getUniformLocation("u_paint_start");       // optional
-   shape_u_paint_scale      = shape_shader.getUniformLocation("u_paint_scale");       // optional
-   shape_u_paint_ndir       = shape_shader.getUniformLocation("u_paint_ndir");        // optional
-   shape_u_paint_ob_len     = shape_shader.getUniformLocation("u_paint_ob_len");      // optional
-   shape_u_paint_angle01    = shape_shader.getUniformLocation("u_paint_angle01");     // optional
-   shape_u_paint_ob_size    = shape_shader.getUniformLocation("u_paint_ob_size");     // optional
+   shape_u_tex_0            = shape_shader.getUniformLocation("u_tex_0");                   // optional
+   shape_u_tex_1            = shape_shader.getUniformLocation("u_tex_1");                   // optional
+   shape_u_a_min            = shape_shader.getUniformLocation("u_a_min");                   // optional
+   shape_u_a_max            = shape_shader.getUniformLocation("u_a_max");                   // optional
+   shape_u_a_maxmin_scale   = shape_shader.getUniformLocation("u_a_maxmin_scale");          // optional
+   shape_u_a_exp            = shape_shader.getUniformLocation("u_a_exp");                   // optional
+   shape_u_paint_tex        = shape_shader.getUniformLocation("u_paint_tex");               // optional
+   shape_u_paint_start      = shape_shader.getUniformLocation("u_paint_start");             // optional
+   shape_u_paint_ndir       = shape_shader.getUniformLocation("u_paint_ndir");              // optional
+   shape_u_paint_ob_len     = shape_shader.getUniformLocation("u_paint_ob_len");            // optional
+   shape_u_paint_angle01    = shape_shader.getUniformLocation("u_paint_angle01");           // optional
+   shape_u_paint_size       = shape_shader.getUniformLocation("u_paint_size");              // optional
+   shape_u_paint_ob_size    = shape_shader.getUniformLocation("u_paint_ob_size");           // optional
+   shape_u_paint_mat_unproject = shape_shader.getUniformLocation("u_paint_mat_unproject");  // optional
+   shape_u_paint_vp_unproject  = shape_shader.getUniformLocation("u_paint_vp_unproject");   // optional
 #ifdef SHADERVG_UNIFORM_ARRAY
-   shape_u_a_offset         = shape_shader.getUniformLocation("u_a_offset");          // optional
+   shape_u_a_offset         = shape_shader.getUniformLocation("u_a_offset");                // optional
 #endif // SHADERVG_UNIFORM_ARRAY
 
    sBool r = validateShapeShader();
@@ -660,34 +671,90 @@ sBool ShaderVG_Shape::createShapeShader(const char *_sVS, const char *_sFS) {
    return r;
 }
 
-void ShaderVG_Shape::updatePaintUniforms(const shadervg_paint_t *_paint) {
+void ShaderVG_Shape::updatePaintUniforms(const shadervg_paint_t *_paint,
+                                         const sBool _bPolygon,
+                                         Dsdvg_mat4_ref_t _mvpMatrix,            // or NULL
+                                         sUI _vpX, sUI _vpY, sUI _vpW, sUI _vpH,
+                                         Dsdvg_mat4_ref_t _mvpMatrixUnproject    // or NULL
+                                         ) {
+   Dpaintprintf("xxx .......................................................... bPolygon=%d\n", _bPolygon);
    sSI loc = shape_u_paint_tex;
    if(loc >= 0)
    {
       Dsdvg_uniform_1i(loc, 0/*tex_unit*/);
    }
 
+#ifdef SHADERVG_USE_POLYGON_SHADERS
+   sBool bPolygonProject = _bPolygon && (NULL == _mvpMatrixUnproject);
+#endif // SHADERVG_USE_POLYGON_SHADERS
+
+   sF32 paintStartX;
+   sF32 paintStartY;
+#ifdef SHADERVG_USE_POLYGON_SHADERS
+   if(bPolygonProject)
+#else
+   if(false)
+#endif // SHADERVG_USE_POLYGON_SHADERS
+   {
+#ifdef MINNIE_LIB
+      _mvpMatrix->project2f(_paint->start_x, _paint->start_y,
+                            _vpX, _vpY, _vpW, _vpH,
+                            paintStartX/*retX*/, paintStartY/*retY*/
+                            );
+#else
+      Dsdvg_errorprintf("[!!!] Shape::updatePaintUniforms<polygon>: not available in plugin build\n");
+#endif // MINNIE_LIB
+   }
+   else
+   {
+      paintStartX = _paint->start_x;
+      paintStartY = _paint->start_y;
+   }
+
+   sF32 paintDirX;
+   sF32 paintDirY;
+#ifdef SHADERVG_USE_POLYGON_SHADERS
+   if(bPolygonProject)
+#else
+   if(false)
+#endif // SHADERVG_USE_POLYGON_SHADERS
+   {
+#ifdef MINNIE_LIB
+      _mvpMatrix->project2f(_paint->start_x + _paint->dir_x,
+                            _paint->start_y - _paint->dir_y,
+                            _vpX, _vpY, _vpW, _vpH,
+                            paintDirX/*retX*/, paintDirY/*retY*/
+                            );
+      paintDirX -= paintStartX;
+      paintDirY -= paintStartY;
+      paintDirY = -paintDirY;
+      // paintDirY = (_vpH - 1 - paintDirY);
+      // paintStartY = (_vpH - 1 - paintStartY);
+      // paintStartY = (_vpH - 1 - paintStartY);
+
+      Dpaintprintf("[trc] polygon paintStart=(%f;%f) paintDir=(%f;%f)\n", paintStartX, paintStartY, paintDirX, paintDirY);
+#else
+      Dsdvg_errorprintf("[!!!] Shape::updatePaintUniforms<polygon>: not available in plugin build\n");
+#endif // MINNIE_LIB
+   }
+   else
+   {
+      paintDirX = _paint->dir_x;
+      paintDirY = _paint->dir_y;
+   }
+
    loc = shape_u_paint_start;
    if(loc >= 0)
    {
-      Dpaintprintf("[trc] paint_start=(%f;%f)\n", _paint->start_x, _paint->start_y);
-      Dsdvg_uniform_2f(loc, _paint->start_x, _paint->start_y);
-   }
-
-   loc = shape_u_paint_scale;
-   if(loc >= 0)
-   {
-      const sF32 sclX = (0.0f != _paint->dir_x) ? (1.0f / _paint->dir_x) : 0.0f;
-      const sF32 sclY = (0.0f != _paint->dir_y) ? (1.0f / _paint->dir_y) : 0.0f;
-      Dpaintprintf("[trc] paint_scale=(%f;%f)\n", sclX, sclY);
-      Dsdvg_uniform_2f(loc, sclX, sclY);
+      Dpaintprintf("[trc] paint_start=(%f;%f) xform=(%f;%f) paint_dir=(%f;%f) xform=(%f;%f) bPolygon=%d\n", _paint->start_x, _paint->start_y, paintStartX, paintStartY, _paint->dir_x, _paint->dir_y, paintDirX, paintDirY, _bPolygon);
+      Dsdvg_uniform_2f(loc, paintStartX, paintStartY);
    }
 
    loc = shape_u_paint_ndir;
    if(loc >= 0)
    {
-      sF32 dx = _paint->dir_x;
-      sF32 dy = _paint->dir_y;
+      sF32 dx = paintDirX;
+      sF32 dy = paintDirY;
       sF32 l = sqrtf(dx*dx + dy*dy);
       if(l > 0.0f)
       {
@@ -700,15 +767,17 @@ void ShaderVG_Shape::updatePaintUniforms(const shadervg_paint_t *_paint) {
          dx = 0.0f;
          dy = 0.0f;
       }
-      Dpaintprintf("[trc] paint_ndir=(%f; %f)  (start=(%f;%f) dir=(%f;%f))\n", dx, dy, _paint->start_x, _paint->start_y, _paint->dir_x, _paint->dir_y);
+      Dpaintprintf("[trc] paint_ndir=(%f; %f)  (orig start=(%f;%f) dir=(%f;%f))\n", dx, dy, _paint->start_x, _paint->start_y, _paint->dir_x, _paint->dir_y);
+      // dx = 1.0f;
+      // dy = 0.0f;
       Dsdvg_uniform_2f(loc, dx, -dy);
    }
 
    loc = shape_u_paint_ob_len;
    if(loc >= 0)
    {
-      const sF32 dx = _paint->dir_x;
-      const sF32 dy = _paint->dir_y;
+      const sF32 dx = paintDirX;
+      const sF32 dy = paintDirY;
       sF32 l = sqrtf(dx*dx + dy*dy);
       if(l > 0.0f)
       {
@@ -721,15 +790,143 @@ void ShaderVG_Shape::updatePaintUniforms(const shadervg_paint_t *_paint) {
    loc = shape_u_paint_angle01;
    if(loc >= 0)
    {
-      Dpaintprintf("[trc] paint_angle01=%f\n", _paint->angle01);
-      Dsdvg_uniform_1f(loc, _paint->angle01);
+#ifdef SHADERVG_USE_POLYGON_SHADERS
+      if(bPolygonProject)
+#else
+      if(false)
+#endif // SHADERVG_USE_POLYGON_SHADERS
+      {
+#ifdef MINNIE_LIB
+         Vector2f r;
+         Dpaintprintf("xxx rx BEGIN\n");
+         _mvpMatrix->project2f(_paint->start_x + 100.0f,
+                               _paint->start_y + 0.0f,
+                               _vpX, _vpY, _vpW, _vpH,
+                               r.x/*retX*/, r.y/*retY*/
+                               );
+         r.x -= paintStartX;
+         r.y -= paintStartY;
+         r.y = -r.y;
+         Dpaintprintf("xxx r=(%f;%f)\n", r.x, r.y);
+         r.unit();
+         Dpaintprintf("xxx rnorm=(%f;%f)\n", r.x, r.y);
+         sF32 a = atanf(r.y / r.x) * (1.0f / sM_2PIf);
+         Dpaintprintf("[trc] initial a=%f\n", a);
+         if(r.x > 0.0f)
+         {
+            if(r.y < 0.0f)
+            {
+               Dpaintprintf("xxx debug a=%f  afix=%f\n", a, 1.0f + a);
+               a = 1.0f + a;
+            }
+         }
+         else
+         {
+            if(r.y < 0.0f)
+            {
+               a += 0.5f;
+            }
+            else
+            {
+               a += 0.5f;
+            }
+         }
+          // a -= 0.75;
+          // a += 0.25;
+         // a = -a;
+         if(a >= 1.0) a -= 1.0;
+         else if(a < 0.0) a += 1.0;
+         a += _paint->angle01;
+         if(a >= 1.0) a -= 1.0;
+         else if(a < 0.0) a += 1.0;
+         Dpaintprintf("[trc] paint_angle01=%f xform=%f a=%f\n", _paint->angle01, _paint->angle01+a, a);
+         Dsdvg_uniform_1f(loc, a);
+#else
+         Dsdvg_errorprintf("[!!!] Shape::updatePaintUniforms<polygon>: not available in plugin build\n");
+#endif // MINNIE_LIB
+      }
+      else
+      {
+         Dpaintprintf("[trc] paint_angle01=%f\n", _paint->angle01);
+         Dsdvg_uniform_1f(loc, _paint->angle01);
+      }
+   }
+
+   sF32 paintSizeX;
+   sF32 paintSizeY;
+   sF32 paintObSizeX;
+   sF32 paintObSizeY;
+#ifdef SHADERVG_USE_POLYGON_SHADERS
+   if(0 && bPolygonProject)
+#else
+   if(false)
+#endif // SHADERVG_USE_POLYGON_SHADERS
+   {
+#if defined(MINNIE_LIB)
+      _mvpMatrix->project2f(_paint->start_x + _paint->size_x,
+                            _paint->start_y + _paint->size_y,
+                            _vpX, _vpY, _vpW, _vpH,
+                            paintSizeX/*retX*/, paintSizeY/*retY*/
+                            );
+      Dpaintprintf("xxx proj paintSize=(%f;%f)\n", paintSizeX, paintSizeY);
+      paintSizeX -= paintStartX;
+      paintSizeY -= paintStartY;
+      Dpaintprintf("xxx proj rel paintSize=(%f;%f)\n", paintSizeX, paintSizeY);
+      paintObSizeX = (0.0f != paintSizeX) ? (1.0f / paintSizeX) : 0.0f;
+      paintObSizeY = (0.0f != paintSizeY) ? (1.0f / paintSizeY) : 0.0f;
+      Dpaintprintf("[trc] polygon paint->size=(%f;%f) xform=(%f;%f) ob_xform=(%f;%f)\n", _paint->size_x, _paint->size_y, paintSizeX, paintSizeY, paintObSizeX, paintObSizeY);
+#else
+      Dsdvg_errorprintf("[!!!] Shape::updatePaintUniforms<polygon>: not available in plugin build\n");
+#endif // MINNIE_LIB
+   }
+   else
+   {
+      paintSizeX = _paint->size_x;
+      paintSizeY = _paint->size_y;
+      paintObSizeX = (0.0f != paintSizeX) ? (1.0f / paintSizeX) : 0.0f;
+      paintObSizeY = (0.0f != paintSizeY) ? (1.0f / paintSizeY) : 0.0f;
+   }
+
+   loc = shape_u_paint_size;
+   if(loc >= 0)
+   {
+      Dpaintprintf("[trc] paint_size=(%f;%f) xform=(%f;%f) u_paint_size=(%f;%f)\n", _paint->size_x, _paint->size_y, paintSizeX, paintSizeY, paintSizeX, paintSizeY);
+      Dsdvg_uniform_2f(loc, paintSizeX, paintSizeY);
    }
 
    loc = shape_u_paint_ob_size;
    if(loc >= 0)
    {
-      Dpaintprintf("[trc] paint_ob_size(%f;%f)\n", _paint->ob_size_x, _paint->ob_size_y);
-      Dsdvg_uniform_2f(loc, _paint->ob_size_x, _paint->ob_size_y);
+      Dpaintprintf("[trc] paint_size=(%f;%f) xform=(%f;%f) u_paint_ob_size=(%f;%f)\n", _paint->size_x, _paint->size_y, paintSizeX, paintSizeY, paintObSizeX, paintObSizeY);
+      Dsdvg_uniform_2f(loc, paintObSizeX, paintObSizeY);
+   }
+
+   loc = shape_u_paint_mat_unproject;
+   if(loc >= 0)
+   {
+      if(NULL != _mvpMatrixUnproject)
+      {
+         Dpaintprintf("[trc] paint_mat_unproject\n");
+         Dsdvg_uniform_mat4(loc, _mvpMatrixUnproject);
+      }
+      else
+      {
+         Dsdvg_errorprintf("[!!!] paint_mat_unproject required but mvpMatrixUnproject is NULL");
+      }
+   }
+
+   loc = shape_u_paint_vp_unproject;
+   if(loc >= 0)
+   {
+      Dpaintprintf("[trc] paint_vp_unproject loc=%d vp=(%u,%u,%u,%u)\n", loc, _vpX, _vpY, _vpW, _vpH);
+      const sF32 vpWh = _vpW * 0.5f;
+      const sF32 vpHh = _vpH * 0.5f;
+      Dsdvg_uniform_4f(loc,
+                       sF32(_vpX + vpWh),
+                       sF32(_vpY + vpHh),
+                       sF32(1.0f / vpWh),
+                       sF32(1.0f / vpHh)
+                       );
    }
 }
 
@@ -789,7 +986,12 @@ void ShaderVG_Shape::drawTrianglesFillFlatUniformVBO32Paint(sUI              _vb
       Dsdvg_uniform_4f(shape_u_color_stroke, _strokeR, _strokeG, _strokeB, _strokeA);
    }
 
-   updatePaintUniforms(_paint);
+   updatePaintUniforms(_paint,
+                       YAC_FALSE/*bPolygon*/,
+                       NULL/*mvpMatrix*/,
+                       0u/*vpX*/, 0u/*vpY*/, 0u/*vpW*/, 0u/*vpH*/,
+                       NULL/*mvpMatrixUnproject*/
+                       );
 
    Dsdvg_attrib_offset(shape_a_vertex, 2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/, 8/*stride*/, _byteOffset);
    Dsdvg_attrib_enable(shape_a_vertex);
@@ -825,7 +1027,12 @@ void ShaderVG_Shape::drawTrianglesFillFlatUniformVBO14_2Paint(sUI              _
       Dsdvg_uniform_4f(shape_u_color_stroke, _strokeR, _strokeG, _strokeB, _strokeA);
    }
 
-   updatePaintUniforms(_paint);
+   updatePaintUniforms(_paint,
+                       YAC_FALSE/*bPolygon*/,
+                       NULL/*mvpMatrix*/,
+                       0u/*vpX*/, 0u/*vpY*/, 0u/*vpW*/, 0u/*vpH*/,
+                       NULL/*mvpMatrixUnproject*/
+                       );
 
    Dsdvg_attrib_offset(shape_a_vertex, 2/*size*/, GL_SHORT, GL_FALSE/*normalize*/, 4/*stride*/, _byteOffset);
    Dsdvg_attrib_enable(shape_a_vertex);
@@ -890,7 +1097,12 @@ void ShaderVG_Shape::drawRectFillAAVBO32Paint(sUI              _vboId,
       }
 #endif // SHADERVG_DEBUG_FRAG
 
-      updatePaintUniforms(_paint);
+      updatePaintUniforms(_paint,
+                          YAC_FALSE/*bPolygon*/,
+                          NULL/*mvpMatrix*/,
+                          0u/*vpX*/, 0u/*vpY*/, 0u/*vpW*/, 0u/*vpH*/,
+                          NULL/*mvpMatrixUnproject*/
+                          );
 
       Dsdvg_attrib_offset(shape_a_vertex, 2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/, 0/*stride*/, _byteOffsetBorder);
       Dsdvg_attrib_enable(shape_a_vertex);
@@ -989,7 +1201,12 @@ void ShaderVG_Shape::drawRectFillAAPaint(Dsdvg_buffer_ref_t _scratchBuf,
    }
 #endif // SHADERVG_DEBUG_FRAG
 
-   updatePaintUniforms(_paint);
+   updatePaintUniforms(_paint,
+                       YAC_FALSE/*bPolygon*/,
+                       NULL/*mvpMatrix*/,
+                       0u/*vpX*/, 0u/*vpY*/, 0u/*vpW*/, 0u/*vpH*/,
+                       NULL/*mvpMatrixUnproject*/
+                       );
 
    Dsdvg_attrib_enable(shape_a_vertex);
 
@@ -1065,7 +1282,12 @@ void ShaderVG_Shape::drawRectStrokeAAVBO32Paint(sUI              _vboId,
       }
 #endif // SHADERVG_DEBUG_FRAG
 
-      updatePaintUniforms(_paint);
+      updatePaintUniforms(_paint,
+                          YAC_FALSE/*bPolygon*/,
+                          NULL/*mvpMatrix*/,
+                          0u/*vpX*/, 0u/*vpY*/, 0u/*vpW*/, 0u/*vpH*/,
+                          NULL/*mvpMatrixUnproject*/
+                          );
 
       Dsdvg_attrib_offset(shape_a_vertex, 2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/, 0/*stride*/, _byteOffsetBorder);
 
@@ -1130,7 +1352,12 @@ void ShaderVG_Shape::drawRectStrokeAAPaint(Dsdvg_buffer_ref_t _scratchBuf,
    }
 #endif // SHADERVG_DEBUG_FRAG
 
-   updatePaintUniforms(_paint);
+   updatePaintUniforms(_paint,
+                       YAC_FALSE/*bPolygon*/,
+                       NULL/*mvpMatrix*/,
+                       0u/*vpX*/, 0u/*vpY*/, 0u/*vpW*/, 0u/*vpH*/,
+                       NULL/*mvpMatrixUnproject*/
+                       );
 
    Dsdvg_attrib_enable(shape_a_vertex);
 
@@ -1220,7 +1447,12 @@ void ShaderVG_Shape::drawEllipseFillAAVBO32Paint(sUI              _vboId,
       }
 #endif // SHADERVG_DEBUG_FRAG
 
-      updatePaintUniforms(_paint);
+      updatePaintUniforms(_paint,
+                          YAC_FALSE/*bPolygon*/,
+                          NULL/*mvpMatrix*/,
+                          0u/*vpX*/, 0u/*vpY*/, 0u/*vpW*/, 0u/*vpH*/,
+                          NULL/*mvpMatrixUnproject*/
+                          );
 
       Dsdvg_attrib_offset(shape_a_vertex, 2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/, 0/*stride*/, _byteOffsetBorder);
       Dsdvg_attrib_enable(shape_a_vertex);
@@ -1331,7 +1563,12 @@ void ShaderVG_Shape::drawEllipseFillAAPaint(Dsdvg_buffer_ref_t _scratchBuf,
 
    Dsdvg_attrib_enable(shape_a_vertex);
 
-   updatePaintUniforms(_paint);
+   updatePaintUniforms(_paint,
+                       YAC_FALSE/*bPolygon*/,
+                       NULL/*mvpMatrix*/,
+                       0u/*vpX*/, 0u/*vpY*/, 0u/*vpW*/, 0u/*vpH*/,
+                       NULL/*mvpMatrixUnproject*/
+                       );
 
    // Calc border mesh
    if(b_draw_border || bSingle)
@@ -1444,7 +1681,12 @@ void ShaderVG_Shape::drawEllipseStrokeAAVBO32Paint(sUI              _vboId,
       }
 #endif // SHADERVG_DEBUG_FRAG
 
-      updatePaintUniforms(_paint);
+      updatePaintUniforms(_paint,
+                          YAC_FALSE/*bPolygon*/,
+                          NULL/*mvpMatrix*/,
+                          0u/*vpX*/, 0u/*vpY*/, 0u/*vpW*/, 0u/*vpH*/,
+                          NULL/*mvpMatrixUnproject*/
+                          );
 
       Dsdvg_attrib_offset(shape_a_vertex, 2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/, 0/*stride*/, _byteOffsetBorder);
       Dsdvg_attrib_enable(shape_a_vertex);
@@ -1538,7 +1780,12 @@ void ShaderVG_Shape::drawEllipseStrokeAAPaint(Dsdvg_buffer_ref_t _scratchBuf,
    }
 #endif // SHADERVG_DEBUG_FRAG
 
-   updatePaintUniforms(_paint);
+   updatePaintUniforms(_paint,
+                       YAC_FALSE/*bPolygon*/,
+                       NULL/*mvpMatrix*/,
+                       0u/*vpX*/, 0u/*vpY*/, 0u/*vpW*/, 0u/*vpH*/,
+                       NULL/*mvpMatrixUnproject*/
+                       );
 
    Dsdvg_attrib_enable(shape_a_vertex);
 
@@ -1649,7 +1896,12 @@ void ShaderVG_Shape::drawRoundRectFillAAVBO32Paint(sUI              _vboId,
       }
 #endif // SHADERVG_DEBUG_FRAG
 
-      updatePaintUniforms(_paint);
+      updatePaintUniforms(_paint,
+                          YAC_FALSE/*bPolygon*/,
+                          NULL/*mvpMatrix*/,
+                          0u/*vpX*/, 0u/*vpY*/, 0u/*vpW*/, 0u/*vpH*/,
+                          NULL/*mvpMatrixUnproject*/
+                          );
 
       Dsdvg_attrib_offset(shape_a_vertex, 2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/, 0/*stride*/, _byteOffsetBorder);
       Dsdvg_attrib_enable(shape_a_vertex);
@@ -1746,7 +1998,12 @@ void ShaderVG_Shape::drawRoundRectFillAAPaint(Dsdvg_buffer_ref_t _scratchBuf,
    }
 #endif // SHADERVG_DEBUG_FRAG
 
-   updatePaintUniforms(_paint);
+   updatePaintUniforms(_paint,
+                       YAC_FALSE/*bPolygon*/,
+                       NULL/*mvpMatrix*/,
+                       0u/*vpX*/, 0u/*vpY*/, 0u/*vpW*/, 0u/*vpH*/,
+                       NULL/*mvpMatrixUnproject*/
+                       );
 
    Dsdvg_attrib_enable(shape_a_vertex);
 
@@ -1840,7 +2097,12 @@ void ShaderVG_Shape::drawRoundRectStrokeAAVBO32Paint(sUI              _vboId,
       }
 #endif // SHADERVG_DEBUG_FRAG
 
-      updatePaintUniforms(_paint);
+      updatePaintUniforms(_paint,
+                          YAC_FALSE/*bPolygon*/,
+                          NULL/*mvpMatrix*/,
+                          0u/*vpX*/, 0u/*vpY*/, 0u/*vpW*/, 0u/*vpH*/,
+                          NULL/*mvpMatrixUnproject*/
+                          );
 
       Dsdvg_attrib_offset(shape_a_vertex, 2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/, 0/*stride*/, _byteOffsetBorder);
 
@@ -1928,7 +2190,12 @@ void ShaderVG_Shape::drawRoundRectStrokeAAPaint(Dsdvg_buffer_ref_t _scratchBuf,
    }
 #endif // SHADERVG_DEBUG_FRAG
 
-   updatePaintUniforms(_paint);
+   updatePaintUniforms(_paint,
+                       YAC_FALSE/*bPolygon*/,
+                       NULL/*mvpMatrix*/,
+                       0u/*vpX*/, 0u/*vpY*/, 0u/*vpW*/, 0u/*vpH*/,
+                       NULL/*mvpMatrixUnproject*/
+                       );
 
    Dsdvg_attrib_enable(shape_a_vertex);
 
@@ -2010,7 +2277,12 @@ void ShaderVG_Shape::drawPointsRoundAAVBO32Paint(sUI              _vboId,
    }
 #endif // SHADERVG_DEBUG_FRAG
 
-   updatePaintUniforms(_paint);
+   updatePaintUniforms(_paint,
+                       YAC_FALSE/*bPolygon*/,
+                       NULL/*mvpMatrix*/,
+                       0u/*vpX*/, 0u/*vpY*/, 0u/*vpW*/, 0u/*vpH*/,
+                       NULL/*mvpMatrixUnproject*/
+                       );
 
    Dsdvg_attrib_offset(shape_a_vertex, 2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/, 8/*stride*/, _byteOffset);
 
@@ -2072,7 +2344,12 @@ void ShaderVG_Shape::drawPointsRoundAAVBO14_2Paint(sUI              _vboId,
    }
 #endif // SHADERVG_DEBUG_FRAG
 
-   updatePaintUniforms(_paint);
+   updatePaintUniforms(_paint,
+                       YAC_FALSE/*bPolygon*/,
+                       NULL/*mvpMatrix*/,
+                       0u/*vpX*/, 0u/*vpY*/, 0u/*vpW*/, 0u/*vpH*/,
+                       NULL/*mvpMatrixUnproject*/
+                       );
 
    Dsdvg_attrib_offset(shape_a_vertex, 2/*size*/, GL_SHORT, GL_FALSE/*normalize*/, 4/*stride*/, _byteOffset);
 

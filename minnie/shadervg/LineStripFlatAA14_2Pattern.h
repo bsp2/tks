@@ -33,7 +33,6 @@ class LineStripFlatAA14_2Pattern : public ShaderVG_Shape {
       "uniform float u_stroke_w; \n"
       "uniform vec2  u_paint_start; \n"
       "uniform vec2  u_paint_ob_size; \n"
-      "uniform float u_paint_ob_len; \n"
       " \n"
       "ATTRIBUTE vec2  a_vertex; \n"
       "ATTRIBUTE vec2  a_vertex_n; \n"
@@ -77,7 +76,7 @@ class LineStripFlatAA14_2Pattern : public ShaderVG_Shape {
       "  gl_Position = u_transform * vec4(v,0,1); \n"
       "  v_vertex_mp = v - v1; \n"
       "  v_plane_n   = vec2(vN.y, -vN.x); \n"
-      "  v_paint_uv  = (v - u_paint_start) * u_paint_ob_size * u_paint_ob_len; \n"
+      "  v_paint_uv  = (v - u_paint_start) * u_paint_ob_size; \n"
       "} \n"
       ;
 
@@ -122,7 +121,6 @@ class LineStripFlatAA14_2Pattern : public ShaderVG_Shape {
          && (-1 != shape_u_aa_range)
          && (-1 != shape_u_paint_start)
          && (-1 != shape_u_paint_ob_size)
-         && (-1 != shape_u_paint_ob_len)
          && (-1 != shape_u_paint_ndir)
          && (-1 != shape_u_paint_tex)
          ;

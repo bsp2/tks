@@ -253,6 +253,8 @@ YF void YAC_CALL sdvg_DisableScissor (void);
 /* @function sdvg_SetTransform,Matrix4f mat4
 Set row-major modelview-projection transformation matrix
 
+This function calls %sdvg_TransformChanged internally.
+
 @group Transform
 */
 #ifdef MINNIE_LIB
@@ -264,6 +266,8 @@ YF void YAC_CALL _sdvg_SetTransform (YAC_Object *_mat4);
 
 /* @function sdvg_GetTransformRef:Matrix4f
 Get reference to row-major modelview-projection matrix.
+
+Applications must call %sdvg_TransformChanged() after the matrix is changed.
 
 @group Transform
 */
@@ -307,8 +311,23 @@ Recalculate combined modelview-projection transform matrix.
 This is usually done automatically when modifying the projection / model matrices via the ShaderVG API functions.
 
 However, when an application obtains references to the matrices and modifies them directly, it must call this function afterwards.
+
+This function calls %sdvg_TransformChanged internally.
+
+@group Transform
 */
 YF void YAC_CALL sdvg_UpdateTransform (void);
+
+/* @function sdvg_TransformChanged
+Recalculate inverse modelview-projection transform matrix.
+
+This is usually done automatically when modifying the projection / model matrices via the ShaderVG API functions.
+
+However, when an application obtains references to the MVP matrix and modifies it directly, it must call this function afterwards.
+
+@group Transform
+*/
+YF void YAC_CALL sdvg_TransformChanged (void);
 
 #ifdef SHADERVG_MATRIX_STACK
 /* @function sdvg_PushProjMatrix
@@ -3475,7 +3494,7 @@ The currently bound texture (nx1) is used as a gradient lookup table.
 
 @arg startX Origin X
 @arg startY Origin Y
-@arg dirX Direction and size X
+@arg dirX Direction and size X  (end point is (start+dir))
 @arg dirY Direction and size Y
 
 @group Paint
@@ -3524,7 +3543,7 @@ The currently bound texture is used as the pattern.
 
 @arg startX Start point X
 @arg startY Start point Y
-@arg dirX Direction X
+@arg dirX Direction X (will be normalized)
 @arg dirY Direction Y
 @arg sizeX Pattern size X
 @arg sizeY Pattern size Y
@@ -3542,7 +3561,7 @@ The currently bound texture is used as the alpha channel pattern.
 
 @arg startX Start point X
 @arg startY Start point Y
-@arg dirX Direction X
+@arg dirX Direction X (will be normalized)
 @arg dirY Direction Y
 @arg sizeX Pattern size X
 @arg sizeY Pattern size Y
@@ -3560,7 +3579,7 @@ The currently bound texture is used as the pattern.
 
 @arg startX Start point X
 @arg startY Start point Y
-@arg dirX Direction X
+@arg dirX Direction X (will be normalized)
 @arg dirY Direction Y
 @arg sizeX Pattern size X
 @arg sizeY Pattern size Y
@@ -3579,8 +3598,8 @@ The currently bound texture is used as the alpha channel pattern.
 
 @arg startX Start point X
 @arg startY Start point Y
-@arg dirX End point X
-@arg dirY End point Y
+@arg dirX Direction X (will be normalized)
+@arg dirY Direction Y
 @arg sizeX Pattern size X
 @arg sizeY Pattern size Y
 
