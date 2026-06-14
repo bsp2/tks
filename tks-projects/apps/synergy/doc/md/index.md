@@ -1,8 +1,8 @@
 % Synergy MIDI Tracker
 % bsp
-% 26-May-2026
+% 01-Jun-2026
 >>>
-03Nov2019, 04Nov2019, 05Nov2019, 07Nov2019, 08Nov2019, 09Nov2019, 17Nov2019, 03Apr2020, 04Apr2020, 07May2020, 15Oct2020, 14May2021, 15May2021, 02Jun2021, 03Jun2021, 14Jun2021, 20Jun2021, 25Jul2021, 28Jul2021, 21Aug2021, 27Aug2021, 13Sep2021, 05Oct2021, 15Oct2021, 24Oct2021, 26Oct2021, 28Oct2021, 31Oct2021, 01Nov2021, 13Nov2021, 21Nov2021, 12Dec2021, 19Dec2021, 20Dec2021, 23Dec2021, 31Dec2021, 09Jan2022, 16Jan2022, 13Feb2022, 23Feb2022, 27Feb2022, 18Mar2022, 20Mar2022, 01Apr2022, 03Apr2022, 08Apr2022, 21Apr2022, 23Apr2022, 24Apr2022, 24Jun2022, 31Oct2022, 04Nov2022, 19Nov2022, 25Nov2022, 16Dec2022, 23Dec2022, 01Feb2023, 05Feb2023, 12Feb2023, 15Feb2023, 18Feb2023, 20Feb2023, 26Feb2023, 31Mar2023, 01Apr2023, 03Aug2023, 04Aug2023, 05Aug2023, 17Aug2023, 18Aug2023, 14Dec2023, 15Dec2023, 15Dec2023, 23Nov2024, 28Nov2024, 30Nov2024, 21Dec2024, 23Dec2024, 27May2025, 29May2025, 31May2025, 04Jun2025, 05Jun2025, 03May2026, 26May2026
+03Nov2019, 04Nov2019, 05Nov2019, 07Nov2019, 08Nov2019, 09Nov2019, 17Nov2019, 03Apr2020, 04Apr2020, 07May2020, 15Oct2020, 14May2021, 15May2021, 02Jun2021, 03Jun2021, 14Jun2021, 20Jun2021, 25Jul2021, 28Jul2021, 21Aug2021, 27Aug2021, 13Sep2021, 05Oct2021, 15Oct2021, 24Oct2021, 26Oct2021, 28Oct2021, 31Oct2021, 01Nov2021, 13Nov2021, 21Nov2021, 12Dec2021, 19Dec2021, 20Dec2021, 23Dec2021, 31Dec2021, 09Jan2022, 16Jan2022, 13Feb2022, 23Feb2022, 27Feb2022, 18Mar2022, 20Mar2022, 01Apr2022, 03Apr2022, 08Apr2022, 21Apr2022, 23Apr2022, 24Apr2022, 24Jun2022, 31Oct2022, 04Nov2022, 19Nov2022, 25Nov2022, 16Dec2022, 23Dec2022, 01Feb2023, 05Feb2023, 12Feb2023, 15Feb2023, 18Feb2023, 20Feb2023, 26Feb2023, 31Mar2023, 01Apr2023, 03Aug2023, 04Aug2023, 05Aug2023, 17Aug2023, 18Aug2023, 14Dec2023, 15Dec2023, 15Dec2023, 23Nov2024, 28Nov2024, 30Nov2024, 21Dec2024, 23Dec2024, 27May2025, 29May2025, 31May2025, 04Jun2025, 05Jun2025, 03May2026, 26May2026, 01Jun2026
 <<<
 $(var:header)
 
@@ -105,7 +105,7 @@ A detailed changelog is available [here](CHANGELOG.txt).
 
   |cols=140,40
   |:File                                                                                                    |:Description
-  | [synergy-miditracker-26May2026-macos_arm64.dmg](files/synergy-miditracker-26May2026-macos_arm64.dmg)    | Latest (stable) Release
+  | [synergy-miditracker-01Jun2026-macos_arm64.dmg](files/synergy-miditracker-01Jun2026-macos_arm64.dmg)    | Latest (stable) Release
   ].table_noborder
 
 >>>mac_quarantine
@@ -124,8 +124,7 @@ note: tested on arm64 macOS 26.4
 
   |cols=140,40
   |:File                                                                                       |:Description
-  | [synergy-miditracker-26May2026-win64.7z](files/synergy-miditracker-26May2026-win64.7z)     | Latest (stable) Release
-  | [synergy-miditracker-26May2026c-win64.7z](files/synergy-miditracker-26May2026c-win64.7z)   | same but w/ Tranzistow workaround
+  | [synergy-miditracker-26May2026c-win64.7z](files/synergy-miditracker-26May2026c-win64.7z)   | Latest (stable) Release
   ].table_noborder
 
 important: when upgrading to a new release, backup your `synergy_config_local.tks` and then replace the default local config
