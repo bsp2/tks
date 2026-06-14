@@ -204,6 +204,7 @@ extern "C" {
       void   (YAC_CALL *_zglShaderSource)       (sUI _shader, YAC_Object *_source);
       void   (YAC_CALL *_zglStoreMatrixf)       (sF32 *_mat);
       void   (YAC_CALL *_zglVertexAttribOffset) (sUI _index, sUI _size, sSI _type, sSI _bNormalized, sSI _stride, sSI _offset);
+      void   (YAC_CALL *_zglObjectLabel)        (sSI _identifier, sUI _name, YAC_Object *_label);
    } tkopengl_shared_t;
 }
 

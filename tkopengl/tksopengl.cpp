@@ -217,6 +217,8 @@ glIsVertexArray_t      glIsVertexArray_xref      = NULL;
 // ---- glGetStringi
 glGetStringi_t glGetStringi_xref = NULL;
 
+// ---- KHR_debug (GLES3.2, GL4.2+)
+glObjectLabel_t        glObjectLabel_xref        = NULL;
 
 // Currently bound VAO (0u = none)
 sUI tkopengl_current_vao_id = 0u;
@@ -319,7 +321,7 @@ static glanyfun_t int_GetProcAddressA3(const char *_name1, const char *_name2, c
 
    if(NULL == r)
    {
-      yac_host->printf("[---] tkopengl: failed to resolve extension fxn \"%s\" / \"%s\" / \"%s\".\n", _name1, _name2, _name3);
+      yac_host->printf("[~~~] tkopengl: failed to resolve extension fxn \"%s\" / \"%s\" / \"%s\".\n", _name1, _name2, _name3);
    }
 
    return r;
@@ -617,6 +619,9 @@ void YAC_CALL _zglLoadExtensions(void) {
 
       // glGetStringi
       Dresolveext(glGetStringi);
+
+      // KHR_debug
+      Dresolveext(glObjectLabel);
    }
 }
 
@@ -7194,6 +7199,18 @@ void YAC_CALL _zgluLookAt(YAC_Object *_eye, YAC_Object *_center, YAC_Object *_up
          Dtraceglerror("zgluLookAt");
 #endif // DX_GLES
 #endif // DX_EMU_MATRIX
+      }
+   }
+}
+
+// ---------------------------------------------------------------------------- zglObjectLabel
+void YAC_CALL _zglObjectLabel(sSI _identifier, sUI _name, YAC_Object *_label) {
+   Dcheckext(glObjectLabel)
+   {
+      if(YAC_Is_String(_label))
+      {
+         YAC_CAST_ARG(YAC_String, label, _label);
+         ::glObjectLabel_xref(_identifier, _name, 999, (const char*)label->chars);
       }
    }
 }

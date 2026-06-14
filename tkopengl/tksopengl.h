@@ -152,6 +152,11 @@ typedef void      (APIENTRY *glVertexAttribDivisor_t) (GLuint index, GLuint divi
 typedef const GLubyte * (APIENTRY *glGetStringi_t) (GLenum name, GLuint index);
 
 
+//
+// --- KHR_debug (GLES3.2, GL4.3+)
+//
+typedef void (APIENTRY *glObjectLabel_t) (GLenum, GLuint, GLsizei, const char *);
+
 
 /* @function zglSetEnableGLCore,boolean bEnable
 Enable GL 4.x core profile mode (false = compatibility).
@@ -1142,7 +1147,7 @@ YF void        YAC_CALL _glStencilFunc          (sSI, sSI, sUI);
 /* @function glStencilFuncSeparate,int face,int func,float ref,int mask
 Set front and/or back function and reference value for stencil testing
 
-@arg face Specifies whether front and/or back stencil state is updated. Three symbolic constants are valid: §GL_FRONT, §GL_BACK, and §GL_FRONT_AND_BACK. 
+@arg face Specifies whether front and/or back stencil state is updated. Three symbolic constants are valid: §GL_FRONT, §GL_BACK, and §GL_FRONT_AND_BACK.
 @arg func Specifies the test function. Eight tokens are valid: §GL_NEVER, §GL_LESS, §GL_LEQUAL, §GL_GREATER, §GL_GEQUAL, §GL_EQUAL, §GL_NOTEQUAL, and §GL_ALWAYS. The initial value is §GL_ALWAYS.
 @arg ref Specifies the reference	value for the stencil test. ref is clamped to the range [0,2n-1], where n is the number of bitplanes in the stencil buffer. The initial value is 0.
 @arg mask Specifies a mask that is ANDed with both the reference value and the stored stencil value when	the test is done. The initial value	is all 1's.
