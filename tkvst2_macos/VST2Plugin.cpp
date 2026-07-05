@@ -13,7 +13,7 @@
 ///          02Mar2018, 03Apr2018, 22Jun2018, 29Jun2018, 06Jul2018, 19Aug2018, 07Jul2019
 ///          17Jul2019, 30Jul2019, 05Aug2019, 26Aug2019, 20May2021, 31Dec2021, 08Jan2022
 ///          11Jan2022, 27Feb2022, 14Feb2023, 25Feb2023, 05Oct2023, 24Oct2023, 01Jul2024
-///          07Apr2026
+///          07Apr2026, 17Jun2026
 ///
 ///
 ///
@@ -36,7 +36,7 @@ typedef void *NSView;
 // (note) processReplacing() >> stopProcess() >> suspend()
 
 // If defined, check whether plugin tries to write beyond specified string boundaries (some buggy plugins do)
-#define PARANOIA_CHECK_DISPATCH_STRING_OVERFLOW defined
+// #define PARANOIA_CHECK_DISPATCH_STRING_OVERFLOW defined
 
 // If defined, check if processReplacing() produced any output
 #define PARANOIA_CHECK_REPLACING_OUTPUT defined
