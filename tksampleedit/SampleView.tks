@@ -24,7 +24,7 @@
 // ----          11Nov2023, 16Nov2023, 22Nov2023, 07Dec2023, 14Dec2023, 16Dec2023, 24Mar2024
 // ----          10Aug2024, 01Nov2024, 10Jan2025, 06Apr2025, 06May2025, 20May2025, 21Jun2025
 // ----          02Sep2025, 11Sep2025, 13Sep2025, 16Sep2025, 10Oct2025, 11Dec2025, 26Dec2025
-// ----          02Jan2026, 07Jan2026, 17Jan2026
+// ----          02Jan2026, 07Jan2026, 17Jan2026, 04Jul2026, 05Jul2026
 // ----
 // ----
 // ----
@@ -68,6 +68,7 @@ use namespace ui;
                lctrl-n : Normalize selection
         lctrl-lshift-n : Normalize regions
                lctrl-o : Amplify selection (show dialog)
+        lctrl-lshift-o : Normalize + Amplify selection (show dialog)
                lctrl-p : Phase-invert selection
                lctrl-q : Select next region, or select next cycle (in cycle-edit mode) (same as cursor RIGHT)
         lctrl-lshift-q : Select previous region, or select previous cycle (in cycle-edit mode) (same as cursor LEFT)
@@ -792,6 +793,8 @@ class SampleView : Control {
    static int     render_style_freedraw_default = RS_LINES;
    static boolean b_render_rms_default          = true;
 
+   protected boolean b_amplify_selection_normalize;  // temporarily valid during amplifySelection1()
+
 
    public method initSampleView() {
       initControl();
@@ -1346,6 +1349,7 @@ class SampleView : Control {
       if(_gridNumFrames >= 32)
       {
          int numFrames = getNumFrames();
+         // trace "xxx setAutoChopRegionsFromGrid: numFrames="+numFrames+" gridNumFrames="+_gridNumFrames;
          if(numFrames >= _gridNumFrames)
          {
             autochop_start_offsets.empty();
@@ -1353,6 +1357,7 @@ class SampleView : Control {
             int frame = 0;
             for(;;)
             {
+               // trace "xxx frame="+frame+" gridNumFrames="+_gridNumFrames+" numFrames="+numFrames;
                if( (frame + _gridNumFrames) <= numFrames )
                {
                   autochop_start_offsets.add(frame);
@@ -1360,8 +1365,16 @@ class SampleView : Control {
                   autochop_end_offsets.add(frame);
                }
                else
+               {
+                  if(frame > 0 && (frame + _gridNumFrames/2) <= numFrames)
+                  {
+                     autochop_start_offsets.add(frame);
+                     autochop_end_offsets.add(numFrames);
+                  }
                   break;
+               }
             }
+            // trace "xxx setAutoChopRegionsFromGrid: gridNumFrames="+_gridNumFrames+" start_offset="+autochop_start_offsets;
             redraw();
          }
       }
@@ -1395,12 +1408,15 @@ class SampleView : Control {
    public method showAutochopDialog() {
       if(0 == UI.GetNumModalFloatingLayers())
       {
-         // if(null == dlg_autochop)
+         if(null == dlg_autochop)
          {
             dlg_autochop <= new SampleViewAutochopDialog;
             dlg_autochop.init( (maybe == b_autochop_rms) );
          }
-         dlg_autochop.showAutochopDialog(this, autochop_config);
+         if(!dlg_autochop.isFloatingLayerVisible())
+            dlg_autochop.showAutochopDialog(this, autochop_config);
+         else
+            dlg_autochop.hide();
       }
    }
 
@@ -1446,7 +1462,13 @@ class SampleView : Control {
    }
 
    protected method calcSampleSizeY() : int {
-      return (zoom < 1.0) ? (size_y - SCROLLBAR_POSY - SCROLLBAR_HEIGHT) : size_y;
+      // // return (zoom < 1.0) ? (size_y - SCROLLBAR_POSY - SCROLLBAR_HEIGHT) : size_y;
+      int r = ((zoom < 1.0) ? ((SCROLLBAR_POSY + SCROLLBAR_HEIGHT) + (MARKER_PY * UI.icon_scaling + 1)) : 0.0f);
+      return size_y - r;
+   }
+
+   protected method calcSamplePosY() : int {
+      return (size_y - calcSampleSizeY()) * 0.5f; //((zoom < 1.0) ? (SCROLLBAR_POSY + SCROLLBAR_HEIGHT) : 0.0f);
    }
 
    public static CalcOffsetAndZoomForRegion(int _wfNumFrames, int _off, int _len, Double _retZoom, Float _retOffset) {
@@ -2007,6 +2029,10 @@ class SampleView : Control {
       pmb <= pmTools.addDefaultButton("Amplify selection..", "tools_amp");
       pmb.setActive(bHaveSel && !b_readonly);
       pmb.setAccelerators(null, "lctrl-o");
+
+      pmb <= pmTools.addDefaultButton("Normalize + Amplify selection..", "tools_norm_amp");
+      pmb.setActive(bHaveSel && !b_readonly);
+      pmb.setAccelerators(null, "lctrl-lshift-o");
 
       pmb <= pmTools.addDefaultButton("Phase-invert selection", "tools_phaseinvert");
       pmb.setActive(bHaveSel && !b_readonly);
@@ -3057,6 +3083,7 @@ class SampleView : Control {
       if(2 == num_channels)
       {
          float sy = calcSampleSizeY();
+         _y -= calcSamplePosY();
 
          if(_y < (sy*0.25))
          {
@@ -3129,7 +3156,8 @@ class SampleView : Control {
    }
 
    protected method calcSampleValueAtMouseY(float _y, Integer _retChannelIdx) : float {
-      float sampleSizeY = calcSampleSizeY() - 4;
+      float sampleSizeY = calcSampleSizeY();// - 4;
+      _y -= calcSamplePosY();
       if(2 == num_channels)
       {
          sampleSizeY *= 0.5;
@@ -3152,7 +3180,7 @@ class SampleView : Control {
 
       // (cy - sampleSizeY) * -((( max_sample - min_sample)/sampleSizeY)) + min = val
 
-      float val = (_y - sampleSizeY - 4) * -((max_sample-min_sample)/sampleSizeY) + min_sample;
+      float val = (_y - sampleSizeY /*- 4*/) * -((max_sample-min_sample)/sampleSizeY) + min_sample;
       val *= zoom_y;
       return mathClampf(val, min_sample, max_sample);
    }
@@ -3838,10 +3866,10 @@ class SampleView : Control {
       }
 
       float knobWidth = zoom * (size_x-4*1);
-      if(knobWidth < 4) knobWidth=4;
+      if(knobWidth < 4) knobWidth = 4;
       float mousex, mouserel;
 
-      if((VMOD_LCTRL == UI.GetKeyMod()) && (GRAB_NONE == grab_mode))
+      if(VMOD_LCTRL == UI.GetKeyMod() && GRAB_NONE == grab_mode)
          return false;  // handled in onMouseClick()
 
       // Toggle LMB mousepositioning grab
@@ -3851,7 +3879,7 @@ class SampleView : Control {
          {
             if(!b_grab_rmb)
             {
-               if(_ev.mouse_rel_y > calcSampleSizeY())
+               if(_ev.mouse_rel_y > (calcSampleSizeY() + calcSamplePosY()))
                {
                   // Start scrollbar scrolling
                   last_rel_x = _ev.mouse_rel_x;
@@ -6284,15 +6312,16 @@ class SampleView : Control {
       handleWaveformChanged();
    }
 
-   public method amplifySelection1(boolean _bNearMouse) {
+   public method amplifySelection1(boolean _bNearMouse, boolean _bNormalize) {
+      b_amplify_selection_normalize = _bNormalize;
       if(null == dlg_scale)
       {
-         dlg_scale <= FloatParamDialog.New("Amplify",
+         dlg_scale <= FloatParamDialog.New("amp",
                                            "Enter amplificator factor",
                                            "textinput"/*iconName*/,
                                            "Amplify", // ok
                                            "Cancel",
-                                           1.0,
+                                           0.8,  // 0.25=-12dB, 0.31498=-10dB, 0.5=-6dB, 0.6=-4.43697dB, 0.707=-3dB, 0.8=-1.983dB
                                            0.0, 100.0,
                                            5,     // cols
                                            3,     // precision
@@ -6300,6 +6329,8 @@ class SampleView : Control {
                                            this   // recipient
                                            );
       }
+
+      dlg_scale.setWindowTitle(_bNormalize ? "Normalize + Amplify" : "Amplify");
 
       if(_bNearMouse)
          dlg_scale.showNearMouse(-50*UI.font_scaling, -100*UI.font_scaling);
@@ -6318,6 +6349,9 @@ class SampleView : Control {
             if(!b_readonly)
             {
                undoBegin("levelSelection");
+
+               if(b_amplify_selection_normalize)
+                  normalizeSelection(false/*bUndoBegin*/);
 
                int numFrames = sel_endoff - sel_startoff;
 
@@ -7129,6 +7163,10 @@ class SampleView : Control {
             if(0 == _key.mod)
             {
                setFreedrawMode(!b_freedraw);
+               if(b_freedraw)
+                  UI.ShowCursor(UIConstants.CURSOR_PENCIL);
+               else
+                  UI.ShowCursor(UIConstants.CURSOR_NORMAL);
                return true;
             }
             break;
@@ -7331,7 +7369,7 @@ class SampleView : Control {
          case 'o':
             if(_key.modCtrl())
             {
-               amplifySelection1(false/*bNearMouse*/);
+               amplifySelection1(false/*bNearMouse*/, _key.modShift()/*bNormalize*/);
                return true;
             }
             break;
@@ -8347,8 +8385,10 @@ class SampleView : Control {
          // int sy = calcSampleSizeY() +1 - 2;
          int sy;
 
-         float regionYT = MARKER_PY * UI.icon_scaling + 1;
-         float regionYB = size_y - (UI.IsHiDPI()?24:14);
+         // // float regionYT = (zoom < 1.0) ? calcSamplePosY() : (MARKER_PY * UI.icon_scaling + 1);
+         // // float regionYB = (zoom < 1.0) ? (calcSamplePosY() + calcSampleSizeY()) : (size_y - (UI.IsHiDPI()?24:14));
+         float regionYT = (zoom < 1.0) ? calcSamplePosY() : (MARKER_PY * UI.icon_scaling + 1);
+         float regionYB = (zoom < 1.0) ? (regionYT + calcSampleSizeY()) : (size_y - (MARKER_PY * UI.icon_scaling + 1));
          float regionSy = (regionYB - regionYT);
          sy = regionSy;
 
@@ -8445,33 +8485,34 @@ class SampleView : Control {
 
       // Draw highlight info
       cx = 10;
-      UIRenderer.DrawText("highlight start:", font, color_areainfo_label, ul32, cx, 2, 0/*availW*/, 0/*align*/);
+      cy = -2; //2;
+      UIRenderer.DrawText("highlight start:", font, color_areainfo_label, ul32, cx, cy, 0/*availW*/, 0/*align*/);
       cx += stringw_hl_start;
-      UIRenderer.DrawText(hl_startoff, font, color_areainfo_valuesdw, ul32, cx+1, 2+1, 0/*availW*/, 0/*align*/);
-      UIRenderer.DrawText(hl_startoff, font, color_areainfo_value, ul32, cx, 2, 0/*availW*/, 0/*align*/);
+      UIRenderer.DrawText(hl_startoff, font, color_areainfo_valuesdw, ul32, cx+1, cy+1, 0/*availW*/, 0/*align*/);
+      UIRenderer.DrawText(hl_startoff, font, color_areainfo_value, ul32, cx, cy, 0/*availW*/, 0/*align*/);
       cx += areaInfoW;
 
-      UIRenderer.DrawText("end:", font, color_areainfo_label, ul32, cx, 2, 0/*availW*/, 0/*align*/);
+      UIRenderer.DrawText("end:", font, color_areainfo_label, ul32, cx, cy, 0/*availW*/, 0/*align*/);
       cx += stringw_hl_end;
-      UIRenderer.DrawText(hl_endoff, font, color_areainfo_valuesdw, ul32, cx+1, 2+1, 0/*availW*/, 0/*align*/);
-      UIRenderer.DrawText(hl_endoff, font, color_areainfo_value, ul32, cx, 2, 0/*availW*/, 0/*align*/);
+      UIRenderer.DrawText(hl_endoff, font, color_areainfo_valuesdw, ul32, cx+1, cy+1, 0/*availW*/, 0/*align*/);
+      UIRenderer.DrawText(hl_endoff, font, color_areainfo_value, ul32, cx, cy, 0/*availW*/, 0/*align*/);
       cx += areaInfoW;
 
-      UIRenderer.DrawText("len: ", font, color_areainfo_label, ul32, cx, 2, 0/*availW*/, 0/*align*/);
+      UIRenderer.DrawText("len: ", font, color_areainfo_label, ul32, cx, cy, 0/*availW*/, 0/*align*/);
       cx += stringw_hl_len;
-      UIRenderer.DrawText((hl_endoff-hl_startoff), font, color_areainfo_valuesdw, ul32, cx+1, 2+1, 0/*availW*/, 0/*align*/);
-      UIRenderer.DrawText((hl_endoff-hl_startoff), font, color_areainfo_value, ul32, cx, 2, 0/*availW*/, 0/*align*/);
+      UIRenderer.DrawText((hl_endoff-hl_startoff), font, color_areainfo_valuesdw, ul32, cx+1, cy+1, 0/*availW*/, 0/*align*/);
+      UIRenderer.DrawText((hl_endoff-hl_startoff), font, color_areainfo_value, ul32, cx, cy, 0/*availW*/, 0/*align*/);
       cx += areaInfoW;
 
       if(null != samples)
       {
          float numFrames = samples.numElements / num_channels;
-         int numVisFrames = (numFrames * zoom) +0.5;
+         int numVisFrames = (numFrames * zoom) + 0.5;
 
-         UIRenderer.DrawText("vis: ", font, color_areainfo_label, ul32, cx, 2, 0/*availW*/, 0/*align*/);
+         UIRenderer.DrawText("vis: ", font, color_areainfo_label, ul32, cx, cy, 0/*availW*/, 0/*align*/);
          cx += stringw_vis;
-         UIRenderer.DrawText(numVisFrames, font, color_areainfo_valuesdw, ul32, cx+1, 2+1, 0/*availW*/, 0/*align*/);
-         UIRenderer.DrawText(numVisFrames, font, color_areainfo_value, ul32, cx, 2, 0/*availW*/, 0/*align*/);
+         UIRenderer.DrawText(numVisFrames, font, color_areainfo_valuesdw, ul32, cx+1, cy+1, 0/*availW*/, 0/*align*/);
+         UIRenderer.DrawText(numVisFrames, font, color_areainfo_value, ul32, cx, cy, 0/*availW*/, 0/*align*/);
       }
 
       // Draw selection info
@@ -8661,7 +8702,8 @@ class SampleView : Control {
 
       // Draw samples
       float sampleSizeX = size_x;// - 4;
-      float sampleSizeY = calcSampleSizeY() - 4;
+      float sampleSizeY = calcSampleSizeY();// - 4;
+      float samplePosY = calcSamplePosY();
       if(null != samples)
       {
          int numFrames = (samples.numElements / num_channels);
@@ -8696,8 +8738,12 @@ class SampleView : Control {
                // Draw markers
                if(!autochop_start_offsets.isEmpty())
                {
-                  float regionYT = MARKER_PY * UI.icon_scaling;
-                  float regionYB = size_y - (UI.IsHiDPI()?24:14);
+                  // // float regionYT = MARKER_PY * UI.icon_scaling;
+                  // // float regionYB = size_y - (UI.IsHiDPI()?24:14) - samplePosY;
+                  float regionYT = (zoom < 1.0) ? calcSamplePosY() : (MARKER_PY * UI.icon_scaling + 1);
+                  float regionYB = (zoom < 1.0) ? (regionYT + calcSampleSizeY()) : (size_y - (MARKER_PY * UI.icon_scaling + 1));
+                  // // float regionSy = (regionYB - regionYT);
+
                   int regionStartOff;
                   float regionSclX = sampleSizeX / numVisFrames;
                   float regionX;
@@ -8799,7 +8845,7 @@ class SampleView : Control {
                   // trace "xxx c32Skip="+UI.GetColorString(c32Skip);
                   tksampleedit_render_sample(samples,
                                              num_channels, sampleOff, numVisFrames,
-                                             sampleSizeX, sampleSizeY,
+                                             sampleSizeX, sampleSizeY, samplePosY,
                                              minSample, maxSample,
                                              rsInner, interpol_style,
                                              c32Skip/*c32Skip*/,
@@ -8823,7 +8869,7 @@ class SampleView : Control {
                   sdvg_SetColorARGB(c32Skip);
                   tksampleedit_render_sample(samples,
                                              num_channels, sampleOff, numVisFrames,
-                                             sampleSizeX, sampleSizeY,
+                                             sampleSizeX, sampleSizeY, samplePosY,
                                              minSample, maxSample,
                                              RS_LINES_OUTER, interpol_style,
                                              c32Skip/*c32Skip*/,
@@ -8849,7 +8895,7 @@ class SampleView : Control {
                   // // glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
                   tksampleedit_render_sample(samples,
                                              num_channels, sampleOff, numVisFrames,
-                                             sampleSizeX, sampleSizeY,
+                                             sampleSizeX, sampleSizeY, samplePosY,
                                              minSample, maxSample,
                                              RS_LINES, interpol_style,
                                              c32Skip/*c32Skip*/,
@@ -8884,7 +8930,7 @@ class SampleView : Control {
                }
                sdvg_SetColorARGB(c32);
                tksampleedit_render_rms(samples, num_channels, sampleOff, numVisFrames,
-                                       sampleSizeX, sampleSizeY,
+                                       sampleSizeX, sampleSizeY, samplePosY,
                                        minSample, maxSample
                                        );
             }
@@ -8897,17 +8943,17 @@ class SampleView : Control {
       if(b_draw_bevel_border)
          UIRenderer.DrawDefaultSunkenBorder(0,0,size_x,size_y);
 
-      // Draw centerline
+      // Draw centerline(s)
       float ssy = sampleSizeY / num_channels;
-      float cy = 0;
+      float cy = samplePosY + ssy*0.5f;
       sdvg_SetColorARGB(color_centerline);
       sdvg_SetStrokeWidth(1.0f);
       if(UIRenderer.BeginLinesAA(num_channels * 2))
       {
          loop(num_channels)
          {
-            sdvg_Vertex2f(2,             cy + ssy*0.5f);
-            sdvg_Vertex2f(2+sampleSizeX, cy + ssy*0.5f);
+            sdvg_Vertex2f(2,             cy);
+            sdvg_Vertex2f(2+sampleSizeX, cy);
 
             cy += ssy;
          }
@@ -8923,18 +8969,18 @@ class SampleView : Control {
       if(zoom < 1.0)
       {
          // Draw scrollbar shade
-         UIRenderer.DrawFilledRectangle(2, smpSy, size_x-4, SCROLLBAR_HEIGHT, color_slider_bg);
+         UIRenderer.DrawFilledRectangle(2, smpSy + samplePosY, size_x-4, SCROLLBAR_HEIGHT, color_slider_bg);
 
          if(b_draw_bevel_border)
-            UIRenderer.DrawDefaultSunkenBorder(2*0, smpSy, size_x-4*0, SCROLLBAR_HEIGHT);
+            UIRenderer.DrawDefaultSunkenBorder(2*0, smpSy + samplePosY, size_x-4*0, SCROLLBAR_HEIGHT);
 
          // Draw scrollbar knob
          float knobWidth = int(0.5 + zoom * (size_x-4*1));
          if(knobWidth < 4) knobWidth = 4;
          float knobX = int( ((size_x-4*1-knobWidth)*0.5) + ((size_x-4*1-knobWidth)*0.5) * offset );
-         UIRenderer.DrawFilledRectangle(2*1+knobX, smpSy+2, knobWidth, SCROLLBAR_HEIGHT-4, color_slider_knob);
+         UIRenderer.DrawFilledRectangle(2*1+knobX, smpSy+2 + samplePosY, knobWidth, SCROLLBAR_HEIGHT-4, color_slider_knob);
          if(b_draw_bevel_border)
-            UIRenderer.DrawDefaultRaisedBorder(2*1+knobX, smpSy+2, knobWidth, SCROLLBAR_HEIGHT-4);
+            UIRenderer.DrawDefaultRaisedBorder(2*1+knobX, smpSy+2 + samplePosY, knobWidth, SCROLLBAR_HEIGHT-4);
       }
 
       sdvg_DisableBlending();
@@ -8944,7 +8990,7 @@ class SampleView : Control {
 
       if(b_draw_tabfocus_border && hasKeyboardFocus())
       {
-         UIRenderer.DrawTabFocusTextBorder(1, 1, size_x-2, smpSy-2);
+         UIRenderer.DrawTabFocusTextBorder(1, 1 + samplePosY, size_x-2, smpSy-2);
       }
 
       // glFinish();//xxxxxxxxxxxxxxxxx
@@ -9059,7 +9105,11 @@ class SampleView : Control {
             return true;
 
          case "tools_amp":
-            amplifySelection1(true/*bNearMouse*/);
+            amplifySelection1(true/*bNearMouse*/, false/*bNormalize*/);
+            return true;
+
+         case "tools_norm_amp":
+            amplifySelection1(true/*bNearMouse*/, true/*bNormalize*/);
             return true;
 
          case "tools_sox":

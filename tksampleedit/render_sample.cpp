@@ -1,7 +1,7 @@
 // ----
 // ---- file   : render_sample.cpp
 // ---- author : Bastian Spiegel <bs@tkscript.de>
-// ---- legal  : (c) 2009-2025 by Bastian Spiegel.
+// ---- legal  : (c) 2009-2026 by Bastian Spiegel.
 // ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
 // ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
 // ----
@@ -10,7 +10,7 @@
 // ---- created: 25Oct2009
 // ---- changed: 29Apr2010, 11May2010, 25Feb2011, 04May2013, 07Mar2014, 18Dec2018, 15Jan2019
 // ----          06May2019, 15Sep2023, 16Sep2023, 10Nov2023, 22Dec2023, 13Sep2025, 16Sep2025
-// ----          18Sep2025
+// ----          18Sep2025, 04Jul2026
 // ----
 // ----
 // ----
@@ -739,7 +739,7 @@ static void render_sample_delta(sF32 *s, sUI _startOffset, sUI _numCh, sUI _numF
 
 void YAC_CALL tksampleedit_render_sample(YAC_Object *_data, sUI _numCh,
                                          sUI _frameOffset, sUI _numFrames,
-                                         sF32 _w, sF32 _h,
+                                         sF32 _w, sF32 _h, sF32 _py,
                                          sF32 _min, sF32 _max,
                                          sSI _renderStyle,
                                          sSI _interpolStyle,
@@ -807,7 +807,7 @@ void YAC_CALL tksampleedit_render_sample(YAC_Object *_data, sUI _numCh,
                      {
                         sF32 h = _h / _numCh;
 
-                        sF32 offY = 0.0f;
+                        sF32 offY = _py;
                         for(sUI ch = 0u; ch < _numCh; ch++)
                         {
                            switch(_renderStyle)

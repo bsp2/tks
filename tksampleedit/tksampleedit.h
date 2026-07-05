@@ -1,7 +1,7 @@
 // ----
 // ---- file   : tksampleedit.tks
 // ---- author : Bastian Spiegel <bs@tkscript.de>
-// ---- legal  : (c) 2009-2025 by Bastian Spiegel.
+// ---- legal  : (c) 2009-2026 by Bastian Spiegel.
 // ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
 // ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
 // ----
@@ -11,13 +11,13 @@
 // ---- changed: 11May2010, 20Jul2010, 25Feb2011, 04May2013, 12Feb2014, 23Feb2018, 24Feb2018
 // ----          30Mar2018, 09Apr2018, 22Jun2018, 18Dec2018, 30Dec2018, 04May2019, 06May2019
 // ----          09May2019, 08Feb2020, 09Feb2020, 14Feb2020, 15May2020, 06Feb2021, 22Dec2021
-// ----          15Sep2023, 10Nov2023, 24Feb2024, 21Sep2024, 10Jan2025
+// ----          15Sep2023, 10Nov2023, 24Feb2024, 21Sep2024, 10Jan2025, 04Jul2026
 // ----
 // ----
 // ----
 
-#ifndef __TKSAMPLEEDIT_H__
-#define __TKSAMPLEEDIT_H__
+#ifndef TKSAMPLEEDIT_H__
+#define TKSAMPLEEDIT_H__
 
 
 #include <math.h>
@@ -62,7 +62,7 @@ YC class PeakAvgTracker : public YAC_Object {
 };
 
 
-/* @function tksampleedit_render_sample,FloatArray samples,int numCh,int sampleOffset,int numSamples,float w,float h,int renderStyle,int interpolStyle,int c32Skip,int c32Rep
+/* @function tksampleedit_render_sample,FloatArray samples,int numCh,int sampleOffset,int numSamples,float w,float h,float py,int renderStyle,int interpolStyle,int c32Skip,int c32Rep
 Render a floating point waveform
 
 @arg samples
@@ -76,14 +76,14 @@ Render a floating point waveform
 @arg c32Skip
 @arg c32Rep
 */
-YF void YAC_CALL tksampleedit_render_sample(YAC_Object *_data, sUI _numCh, sUI _frameOffset, sUI _numFrames, sF32 _w, sF32 _h, sF32 _min, sF32 _max, sSI _renderStyle, sSI _interpolStyle, sUI _c32Skip, sUI _c32Rep);
+YF void YAC_CALL tksampleedit_render_sample(YAC_Object *_data, sUI _numCh, sUI _frameOffset, sUI _numFrames, sF32 _w, sF32 _h, sF32 _py, sF32 _min, sF32 _max, sSI _renderStyle, sSI _interpolStyle, sUI _c32Skip, sUI _c32Rep);
 
 
-/* @function tksampleedit_render_rms,FloatArray samples,int numCh,int sampleOffset,int numSamples,float w,float h
+/* @function tksampleedit_render_rms,FloatArray samples,int numCh,int sampleOffset,int numSamples,float w,float h,float py, float min,float max
 Render root mean square (RMS) of a floating point waveform
 
 */
-YF void YAC_CALL tksampleedit_render_rms(YAC_Object *_data, sUI _numCh, sUI _frameOffset, sUI _numFrames, sF32 _w, sF32 _h, sF32 _min, sF32 _max);
+YF void YAC_CALL tksampleedit_render_rms(YAC_Object *_data, sUI _numCh, sUI _frameOffset, sUI _numFrames, sF32 _w, sF32 _h, sF32 _py, sF32 _min, sF32 _max);
 
 
 YF void YAC_CALL tksampleedit_render_mono_sample_1d_8bit(YAC_Object *_byteArray, sUI _width, YAC_Object *_fa, sUI _frameOffset, sUI _numFrames, sF32 _lumScl);
@@ -240,4 +240,4 @@ YF sSI YAC_CALL tksampleedit_find_min_threshold_fwd (YAC_Object *_fa, sUI _chOff
 YF sSI YAC_CALL tksampleedit_find_min_threshold_bwd (YAC_Object *_fa, sUI _chOff, sUI _numChannels, sF32 _min);
 
 
-#endif // __TKSAMPLEEDIT_H__
+#endif // TKSAMPLEEDIT_H__

@@ -1,14 +1,14 @@
 // ----
 // ---- file   : render_rms.cpp
 // ---- author : Bastian Spiegel <bs@tkscript.de>
-// ---- legal  : (c) 2010-2025 by Bastian Spiegel.
+// ---- legal  : (c) 2010-2026 by Bastian Spiegel.
 // ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
 // ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
 // ----
 // ---- info   :
 // ----
 // ---- created: 11May2010
-// ---- changed: 25Feb2011, 07Mar2014, 23Feb2018, 22Dec2023, 13Sep2025, 18Sep2025
+// ---- changed: 25Feb2011, 07Mar2014, 23Feb2018, 22Dec2023, 13Sep2025, 18Sep2025, 04Jul2026
 // ----
 // ----
 // ----
@@ -173,7 +173,8 @@ static void render_sample_rms(sF32 *s, sUI numCh, sUI numSamples, sUI maxSamples
 
 void YAC_CALL tksampleedit_render_rms(YAC_Object *_data, sUI _numCh,
                                       sUI _sampleOffset, sUI _numSamples,
-                                      sF32 _w, sF32 _h, sF32 _min, sF32 _max
+                                      sF32 _w, sF32 _h, sF32 _py,
+                                      sF32 _min, sF32 _max
                                       )
 {
    //
@@ -210,7 +211,7 @@ void YAC_CALL tksampleedit_render_rms(YAC_Object *_data, sUI _numCh,
                         tkopengl_shared_resolve();
 #endif // USE_TKMINNIE
 
-                        sF32 offY = 0.0f;
+                        sF32 offY = _py;
                         for(sUI ch = 0u; ch < _numCh; ch++)
                         {
                            render_sample_rms(a->elements + (_sampleOffset * _numCh) + ch,
