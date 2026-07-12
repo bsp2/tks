@@ -10,7 +10,8 @@
 // ---- created: 17Jul2021
 // ---- changed: 18Jul2021, 19Jul2021, 21Jul2021, 10Aug2022, 11Aug2022, 12Aug2022, 13Aug2022
 // ----          18Dec2022, 29Jul2023, 16Nov2023, 17Nov2023, 19Nov2023, 02Dec2023, 22Mar2024
-// ----          15Nov2024, 06Jan2025, 26Jan2025, 28Feb2025, 03Jan2026, 31Jan2026
+// ----          15Nov2024, 06Jan2025, 26Jan2025, 28Feb2025, 03Jan2026, 31Jan2026, 08Jul2026
+// ----          09Jul2026, 11Jul2026
 // ----
 // ----
 // ----
@@ -51,6 +52,7 @@ class AudioLiveRecForm extends XMLForm, RemoteEventListener {
    protected FloatParam *fp_extra_16ths;
    protected CheckBox   *cb_force_stereo;
 
+   protected Button   *bt_preview;
    protected Button   *bt_sample;
    protected ComboBox *cm_samples;
    protected Button   *bt_norm_clear;
@@ -883,8 +885,10 @@ class AudioLiveRecForm extends XMLForm, RemoteEventListener {
    }
 
    // <method.png>
-   protected method updateVoiceModulo() {
-      replay.configureVoiceModulo(cb_modulo.isSelected() ? (fp_modulo_voicenr.getFloatValue() - 1) : -1,
+   public method updateVoiceModulo() {
+      int modStart = cb_modulo.isSelected() ? (fp_modulo_voicenr.getFloatValue() - 1) : -1;
+      // trace "xxx AudioLiveRecForm::updateVoiceModulo: modStart="+modStart;
+      replay.configureVoiceModulo(modStart,
                                   fp_modulo_numvoices.getFloatValue()
                                   );
    }
@@ -1057,6 +1061,47 @@ class AudioLiveRecForm extends XMLForm, RemoteEventListener {
          Global.Warning("Clear: invalid sample");
    }
 
+   // <ui_handle.png>
+   public method handlePreview(boolean _bNoteOn) {
+      SysExSamplerInstance lri <= getSelectedSamplerInstance();
+      if(null != lri)
+      {
+         SysExSample sysSmp <= filtered_samples.get(cm_samples.getSelectedOption());
+         if(null != sysSmp)
+         {
+            float ms = sysSmp.millisecs;
+            // // int num16th = (int((current_song.milliSecondsTo16th(ms) + 3.5))/16) * 16;
+            int num16th = int(current_song.milliSecondsTo16th(ms) + 0.5);
+            if(num16th > 0)
+            {
+               STX_MIDIOutDevice outDev <= MIDI.GetVSTOutDeviceByIdx(lri.dev_idx);
+               if(null != outDev)
+               {
+                  int ticks = current_song.milliSecondsToTicks(current_song.sixteenthToMilliSeconds(num16th)) + 1;
+                  if(_bNoteOn)
+                  {
+                     outDev.queueNoteOn((lri.midi_ch < 0) ? 0 : lri.midi_ch, 5*12/*C-5*/, 127/*vel*/);
+                     Global.PrintFast("Start preview (#16th="+num16th+")");
+                  }
+                  else
+                  {
+                     outDev.queueNoteOff((lri.midi_ch < 0) ? 0 : lri.midi_ch, 5*12/*C-5*/, 0/*vel*/);
+                     Global.PrintFast("Stop preview");
+                  }
+               }
+               else
+                  Global.Warning("Preview: invalid outDev (dev_idx="+lri.dev_idx+")");
+            }
+            else
+               Global.Warning("Preview: sample too short");
+         }
+         else
+            Global.Warning("Preview: invalid sample");
+      }
+      else
+         Global.Warning("Preview: invalid sampler instance");
+   }
+
    // <method.png>
    protected method lazyQueryParams() : boolean {
       // (note) params are the same for all (ModSample) instances
@@ -1105,6 +1150,10 @@ class AudioLiveRecForm extends XMLForm, RemoteEventListener {
             int smp16th = int((sysSmp.millisecs / msPer16th)+0.5);
             int ticksPer16th = current_song.getNumTicksPer16th();
             int endTickNr = (ticksPer16th * smp16th);
+            // // // if(maybe == replay.b_cycle)  // [09Jul2026] mute after cycle ?
+            // // // {
+            // // //    endTickNr = current_song.getCycleLengthInTicks();
+            // // // }
             if(endTickNr > 1)
             {
                endTickNr = (endTickNr - 0) + startTickNr;
@@ -1133,6 +1182,23 @@ class AudioLiveRecForm extends XMLForm, RemoteEventListener {
       }
       else
          Global.Warning("Record: invalid sample");
+   }
+
+   // <method_handle.png>
+   public method handleRecordNext() {
+      if(!replay.b_playing)
+      {
+         Global.Debug("AudioLiveRecForm::handleRecordNext: start");
+         handleRecord();
+         handleToggleReplay(false/*bMMC*/);
+      }
+      else
+      {
+         Global.Debug("AudioLiveRecForm::handleRecordNext: start next");
+         handleToggleReplay(false/*bMMC*/);  // stop + advance voice nr
+         handleRecord();        // arm / queue recording
+         handleToggleReplay(false/*bMMC*/);  // start
+      }
    }
 
    // <method_handle.png>
@@ -1225,8 +1291,8 @@ class AudioLiveRecForm extends XMLForm, RemoteEventListener {
    }
 
    // <ui_handle.png>
-   protected method handleToggleReplay() {
-      root_form.handleToggleReplay(false/*bSendMMC*/);
+   protected method handleToggleReplay(boolean _bMMC) {
+      root_form.handleToggleReplay(_bMMC/*bSendMMC*/);
 
       if(!replay.b_playing)
          updatePeaksForSelectedSample();
@@ -1245,13 +1311,18 @@ class AudioLiveRecForm extends XMLForm, RemoteEventListener {
    }
 
    // <method.png>
+   protected method selectNextModuleVoiceNr() {
+      fp_modulo_voicenr.setValue( (int(fp_modulo_voicenr.getValue()-1+1) % int(fp_modulo_numvoices.getFloatValue())) + 1 );
+      tryLoadPanPreset();
+   }
+
+   // <method.png>
    public method handleStopPlaying() {
       // Called by RootForm::handleStopPlaying() while =replay= is locked
-      // // Global.Debug2("AudioLiveRecForm::handleStopPlaying: cb_modulo.isSelected()="+cb_modulo.isSelected());
+      Global.Debug2("AudioLiveRecForm::handleStopPlaying: cb_modulo.isSelected()="+cb_modulo.isSelected());
       if(cb_modulo.isSelected())
       {
-         fp_modulo_voicenr.setValue( (int(fp_modulo_voicenr.getValue()-1+1) % int(fp_modulo_numvoices.getFloatValue())) + 1 );
-         tryLoadPanPreset();
+         selectNextModuleVoiceNr();
          Global.Debug2("AudioLiveRecForm::handleStopPlaying: new fp_modulo_voicenr="+fp_modulo_voicenr.getFloatValue());
       }
    }
@@ -1262,6 +1333,8 @@ class AudioLiveRecForm extends XMLForm, RemoteEventListener {
       if(b_last_seen_liverec_active ^ replay.b_liverec_active)
       {
          b_last_seen_liverec_active = replay.b_liverec_active;
+         Global.Debug("AudioLiveRecForm::handleReplayTimer: replay.b_liverec_active="+replay.b_liverec_active);
+         // // // selectNextModuleVoiceNr();  // (note) handled in handleStopPlaying()
          bt_record.setBackgroundTint(b_last_seen_liverec_active ? TINT32_RECORD : 0);
          bt_record.redraw();
       }
@@ -1345,6 +1418,13 @@ class AudioLiveRecForm extends XMLForm, RemoteEventListener {
             handleClone(true/*bAllowEdit*/);
             return true;
 
+         case @(bt_preview):
+            if(Button.ACTION_PRESS == acName)
+               handlePreview(true/*bNoteOn*/);
+            else
+               handlePreview(false/*bNoteOn*/);
+            return true;
+
          case @(bt_sample):
             if(Button.ACTION_HOLD_CLICK == acName)
             {
@@ -1377,11 +1457,20 @@ class AudioLiveRecForm extends XMLForm, RemoteEventListener {
             return true;
 
          case @(bt_record):
-            handleRecord();
+            if(Button.ACTION_HOLD_CLICK == acName)
+            {
+               handleRecordNext();
+            }
+            else
+            {
+               handleRecord();
+            }
             return true;
 
          case @(bt_replay):
-            handleToggleReplay();
+            if(!replay.b_playing && cb_modulo.isSelected())
+               updateVoiceModulo();
+            handleToggleReplay((Button.ACTION_HOLD_CLICK == acName)/*bMMC*/);
             return true;
 
          case @(bt_close):
