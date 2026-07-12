@@ -24,7 +24,7 @@
 // ----          11Nov2023, 16Nov2023, 22Nov2023, 07Dec2023, 14Dec2023, 16Dec2023, 24Mar2024
 // ----          10Aug2024, 01Nov2024, 10Jan2025, 06Apr2025, 06May2025, 20May2025, 21Jun2025
 // ----          02Sep2025, 11Sep2025, 13Sep2025, 16Sep2025, 10Oct2025, 11Dec2025, 26Dec2025
-// ----          02Jan2026, 07Jan2026, 17Jan2026, 04Jul2026, 05Jul2026
+// ----          02Jan2026, 07Jan2026, 17Jan2026, 04Jul2026, 05Jul2026, 11Jul2026
 // ----
 // ----
 // ----
@@ -774,6 +774,7 @@ class SampleView : Control {
    protected TextInputDialog *dlg_num_frames;
 
    protected FloatParamDialog    *dlg_scale;
+   protected FloatParamDialog    *dlg_resize;
    protected SampleViewSoXDialog *dlg_sox;
 
    public boolean b_no_export;  // 1=hide export options in context menu
@@ -794,6 +795,9 @@ class SampleView : Control {
    static boolean b_render_rms_default          = true;
 
    protected boolean b_amplify_selection_normalize;  // temporarily valid during amplifySelection1()
+
+   protected float last_seen_play_offset;
+   protected int   last_seen_play_offset_count;
 
 
    public method initSampleView() {
@@ -2034,6 +2038,10 @@ class SampleView : Control {
       pmb.setActive(bHaveSel && !b_readonly);
       pmb.setAccelerators(null, "lctrl-lshift-o");
 
+      pmb <= pmTools.addDefaultButton("Resize 16th..", "tools_resize16th");
+      pmb.setActive(!b_readonly);
+      pmb.setAccelerators(null, "lctrl-l");
+
       pmb <= pmTools.addDefaultButton("Phase-invert selection", "tools_phaseinvert");
       pmb.setActive(bHaveSel && !b_readonly);
       pmb.setAccelerators(null, "lctrl-p");
@@ -2355,6 +2363,7 @@ class SampleView : Control {
 
       invalidatePlayOffsets();
       provideAction(Action.New(getProvidedActionAlias(ACTION_WAVEFORM_CHANGED), this));
+      redraw();
    }
 
    public method handleExportSelection() {
@@ -2906,6 +2915,13 @@ class SampleView : Control {
          return samples.numElements / num_channels;
       }
       return 0;
+   }
+
+   // <method_get.png>
+   public method getNum16ths() : float {
+      float ms = (1000 * getNumFrames()) / sample_rate;
+      float num16th = (bpm * ms) / (1000 * 60 * 0.25);
+      return num16th;
    }
 
    public method getNumChannels() : int {
@@ -6413,6 +6429,99 @@ class SampleView : Control {
       }
    }
 
+   public method resize16th1(boolean _bNearMouse) {
+      int curNum16th = int(getNum16ths() + 0.5f);
+      UI.Debug("SampleView::resize16th1: curNum16th="+curNum16th);
+      if(null == dlg_resize)
+      {
+         dlg_resize <= FloatParamDialog.New("Resize 16th",
+                                            "Enter duration",
+                                            "textinput"/*iconName*/,
+                                            "Resize", // ok
+                                            "Cancel",
+                                            curNum16th,
+                                            1.0, 1024.0,
+                                            4,     // cols
+                                            0,     // precision
+                                            1,     // step
+                                            this   // recipient
+                                            );
+      }
+      dlg_resize.setValue(curNum16th);
+
+      if(_bNearMouse)
+         dlg_resize.showNearMouse(-50*UI.font_scaling, -100*UI.font_scaling);
+      else
+         dlg_resize.showCentered();
+   }
+
+   public =replay= method resize16th2(int _num16ths) {
+
+      UI.Debug("SampleView::resize16th2: num16ths="+_num16ths);
+
+      float ms = ( (1000 * 60 * 0.25) * _num16ths ) / bpm;
+      int numFrames = (ms * sample_rate) / 1000;
+      int oldNumFrames = getNumFrames();
+
+      if(numFrames > 0)
+      {
+         if(numFrames != oldNumFrames)
+         {
+            undoBegin("resize16h");
+
+            if(null != plugin)
+            {
+               plugin.svBeginReallocSamples();
+            }
+
+            int channelMask = (2 == num_channels) ? CHANNEL_MASK_LR : CHANNEL_MASK_L;
+
+            if(numFrames >= oldNumFrames)
+            {
+               // Lengthen
+               undoActionAdd(oldNumFrames, (numFrames - oldNumFrames), channelMask);
+               samples.realloc(num_channels * numFrames);
+               samples.useAll();
+               samples.fillRegion(oldNumFrames*num_channels, (oldNumFrames - numFrames)*num_channels, 0.0f);
+               trace "[trc] samples.numframes="+(samples.numElements/num_channels)+" oldNumFrames="+oldNumFrames+" numFrames="+numFrames;
+               if(null != plugin)
+                  plugin.svHandleInsertRegion(oldNumFrames, (numFrames - oldNumFrames));
+            }
+            else
+            {
+               // Shorten
+               undoActionRemove(numFrames, oldNumFrames - numFrames, channelMask);
+               samples.realloc(num_channels * numFrames);
+               if(null != plugin)
+                  plugin.svHandleDeleteRegion(numFrames, (oldNumFrames - numFrames));
+            }
+
+            if(null != plugin)
+            {
+               plugin.svEndReallocSamples();
+            }
+
+            setSelection(0, numFrames);
+            invalidateAutoChop();
+
+            undoEnd();
+            handleWaveformChanged();
+            showAll();
+
+            redraw();
+            Global.SuccessShort("SampleView: resize to "+_num16ths+" 16th"+Utils.GetPluralString(_num16ths));
+         }
+         else
+         {
+            Global.Print("resize: length did not change");
+         }
+      }
+      else
+      {
+         Global.Error("resize: Invalid #frames="+numFrames);
+      }
+   }
+
    protected method processSelectionWithSoX_Int(String _cmdArgs, boolean _bCmdAfterOutPathName, boolean _bNoiseRed) : boolean {
       boolean bNoiseProf = _bNoiseRed && (_cmdArgs <= "noiseprof");
       local String pathNameIn  <= Utils.ToNativePathName(STConfig.temp+"/sampleview_sox_in.wav");
@@ -7331,6 +7440,11 @@ class SampleView : Control {
                if(_key.modShift())
                {
                   undoClear();
+                  return true;
+               }
+               else if(_key.modCtrlOnly())
+               {
+                  resize16th1(false/*bNearMouse*/);
                   return true;
                }
             }
@@ -8301,6 +8415,50 @@ class SampleView : Control {
       }
    }
 
+   protected method trySelectAreaBetweenAutoChopRegions(int _off) : boolean {
+      int selStart = 0;
+      int selEnd = 0;
+
+      if(autochop_start_offsets.numElements > 0)
+      {
+         int idx = 0;
+         loop(autochop_start_offsets.numElements)
+         {
+            int startOff = autochop_start_offsets[idx];
+            int endOff = autochop_end_offsets[idx];
+
+            if(_off < startOff)
+            {
+               selEnd = startOff;
+               setSelection(selStart, selEnd);
+               return true;
+            }
+            else
+            {
+               selStart = endOff;
+            }
+
+            // Next region
+            idx++;
+         }
+
+         // Beyond last region ?
+         selStart = autochop_end_offsets.last;
+         if(_off >= selStart)
+         {
+            int numFrames = getNumFrames();
+            if(selStart < numFrames)
+            {
+               selEnd = numFrames;
+               setSelection(selStart, selEnd);
+               return true;
+            }
+         }
+      }
+
+      return false;
+   }
+
    protected method trySelectRegionUnderMouse(MouseEvent _ev) : boolean {
       if(null != samples)
       {
@@ -8309,9 +8467,24 @@ class SampleView : Control {
          if(off >= 0)
          {
             int regionIdx = findAutoChopRegionIdxAt(off);
+            // // trace "xxx regionIdx="+regionIdx+" off="+off;
             if(-1 == regionIdx)
             {
-               regionIdx = findAutoChopRegionIdxNear(off);
+               if(_ev.isRightButtonDown())
+               {
+                  // Select nearest region
+                  regionIdx = findAutoChopRegionIdxNear(off);
+               }
+               else
+               {
+                  // Select area between regions
+                  if(trySelectAreaBetweenAutoChopRegions(off))
+                  {
+                     handleSelectionChanged();
+                     UI.CompositeAll();
+                     return false;  // no region selected
+                  }
+               }
             }
             if(-1 != regionIdx)
             {
@@ -8323,6 +8496,10 @@ class SampleView : Control {
                handleRegionSelected();
                UI.CompositeAll();
                return true;
+            }
+            else
+            {
+               Global.Debug2("SampleView::trySelectRegionUnderMouse: no region at off="+off);
             }
          }
       }
@@ -8582,6 +8759,17 @@ class SampleView : Control {
          if(null != waveform)
          {
             playoff = waveform.uiGetLastPlayedOffset();
+            // trace "xxx waveform.uiGetLastPlayedOffset()="+waveform.uiGetLastPlayedOffset()+" last_seen_play_offset="+last_seen_play_offset+" last_seen_play_offset_count="+last_seen_play_offset_count;
+            if(playoff == last_seen_play_offset)
+            {
+               if(last_seen_play_offset_count++ > 1)
+                  playoff = -1;
+            }
+            else
+            {
+               last_seen_play_offset       = playoff;
+               last_seen_play_offset_count = 0;
+            }
             if(playoff >= 0)
             {
                playoff -= waveform.ringOffset;
@@ -8605,12 +8793,13 @@ class SampleView : Control {
                playoff = last_play_offset;
                last_play_offset = t;
             }
-            if( (-1 != last_play_offset) && (-1 != playoff))
+            if(-1 != last_play_offset && -1 != playoff)
             {
                // // if( (playoff - last_play_offset) < 4096 )  // <-- breaks playoff display when sample is transposed up 1/2 octaves
                {
                   if(playoff != last_play_offset)
                   {
+                     // trace "xxx drawArea: last_play_offset="+last_play_offset+" playoff="+playoff+" sampleOff="+sampleOff;
                      drawArea(color_playoff_bg, color_playoff, last_play_offset, playoff, sampleOff, numVisFrames, CHANNEL_MASK_LR);
                   }
                }
@@ -9112,6 +9301,10 @@ class SampleView : Control {
             amplifySelection1(true/*bNearMouse*/, true/*bNormalize*/);
             return true;
 
+         case "tools_resize16th":
+            resize16th1(true/*bNearMouse*/);
+            return true;
+
          case "tools_sox":
             showSoXDialog(false/*bNearMouse*/);
             return true;
@@ -9461,6 +9654,14 @@ class SampleView : Control {
             {
                fac <= _ac;
                amplifySelection2(fac.getFloatValue());
+            }
+            return true;
+
+         case @(dlg_resize):
+            if(FloatParamDialog.ACTION_FLOATPARAMDIALOGCLOSED == acName)
+            {
+               fac <= _ac;
+               resize16th2(fac.getFloatValue());
             }
             return true;
       }
