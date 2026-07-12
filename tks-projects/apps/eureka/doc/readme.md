@@ -1,8 +1,8 @@
 % Eureka Sampler / DAW
 % bsp
-% 05-Jul-2026
+% 11-Jul-2026
 >>>
-17Nov2019, 15May2020, 16Oct2020, 06Feb2021, 31May2021, 04Jan2023, 18Mar2023, 24Mar2023, 31Mar2023, 04Aug2023, 05Aug2023, 10Aug2023, 16Aug2023, 18Aug2023, 19Aug2023, 07Dec2023, 14Dec2023, 15Dec2023, 16Dec2023, 03Feb2024, 27Apr2024, 07Jul2024, 04Aug2024, 06Aug2024, 10Aug2024, 12Aug2024, 28Sep2024, 30Sep2024, 03Oct2024, 04Oct2024, 05Oct2024, 28Nov2024, 30Nov2024, 23Dec2024, 26Dec2024, 28Dec2024, 31Dec2024, 04Jan2025, 20Mar2025, 21Mar2025, 22May2025, 28May2025, 29May2025, 30May2025, 07Jun2025, 11Jun2025, 12Jun2025, 15Jun2025, 20Jun2025, 21Jun2025, 11Dec2025, 02Jan2026, 17Jan2026, 26Jan2026, 09Apr2026, 10Apr2026, 15Apr2026, 16Apr2026, 23Apr2026, 26Apr2026, 26May2026, 01Jun2026, 02Jun2026, 05Jul2026
+17Nov2019, 15May2020, 16Oct2020, 06Feb2021, 31May2021, 04Jan2023, 18Mar2023, 24Mar2023, 31Mar2023, 04Aug2023, 05Aug2023, 10Aug2023, 16Aug2023, 18Aug2023, 19Aug2023, 07Dec2023, 14Dec2023, 15Dec2023, 16Dec2023, 03Feb2024, 27Apr2024, 07Jul2024, 04Aug2024, 06Aug2024, 10Aug2024, 12Aug2024, 28Sep2024, 30Sep2024, 03Oct2024, 04Oct2024, 05Oct2024, 28Nov2024, 30Nov2024, 23Dec2024, 26Dec2024, 28Dec2024, 31Dec2024, 04Jan2025, 20Mar2025, 21Mar2025, 22May2025, 28May2025, 29May2025, 30May2025, 07Jun2025, 11Jun2025, 12Jun2025, 15Jun2025, 20Jun2025, 21Jun2025, 11Dec2025, 02Jan2026, 17Jan2026, 26Jan2026, 09Apr2026, 10Apr2026, 15Apr2026, 16Apr2026, 23Apr2026, 26Apr2026, 26May2026, 01Jun2026, 02Jun2026, 05Jul2026, 10Jul2026, 11Jul2026
 <<<
 $(var:header)
 
@@ -641,7 +641,8 @@ tip: $(buf!notenumberedit)
    |+RMB hold click            |+
    |+RMB click drag handle bar |+
    |+RMB hold click            |+edit focused track
-   |:f                         |:edit first ModSample or ModCLAP or ModVST2 of focused track
+   |:w                         |:edit first ModSample or ModCLAP or ModVST2 of focused track
+   |:f                         |:select next timeline track
    |:d                         |:mute focused track
    |:s                         |:solo focused track
    |:n                         |:add new track
@@ -659,7 +660,6 @@ tip: $(buf!notenumberedit)
    |:RIGHT                |:
    |+WHEELDOWN            |+select next track
    |:F3                   |:show/hide plugin browser
-   |:RETURN               |:edit first or last selected mod
    |:lctrl - TAB          |:
    |+lctrl - r            |+toggle modmatrix / lanes view (alt key: F4, lctrl-4)
    |:lctrl - q            |+show / hide browser
@@ -728,7 +728,9 @@ when CLAP / VST2 editor window is focused:
    |:c                    |:set loop to selected clips, region, or canvas (prefer clips)
    |:lshift - c           |:set loop to selected region, clips, or canvas (prefer region)
    |:lalt - c             |:copy timeline to clipboard
-   |:e                    |:erase(clear) selection (split clip if required) (do not modify samples) OR select 'erase' mode
+   |:e                    |:
+   |+RETURN               |+edit first or last selected clip
+   |:lctrl-lshift-e       |:erase(clear) selection (split clip if required) (do not modify samples) OR select 'erase' mode
    |:lctrl - v            |:paste SampleView clipboard as new sample+clip OR paste timeline clips from clipboard (depends on which clipboard is more recent)
    |:lctrl - lshift - v   |:insert space on all tracks and shift-paste timeline clips from clipboard
    |:lalt - v             |:paste timeline from clipboard
@@ -737,6 +739,8 @@ when CLAP / VST2 editor window is focused:
    |:n                    |:toggle normalize-waveform-display
    |:r                    |:split selected clips at cursor position OR select 'razor' mode
    |:lshift - r           |:expand selection to all tracks and split at cursor position
+   |:lctrl - r            |:clone clip sample or allocate new, empty one
+   |:lctrl - lshift - r   |:allocate new, empty clip sample (copy sample size if a sample is assigned to the clip)
    |:s                    |:toggle snap-to-grid
    |:lshift - s           |:cycle snap-to-grid units
    |:t                    |:toggle mute selected clips or select 'mute' mode
@@ -758,6 +762,7 @@ when CLAP / VST2 editor window is focused:
    |:LMB-holdclick        |:split clip at cursor position
    |:LMB-dblclick         |:
    |+f                    |+toggle clip zoom
+   |:g                    |:toggle sync-loop-to-selection
    |:RMB-click            |:
    |+RETURN               |+edit clip sample
    |+                     |+ while dragging clip position or length: mini undo
@@ -802,6 +807,7 @@ note: RPNs 88(offms_lo)/89(offms_hi) set start position (seek) (1/64 ms resoluti
 |              lctrl - k  | Delete left channel
 |     lctrl - lshift - k  | Delete right channel
 |     lctrl - lshift - l  | Clear undo/redo history
+|              lctrl - l  | Resize waveform (16ths)
 |              lctrl - m  | Convert to mono
 |     lctrl - lshift - m  | Convert to stereo
 |              lctrl - n  | Normalize selection
