@@ -12,7 +12,8 @@
 // ---- changed: 28Jun2021, 29Jun2021, 30Jun2021, 01Jul2021, 02Jul2021, 25Jun2022, 26Jun2022
 // ----          04Apr2025, 05Apr2025, 09Apr2025, 10Apr2025, 01May2025, 04May2025, 06May2025
 // ----          20May2025, 31May2025, 12Jun2025, 14Jun2025, 15Jun2025, 22Jun2025, 13Sep2025
-// ----          14Sep2025, 10Oct2025, 02Jan2026, 03Jan2026, 07Apr2026, 15Apr2026
+// ----          14Sep2025, 10Oct2025, 02Jan2026, 03Jan2026, 07Apr2026, 15Apr2026, 10Jul2026
+// ----          12Jul2026
 // ----
 // ----
 // ----
@@ -112,6 +113,17 @@ class SampleTimelineEditorClip : TimelineClip {
       return true;
    }
 
+   public method selectClipUnderMouse(int _mouseRelX, int _mouseRelY) {
+      PageTrack pgTrack <= root_form.pg_track;
+      SampleTimelineForm f <= pgTrack.f_sampletimeline;
+      SampleTimelineEditor parentEditor <= f.sample_timeline_editor;
+      TimelineData parentData <= parentEditor.data;
+      int dataX = _mouseRelX + parent_track.position_x + position_x;
+      int dataY = _mouseRelY + parent_track.position_y + position_y;
+      parentData.selectClipFromMouseEvent(dataX, dataY);
+      f.updateTrackWidgets();
+   }
+
    public virtual timelineClipEdit(int _mouseRelX, int _mouseRelY, boolean _bSelectClipUnderMouse) {
       // trace "xxx ----------------------- timelineClipEdit --------------------";
       // Select clip
@@ -127,10 +139,11 @@ class SampleTimelineEditorClip : TimelineClip {
       Global.Debug2("SampleTimelineEditorClip::onMouseClick: oldSelStartMS="+oldSelStartMS+" oldSelEndMS="+oldSelEndMS);
       if(_bSelectClipUnderMouse)
       {
-         int dataX = _mouseRelX + parent_track.position_x + position_x;
-         int dataY = _mouseRelY + parent_track.position_y + position_y;
-         parentData.selectClipFromMouseEvent(dataX, dataY);
-         f.updateTrackWidgets();
+         selectClipUnderMouse(_mouseRelX, _mouseRelY);
+         // // int dataX = _mouseRelX + parent_track.position_x + position_x;
+         // // int dataY = _mouseRelY + parent_track.position_y + position_y;
+         // // parentData.selectClipFromMouseEvent(dataX, dataY);
+         // // f.updateTrackWidgets();
       }
       else
       {
@@ -270,6 +283,16 @@ class SampleTimelineEditorTrack : TimelineTrack {
       model_track.deleteClip(_clip.model_clip);
    }
 
+   public static GenerateAudioClipSampleNameAndNamespaceIdxFromTrackName(String _nameInOut) : int {
+      if(!_nameInOut.startsWith("a_"))
+         _nameInOut.insert(0, "a_");
+      _nameInOut.trim();
+      local String sNSPName = _nameInOut;
+      _nameInOut.append(" 1");
+      _nameInOut.toLower();
+      return current_project.getOrCreateSampleNamespace(sNSPName);
+   }
+
    protected method createAndAssignSampleToNewClip(SampleTimelineModelClip _clip) {
 
       local String sName = model_track.name;
@@ -289,7 +312,7 @@ class SampleTimelineEditorTrack : TimelineTrack {
          int numCh = 2;
          local FloatArray samples;
          samples.allocAndFill(numCh * numFrames, 0.0f);  // (todo) createEmptySample()
-      
+
          PageSample pgSample <= root_form.pg_sample;
          Sample sample <= pgSample.createSingleSampleFromWaveform(samples,
                                                                   numCh, 0/*chOff*/, numCh/*dstNumCh*/,
@@ -300,14 +323,9 @@ class SampleTimelineEditorTrack : TimelineTrack {
                                                                   );
          if(null != sample)
          {
-            if(!sName.startsWith("a_"))
-               sName.insert(0, "a_");
-            sName.trim();
-            local String sNSPName = sName;
-            sName.append(" 1");
-            sName.toLower();
+            int nspIdx = GenerateAudioClipSampleNameAndNamespaceIdxFromTrackName(sName/*nameInOut*/);
             sample.assignUniqueName(sName);
-            sample.setNamespaceIdx(current_project.getOrCreateSampleNamespace(sNSPName));
+            sample.setNamespaceIdx(nspIdx);
             _clip.name = sample.unique_name;
             _clip.setSampleIdx(current_project.getSampleIdx(sample));
             Global.Print("Create sample (#frames="+numFrames+" #ch="+numCh+" bpm="+bpm+")");
@@ -565,13 +583,19 @@ class SampleTimelineEditor : Timeline {
    }
 
    public =replay= method timelineSetLoop(int _start, int _len) : int {
+
+      if(_len < 0)
+      {
+         _start += _len;
+         _len = -_len;
+      }
+
       if(null != edit_model)
       {
          edit_model.loop_start = _start;
          edit_model.loop_len   = _len;
       }
-      sample_timeline.loop_start = _start;
-      sample_timeline.loop_len   = _len;
+      sample_timeline.setOrQueueLoop(_start, _len);
    }
 
    public virtual timelineUpdate() {
@@ -599,6 +623,13 @@ class SampleTimelineEditor : Timeline {
       {
          SampleTimelineForm f <= pgTrack.f_sampletimeline;
          f.handleTimelineKbdSelectionChanged();
+      }
+   }
+
+   public virtual timelineHandleCursorUnitsChanged() {
+      if(!sample_timeline.b_playing)
+      {
+         sample_timeline.play_pos = cursor_units;
       }
    }
 
@@ -680,7 +711,7 @@ class SampleTimelineEditor : Timeline {
          case 'c':
             if(_k.modNone() || _k.modShiftOnly())
             {
-               handleSetLoop(_k.modShift()/*bPreferRegion*/);
+               handleSetLoop(_k.modShift()/*bPreferRegion*/, true/*bKbdSelectNone*/);
                return true;
             }
             break;

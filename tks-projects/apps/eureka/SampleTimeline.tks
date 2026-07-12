@@ -11,7 +11,7 @@
 // ---- changed: 28Jun2021, 29Jun2021, 30Jun2021, 01Jul2021, 02Jul2021, 25Jun2022, 26Jun2022
 // ----          04Apr2025, 05Apr2025, 06Apr2025, 07Apr2025, 09Apr2025, 01May2025, 04May2025
 // ----          06May2025, 20May2025, 22May2025, 29May2025, 30May2025, 04Jun2025, 14Jun2025
-// ----          22Jun2025, 20Dec2025, 02Jan2026, 03Jan2026, 07Apr2026, 08Apr2026
+// ----          22Jun2025, 20Dec2025, 02Jan2026, 03Jan2026, 07Apr2026, 08Apr2026, 11Jul2026
 // ----
 // ----
 // ----
@@ -44,6 +44,8 @@ class SampleTimeline {
    float num_tick_frames_left;
    int   loop_start;  // copied from last selected SampleTimelineModel
    int   loop_len;
+   int   queued_loop_start;  // -1=none queued
+   int   queued_loop_len;
 
    float   beats_per_minute;
    boolean b_use_project_bpm;  // false=use global timeline BPM, true=use project BPM, maybe=use timeline BPM
@@ -64,6 +66,8 @@ class SampleTimeline {
 
       loop_start = 0;
       loop_len   = SampleTimelineModel.DEFAULT_NUM_UNITS_PER_BAR * 2;
+
+      queued_loop_start = -1;
 
       all_models.alloc(MAX_TIMELINES);
       all_models.useAll();
@@ -164,8 +168,8 @@ class SampleTimeline {
       loop_start = _o.loop_start;
       loop_len   = _o.loop_len;
 
-      beats_per_minute  = _o.beats_per_minute;
-      b_use_project_bpm = _o.b_use_project_bpm;
+      beats_per_minute   = _o.beats_per_minute;
+      b_use_project_bpm  = _o.b_use_project_bpm;
 
       SampleTimelineReplayTrack *replayTrack;
       int replayTrackIdx = 0;
@@ -265,6 +269,46 @@ class SampleTimeline {
    // <method_get.png>
    public =replay= getPlayPos() : int {
       return play_pos;
+   }
+
+   // <method_set.png>
+   public method setOrQueueLoop(int _start, int _len) {
+      // called by SampleTimelineEditor::timelineSetLoop() (while =replay= is locked)
+      if(b_playing)
+      {
+         // Play (and copy to loop_start/len) when current loop ends
+         if(queued_loop_start == _start)
+         {
+            // Sync to end of next bar
+            int numUnitsPerBeat =
+               (null != replay_model)
+               ? replay_model.num_units_per_beat
+               : SampleTimelineModel.DEFAULT_NUM_UNITS_PER_BEAT
+               ;
+            int numBeatsPerBar =
+               (null != replay_model)
+               ? replay_model.num_beats_per_bar
+               : SampleTimelineModel.DEFAULT_NUM_BEATS_PER_BAR
+               ;
+            int numUnitsPerBar = numBeatsPerBar * numUnitsPerBeat;
+            int qBeat= ((play_pos/numUnitsPerBar)+1)*numUnitsPerBar;
+            if(qBeat < (loop_start + loop_len))
+            {
+               if(play_pos < qBeat)
+               {
+                  loop_len = (qBeat - loop_start);
+               }
+            }
+         }
+         queued_loop_start = _start;
+         queued_loop_len   = _len;
+      }
+      else
+      {
+         // Set immediately
+         loop_start = _start;
+         loop_len   = _len;
+      }
    }
 
    // <replay.png>
@@ -443,6 +487,9 @@ class SampleTimeline {
    public =replay= method toggleReplay(int _playPos) {      // , int _preDelayFrames
       int _preDelayFrames = 0;
       // called from UI (SPACE key)
+
+      queued_loop_start = -1;
+
       if(b_playing)
       {
          b_playing = false;
@@ -968,6 +1015,7 @@ class SampleTimeline {
                                  if(null != sample && !sample.b_clip_recording)
                                  {
                                     sp.setLastStartedSampleBankHint(sample.sample_bank);
+                                    local float modVal = replayTrack.getModVal(sample, clip);
                                     if(-1 == sample.solo_zone_idx)
                                     {
                                        replayTrack.last_voice_key =
@@ -975,7 +1023,7 @@ class SampleTimeline {
                                                              null/*freqTable*/,
                                                              SEQ_REPLAY_NOTE,
                                                              clip.vel_on/127.0f/*velocity*/,
-                                                             0.0f/*modVal*/,
+                                                             modVal,
                                                              1.0f/*volume*/,
                                                              0.0f/*pan*/,
                                                              0/*freq*/
@@ -991,7 +1039,7 @@ class SampleTimeline {
                                                             null/*freqTable=default*/,
                                                             SEQ_REPLAY_NOTE,
                                                             clip.vel_on/127.0f/*velocity*/,
-                                                            0.0f/*modVal*/,
+                                                            modVal,
                                                             1.0f/*volume*/,
                                                             0.0f/*pan*/,
                                                             0/*freq*/
@@ -1109,7 +1157,13 @@ class SampleTimeline {
             {
                if(play_pos == (loop_start + loop_len))
                {
-                  if(bDebug) trace "[>>>] SampleTimeline: loop (start="+loop_start+" len="+loop_len+")";
+                  if(bDebug) trace "[>>>] SampleTimeline: loop (start="+loop_start+" len="+loop_len+") queued=("+queued_loop_start+","+queued_loop_len+")";
+                  if(queued_loop_start >= 0)
+                  {
+                     loop_start = queued_loop_start;
+                     loop_len   = queued_loop_len;
+                     queued_loop_start = -1;
+                  }
                   play_pos = loop_start;
                   if(null != replay_model)
                      replay_model.invalidateClipIndexHints();
