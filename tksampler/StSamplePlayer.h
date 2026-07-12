@@ -31,7 +31,7 @@
 // ----          28Apr2021, 20May2021, 17Jul2021, 01Aug2021, 10Aug2021, 30Aug2021, 10Dec2022
 // ----          20Dec2022, 12Apr2023, 20Aug2023, 07Sep2023, 21Jan2024, 28Sep2024, 01Oct2024
 // ----          03Oct2024, 31Oct2024, 15Nov2024, 14Jan2025, 28May2025, 29May2025, 30May2025
-// ----          13Jun2025, 16Jan2026, 09Apr2026, 19May2026, 24May2026, 27May2026
+// ----          13Jun2025, 16Jan2026, 09Apr2026, 19May2026, 24May2026, 27May2026, 11Jul2026
 // ----
 // ----
 // ----
@@ -1026,6 +1026,10 @@ YC class StSamplePlayer : public YAC_Object {
       Update performance controllers. Skip when value is <0.
    */
    YM void updatePerfCtls (YAC_Object *_initialPerfCtl);
+
+   /* @method getPerfCtlByIdx,int idx:float
+    */
+   YM sF32 getPerfCtlByIdx (sUI _idx);
 
    // for poly-pressure (STSAMPLEPLAYER_PERFCTL_PRESSURE)
    YM void updatePerfCtlByKey (sSI _voiceKey, sUI _idx, sF32 _val);

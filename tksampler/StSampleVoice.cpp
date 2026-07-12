@@ -31,7 +31,7 @@
 // ----          14Jan2024, 15Jan2024, 16Jan2024, 19Jan2024, 28Sep2024, 30Sep2024, 03Oct2024
 // ----          31Oct2024, 03Nov2024, 08Nov2024, 09Nov2024, 11Dec2024, 03Jan2025, 04Jan2025
 // ----          12Jan2025, 09Jan2026, 11Jan2026, 10Apr2026, 08May2026, 09May2026, 14May2026
-// ----          15May2026, 24May2026, 27May2026
+// ----          15May2026, 24May2026, 27May2026, 11Jul2026, 12Jul2026
 // ----
 // ----
 // ----
@@ -5054,7 +5054,8 @@ void StSampleVoice::readWindowedCycleSample(const sF32 *smpDat,
                                             sF32        _tsOff,
                                             sF32       *_l,
                                             sF32       *_r,
-                                            const sUI   _curSampleLen
+                                            const sUI   _curSampleLen,
+                                            const sF32  _cRate
                                             ) {
 
    sUI tsIntOff = (sUI) _tsOff;
@@ -5074,7 +5075,8 @@ void StSampleVoice::readWindowedCycleSample(const sF32 *smpDat,
                          &al,
                          &ar,
                          false/*bAllowInterpol*/,
-                         _curSampleLen
+                         _curSampleLen,
+                         _cRate
                          );
 
       // lerp to start of cycle
@@ -5086,7 +5088,8 @@ void StSampleVoice::readWindowedCycleSample(const sF32 *smpDat,
                          &bl,
                          &br,
                          false/*bAllowInterpol*/,
-                         _curSampleLen
+                         _curSampleLen,
+                         _cRate
                          );
 
       *_l = (1.0f - tsFrac) * al + tsFrac * bl;
@@ -5115,7 +5118,8 @@ void StSampleVoice::readWindowedCycleSample(const sF32 *smpDat,
                          _l,
                          _r,
                          true/*bAllowInterpol*/,
-                         _curSampleLen
+                         _curSampleLen,
+                         _cRate
                          );
 
       // *_l = 0;
@@ -5160,7 +5164,8 @@ void StSampleVoice::readWindowedSample(const sF32 *smpDat,
 #endif // TKSAMPLER_SKIP_LIVEREC
                                        sF32 _off, sF32 *_l, sF32 *_r,
                                        sBool _bAllowInterpol,
-                                       const sUI _curSampleLen
+                                       const sUI _curSampleLen,
+                                       const sF32 _cRate
                                        ) {
 
    ////printf("readWindowedSample _off=%f\n", _off);
@@ -5182,7 +5187,7 @@ void StSampleVoice::readWindowedSample(const sF32 *smpDat,
    intOff &= smpoff_mask;
 
    sUI smpOff = intOff * numCh;
-   if((STSAMPLE_INTERPOL_LINEAR == sample->interpol_type) && _bAllowInterpol)
+   if(_bAllowInterpol && STSAMPLE_INTERPOL_LINEAR == sample->interpol_type)
    {
       // Linear interpolation
       sUI smpOffR;
@@ -5256,6 +5261,486 @@ void StSampleVoice::readWindowedSample(const sF32 *smpDat,
       {
          *_r = *_l; // mono to stereo
       }
+   }
+   else if(_bAllowInterpol && STSAMPLE_INTERPOL_VSR2 == sample->interpol_type)
+   {
+#define VSR_NUM 2
+      sF64 fetchOffC = _off;
+      const sF64 cRateVSR  = _cRate * (1.0f / VSR_NUM);
+
+      sF32 smpL = 0.0f;
+      sF32 smpR = 0.0f;
+
+      for(sUI i = 0u; i < VSR_NUM; i++)
+      {
+         const sUI intOffC = sUI(fetchOffC) & smpoff_mask;
+
+         if(1u == numCh)
+         {
+            // Mono
+            const sUI smpOffC = intOffC;
+
+            sF32 readL = readSample1(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                     smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                     smpOffC + 0u
+                                     );
+
+            if(br_mask)
+            {
+               readL = BitReduce(readL, sample->br_preamp, br_mask);
+            }
+
+            smpL += readL;
+         }
+         else
+         {
+            // Stereo
+            sUI smpOffC = intOffC * numCh;
+
+            sF32 readL = readSample2(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                     smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                     smpOffC + 0u
+                                     );
+            sF32 readR = readSample2(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                     smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                     smpOffC + 1u
+                                     );
+
+            if(br_mask)
+            {
+               readL = BitReduce(readL, sample->br_preamp, br_mask);
+               readR = BitReduce(readR, sample->br_preamp, br_mask);
+            }
+
+            smpL += readL;
+            smpR += readR;
+         }
+
+         fetchOffC += cRateVSR;
+         if(fetchOffC >= current_sample_len)
+            fetchOffC -= current_sample_len;
+      }
+
+      if(1u == numCh)
+      {
+         smpL *= (1.0f / VSR_NUM);
+         smpR = smpL; // mono to stereo
+      }
+      else
+      {
+         smpL *= (1.0f / VSR_NUM);
+         smpR *= (1.0f / VSR_NUM);
+      }
+
+      *_l = smpL;
+      *_r = smpR;
+#undef VSR_NUM
+   }
+   else if(_bAllowInterpol && STSAMPLE_INTERPOL_VSR4 == sample->interpol_type)
+   {
+#define VSR_NUM 4
+      sF64 fetchOffC = _off;
+      const sF64 cRateVSR  = _cRate * (1.0f / VSR_NUM);
+
+      sF32 smpL = 0.0f;
+      sF32 smpR = 0.0f;
+
+      for(sUI i = 0u; i < VSR_NUM; i++)
+      {
+         const sUI intOffC = sUI(fetchOffC) & smpoff_mask;
+
+         if(1u == numCh)
+         {
+            // Mono
+            const sUI smpOffC = intOffC;
+
+            sF32 readL = readSample1(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                     smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                     smpOffC + 0u
+                                     );
+
+            if(br_mask)
+            {
+               readL = BitReduce(readL, sample->br_preamp, br_mask);
+            }
+
+            smpL += readL;
+         }
+         else
+         {
+            // Stereo
+            sUI smpOffC = intOffC * numCh;
+
+            sF32 readL = readSample2(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                     smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                     smpOffC + 0u
+                                     );
+            sF32 readR = readSample2(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                     smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                     smpOffC + 1u
+                                     );
+
+            if(br_mask)
+            {
+               readL = BitReduce(readL, sample->br_preamp, br_mask);
+               readR = BitReduce(readR, sample->br_preamp, br_mask);
+            }
+
+            smpL += readL;
+            smpR += readR;
+         }
+
+         fetchOffC += cRateVSR;
+         if(fetchOffC >= current_sample_len)
+            fetchOffC -= current_sample_len;
+      }
+
+      if(1u == numCh)
+      {
+         smpL *= (1.0f / VSR_NUM);
+         smpR = smpL; // mono to stereo
+      }
+      else
+      {
+         smpL *= (1.0f / VSR_NUM);
+         smpR *= (1.0f / VSR_NUM);
+      }
+
+      *_l = smpL;
+      *_r = smpR;
+#undef VSR_NUM
+   }
+   else if(_bAllowInterpol && STSAMPLE_INTERPOL_VSR8 == sample->interpol_type)
+   {
+#define VSR_NUM 8
+      sF64 fetchOffC = _off;
+      const sF64 cRateVSR  = _cRate * (1.0f / VSR_NUM);
+
+      sF32 smpL = 0.0f;
+      sF32 smpR = 0.0f;
+
+      for(sUI i = 0u; i < VSR_NUM; i++)
+      {
+         const sUI intOffC = sUI(fetchOffC) & smpoff_mask;
+
+         if(1u == numCh)
+         {
+            // Mono
+            const sUI smpOffC = intOffC;
+
+            sF32 readL = readSample1(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                     smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                     smpOffC + 0u
+                                     );
+
+            if(br_mask)
+            {
+               readL = BitReduce(readL, sample->br_preamp, br_mask);
+            }
+
+            smpL += readL;
+         }
+         else
+         {
+            // Stereo
+            sUI smpOffC = intOffC * numCh;
+
+            sF32 readL = readSample2(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                     smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                     smpOffC + 0u
+                                     );
+            sF32 readR = readSample2(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                     smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                     smpOffC + 1u
+                                     );
+
+            if(br_mask)
+            {
+               readL = BitReduce(readL, sample->br_preamp, br_mask);
+               readR = BitReduce(readR, sample->br_preamp, br_mask);
+            }
+
+            smpL += readL;
+            smpR += readR;
+         }
+
+         fetchOffC += cRateVSR;
+         if(fetchOffC >= current_sample_len)
+            fetchOffC -= current_sample_len;
+      }
+
+      if(1u == numCh)
+      {
+         smpL *= (1.0f / VSR_NUM);
+         smpR = smpL; // mono to stereo
+      }
+      else
+      {
+         smpL *= (1.0f / VSR_NUM);
+         smpR *= (1.0f / VSR_NUM);
+      }
+
+      *_l = smpL;
+      *_r = smpR;
+#undef VSR_NUM
+   }
+   else if(_bAllowInterpol && STSAMPLE_INTERPOL_VSR16 == sample->interpol_type)
+   {
+#define VSR_NUM 16
+      sF64 fetchOffC = _off;
+      const sF64 cRateVSR  = _cRate * (1.0f / VSR_NUM);
+
+      sF32 smpL = 0.0f;
+      sF32 smpR = 0.0f;
+
+      for(sUI i = 0u; i < VSR_NUM; i++)
+      {
+         const sUI intOffC = sUI(fetchOffC) & smpoff_mask;
+
+         if(1u == numCh)
+         {
+            // Mono
+            const sUI smpOffC = intOffC;
+
+            sF32 readL = readSample1(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                     smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                     smpOffC + 0u
+                                     );
+
+            if(br_mask)
+            {
+               readL = BitReduce(readL, sample->br_preamp, br_mask);
+            }
+
+            smpL += readL;
+         }
+         else
+         {
+            // Stereo
+            sUI smpOffC = intOffC * numCh;
+
+            sF32 readL = readSample2(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                     smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                     smpOffC + 0u
+                                     );
+            sF32 readR = readSample2(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                     smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                     smpOffC + 1u
+                                     );
+
+            if(br_mask)
+            {
+               readL = BitReduce(readL, sample->br_preamp, br_mask);
+               readR = BitReduce(readR, sample->br_preamp, br_mask);
+            }
+
+            smpL += readL;
+            smpR += readR;
+         }
+
+         fetchOffC += cRateVSR;
+         if(fetchOffC >= current_sample_len)
+            fetchOffC -= current_sample_len;
+      }
+
+      if(1u == numCh)
+      {
+         smpL *= (1.0f / VSR_NUM);
+         smpR = smpL; // mono to stereo
+      }
+      else
+      {
+         smpL *= (1.0f / VSR_NUM);
+         smpR *= (1.0f / VSR_NUM);
+      }
+
+      *_l = smpL;
+      *_r = smpR;
+#undef VSR_NUM
+   }
+   else if(_bAllowInterpol && STSAMPLE_INTERPOL_VSR32 == sample->interpol_type)
+   {
+#define VSR_NUM 32
+      sF64 fetchOffC = _off;
+      const sF64 cRateVSR  = _cRate * (1.0f / VSR_NUM);
+
+      sF32 smpL = 0.0f;
+      sF32 smpR = 0.0f;
+
+      for(sUI i = 0u; i < VSR_NUM; i++)
+      {
+         const sUI intOffC = sUI(fetchOffC) & smpoff_mask;
+
+         if(1u == numCh)
+         {
+            // Mono
+            const sUI smpOffC = intOffC;
+
+            sF32 readL = readSample1(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                     smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                     smpOffC + 0u
+                                     );
+
+            if(br_mask)
+            {
+               readL = BitReduce(readL, sample->br_preamp, br_mask);
+            }
+
+            smpL += readL;
+         }
+         else
+         {
+            // Stereo
+            sUI smpOffC = intOffC * numCh;
+
+            sF32 readL = readSample2(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                     smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                     smpOffC + 0u
+                                     );
+            sF32 readR = readSample2(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                     smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                     smpOffC + 1u
+                                     );
+
+            if(br_mask)
+            {
+               readL = BitReduce(readL, sample->br_preamp, br_mask);
+               readR = BitReduce(readR, sample->br_preamp, br_mask);
+            }
+
+            smpL += readL;
+            smpR += readR;
+         }
+
+         fetchOffC += cRateVSR;
+         if(fetchOffC >= current_sample_len)
+            fetchOffC -= current_sample_len;
+      }
+
+      if(1u == numCh)
+      {
+         smpL *= (1.0f / VSR_NUM);
+         smpR = smpL; // mono to stereo
+      }
+      else
+      {
+         smpL *= (1.0f / VSR_NUM);
+         smpR *= (1.0f / VSR_NUM);
+      }
+
+      *_l = smpL;
+      *_r = smpR;
+#undef VSR_NUM
+   }
+   else if(_bAllowInterpol && STSAMPLE_INTERPOL_VSR64 == sample->interpol_type)
+   {
+#define VSR_NUM 64
+      sF64 fetchOffC = _off;
+      const sF64 cRateVSR  = _cRate * (1.0f / VSR_NUM);
+
+      sF32 smpL = 0.0f;
+      sF32 smpR = 0.0f;
+
+      for(sUI i = 0u; i < VSR_NUM; i++)
+      {
+         const sUI intOffC = sUI(fetchOffC) & smpoff_mask;
+
+         if(1u == numCh)
+         {
+            // Mono
+            const sUI smpOffC = intOffC;
+
+            sF32 readL = readSample1(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                     smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                     smpOffC + 0u
+                                     );
+
+            if(br_mask)
+            {
+               readL = BitReduce(readL, sample->br_preamp, br_mask);
+            }
+
+            smpL += readL;
+         }
+         else
+         {
+            // Stereo
+            sUI smpOffC = intOffC * numCh;
+
+            sF32 readL = readSample2(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                     smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                     smpOffC + 0u
+                                     );
+            sF32 readR = readSample2(smpDat,
+#ifndef TKSAMPLER_SKIP_LIVEREC
+                                     smpDatLRX,
+#endif // TKSAMPLER_SKIP_LIVEREC
+                                     smpOffC + 1u
+                                     );
+
+            if(br_mask)
+            {
+               readL = BitReduce(readL, sample->br_preamp, br_mask);
+               readR = BitReduce(readR, sample->br_preamp, br_mask);
+            }
+
+            smpL += readL;
+            smpR += readR;
+         }
+
+         fetchOffC += cRateVSR;
+         if(fetchOffC >= current_sample_len)
+            fetchOffC -= current_sample_len;
+      }
+
+      if(1u == numCh)
+      {
+         smpL *= (1.0f / VSR_NUM);
+         smpR = smpL; // mono to stereo
+      }
+      else
+      {
+         smpL *= (1.0f / VSR_NUM);
+         smpR *= (1.0f / VSR_NUM);
+      }
+
+      *_l = smpL;
+      *_r = smpR;
+#undef VSR_NUM
    }
    else
    {
@@ -7230,7 +7715,8 @@ void StSampleVoice::renderBlockTimestretch(sF32 *    _buf,
                                  tsReadOff,
                                  &smpLA,
                                  &smpRA,
-                                 current_sample_len
+                                 current_sample_len,
+                                 tsRate
                                  );
 
          if(sample->b_timestretch_xfade)
@@ -7244,7 +7730,8 @@ void StSampleVoice::renderBlockTimestretch(sF32 *    _buf,
                                     tsReadOffXFade,
                                     &l2,
                                     &r2,
-                                    current_sample_len
+                                    current_sample_len,
+                                    tsRate
                                     );
             smpLA = (smpLA + l2) * 0.5f;
             smpRA = (smpRA + r2) * 0.5f;
@@ -7261,7 +7748,8 @@ void StSampleVoice::renderBlockTimestretch(sF32 *    _buf,
                                  tsReadOff,
                                  &smpLB,
                                  &smpRB,
-                                 nextSampleLen
+                                 nextSampleLen,
+                                 tsRate
                                  );
 
          if(sample->b_timestretch_xfade)
@@ -7276,7 +7764,8 @@ void StSampleVoice::renderBlockTimestretch(sF32 *    _buf,
                                     tsReadOffXFade,
                                     &l2,
                                     &r2,
-                                    nextSampleLen
+                                    nextSampleLen,
+                                    tsRate
                                     );
             smpLB = (smpLB + l2) * 0.5f;
             smpRB = (smpRB + r2) * 0.5f;
@@ -7338,7 +7827,8 @@ void StSampleVoice::renderBlockTimestretch(sF32 *    _buf,
                                     anticlick_granular_smpoffinterpol_winoff,
                                     anticlick_granular_smpoffinterpol_tsoff,
                                     &lcSmpLA, &lcSmpRA,
-                                    current_sample_len
+                                    current_sample_len,
+                                    tsRate
                                     );
 
             if(sample->b_timestretch_xfade)
@@ -7351,7 +7841,8 @@ void StSampleVoice::renderBlockTimestretch(sF32 *    _buf,
                                        anticlick_granular_smpoffinterpol_winoff,
                                        ((sUI)current_cyclelen-1)-anticlick_granular_smpoffinterpol_tsoff,
                                        &l2, &r2,
-                                       current_sample_len
+                                       current_sample_len,
+                                       tsRate
                                        );
                lcSmpLA = (lcSmpLA + l2) * 0.5f;
                lcSmpRA = (lcSmpRA + r2) * 0.5f;
@@ -7367,7 +7858,8 @@ void StSampleVoice::renderBlockTimestretch(sF32 *    _buf,
                                     anticlick_granular_smpoffinterpol_nextwinoff,
                                     anticlick_granular_smpoffinterpol_tsoff,
                                     &lcSmpLB, &lcSmpRB,
-                                    current_sample_len
+                                    current_sample_len,
+                                    tsRate
                                     );
 
             if(sample->b_timestretch_xfade)
@@ -7380,7 +7872,8 @@ void StSampleVoice::renderBlockTimestretch(sF32 *    _buf,
                                        anticlick_granular_smpoffinterpol_nextwinoff,
                                        ((sUI)current_cyclelen-1)-anticlick_granular_smpoffinterpol_tsoff,
                                        &l2, &r2,
-                                       current_sample_len
+                                       current_sample_len,
+                                       tsRate
                                        );
                lcSmpLB = (lcSmpLB + l2) * 0.5f;
                lcSmpRB = (lcSmpRB + r2) * 0.5f;
@@ -11478,6 +11971,8 @@ void StSampleVoice::calcSmpDat(sF32*&smpDat,
                   sample->waveform->ui_last_played_offset = sF32(uiLiveRecDblBufOff + smpShift + current_play_offset + liverec_copy_loop_offset);
                else
                   sample->waveform->ui_last_played_offset = uiLiveRecDblBufOff + smpShift + sF32(current_sample_len - 1 - current_play_offset) + liverec_copy_loop_offset;
+               if(sample->b_timestretch)
+                  sample->waveform->ui_last_played_offset += current_ts_offset;
             }
             else
             {
@@ -11488,6 +11983,8 @@ void StSampleVoice::calcSmpDat(sF32*&smpDat,
 
                if(STSAMPLE_LIVEREC_OSC_MODE_OFF == sample->liverec_osc_mode)
                   sample->waveform->ui_last_played_offset += current_sample_offset;
+               if(sample->b_timestretch)
+                  sample->waveform->ui_last_played_offset += current_ts_offset;
             }
          }
          else
@@ -11499,12 +11996,17 @@ void StSampleVoice::calcSmpDat(sF32*&smpDat,
                sF64 cOff = current_play_offset + current_ts_offset;
                if(cOff > _curSampleLen)
                   cOff -= _curSampleLen;
-               sample->waveform->ui_last_played_offset = sF32(waveOff + cOff);
+               sample->waveform->ui_last_played_offset = sF32(waveOff + cOff) + ((replay_ticks & 1u)*0.01f);
             }
-            else if(b_fwd || (STSAMPLE_PLAY_MODE_PINGPONG != sample->play_mode))
-               sample->waveform->ui_last_played_offset = sF32(waveOff + current_play_offset);
             else
-               sample->waveform->ui_last_played_offset = waveOff + sF32(current_sample_len - 1 - current_play_offset);
+            {
+               if(b_fwd || (STSAMPLE_PLAY_MODE_PINGPONG != sample->play_mode))
+                  sample->waveform->ui_last_played_offset = sF32(waveOff + current_play_offset);
+               else
+                  sample->waveform->ui_last_played_offset = waveOff + sF32(current_sample_len - 1 - current_play_offset);
+               if(sample->b_timestretch)
+                  sample->waveform->ui_last_played_offset += current_ts_offset;
+            }
          }
       }
    }

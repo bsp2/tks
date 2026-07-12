@@ -24,7 +24,7 @@
 // ----          16Aug2023, 14Sep2023, 10Jan2024, 11Jan2024, 13Jan2024, 14Jan2024, 15Jan2024
 // ----          16Jan2024, 05Aug2024, 28Sep2024, 01Oct2024, 02Oct2024, 03Oct2024, 03Nov2024
 // ----          03Jan2025, 04Jan2025, 09Jan2026, 16Jan2026, 14May2026, 16May2026, 24May2026
-// ----          27May2026
+// ----          27May2026, 11Jul2026
 // ----
 // ----
 // ----
@@ -886,7 +886,8 @@ YC class StSampleVoice : public YAC_Object {
                                  sF32 _tsOff,
                                  sF32 *_l,
                                  sF32 *_r,
-                                 const sUI _curSampleLen
+                                 const sUI _curSampleLen,
+                                 const sF32 _cRate
                                  );
    void readWindowedSample (const sF32 *smpDat,
 #ifndef TKSAMPLER_SKIP_LIVEREC
@@ -896,7 +897,8 @@ YC class StSampleVoice : public YAC_Object {
                             sF32 *_l,
                             sF32 *_r,
                             sBool _bAllowInterpol,
-                            const sUI _curSampleLen
+                            const sUI _curSampleLen,
+                            const sF32 _cRate
                             );
 
    sF32 readSample1IntAI (const sF32 *smpDat, sSI _off) /*const*/;  // mono
