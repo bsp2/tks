@@ -37,7 +37,7 @@
 // ----          20May2025, 28May2025, 05Jun2025, 12Jun2025, 13Jun2025, 14Jun2025, 22Dec2025
 // ----          09Jan2026, 13Jan2026, 16Jan2026, 14Feb2026, 09Apr2026, 10Apr2026, 12Apr2026
 // ----          16Apr2026, 19Apr2026, 23Apr2026, 09May2026, 17May2026, 18May2026, 20May2026
-// ----          22May2026
+// ----          22May2026, 10Jul2026, 11Jul2026
 // ----
 // ----
 // ----
@@ -1446,7 +1446,8 @@ class Sample {
    }
 
    // <method.png>
-   public method markWaveformAsModified() {
+   public =replay= method markWaveformAsModified() {
+      // // trace "xxx Sample::markWaveformAsModified: unique_name=\""+unique_name+"\"";
       b_project_waveform_modified = true;
       b_user_waveform_modified = true;
       last_modification_time.now();
@@ -2711,7 +2712,7 @@ class Sample {
             case TYPE_SLICE_MOD_ABS:
                regionIdx = 0;
                cmod = 0;
-               smod = 1.0 / 128;
+               smod = 1.0 / 127;
                loop(_startOffsets.numElements)
                {
                   s <= newZone();
@@ -2800,7 +2801,7 @@ class Sample {
 
             case TYPE_SLICE_VEL_ABS:
                regionIdx = 0;
-               smod = 1.0 / 128;
+               smod = 1.0 / 127;
                cmod = smod;  // (note) velocity 0 = note off, skip
                loop(_startOffsets.numElements)
                {
@@ -3427,7 +3428,7 @@ class Sample {
          case TYPE_SLICE_MOD_ABS:
             zoneIdx = 0;
             cmod = 0;
-            smod = 1.0 / 128;
+            smod = 1.0 / 127;
             loop(numZones)
             {
                s <= _selectedZones.get(zoneIdx);
@@ -3545,7 +3546,7 @@ class Sample {
 
          case TYPE_SLICE_VEL_ABS:
             zoneIdx = 0;
-            smod = 1.0 / 128;
+            smod = 1.0 / 127;
             cmod = smod;  // (note) velocity 0 = note off, skip
             loop(numZones)
             {
@@ -10390,26 +10391,83 @@ class Sample {
    }
 
    // <method_get.png>
+   public method getWaveformNum16ths() : float {
+
+      // float ms = ((1000 * 60 * 0.25) * _num16th) / current_project.bpm;
+      // int numFrames = (ms * waveform.sampleRate) / 1000;
+
+      // numFrames = (ms * waveform.sampleRate) / 1000;
+      // numFrames/ms = (waveform.sampleRate) / 1000;
+      // 1/ms = (waveform.sampleRate) / (1000 * numFrames);
+      // ms = (1000 * numFrames) / waveform.sampleRate;
+      float ms = (1000 * waveform.numFrames) / waveform.sampleRate;
+
+      // ms = ((1000 * 60 * 0.25) * _num16th) / current_project.bpm;
+      // ms/_num16th = ((1000 * 60 * 0.25)) / current_project.bpm;
+      // 1/_num16th = ((1000 * 60 * 0.25)) / (current_project.bpm * ms);
+      // _num16th = (current_project.bpm * ms) / ((1000 * 60 * 0.25));
+      float num16th = (current_project.bpm * ms) / (1000 * 60 * 0.25);
+
+      return num16th;
+   }
+
+   // <method_get.png>
    public method getWaveformSampleRate() : float {
       return waveform.sampleRate;
    }
 
    // <method_get.png>
-   public method unlinkWaveformAndLoadInit() : StWaveform {
+   public method getWaveformNumChannels() : int {
+      return waveform.numChannels;
+   }
+
+   // <method_get.png>
+   protected method unlinkWaveformAndLoadInit() : StWaveform {
       StWaveform r <= deref waveform;
 
       waveform <= new StWaveform;
-      waveform.alloc(1/*ch*/, 1/*frames*/);  // create sampleData FloatArray
+      waveform.alloc(1/*numCh*/, 1/*numFrames*/);  // create sampleData FloatArray
       waveform.sampleRate = STConfig.audio_mixrate;
       waveform.baseFrequency = BASE_FREQ_MIDDLE_C;
-
+      markWaveformAsModified();
       return deref r;
    }
 
    // <method_get.png>
-   public method setWaveform(StWaveform _wf) {
+   public =replay= method setWaveform(StWaveform _wf) {
       // override waveform, e.g. when loading audio clip preset sample
       waveform <= deref _wf;
+      markWaveformAsModified();
+   }
+
+   // <method_new.png>
+   public =replay= method allocAndZeroWaveform16th(float _num16th, int _numCh) : int {
+      // returns new numFrames
+      float ms = ((1000 * 60 * 0.25) * _num16th) / current_project.bpm;
+      int numFrames = (ms * waveform.sampleRate) / 1000;
+      FloatArray smpDat <= waveform.sampleData;
+      smpDat.allocAndFill(_numCh * numFrames, 0);
+      waveform.numChannels = _numCh;
+      markWaveformAsModified();
+      return smpDat.numElements / _numCh;
+   }
+
+   // <method_new.png>
+   public =replay= method lazyAllocFirstZone() : StSample {
+      StSample r <= sample_bank.getSampleByIdx(0);
+      if(null == r)
+      {
+         r <= new StSample;
+         r.waveform = waveform;
+         IntArray loops <= r.getOrCreateSampleLoops();
+         loops.free();
+         loops.add(0);
+         loops.add(waveform.numFrames);
+         loops.add(1);
+         r.verifySampleAreas();
+         sample_bank.addSample(#(deref r));
+      }
+      return r;
    }
 
    // <method_get.png>
@@ -10965,6 +11023,7 @@ class Sample {
       s.verifySampleAreas();
       Global.Debug("Sample::loadAudioClipPreset: restore CLIP aLoops="+#(aLoops));
       Global.Debug("Sample::loadAudioClipPreset: bPresetLoaded="+bPresetLoaded);
+      b_audio_clip = true;
       return bPresetLoaded;
    }
 
