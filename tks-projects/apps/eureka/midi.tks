@@ -1,7 +1,7 @@
 // ----
 // ---- file   : midi.tks
 // ---- author : Bastian Spiegel <bs@tkscript.de>
-// ---- legal  : (c) 2006-2025 by Bastian Spiegel.
+// ---- legal  : (c) 2006-2026 by Bastian Spiegel.
 // ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
 // ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
 // ----
@@ -39,7 +39,7 @@
 // ----          18Feb2017, 23Feb2017, 03Mar2017, 10Mar2017, 11Mar2017, 12Mar2017, 27May2017
 // ----          14Oct2017, 04Jan2018, 29Jan2018, 01Feb2018, 02Jun2018, 30Jul2019, 05Aug2019
 // ----          26Aug2019, 22Jul2023, 29Jul2023, 06Aug2023, 01Jul2024, 07Jul2024, 09Aug2024
-// ----          15Jan2025
+// ----          15Jan2025, 14Jul2026
 // ----
 // ----
 // ----
@@ -1101,6 +1101,7 @@ class MIDI : MIDIMapDefs {
       int shortMsg = _recEv.shortMessage;
       byte note;
       byte vel;
+      MIDIPipeEvent ev;
 
       switch(_recEv.midiMapEventType)
       {
@@ -1108,10 +1109,30 @@ class MIDI : MIDIMapDefs {
             note = (shortMsg >> 8)&127;
             vel  = (shortMsg >> 16)&127;
             // trace "xxx AddRecordedMIDIEventToFrame: NOTE_OFF note="+note+" vel="+vel+" noteOffPreFlags["+_midiCh+"]="+_noteOffPreFlags[_midiCh];
-            if(_noteOffPreFlags[_midiCh])
-               _fr.noteOffPre(true/*bSet*/, _devIdx, _midiCh, note, vel);
+            if(_fr.getNoteOnEventByFlt(ev, note, _devIdx, _midiCh))
+            {
+               // Note-on already occured on same tick => discard note-on
+               //  (note) fix cornercase-issue where two seq nodes play the same note simultaneously
+               //  (note) during MIDIPipeFrame::emit(), the second note-on will cause an immediate note-off
+               //            ! 55048 vst_a:
+               //                     0000: 90 3a 2f 80 3a 00 90 3a 40
+               //                                    ^--forced note off
+               //              55189 vst_a:
+               //                     0000: 80 3a 00
+               //  (note) ModSample removes voice from start-queue if a noteOff occurs before the voice is actually started
+               _fr.noteOn(false/*bSet*/, _devIdx, _midiCh, note, 0.0f/*vel*/, 0/*dur*/);
+            }
             else
-               _fr.noteOff(true/*bSet*/, _devIdx, _midiCh, note, vel);
+            {
+               // If any note-on event occured, process note-off(s) after note-ons,
+               //  (note) otherwise process them before the note-ons
+               //  (note) instead of the helper array, MIDIPipeFrame::getNumEventsNoteOnByFlt(dev,ch) could be used instead
+               //          (and maybe it should)
+               if(_noteOffPreFlags[_midiCh])
+                  _fr.noteOffPre(true/*bSet*/, _devIdx, _midiCh, note, vel);
+               else
+                  _fr.noteOff(true/*bSet*/, _devIdx, _midiCh, note, vel);
+            }
             break;
 
          case TYPE_NOTE_ON:
