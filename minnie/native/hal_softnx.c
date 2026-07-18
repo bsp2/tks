@@ -62,7 +62,11 @@ static EGLConfig  config;
 static EGLContext context;
 static EGLSurface surface;
 
+static int32_t egl_surface_w = 0;
+static int32_t egl_surface_h = 0;
+
 static sBool b_hal_running = YAC_FALSE;
+
 
 // ---------------------------------------------------------------------------- time_get_milliseconds_f64
 static sF64 loc_ms_start = 0.0;
@@ -152,13 +156,29 @@ static void loc_spirv_program_loader(const char *programName, const void **retOr
 
 // ---------------------------------------------------------------------------- loc_config_init
 static EGLBoolean loc_config_init(EGLDisplay _display, EGLConfig *_config) {
+   EGLBoolean ret = EGL_FALSE;
+
    EGLint attribs[] = {
       EGL_RENDERABLE_TYPE, EGL_OPENGL_ES2_BIT,
-      EGL_BUFFER_SIZE,     32,
+#if 1
+      EGL_BUFFER_SIZE,     16,
       EGL_RED_SIZE,        5,
       EGL_GREEN_SIZE,      6,
       EGL_BLUE_SIZE,       5,
       EGL_ALPHA_SIZE,      0,
+#elif 0
+      EGL_BUFFER_SIZE,     16,
+      EGL_RED_SIZE,        4,
+      EGL_GREEN_SIZE,      4,
+      EGL_BLUE_SIZE,       4,
+      EGL_ALPHA_SIZE,      0,
+#else
+      EGL_BUFFER_SIZE,     8,
+      EGL_RED_SIZE,        2,
+      EGL_GREEN_SIZE,      2,
+      EGL_BLUE_SIZE,       2,
+      EGL_ALPHA_SIZE,      2,
+#endif
 #ifdef SHADERVG_DEPTH
       EGL_DEPTH_SIZE,      16,
 #else
@@ -178,18 +198,50 @@ static EGLBoolean loc_config_init(EGLDisplay _display, EGLConfig *_config) {
       EGL_NONE
    };
 
-   EGLConfig configs[1];
+   EGLConfig configs[1024];
    EGLint numCfgs;
+   *_config = NULL;
 
+#if 0
+   if(EGL_TRUE == eglChooseConfig(_display, attribs, configs, 1024, &numCfgs)) {
+
+      if(numCfgs > 0) {
+
+         for(int32_t cfgIdx = 0; cfgIdx < numCfgs; cfgIdx++) {
+
+            EGLint alphaSz;
+            EGLint redSz;
+            EGLint greenSz;
+            EGLint blueSz;
+
+            if(EGL_TRUE == eglGetConfigAttrib(_display, configs[cfgIdx], EGL_ALPHA_SIZE, &alphaSz) &&
+               EGL_TRUE == eglGetConfigAttrib(_display, configs[cfgIdx], EGL_RED_SIZE,   &redSz)   &&
+               EGL_TRUE == eglGetConfigAttrib(_display, configs[cfgIdx], EGL_GREEN_SIZE, &greenSz) &&
+               EGL_TRUE == eglGetConfigAttrib(_display, configs[cfgIdx], EGL_BLUE_SIZE,  &blueSz)
+               ) {
+
+               if(2 == alphaSz && 2 == redSz && 2 == greenSz && 2 == blueSz) {
+                  
+                  *_config = configs[cfgIdx];
+                  ret = EGL_TRUE;
+                  break;
+               }
+            }
+         }
+
+      }
+   }
+#else
    if(EGL_TRUE == eglChooseConfig(_display, attribs, configs, 1, &numCfgs)) {
 
       if(numCfgs > 0) {
          *_config = configs[0];
-         return EGL_TRUE;
+         ret = EGL_TRUE;
       }
    }
+#endif
 
-   return EGL_FALSE;
+   return ret;
 }
 
 // ---------------------------------------------------------------------------- loc_egl_init
@@ -218,6 +270,21 @@ static EGLSurface loc_surface_create(EGLDisplay _display, EGLConfig _config, sUI
    };
 
    surf = eglCreateWindowSurface(_display, _config, (EGLNativeWindowType)NULL, attribs);
+
+   if(NULL != surf) {
+      // (note) actual surface size may differ from requested size (EGL_W / EGL_H runtime options)
+      egl_surface_w = 0u;
+      egl_surface_h = 0u;
+      if(EGL_TRUE == eglQuerySurface(_display, surf, EGL_WIDTH,  (EGLint*)&egl_surface_w) &&
+         EGL_TRUE == eglQuerySurface(_display, surf, EGL_HEIGHT, (EGLint*)&egl_surface_h)
+         ) {
+         printf("[...] loc_surface_create: EGL surface size is (%u,%u)\n", egl_surface_w, egl_surface_h);
+      }
+      else {
+         printf("[---] loc_surface_create: eglQuerySurface() failed\n");
+      }
+   }
+
    return surf;
 }
 
@@ -278,6 +345,13 @@ sBool hal_window_init(sUI _w, sUI _h) {
    return YAC_TRUE;
 }
 
+// ---------------------------------------------------------------------------- hal_window_get_size
+sBool hal_window_get_size(sUI *_retW, sUI *_retH) {
+   *_retW = (sUI)egl_surface_w;
+   *_retH = (sUI)egl_surface_h;
+   return (0u != egl_surface_w) && (0u != egl_surface_h);
+}
+
 // ---------------------------------------------------------------------------- hal_window_set_title
 void hal_window_set_title(const char *_s) {
    display_set_window_title(_s);
@@ -327,7 +401,6 @@ void hal_window_loop(void) {
 
       }
 #endif
-
       hal_on_draw();
    }
 }

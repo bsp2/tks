@@ -197,6 +197,9 @@ static MinnieDrawable *drawable;
 
 static sF32 rot_ang = 0.0f;
 
+static uint32_t display_width;
+static uint32_t display_height;
+
 #if 0
 static sBool b_reopen = YAC_FALSE;
 #endif
@@ -309,7 +312,7 @@ void hal_on_draw(void) {
          // (note) high-level "min" API SW-tesselated lines (triangles) are in drawable/projection coordinate system
          // (note) => align low-level and high-level line widths
          //            (e.g. inc line widths when drawable size is (640;480) but viewport size is (800;600))
-         sF32 strokeScale = ((sF32)DISPLAY_WIDTH) / dw;
+         sF32 strokeScale = ((sF32)display_width) / dw;
          sdvg_SetStrokeScale(strokeScale);
          sdvg_SetPointScale(strokeScale);
       }
@@ -536,13 +539,15 @@ int main(int argc, char**argv) {
 
    if(hal_window_init(DISPLAY_WIDTH, DISPLAY_HEIGHT))
    {
+      (void)hal_window_get_size(&display_width, &display_height);
+
       if(!MinnieVG_Init(1/*b_glcore*/))
       {
          Dprintf("[---] MinnieVG_Init() failed, exiting..\n");
          exit(20);
       }
 
-      sdvg_SetFramebufferSize(DISPLAY_WIDTH, DISPLAY_HEIGHT);
+      sdvg_SetFramebufferSize(display_width, display_height);
 
       if(!MinnieVG_OnOpen())
       {

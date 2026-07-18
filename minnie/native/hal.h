@@ -68,6 +68,7 @@ extern void load_gl_extensions (void);
 #endif // !YAC_MACOS
 
 extern sBool hal_window_init       (sUI _w, sUI _h);         // initialize
+extern sBool hal_window_get_size   (sUI *_retW, sUI *_retH); // may differ from hal_window_init() args
 extern void  hal_window_exit       (void);                   // shutdown
 extern void  hal_window_swap       (void);                   // swap front/back buffers
 extern void  hal_window_loop       (void);                   // enter event loop

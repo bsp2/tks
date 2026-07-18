@@ -36,7 +36,10 @@
 
 #include <stdio.h>
 #include <stdarg.h>
+#include <stdlib.h>  // getenv
 #include <math.h>
+
+static void RandAngles (void);
 
 #if 1
 #define DISPLAY_WIDTH   640
@@ -58,6 +61,7 @@ static sBool b_anim       = 1;     // SPACE
 static sBool b_anim_xy    = 1;     // TAB
 static sBool b_anim_whc   = 1;     // lctrl-TAB
 static sBool b_slomo      = 0;     // lctrl-SPACE
+static sBool b_rand_anim  = 0;     // randomize anim params in each iteration (RandAngles())
 static sBool b_aa         = 1;     // 'a'
 static sBool b_vsync      = 1;     // 'v'
 static sF32  aa_range     = 1.5f;  // (todo) m/lshift-m
@@ -81,6 +85,9 @@ static sUI auto_exit_frames =
 #endif // AUTO_EXIT_FRAMES
    ;
 static sUI auto_exit_num_iter = 1u;
+
+static uint32_t display_width;
+static uint32_t display_height;
 
 static sU32 last_ticks = 0u;  // 1000 ticks per second
 static sU32 num_frames_rendered = 0u;
@@ -334,6 +341,9 @@ static sF32 ang_c = 0.0f;
 #define NUM_RENDER_MODES                                         237
 
 static sSI render_mode = RENDER_RECT_FILL_AA;  // UP/DOWN
+
+static sSI benchmark_start_render_mode = 0;
+
 static sUI auto_cycle_num_frames =     // >0:auto-cycle tests (any key stroke interrupts this)
 #ifdef AUTO_CYCLE_NUM_FRAMES
    AUTO_CYCLE_NUM_FRAMES
@@ -688,6 +698,20 @@ static sF32 loc_randf(sF32 _max) {
    return ret.f32;
 }
 
+static sU32 loc_randu_sys(void) {
+   return rand();
+}
+
+static sF32 loc_randf_sys(sF32 _max) {
+   union {
+      sU32 u32;
+      sF32 f32;
+   } ret;
+   ret.u32 = 0x3f800000u | (loc_randu_sys() & ((1u << 23) - 1u));
+   ret.f32 = (ret.f32 - 1.0f) * _max;
+   return ret.f32;
+}
+
 // ---------------------------------------------------------------------------- TestLineStripFlat_1 (13+15)
 static void TestLineStripFlat_1(sBool _bAA) {
    buf_vbo.io_offset = 0u;
@@ -984,10 +1008,10 @@ static void TestLinesFlat(sBool _bAA) {
    buf_vbo.io_offset = 0u;
    for(sUI i = 0u; i < (numPoints / 2u); i++)
    {
-      sF32 x1 = sinf(a) * 200.0f + (VP_W*0.5f);
-      sF32 y1 = cosf(a) * 200.0f + (VP_H*0.5f);
-      sF32 x2 = sinf(a) * 120.0f + (VP_W*0.5f);
-      sF32 y2 = cosf(a) * 120.0f + (VP_H*0.5f);
+      sF32 x1 = sinf(a) * 200.0f + (VP_W * 0.5f);
+      sF32 y1 = cosf(a) * 200.0f + (VP_H * 0.5f);
+      sF32 x2 = sinf(a) * 120.0f + (VP_W * 0.5f);
+      sF32 y2 = cosf(a) * 120.0f + (VP_H * 0.5f);
       yac_buffer_write_4fx(&buf_vbo, x1, y1, x2, y2);
       a += w;
    }
@@ -1077,12 +1101,12 @@ static void TestBeginLinesFlat(sBool _bAA) {
                pointIdx = 0;
             }
 
-            x1 = sinf(a) * 200.0f + (VP_W/2);
-            y1 = cosf(a) * 200.0f + (VP_H/2);
+            x1 = sinf(a) * 200.0f + (VP_W * 0.5f);
+            y1 = cosf(a) * 200.0f + (VP_H * 0.5f);
             sdvg_Vertex2f(x1, y1);
 
-            x2 = sinf(a) * 120.0f + (VP_W/2);
-            y2 = cosf(a) * 120.0f + (VP_H/2);
+            x2 = sinf(a) * 120.0f + (VP_W * 0.5f);
+            y2 = cosf(a) * 120.0f + (VP_H * 0.5f);
             sdvg_Vertex2f(x2, y2);
 
             a += w;
@@ -1101,12 +1125,12 @@ static void TestBeginLinesFlat(sBool _bAA) {
       {
          for(sSI i = 0; i < numPoints / 2; i++)
          {
-            x1 = sinf(a) * 200.0f + (VP_W/2);
-            y1 = cosf(a) * 200.0f + (VP_H/2);
+            x1 = sinf(a) * 200.0f + (VP_W * 0.5f);
+            y1 = cosf(a) * 200.0f + (VP_H * 0.5f);
             sdvg_Vertex2f(x1, y1);
 
-            x2 = sinf(a) * 120.0f + (VP_W/2);
-            y2 = cosf(a) * 120.0f + (VP_H/2);
+            x2 = sinf(a) * 120.0f + (VP_W * 0.5f);
+            y2 = cosf(a) * 120.0f + (VP_H * 0.5f);
             sdvg_Vertex2f(x2, y2);
 
             a += w;
@@ -1129,8 +1153,8 @@ static void TestBeginPointsSquare(sBool _bAA) {
    {
       for(sUI i = 0u; i < numPoints; i++)
       {
-         sF32 x = sinf(a) * 200.0f + (VP_W*0.5f);
-         sF32 y = cosf(a) * 200.0f + (VP_H*0.5f);
+         sF32 x = sinf(a) * 200.0f + (VP_W * 0.5f);
+         sF32 y = cosf(a) * 200.0f + (VP_H * 0.5f);
          sdvg_Vertex2f(x, y);
 
          a += w;
@@ -1152,8 +1176,8 @@ static void TestBeginPointsRound(sBool _bAA) {
    {
       for(sUI i = 0u; i < numPoints; i++)
       {
-         sF32 x = sinf(a) * 200.0f + (VP_W*0.5f);
-         sF32 y = cosf(a) * 200.0f + (VP_H*0.5f);
+         sF32 x = sinf(a) * 200.0f + (VP_W * 0.5f);
+         sF32 y = cosf(a) * 200.0f + (VP_H * 0.5f);
          sdvg_Vertex2f(x, y);
 
          a += w;
@@ -1168,8 +1192,8 @@ static void TestBeginFilledTriangles(void) {
    sF32 a = ang_x * 0.5f;
    sF32 w = 240.0f;
    sF32 h = 180.0f;
-   sF32 x = sinf(a) * 200.0f + (VP_W/2) - w*0.5f;
-   sF32 y = cosf(a) * 200.0f + (VP_H/2) - h*0.5f;
+   sF32 x = sinf(a) * 200.0f + (VP_W * 0.5f) - w*0.5f;
+   sF32 y = cosf(a) * 200.0f + (VP_H * 0.5f) - h*0.5f;
    sdvg_BindShader(0u);  // use built-in shader
    if(sdvg_BeginFilledTriangles(2u*3u))
    {
@@ -2902,9 +2926,16 @@ static void TestBeginLineStripFlatMiterClosed(sBool _bAA) {
 static void TestLinesRandAAVBO(void) {
    // (note) same coordinates+colors as test264_line_benchmark
    const sUI numLines = 1000u;
-   if(0u == buf_vbo.io_offset)
+   if(0u == buf_vbo.io_offset || b_rand_anim)
    {
-      loc_rand_seed(0x9C82F83Bu);
+      if(b_rand_anim)
+      {
+         loc_rand_seed(0xCD000000u | (loc_randu_sys()&0xFFFFFFu));
+      }
+      else
+      {
+         loc_rand_seed(0x9C82F83Bu);
+      }
       yacmemptr d; d.u8 = buf_vbo.buffer;
 
       for(sUI i = 0u; i < numLines; i++)
@@ -2932,9 +2963,17 @@ static void TestLinesRandAAVBO(void) {
 // ---------------------------------------------------------------------------- TestLinesRand2 (177)
 static void TestLinesRand2AAVBO() {
    sUI numVerts = 1000u + 2u;
-   if(0u == buf_vbo.io_offset)
+   if(0u == buf_vbo.io_offset || b_rand_anim)
    {
-      loc_rand_seed(0x9C82F83B);
+      buf_vbo.io_offset = 0;
+      if(b_rand_anim)
+      {
+         loc_rand_seed(0xCD000000u | (loc_randu_sys()&0xFFFFFFu));
+      }
+      else
+      {
+         loc_rand_seed(0x9C82F83B);
+      }
       sSI x = (int)loc_randf(VP_W);
       sSI y = (int)loc_randf(VP_H);
 
@@ -2981,7 +3020,14 @@ static void TestBeginLinesRandAAVBO(void) {
    sdvg_SetStrokeWidth(1.0f);
    if(sdvg_BeginLinesGouraudAA(numLines*2u))
    {
-      loc_rand_seed(0x9C82F83Bu);
+      if(b_rand_anim)
+      {
+         loc_rand_seed(0xCD000000u | (loc_randu_sys()&0xFFFFFFu));
+      }
+      else
+      {
+         loc_rand_seed(0x9C82F83Bu);
+      }
       for(sUI lineIdx = 0u; lineIdx < numLines; lineIdx++)
       {
          for(sUI i = 0u; i < 2u; i++)
@@ -3101,8 +3147,8 @@ static void TestBeginPointsRoundSpiral(sBool _bAA) {
       sF32 dw = 170.0f / numPoints;
       for(sUI i = 0u; i < numPoints; i++)
       {
-         sF32 x = sinf(a) * d + (VP_W*0.5f);
-         sF32 y = cosf(a) * d + (VP_H*0.5f);
+         sF32 x = sinf(a) * d + (VP_W * 0.5f);
+         sF32 y = cosf(a) * d + (VP_H * 0.5f);
          sdvg_Vertex2f(x, y);
 
          a += w;
@@ -3211,8 +3257,8 @@ static void TestBeginLineStripPatternDecalMiterDiagonal(sBool _bAA) {
    sF32 a = ang_x * 0.5f;
    sF32 wd = ((3.0f*sM_2PIf) / numSeg);
    sF32 ad = ang_y;
-   sF32 ctrX = VP_W*0.5f;
-   sF32 ctrY = VP_H*0.5f;
+   sF32 ctrX = VP_W * 0.5f;
+   sF32 ctrY = VP_H * 0.5f;
    if(_bAA
       ? sdvg_BeginLineStripPatternDecalMiterAAClosed(numPoints)
       : sdvg_BeginLineStripPatternDecalMiterClosed(numPoints)
@@ -3251,14 +3297,14 @@ static Matrix4f *loc_load_aspect_ratio_transform(void) {
    sF32 extraY = 0.0f;
 #if 1
    // correct aspect ratio (4:3)
-   sF32 aspect = (((sF32)(DISPLAY_WIDTH)) / DISPLAY_HEIGHT) / 1.333f;
+   sF32 aspect = (((sF32)(display_width)) / display_height) / 1.333f;
    if(aspect >= 1.0f)
    {
       extraX = ((VP_W*aspect) - VP_W) * 0.5f;
    }
    else
    {
-      aspect = 1.333f / (((sF32)(DISPLAY_WIDTH)) / DISPLAY_HEIGHT);
+      aspect = 1.333f / (((sF32)(display_width)) / display_height);
       extraY = ((VP_H*aspect) - VP_H) * 0.5f;
    }
 #else
@@ -3272,11 +3318,17 @@ static Matrix4f *loc_load_aspect_ratio_transform(void) {
                              0.0f/*znear*/,  10.0f/*zfar*/
                              );
    sdvg_TransformChanged();
+   sdvg_SetPixelScaling((VP_W+extraX*2.0f) / display_width);
    return mProj;
 }
 
 // ---------------------------------------------------------------------------- DrawTest
 static void DrawTest(void) {
+
+   if(b_rand_anim)
+   {
+      RandAngles();
+   }
 
    Matrix4f *mProj = loc_load_aspect_ratio_transform();
 
@@ -5363,7 +5415,8 @@ void hal_on_draw(void) {
 
    for(sUI iter = 0u; iter < numIter; iter++)
    {
-      sdvg_SetFramebufferSize(DISPLAY_WIDTH, DISPLAY_HEIGHT);
+      // Dprintf("xxx sdvg_SetFramebufferSize: (%u,%u)\n", display_width, display_height);
+      sdvg_SetFramebufferSize(display_width, display_height);
       sdvg_BeginFrame();
 
       sdvg_SetEnableAA(b_aa);
@@ -5419,6 +5472,7 @@ void hal_on_draw(void) {
 
    if(b_benchmark)
    {
+      // Dprintf("xxx benchmark_frames_left=%u render_mode=%d\n", benchmark_frames_left, render_mode);
       if(0 == --benchmark_frames_left)
       {
          glFinish();
@@ -5428,7 +5482,7 @@ void hal_on_draw(void) {
             deltaMS = (hal_get_ticks() - benchmark_ms_start);
             benchmark_ms_avg = deltaMS / ((sF32)BENCHMARK_NUM_FRAMES_BASELINE * numIter);
             benchmark_ms_avg_baseline = benchmark_ms_avg;
-            render_mode = 0;
+            SelectRenderMode(benchmark_start_render_mode);
             Dprintf("[...] benchmark: deltaMS=%f benchmark_ms_avg_baseline=%f (%d fps)\n", deltaMS, benchmark_ms_avg_baseline, (sSI)(1000.0/benchmark_ms_avg_baseline));
          }
          else
@@ -5437,7 +5491,7 @@ void hal_on_draw(void) {
             benchmark_ms_avg = deltaMS / ((sF32)BENCHMARK_NUM_FRAMES * numIter);
             // benchmark_ms_avg -= benchmark_ms_avg_baseline;
             Dprintf("[...] benchmark: render mode %d \"%s\" deltaMS=%f ms_avg=%f (%d fps)\n", render_mode, mode_names[render_mode], deltaMS, (((sSI)(100*benchmark_ms_avg))*0.01f), (sSI)(1000.0f/benchmark_ms_avg));
-            render_mode++;
+            SelectRenderMode(render_mode + 1);
             if(render_mode >= NUM_RENDER_MODES)
                hal_window_quit();
          }
@@ -5552,6 +5606,18 @@ static void ResetParams(void) {
 
    diagonal_line_pattern_idx = 0;
    UpdateDiagonalLinePatternTex();
+}
+
+// ---------------------------------------------------------------------------- RandAngles
+void RandAngles(void) {
+   radius_sclx = loc_randf_sys(0.75f) + 0.25f;
+   radius_scly = loc_randf_sys(0.75f) + 0.25f;
+   ang_x       = loc_randf_sys(16.0f * sM_2PIf);
+   ang_y       = loc_randf_sys(16.0f * sM_2PIf);
+   ang_w       = loc_randf_sys(2.0f * sM_2PIf);
+   ang_h       = loc_randf_sys(2.0f * sM_2PIf);
+   ang_c       = loc_randf_sys(sM_2PIf);
+   Dprintf("[...] RandAngles: render_mode=%u/%u  benchmark_frames_left=%u\nradius_sclx = %f;\nradius_scly = %f;\nang_x = %f;\nang_y = %f;\nang_w = %f;\nang_h = %f;\nang_c = %f;\n\n\n", render_mode, NUM_RENDER_MODES-1, benchmark_frames_left, radius_sclx, radius_scly, ang_x, ang_y, ang_w, ang_h, ang_c);
 }
 
 // ---------------------------------------------------------------------------- hal_on_key_down
@@ -5716,13 +5782,50 @@ void hal_on_key_down(sU32 _code, sU32 _mod) {
    }
 }
 
+// ---------------------------------------------------------------------------- loc_parse_rt_option_bool
+#ifndef BAGL_FREERTOS
+static void loc_parse_rt_option_bool(const char *_name, sBool *_ret) {
+   char *envStr = getenv(_name);
+   if(NULL != envStr)
+   {
+      switch(envStr[0]) {
+         default:
+            break;
+
+         case 'n':
+         case 'N':
+         case '0':
+            *_ret = 0;
+            break;
+
+         case 'y':
+         case 'Y':
+         case '1':
+            *_ret = 1;
+            break;
+      }
+      Dprintf("main: %s=%d\n", _name, *_ret);
+   }
+}
+
+// ---------------------------------------------------------------------------- loc_parse_rt_options
+static void loc_parse_rt_options(void) {
+   loc_parse_rt_option_bool("SDVG_RAND_ANIM", &b_rand_anim);
+}
+#endif // BAGL_FREERTOS
+
 // ---------------------------------------------------------------------------- main
 int main(int argc, char**argv) {
    Dprintf("main: ENTER\n");
 
+#ifndef BAGL_FREERTOS
+   loc_parse_rt_options();
+#endif // BAGL_FREERTOS
+
    if(argc >= 2)
    {
-      render_mode = atoi(argv[1]);
+      int argIdx = 1;
+      render_mode = atoi(argv[argIdx]);
       if(render_mode >= NUM_RENDER_MODES)
       {
          render_mode = 0;
@@ -5734,24 +5837,39 @@ int main(int argc, char**argv) {
          auto_cycle_num_frames = 0u;
       }
 
-      if(argc >= 3)
+      if(++argIdx < argc)
       {
-         auto_exit_frames = (sUI)atoi(argv[2]);
-         if(auto_exit_frames > 0u)
+         if(!strcmp(argv[argIdx], "-"))
          {
+            // benchmark mode with configurable start test nr
+            //  e.g. $ test_shadervg 170 -
+            b_benchmark = YAC_TRUE;
             b_vsync = YAC_FALSE;
             auto_cycle_num_frames = 0u;
+            benchmark_start_render_mode = render_mode;
          }
 
-         if(argc >= 4)
+         if(++argIdx < argc)
          {
-            auto_exit_num_iter = (sUI)atoi(argv[3]);
+            auto_exit_frames = (sUI)atoi(argv[argIdx]);
+            if(auto_exit_frames > 0u)
+            {
+               b_vsync = YAC_FALSE;
+               auto_cycle_num_frames = 0u;
+            }
+
+            if(++argIdx < argc)
+            {
+               auto_exit_num_iter = (sUI)atoi(argv[argIdx]);
+            }
          }
       }
    }
 
    if(hal_window_init(DISPLAY_WIDTH, DISPLAY_HEIGHT))
    {
+      (void)hal_window_get_size(&display_width, &display_height);
+
       // Update window title
       SelectRenderMode(render_mode);
 

@@ -38,6 +38,10 @@
 
 static SDL_Window    *sdl_window = NULL;
 static SDL_GLContext  sdl_glcontext = NULL;
+
+static int32_t egl_surface_w = 0;
+static int32_t egl_surface_h = 0;
+
 static sBool          b_hal_running = YAC_FALSE;
 
 
@@ -81,6 +85,9 @@ static sU32 loc_map_key_mod(sU32 _mod) {
 // ---------------------------------------------------------------------------- hal_window_init
 sBool hal_window_init(sUI _w, sUI _h) {
    sBool ret = YAC_FALSE;
+
+   egl_surface_w = _w;
+   egl_surface_h = _h;
 
    SDL_InitSubSystem(SDL_INIT_VIDEO);
    SDL_SetHint(SDL_HINT_MOUSE_FOCUS_CLICKTHROUGH, "1");
@@ -141,6 +148,13 @@ sBool hal_window_init(sUI _w, sUI _h) {
    }
 
    return ret;
+}
+
+// ---------------------------------------------------------------------------- hal_window_get_size
+sBool hal_window_get_size(sUI *_retW, sUI *_retH) {
+   *_retW = (sUI)egl_surface_w;
+   *_retH = (sUI)egl_surface_h;
+   return (0u != egl_surface_w) && (0u != egl_surface_h);
 }
 
 // ---------------------------------------------------------------------------- hal_window_set_title

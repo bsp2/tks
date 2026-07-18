@@ -82,6 +82,34 @@
 
 #define Dsdvg_pixel_scl(a) ((a) * sdvg_pixel_scl)
 
+static sBool b_aa;
+static sF32  aa_range;
+static sF32  aa_exp;        // (todo) remove
+static sF32  alpha_sdf_min;
+static sF32  alpha_sdf_max;
+static sF32  alpha_sdf_maxmin_scale;
+static sF32  alpha_sdf_exp;
+static sF32  stroke_w;         // px. total line width = 2*stroke_w
+static sF32  stroke_w_aa_off;  // def=SHADERVG_LINE_AA_STROKE_W_OFFSET
+static sF32  stroke_w_scale;
+static sF32  line_pattern_scale;
+static sF32  line_pattern_offset;  // 0..1
+static sF32  line_miter_limit;
+static sF32  point_radius;  // px
+static sF32  point_scale;
+static sF32  sdvg_pixel_scl;       // vp/proj (aa_range, stroke_w)
+static sF32  fill_r;
+static sF32  fill_g;
+static sF32  fill_b;
+static sF32  fill_a;
+static sBool b_fillrule_nonzero;
+static sF32  stroke_r;
+static sF32  stroke_g;
+static sF32  stroke_b;
+static sF32  stroke_a;
+static sF32  global_a;
+static sF32  decal_alpha;
+
 #include "TrianglesFillFlat32.h"
 #include "TrianglesFillFlat14_2.h"
 #include "TrianglesFillFlatModulate32.h"
@@ -974,34 +1002,6 @@ static sF32 proj_w_stack[SHADERVG_MATRIX_STACK_SIZE];
 static sF32 proj_w;
 static sSI model_stacki;
 #endif // SHADERVG_MATRIX_STACK
-
-static sBool b_aa;
-static sF32  aa_range;
-static sF32  aa_exp;        // (todo) remove
-static sF32  alpha_sdf_min;
-static sF32  alpha_sdf_max;
-static sF32  alpha_sdf_maxmin_scale;
-static sF32  alpha_sdf_exp;
-static sF32  stroke_w;         // px. total line width = 2*stroke_w
-static sF32  stroke_w_aa_off;  // def=SHADERVG_LINE_AA_STROKE_W_OFFSET
-static sF32  stroke_w_scale;
-static sF32  line_pattern_scale;
-static sF32  line_pattern_offset;  // 0..1
-static sF32  line_miter_limit;
-static sF32  point_radius;  // px
-static sF32  point_scale;
-static sF32  sdvg_pixel_scl;       // vp/proj (aa_range, stroke_w)
-static sF32  fill_r;
-static sF32  fill_g;
-static sF32  fill_b;
-static sF32  fill_a;
-static sBool b_fillrule_nonzero;
-static sF32  stroke_r;
-static sF32  stroke_g;
-static sF32  stroke_b;
-static sF32  stroke_a;
-static sF32  global_a;
-static sF32  decal_alpha;
 
 // see SetGLSLVersion()
 #ifdef SHADERVG_SCRIPT_API
@@ -2429,9 +2429,21 @@ static void loc_drawTESDaveNXPolygon(sUI _numVerts) {
 
    glPolygonFillTES(b_fillrule_nonzero ? GL_NON_ZERO_TES : GL_EVEN_ODD_TES);
 
+#ifdef SHADERVG_HW_NPOLYGONS_AA
+   if(b_aa)
+      glEnable(GL_POLYGON_AA_TES);
+   else
+      glDisable(GL_POLYGON_AA_TES);
+#endif // SHADERVG_HW_NPOLYGONS_AA
+
    glPolygonBeginTES();
    glDrawArrays(GL_POLYGON_TES, 0, _numVerts);
    glPolygonEndTES();
+
+#ifdef SHADERVG_HW_NPOLYGONS_AA
+   if(b_aa)
+      glDisable(GL_POLYGON_AA_TES);
+#endif // SHADERVG_HW_NPOLYGONS_AA
 }
 #endif // SHADERVG_HW_NPOLYGONS && GL_TES_npolygons
 
@@ -3338,6 +3350,12 @@ void YAC_CALL sdvg_PolygonFillFlatUniformVBO32_BeginPass1(sUI _vboId) {
       Dsdvg_attrib_enable(a);
 
 #if defined(SHADERVG_HW_NPOLYGONS) && defined(GL_TES_npolygons)
+#ifdef SHADERVG_HW_NPOLYGONS_AA
+      if(b_aa)
+         glEnable(GL_POLYGON_AA_TES);
+      else
+         glDisable(GL_POLYGON_AA_TES);
+#endif // SHADERVG_HW_NPOLYGONS_AA
       glPolygonFillTES(b_fillrule_nonzero ? GL_NON_ZERO_TES : GL_EVEN_ODD_TES);
       glPolygonBeginTES();
 #elif defined(SHADERVG_STENCIL_POLYGONS)
@@ -3368,6 +3386,12 @@ void YAC_CALL sdvg_PolygonFillFlatUniformVBO14_2_BeginPass1(sUI _vboId) {
 
 #if defined(SHADERVG_HW_NPOLYGONS) && defined(GL_TES_npolygons)
       glPolygonFillTES(b_fillrule_nonzero ? GL_NON_ZERO_TES : GL_EVEN_ODD_TES);
+#ifdef SHADERVG_HW_NPOLYGONS_AA
+      if(b_aa)
+         glEnable(GL_POLYGON_AA_TES);
+      else
+         glDisable(GL_POLYGON_AA_TES);
+#endif // SHADERVG_HW_NPOLYGONS_AA
       glPolygonBeginTES();
 #elif defined(SHADERVG_STENCIL_POLYGONS)
       if(b_fillrule_nonzero)
@@ -3550,7 +3574,11 @@ void YAC_CALL sdvg_PolygonFillFlatUniformVBO32_End(void) {
    ShaderVG_Shape *shape = loc_get_default_triangles_fill_flat_uniform_shape_32();
    Dsdvg_attrib_disable(shape->shape_a_vertex);
 #if defined(SHADERVG_HW_NPOLYGONS) && defined(GL_TES_npolygons)
-      glPolygonEndTES();
+   glPolygonEndTES();
+#ifdef SHADERVG_HW_NPOLYGONS_AA
+   if(b_aa)
+      glDisable(GL_POLYGON_AA_TES);
+#endif // SHADERVG_HW_NPOLYGONS_AA
 #elif defined(SHADERVG_STENCIL_POLYGONS)
    Dsdvg_stencil_poly_end();
 #else
@@ -3564,6 +3592,10 @@ void YAC_CALL sdvg_PolygonFillFlatUniformVBO14_2_End(void) {
    Dsdvg_attrib_disable(shape->shape_a_vertex);
 #if defined(SHADERVG_HW_NPOLYGONS) && defined(GL_TES_npolygons)
    glPolygonEndTES();
+#ifdef SHADERVG_HW_NPOLYGONS_AA
+   if(b_aa)
+      glDisable(GL_POLYGON_AA_TES);
+#endif // SHADERVG_HW_NPOLYGONS_AA
 #elif defined(SHADERVG_STENCIL_POLYGONS)
    Dsdvg_stencil_poly_end();
 #else
@@ -6275,7 +6307,7 @@ void YAC_CALL sdvg_SetFramebufferSize(sUI _w, sUI _h) {
 void YAC_CALL sdvg_UpdatePixelScaling(void) {
    // calc viewport/projection dependent stroke width scaling factor
    sF32 pixelScl = (proj_w / ((0 != viewport_w) ? viewport_w : 1));
-   // trace "xxx UpdatePixelScaling: proj_w="+proj_w+" vpw="+sdvg_GetViewportWidth()+" => pixelScl="+pixelScl;
+   // Dprintf("xxx UpdatePixelScaling: proj_w=%f vpw=%d => pixelScl=%f\n", proj_w, sdvg_GetViewportWidth(), pixelScl);
    sdvg_SetPixelScaling(pixelScl);
 }
 #endif // SHADERVG_MATRIX_STACK

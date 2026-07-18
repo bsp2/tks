@@ -116,10 +116,20 @@ class TrianglesFillFlatUniform14_2 : public ShaderVG_Shape {
       Dsdvg_attrib_enable(shape_a_vertex);
 
 #if defined(SHADERVG_HW_NPOLYGONS) && defined(GL_TES_npolygons)
+#ifdef SHADERVG_HW_NPOLYGONS_AA
+      if(b_aa)
+         glEnable(GL_POLYGON_AA_TES);
+      else
+         glDisable(GL_POLYGON_AA_TES);
+#endif // SHADERVG_HW_NPOLYGONS_AA
       glPolygonFillTES(_bNonZero ? GL_NON_ZERO_TES : GL_EVEN_ODD_TES);
       glPolygonBeginTES();
       glDrawArrays(GL_POLYGON_TES, 0, _numVerts);
       glPolygonEndTES();
+#ifdef SHADERVG_HW_NPOLYGONS_AA
+      if(b_aa)
+         glDisable(GL_POLYGON_AA_TES);
+#endif // SHADERVG_HW_NPOLYGONS_AA
 #elif defined(SHADERVG_STENCIL_POLYGONS)
       if(_bNonZero)
       {

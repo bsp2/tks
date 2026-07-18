@@ -60,6 +60,9 @@ static EGLConfig  config;
 static EGLContext context;
 static EGLSurface surface;
 
+static int32_t egl_surface_w = 0;
+static int32_t egl_surface_h = 0;
+
 static sBool b_hal_running = YAC_FALSE;
 
 // ---------------------------------------------------------------------------- time_get_milliseconds_f64
@@ -193,6 +196,21 @@ static EGLSurface loc_surface_create(EGLDisplay _display, EGLConfig _config, sUI
    };
 
    surf = eglCreateWindowSurface(_display, _config, (EGLNativeWindowType)NULL, attribs);
+
+   if(NULL != surf) {
+      // (note) actual surface size may differ from requested size (EGL_W / EGL_H runtime options)
+      egl_surface_w = 0u;
+      egl_surface_h = 0u;
+      if(EGL_TRUE == eglQuerySurface(_display, surf, EGL_WIDTH,  (EGLint*)&egl_surface_w) &&
+         EGL_TRUE == eglQuerySurface(_display, surf, EGL_HEIGHT, (EGLint*)&egl_surface_h)
+         ) {
+         printf("[...] loc_surface_create: EGL surface size is (%u,%u)\n", egl_surface_w, egl_surface_h);
+      }
+      else {
+         printf("[---] loc_surface_create: eglQuerySurface() failed\n");
+      }
+   }
+
    return surf;
 }
 
@@ -249,6 +267,13 @@ sBool hal_window_init(sUI _w, sUI _h) {
    printf("GLES extensions=\"%s\".\n", (const char*)glGetString(GL_EXTENSIONS));
 
    return YAC_TRUE;
+}
+
+// ---------------------------------------------------------------------------- hal_window_get_size
+sBool hal_window_get_size(sUI *_retW, sUI *_retH) {
+   *_retW = (sUI)egl_surface_w;
+   *_retH = (sUI)egl_surface_h;
+   return (0u != egl_surface_w) && (0u != egl_surface_h);
 }
 
 // ---------------------------------------------------------------------------- hal_window_set_title

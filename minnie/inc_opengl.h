@@ -10,6 +10,7 @@
 #define GL_GLEXT_PROTOTYPES defined
 #include <GLES3/gl32.h>
 #include <GLES3/gl2ext.h>
+// #undef GL_TES_spirv_program_loader
 #include <EGL/egl.h>
 #else
 #define GL_GLEXT_LEGACY defined

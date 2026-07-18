@@ -51,9 +51,13 @@
 #include <math.h>
 
 #if 1
+#define DISPLAY_WIDTH  800
+#define DISPLAY_HEIGHT 600
 #define VP_W 800
 #define VP_H 600
 #else
+#define DISPLAY_WIDTH  454
+#define DISPLAY_HEIGHT 454
 #define VP_W 454
 #define VP_H 454
 #endif
@@ -82,6 +86,9 @@ static sUI   auto_cycle_num_frames =  // >0:auto-cycle tests (any key stroke int
 #endif // AUTO_CYCLE_NUM_FRAMES
    ;
 
+static uint32_t display_width;
+static uint32_t display_height;
+
 static sBool b_sym_radius    = 1;     // 'l'(removed)  (rx=ry)
 static sF32  stroke_scale    = 1.0f;  // LEFT/RIGHT
 static sBool b_tex_filter    = 1;     // 't'
@@ -108,6 +115,7 @@ static sU32 last_ticks = 0u;  // 1000 ticks per second
 static sU32 ticks_start = 0u;
 static sUI num_frames_rendered = 0u;
 static sUI total_num_frames_rendered = 0u;
+static sBool b_queued_test_restart = YAC_TRUE;  // auto-resets to false at end of first frame after test restart
 static sUI num_iter         = 1u;
 static sUI auto_exit_frames = 0u;  // auto-exit after <n> frames (benchmark single test)
 static sBool b_benchmark    = 0;
@@ -1244,13 +1252,13 @@ static void Test_37(void) {
 
    MinnieDrawable *d = drawable_star;
 
-   if(0u == num_frames_rendered)
+   if(b_queued_test_restart)
    {
       Test_37_InitDrawable();
    }
 
-   sF32 vpw = VP_W;
-   sF32 vph = VP_H;
+   sF32 vpw = (sF32)VP_W;
+   sF32 vph = (sF32)VP_H;
 
    sdvg_ProjInit2D(vpw, vph);
   
@@ -1339,6 +1347,7 @@ static void SelectTest(sSI _idx) {
    Dprintf("[...] SelectTest: %d \"%s\"\n", test_idx, test_names[test_idx]);
    hal_window_set_title(test_names[test_idx]);
    num_frames_rendered = 0u;
+   b_queued_test_restart = YAC_TRUE;
 }
 
 // ---------------------------------------------------------------------------- hal_on_draw
@@ -1369,8 +1378,9 @@ void hal_on_draw(void) {
 
    if(!b_gl_buf_once || !minDrawableIsComplete(drawable))
    {
+      glFinish();
       minDrawableBegin(drawable);
-      minDrawableSetSize2f(drawable, VP_W, VP_H);
+      minDrawableSetSize2f(drawable, (sF32)VP_W, (sF32)VP_H);
       minSetGeoScale2f(VP_W/800.0f, VP_H/600.0f);
       minSetStrokeScale(stroke_scale * (VP_W / 800.0f));
 
@@ -1418,6 +1428,8 @@ void hal_on_draw(void) {
                   break;
       }
 
+      b_queued_test_restart = YAC_FALSE;
+
       minDrawableEnd(drawable);
 
       if(!b_benchmark && 0u == (num_frames_rendered & 255u))
@@ -1428,13 +1440,20 @@ void hal_on_draw(void) {
 
    if(b_draw_gl)
    {
-      sdvg_ProjInit2D(minDrawableGetSizeX(drawable),
+      sF32 drawableSx = minDrawableGetSizeX(drawable);
+      sdvg_ProjInit2D(drawableSx,
                       minDrawableGetSizeY(drawable)
                       );
+      // Dprintf("xxx SetPixelScaling(%f) drawableSx=%f display_width=%u\n", drawableSx / display_width, drawableSx, display_width);
       minDrawableSetScale2f(drawable, 1.0f, 1.0f);
       minDrawableSetRotation(drawable, 0.0f);
       minDrawableSetTranslate2f(drawable, 0.0f, 0.0f);
       MinnieVG_SetTransformForDrawable(drawable);
+#if 0
+      sdvg_SetPixelScaling(drawableSx / display_width);  // (todo) minSetPixelScaling()
+#else
+      sdvg_SetPixelScaling(1.0f);
+#endif
 
       sdvg_SetGlobalAlpha(1.0f);
 
@@ -1453,6 +1472,7 @@ void hal_on_draw(void) {
       {
          Matrix4f *mvp = sdvg_GetTransformRef();
          minnie_matrix4f_translatef(mvp, 6.0f, 6.0f, 0.0f);
+         sdvg_TransformChanged();
          sdvg_SetGlobalAlpha(0.33f);
          minDrawableDraw(drawable);
          // minnie_matrix4f_translatef(mvp, -6.0f, -6.0f, 0.0f);
@@ -1511,6 +1531,7 @@ void hal_on_draw(void) {
          SelectTest(sWRAP(test_idx + 1, 0, NUM_TESTS));
       }
    }
+
 }
 
 // ---------------------------------------------------------------------------- hal_on_key_down
@@ -1526,6 +1547,7 @@ void hal_on_key_down(sU32 _code, sU32 _mod) {
          {
             minDrawableReset(drawable);
             num_frames_rendered = 0u;
+            b_queued_test_restart = YAC_TRUE;
             return;
          }
          break;
@@ -1593,6 +1615,7 @@ void hal_on_key_down(sU32 _code, sU32 _mod) {
       case 'o':
          fill_mode = sWRAP(fill_mode +1u, 1u, 3u+1u);
          num_frames_rendered = 0u;
+         b_queued_test_restart = YAC_TRUE;
          Dprintf("[...] fill_mode is %u\n", fill_mode);
          break;
 
@@ -1614,6 +1637,7 @@ void hal_on_key_down(sU32 _code, sU32 _mod) {
          hal_set_swap_interval(b_vsync);
          num_frames_rendered = 0u;
          total_num_frames_rendered = 0u;
+         b_queued_test_restart = YAC_TRUE;
          ticks_start = hal_get_ticks();
          break;
    }
@@ -1653,15 +1677,17 @@ int main(int argc, char**argv) {
       test_idx = 0;
    }
 
-   if(hal_window_init(VP_W, VP_H))
+   if(hal_window_init(DISPLAY_WIDTH, DISPLAY_HEIGHT))
    {
+      (void)hal_window_get_size(&display_width, &display_height);
+
       if(!MinnieVG_Init(1/*b_glcore*/))
       {
          Dprintf("[---] MinnieVG_Init() failed, exiting..\n");
          exit(20);
       }
 
-      sdvg_SetFramebufferSize(VP_W, VP_H);
+      sdvg_SetFramebufferSize(display_width, display_height);
       sdvg_SetStrokeRadiusAAOffset(1.5f);
 
       Dprintf("[...] init OK, initializing textures..\n");
