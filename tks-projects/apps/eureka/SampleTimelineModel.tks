@@ -11,7 +11,7 @@
 // ---- created: 27Jun2021
 // ---- changed: 28Jun2021, 29Jun2021, 30Jun2021, 01Jul2021, 02Jul2021, 25Jun2022, 04Apr2025
 // ----          05Apr2025, 06Apr2025, 09Apr2025, 01May2025, 06May2025, 14Jun2025, 22Jun2025
-// ----          03Jan2026, 07Apr2026, 14Apr2026, 10May2026, 11May2026, 10Jul2026
+// ----          03Jan2026, 07Apr2026, 14Apr2026, 10May2026, 11May2026, 10Jul2026, 13Jul2026
 // ----
 // ----
 // ----
@@ -280,6 +280,32 @@ class SampleTimelineModelTrack {
 
    boolean b_master_volume;  // 1=apply clip volume (fade in/out) to following tracks
 
+   define int REC_DEFAULT           = 0;
+   define int REC_AUTO_MUTE         = 1;
+   define int REC_AUTO_MUTE_DISCARD = 2;  // "Loop"
+   define int REC_VOICE_MODULO      = 3;
+   int rec_mode;
+   int rec_num_voices;
+   static StringArray rec_mode_names = [
+      "Default",
+      "Auto-mute",
+      "Loop",
+      "Voice Modulo"
+                                        ];
+   static StringArray rec_mode_names_long = [
+      "Default",
+      "Auto-mute after <cliplen>",
+      "Loop: Auto-mute after 2x <cliplen>, discard first cycle",
+      "Voice Modulo"
+                                             ];
+   static StringArray rec_mode_names_tooltips = [
+      "Default",
+      "Auto-mute after <cliplen>\n\n (note) sample volume release speed should be set to ~50 to mix last loop release with next loop start",
+      "Record 2x <cliplen>, auto-mute at end of second cycle, then discard first cycle\n\n (note) trim sample to clip length",
+      "Voice Modulo\n\n (note) set sequencer loop + clip length to twice the size, then halve after recording\n (note)  (avoid note overlap at clip start)"
+                                             ];
+
+
 
    // <method_init.png>
    public method initTrack(int _trackIdx) {
@@ -295,6 +321,9 @@ class SampleTimelineModelTrack {
       lane_sends_slew_amt = SampleTimelineReplayTrack.SEND_SLEW_MEDIUM;
 
       audio_track_unique_id = -1;
+
+      rec_mode = REC_DEFAULT;
+      rec_num_voices = 4;
    }
 
    // <method.png>
@@ -324,6 +353,20 @@ class SampleTimelineModelTrack {
             return sample.getWaveformNumChannels();
       }
       return 2;
+   }
+
+   // <method_find.png>
+   public method findClipInRange(int _start, int _end) : SampleTimelineModelClip {
+      SampleTimelineModelClip *clip;
+      foreach clip in clips
+      {
+         if( (clip.start <= _start < clip.end) ||
+             (clip.start <= _end < clip.end) ||
+             ( (_start <= clip.start) && (_end >= clip.end) )
+             )
+            return clip;
+      }
+      return null;
    }
 
    // <method.png>
@@ -450,7 +493,7 @@ class SampleTimelineModelTrack {
    // <save.png>
    public method saveState(Stream ofs) {
       // ver
-      ofs.i16 = 4;
+      ofs.i16 = 5;
 
       // name
       name.yacSerialize(ofs, false/*bRTTI*/);
@@ -483,6 +526,12 @@ class SampleTimelineModelTrack {
 
       // Audio-track (v4+)
       ofs.i16 = audio_track_unique_id;
+
+      // Recording mode (v5+)
+      ofs.i8 = rec_mode;
+
+      // Voice Modulo Num Voices (v5+)
+      ofs.i8 = rec_num_voices;
    }
 
    // <load.png>
@@ -563,6 +612,15 @@ class SampleTimelineModelTrack {
             audio_track_unique_id = ifs.s16;
          }
 
+         if(ver >= 5)
+         {
+            // Recording mode (v5+)
+            rec_mode = ifs.u8;
+
+            // Voice Modulo Num Voices (v5+)
+            rec_num_voices = ifs.u8;
+         }
+
          if(1) trace "[trc] SampleTimelineModelTrack::loadState: END read track_idx="+track_idx;
 
          return true;
@@ -578,6 +636,7 @@ class SampleTimelineModelTrack {
 
 // <class.png>
 class SampleTimelineModel {
+   define int UNITS_PER_QUARTER = 1024;  // PPQ   (1024=1 quarter)
    define int DEFAULT_NUM_UNITS_PER_BEAT = 1024;  // PPQ   (1024=1 quarter)
    define int DEFAULT_NUM_BEATS_PER_BAR  = 4;     // 4/4
    define int DEFAULT_NUM_UNITS_PER_BAR  = (DEFAULT_NUM_BEATS_PER_BAR * DEFAULT_NUM_UNITS_PER_BEAT);
@@ -828,15 +887,8 @@ class SampleTimelineModel {
                int newStart = cbClip.start + _units;
                int newEnd   = cbClip.end   + _units;
 
-               SampleTimelineModelClip *clip;
-               foreach clip in track.clips
-               {
-                  if( (clip.start <= newStart < clip.end) ||
-                      (clip.start <= newEnd < clip.end) ||
-                      ( (newStart <= clip.start) && (newEnd >= clip.end) )
-                      )
-                     return false;
-               }
+               if(null != track.findClipInRange(newStart, newEnd))
+                  return false;
             }
             return true;
          }

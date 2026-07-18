@@ -12,7 +12,7 @@
 // ---- changed: 05Apr2025, 06Apr2025, 07Apr2025, 09Apr2025, 10Apr2025, 01May2025, 03May2025
 // ----          04May2025, 20May2025, 31May2025, 14Jun2025, 15Jun2025, 22Jun2025, 26Jun2025
 // ----          02Jan2026, 03Jan2026, 17Jan2026, 07Apr2026, 14Apr2026, 15Apr2026, 16Apr2026
-// ----          17Apr2026, 10May2026, 11May2026, 10Jul2026, 11Jul2026, 12Jul2026
+// ----          17Apr2026, 10May2026, 11May2026, 10Jul2026, 11Jul2026, 12Jul2026, 13Jul2026
 // ----
 // ----
 // ----
@@ -90,6 +90,7 @@ class SampleTimelineForm : XMLForm, ActionProvider, SampleViewPlugin {
    protected PopupMenu *pm_context;
    protected PopupMenu *pm_selection;
    protected PopupMenu *pm_audiotrack;
+   protected SampleTimelineAudioTrackMenuForm *f_audiotrackmenu;
 
 
    // <init.png>
@@ -558,7 +559,7 @@ class SampleTimelineForm : XMLForm, ActionProvider, SampleViewPlugin {
                lb_clip_info.setCaption("<invalid sample>");
                bt_clip_sample.setCaption("-");
                bt_clip_sample.setEditable(true);
-               bt_clip_sample_rec.setEditable(false);
+               bt_clip_sample_rec.setEditable(true);  // (note) sample will be auto-allocated when recording starts
                bt_clip_sample_rec.setToggleState(false);
                updateAudioTrackSelection();
             }
@@ -604,7 +605,7 @@ class SampleTimelineForm : XMLForm, ActionProvider, SampleViewPlugin {
 
             bt_clip_sample.setCaption("-");
             bt_clip_sample.setEditable(false);
-            bt_clip_sample_rec.setEditable(false);
+            bt_clip_sample_rec.setEditable(true);  // (note) allow audio-track menu
             bt_clip_sample_rec.setToggleState(false);
             updateAudioTrackSelection();
          }
@@ -1528,88 +1529,177 @@ class SampleTimelineForm : XMLForm, ActionProvider, SampleViewPlugin {
       }
    }
 
+   // <method.png>
+   protected =replay= method tryCreateClipAtCursorPos() {
+      SampleTimelineModelTrack modelTrack <= getSelectedModelTrack();
+      if(null != modelTrack)
+      {
+         int unitsPerBeat = sample_timeline_editor.num_units_per_beat;
+         trace "xxx sample_timeline_editor.num_beats_per_bar="+sample_timeline_editor.num_beats_per_bar;
+         int unitsPerBar = unitsPerBeat * sample_timeline_editor.num_beats_per_bar * 2;
+         int start = sample_timeline_editor.cursor_units;
+         int end = sample_timeline_editor.cursor_units + unitsPerBar;
+         if(null == modelTrack.findClipInRange(start, end))
+         {
+            SampleTimelineModelClip modelClip <= modelTrack.newClipInitAutoId(start, end);
+            sample_timeline_editor.timelineUpdate();
+            sample_timeline_editor.timelineSelectClipUnderCursor(true/*bTouch*/);
+            sample_timeline_editor.timelineSetLoop(start, end-start);
+            sample_timeline_editor.timelineMarkAsModified();
+         }
+      }
+   }
+
    // <ui_handle.png>
    public method handleToggleClipRec() : boolean {
       // called from UI thread by onTriadKey() handler
       if(null != sample_timeline)
       {
-         if(!root_form.isAudioRecording())
+         if(null == getSelectedModelClip())
          {
-            if(null != current_sample)
+            tryCreateClipAtCursorPos();
+         }
+
+         if(null != getSelectedModelClip())
+         {
+            if(!root_form.isAudioRecording())
             {
-               if(current_sample.b_audio_clip)
+               // Lazy-alloc sample
+               SampleTimelineEditorClip editorClip <= getSelectedEditorClip();
+               if(null != editorClip && null == current_sample)
                {
-                  // Auto-record-enable audio-track
-                  SampleTimelineModelTrack modelTrack <= getSelectedModelTrack();
-                  if(null != modelTrack)
+                  handleCloneOrAllocClipSample(true/*bPreferEmpty*/);
+               }
+
+               if(null != current_sample)
+               {
+                  if(current_sample.b_audio_clip)
                   {
-                     AudioTrack audioTrack <= current_project.findAudioTrackByUniqueId(modelTrack.audio_track_unique_id);
-                     if(null != audioTrack)
+                     // Auto-record-enable audio-track
+                     SampleTimelineModelTrack modelTrack <= getSelectedModelTrack();
+                     if(null != modelTrack)
                      {
-                        current_project.setRecordEnableSingleAudioTrack(audioTrack);
+                        AudioTrack audioTrack <= current_project.findAudioTrackByUniqueId(modelTrack.audio_track_unique_id);
+                        if(null != audioTrack)
+                        {
+                           current_project.setRecordEnableSingleAudioTrack(audioTrack);
+                        }
+                        // else: record from first enabled audio-track
                      }
-                     // else: record from first enabled audio-track
-                  }
 
-                  // Find first record-enable audio-track
-                  //  (todo) support recording to multiple clip samples from multiple audio-tracks
-                  //  (todo) support audio-track selection (TBD)
-                  AudioTrack *atrack;
-                  AudioTrack atrackRec <= null;
-                  foreach atrack in current_project.audio_tracks
-                  {
-                     if(atrack.b_record)
+                     // Find first record-enable audio-track
+                     //  (todo) support recording to multiple clip samples from multiple audio-tracks
+                     //  (todo) support audio-track selection (TBD)
+                     AudioTrack *atrack;
+                     AudioTrack atrackRec <= null;
+                     foreach atrack in current_project.audio_tracks
                      {
-                        atrackRec <= atrack;
-                        break;
+                        if(atrack.b_record)
+                        {
+                           atrackRec <= atrack;
+                           break;
+                        }
                      }
-                  }
-                  if(null != atrackRec)
-                  {
-                     if(current_sample.waveform.getNumChannels() == (atrackRec.b_stereo ? 2 : 1))
+                     if(null != atrackRec)
                      {
-                        current_rec_sample <= current_sample;
-                        current_rec_atrack <= atrackRec;
-                        current_rec_sample.b_clip_recording = true;
-                        Global.Debug("SampleTimelineForm::handleToggleClipRec: start");
-                        replay.queueStartSampleTimeline_Sync(sample_timeline);
-                        // // root_form.toggleAudioRecording();  // prepare recording
-                        root_form.enableRecCheckBoxForClipRecording();
-                        current_project.prepareRecord();
-                        bt_clip_sample_rec.setToggleState(true);
+                        if(current_sample.waveform.getNumChannels() == (atrackRec.b_stereo ? 2 : 1))
+                        {
+                           current_rec_sample <= current_sample;
+                           current_rec_atrack <= atrackRec;
+                           current_rec_sample.b_clip_recording = true;
+                           Global.Debug("SampleTimelineForm::handleToggleClipRec: start");
+                           replay.queueStartSampleTimeline_Sync(sample_timeline);
+                           // // root_form.toggleAudioRecording();  // prepare recording
+                           root_form.enableRecCheckBoxForClipRecording();
+                           current_project.prepareRecord();
+                           bt_clip_sample_rec.setToggleState(true);
 
-                        SysEx.QueueSendSeqStart();
-                        // wait for SEQ_START_ACK before starting timeline replay and audio track recording
+                           if(null != modelTrack)
+                           {
+                              int autoMuteNum16ths = 0;
+                              switch(modelTrack.rec_mode)
+                              {
+                                 default:
+                                 case SampleTimelineModelTrack.REC_DEFAULT:
+                                    Global.Debug("SampleTimelineModelTrack.REC_DEFAULT: latency="+STConfig.atrk_rec_skip_num_frames);
+                                    SysEx.QueueSendSeqStart();
+                                    break;
 
-                        // replay.toggleSeq(true/*bRec*/);
-                        // sample_timeline.toggleReplay(sample_timeline.loop_start, STConfig.sample_timeline_clip_rec_skip_num_frames);
-                        Global.Print("Start clip rec (src atrack=\""+atrackRec.name+"\")");
-                        return true;
+                                 case SampleTimelineModelTrack.REC_AUTO_MUTE:
+                                    if(null != editorClip)
+                                    {
+                                       autoMuteNum16ths = editorClip.timelineClipGetNum16ths();
+                                    }
+                                    Global.Debug("SampleTimelineModelTrack.REC_AUTO_MUTE: latency="+STConfig.atrk_rec_skip_num_frames+" autoMuteNum16th="+autoMuteNum16ths);
+                                    SysEx.QueueSendSeqStartVoiceModuloAutoMute(0/*numVoices*/,
+                                                                               0/*moduloAdvance16ths*/,
+                                                                               autoMuteNum16ths
+                                                                               );
+                                    break;
+
+                                 case SampleTimelineModelTrack.REC_AUTO_MUTE_DISCARD:
+                                    if(null != editorClip)
+                                    {
+                                       autoMuteNum16ths = editorClip.timelineClipGetNum16ths() * 2;
+                                    }
+                                    Global.Debug("SampleTimelineModelTrack.REC_AUTO_MUTE_DISCARD: latency="+STConfig.atrk_rec_skip_num_frames+" autoMuteNum16th="+autoMuteNum16ths);
+                                    SysEx.QueueSendSeqStartVoiceModuloAutoMute(0/*numVoices*/,
+                                                                               0/*moduloAdvance16ths*/,
+                                                                               autoMuteNum16ths
+                                                                               );
+                                    break;
+
+                                 case SampleTimelineModelTrack.REC_VOICE_MODULO:
+                                    int moduloAdvance16ths = editorClip.timelineClipGetNum16ths();
+                                    Global.Debug("SampleTimelineModelTrack.REC_VOICE_MODULO: latency="+STConfig.atrk_rec_skip_num_frames+" modelTrack.rec_num_voices="+modelTrack.rec_num_voices+" moduloAdvance16ths="+moduloAdvance16ths);
+                                    SysEx.QueueSendSeqStartVoiceModuloAutoMute(modelTrack.rec_num_voices,
+                                                                               moduloAdvance16ths,
+                                                                               0/*autoMuteNum16ths*/
+                                                                               );
+                                    break;
+                              }
+                              // wait for SEQ_START_ACK before starting timeline replay and audio track recording
+                           }
+                           else
+                           {
+                              SysEx.QueueSendSeqStart();
+                              // wait for SEQ_START_ACK before starting timeline replay and audio track recording
+                           }
+
+                           // replay.toggleSeq(true/*bRec*/);
+                           // sample_timeline.toggleReplay(sample_timeline.loop_start, STConfig.sample_timeline_clip_rec_skip_num_frames);
+                           Global.Print("Start clip rec (src atrack=\""+atrackRec.name+"\")");
+                           return true;
+                        }
+                        else
+                        {
+                           Global.Warning("Rec<start>: sample<=>atrack channel count mismatch");
+                        }
                      }
                      else
                      {
-                        Global.Warning("Rec<start>: sample<=>atrack channel count mismatch");
+                        Global.Warning("Rec<start>: no record-enabled audio track found");
                      }
                   }
                   else
                   {
-                     Global.Warning("Rec<start>: no record-enabled audio track found");
+                     Global.Warning("Rec: sample must be an audio clip (\"A\")");
                   }
                }
                else
                {
-                  Global.Warning("Rec: sample must be an audio clip (\"A\")");
+                  Global.Warning("Rec: no current sample");
                }
             }
             else
             {
-               Global.Warning("Rec: no current sample");
+               // trace "[dbg] SampleTimelineForm::handleToggleClipRec: stop";
+               Global.Warning("Rec: audiotrack recording already active");
             }
          }
          else
          {
-            // trace "[dbg] SampleTimelineForm::handleToggleClipRec: stop";
-            Global.Warning("Rec: audiotrack recording already active");
+            Global.Warning("Rec: no clip");
          }
       }
       else
@@ -1635,15 +1725,78 @@ class SampleTimelineForm : XMLForm, ActionProvider, SampleViewPlugin {
             int newNumFrames = current_rec_sample.waveform.getNumFrames();
             float newNumSec = newNumFrames / (current_rec_sample.waveform.getSampleRate());
             current_rec_sample.b_clip_recording = false;
-            current_rec_sample <= null;
-            current_rec_atrack <= null;
 
             SampleTimelineEditorClip editorClip <= getSelectedEditorClip();
             if(null != editorClip)
             {
                showClipDetails(editorClip, false/*bWidgets*/, true/*bSampleView*/); // update SampleView highlight
                ta_redraw.schedule();
+
+               // Mix / Overdub modulo voices
+               SampleTimelineModelTrack modelTrack <= getSelectedModelTrack();
+               if(null != modelTrack)
+               {
+                  int numUnits = editorClip.timelineClipGetLen();
+                  StWaveform wf <= current_rec_sample.waveform;
+                  float numFramesF = sample_timeline.getNumFramesPerUnit(wf.sampleRate) * numUnits;
+                  int numFrames = numFramesF + 0.5f;
+                  int availNumFrames = sv_wave.getNumFrames();
+
+                  if(SampleTimelineModelTrack.REC_AUTO_MUTE_DISCARD == modelTrack.rec_mode)
+                  {
+                     sv_wave.setSelection(numFrames, availNumFrames);
+                     sv_wave.cutSelection();
+                     Global.Print("Discard first cycle (numFrames="+numFrames+" availNumFrames="+availNumFrames+")");
+                  }
+                  else if(SampleTimelineModelTrack.REC_VOICE_MODULO == modelTrack.rec_mode)
+                  {
+                     Global.Debug2("handleStopClipRec: availNumFrames="+availNumFrames+" reqNumFrames="+numFrames);
+                     if(availNumFrames >= numFrames)
+                     {
+                        if(modelTrack.rec_num_voices >= 2)
+                        {
+                           int voiceIdx = 1;
+                           int numVoicesDone = 1;
+                           loop(modelTrack.rec_num_voices - 1)
+                           {
+                              int srcOff = numFramesF * voiceIdx + 0.5f;
+                              if( ((srcOff + numFrames) <= availNumFrames) || 
+                                  ((numVoicesDone+1) == modelTrack.rec_num_voices)
+                                  )
+                              {
+                                 Global.Debug2("handleStopClipRec: mix voice "+(voiceIdx+1)+"/"+modelTrack.rec_num_voices+" srcOff="+srcOff+" numFrames="+numFrames);
+                                 sv_wave.setSelection(srcOff, srcOff + numFrames);
+                                 sv_wave.copySelection();
+                                 sv_wave.setSelection(0, numFrames);
+                                 sv_wave.addClipboardToSelection();
+                                 numVoicesDone++;
+                              }
+                              // Next voice
+                              voiceIdx++;
+                           }
+                           Global.Debug2("handleStopClipRec: trim overdub voice 2.."+numVoicesDone+" area ("+numFrames+","+(availNumFrames-numFrames)+")");
+                           if(availNumFrames > (numFrames*2))
+                           {
+                              // env release, reverb trails etc
+                              sv_wave.setSelection(numFrames*1.5, numFrames*2);
+                              sv_wave.silenceSelection(true/*bUndoBegin*/);
+                              sv_wave.setSelection(numFrames*2, availNumFrames);  // env release, reverb trails etc
+                              sv_wave.cutSelection();
+                           }
+                           else
+                           {
+                              sv_wave.setSelection(numFrames, availNumFrames);
+                              sv_wave.cutSelection();
+                           }
+                           Global.Print("Overdub-mix "+numVoicesDone+" voice"+Utils.GetPluralString(numVoicesDone));
+                        }
+                     }
+                  }
+               }
             }
+
+            current_rec_sample <= null;
+            current_rec_atrack <= null;
 
             Global.SuccessShort("Rec: finish clip recording ("+(int(newNumSec*100)/100.0f)+" sec)");
          }
@@ -1980,7 +2133,8 @@ class SampleTimelineForm : XMLForm, ActionProvider, SampleViewPlugin {
 
    // <ui_show.png>
    public method showAudioTrackMenu(boolean _bFocusFirst) {
-      if(null != getSelectedModelClip())
+      // // if(null != getSelectedModelClip())
+      if(1)
       {
          pm_audiotrack <= PopupMenu.New(this);
          PopupMenuButton *pmb;
@@ -2006,6 +2160,29 @@ class SampleTimelineForm : XMLForm, ActionProvider, SampleViewPlugin {
                                      "audiotrack_"+audioTrackNr
                                      );
             audioTrackNr++;
+         }
+
+         // Recording panel
+         if(null == f_audiotrackmenu)
+         {
+            f_audiotrackmenu <= new SampleTimelineAudioTrackMenuForm;
+            f_audiotrackmenu.initSampleTimelineAudioTrackMenuForm(this/*parentForm*/);
+         }
+
+         pm.addSeparator();
+         pm.addItemLayer(f_audiotrackmenu);
+
+         f_audiotrackmenu.setModelTrack(modelTrack);
+         if(null != modelTrack)
+         {
+            f_audiotrackmenu.setRecordingMode(modelTrack.rec_mode);
+            f_audiotrackmenu.setVoiceModuloNumVoices(modelTrack.rec_num_voices);
+         }
+         else
+         {
+            // not reachable ?!
+            f_audiotrackmenu.setRecordingMode(SampleTimelineModelTrack.REC_DEFAULT);
+            f_audiotrackmenu.setVoiceModuloNumVoices(1);
          }
 
          pm.resizeToMinimum();
@@ -2402,7 +2579,7 @@ class SampleTimelineForm : XMLForm, ActionProvider, SampleViewPlugin {
             return true;
 
          case @(pm_audiotrack):
-            Global.Debug("pm_audiotrack acName="+acName);
+            Global.Debug("pm_audiotrack acName="+acName+" ap="+#(ap));
             switch(acName)
             {
                case PopupMenu.ACTION_CANCEL:
@@ -2594,10 +2771,12 @@ class SampleTimelineForm : XMLForm, ActionProvider, SampleViewPlugin {
             {
                if(bt_clip_sample_rec.getToggleState())
                {
+                  // Start recording
                   handleToggleClipRec();
                }
                else
                {
+                  // Stop recording
                   handleToggleReplay(false/*bCursor*/);
                }
             }
