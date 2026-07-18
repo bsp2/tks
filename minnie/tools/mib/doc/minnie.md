@@ -1,10 +1,10 @@
 % minnie
 % bsp
-% 23-May-2026
+% 18-Jul-2026
 >>>
 04Jul2025, 05Jul2025, 06Jul2025, 12Jul2025, 13Jul2025, 02Aug2025, 03Aug2025
 04Aug2025, 16Aug2025, 17Aug2025, 08Jan2026, 22Mar2026, 21May2026, 22May2026
-23May2026
+23May2026, 18Jul2026
 <<<
 $(var:header)
 
@@ -29,8 +29,8 @@ Triangle rendering is performed with an antialiased software rasterizer which ca
 - 1D and 2D (e.g. diagonal) line patterns (with support for multi-color patterns)
 - textured and gouraud shaded triangles
 - HW accelerated stencil polygons
-- support for anti-aliased hardware n-Polygons (DaveNX OpenGL extension)
-- support for precompiled shader binaries (DaveNX OpenGL extension)
+- support for anti-aliased hardware n-Polygons ([DaveNX](https://www.tes-dst.com/technology-products/gpus/d/ave-nx/) OpenGL extension)
+- support for precompiled shader binaries ([DaveNX](https://www.tes-dst.com/technology-products/gpus/d/ave-nx/) OpenGL extension)
 - support for custom GLSL shaders
 - multi-instance drawables with 4x4 matrix transformations and colorization
 - size-optimized `.mib` vector images (with SVG-subset import)
