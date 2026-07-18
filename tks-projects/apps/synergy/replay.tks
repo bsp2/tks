@@ -189,6 +189,7 @@ class Replay {
    boolean b_atrk_sync_restart;  // true=start audio recording at beginning of next bar (send sysex to Eureka process)
 
    int queued_liverec_start_ticks;  // see AudioLiveRecForm
+   int active_liverec_start_ticks;  // when b_liverec_active==1
    int queued_liverec_end_ticks;
    int queued_liverec_instance_id;  // ModSample instance id
    int queued_liverec_zone_idx;     // zone idx
@@ -198,6 +199,8 @@ class Replay {
 
    // See AudioLiveRecDialog
    int voice_modulo_start;  // initial voice index at replay start (0..voice_modulo_num-1). -1=disable
+   int voice_modulo_cur;    // current voice idx (when advance_ticks > 0)
+   int voice_modulo_advance_ticks;
    int voice_modulo_num;
 
 
@@ -953,6 +956,8 @@ class Replay {
          {
             if(-1 != queued_liverec_end_ticks)
             {
+               if(b_liverec_active)
+                  trace "xxx active_liverec_start_ticks="+active_liverec_start_ticks+" current_song.tick_nr="+current_song.tick_nr+" voice_modulo_cur="+voice_modulo_cur+" voice_modulo_num="+voice_modulo_num+" advance_ticks="+voice_modulo_advance_ticks;
                // trace "xxx current_song.tick_nr="+current_song.tick_nr+" queued_liverec_end_ticks="+queued_liverec_end_ticks;
                if(current_song.tick_nr == queued_liverec_end_ticks)
                {
@@ -962,8 +967,31 @@ class Replay {
                                               queued_liverec_zone_idx / 127.0
                                               );
                   b_liverec_active = false;
-                  configureVoiceModulo(-1/*start*/, voice_modulo_num);
+                  configureVoiceModulo(-1/*start*/, 0/*moduloAdvance16ths*/, voice_modulo_num);
                   current_pipe_root.configureVoiceModulo(-1/*start*/, voice_modulo_num);
+               }
+               else if(0 != voice_modulo_advance_ticks &&
+                       b_liverec_active &&
+                       (0 == ((current_song.tick_nr - active_liverec_start_ticks) % voice_modulo_advance_ticks))
+                       )
+               {
+                  if(++voice_modulo_cur < voice_modulo_num)
+                  {
+                     // Next voice
+                     //  (note) used by Eureka SampleTimeline (todo: not reachable here!)
+                     current_pipe_root.configureVoiceModulo(voice_modulo_cur, voice_modulo_num);
+                  }
+                  else
+                  {
+                     // All voices done, stop recording
+                     current_pipe_root.configureVoiceModulo(-1/*start*/, voice_modulo_num);
+                     voice_modulo_cur = voice_modulo_start;  // rewind to first voice (can be skipped)
+                     SysEx.SendRemoteParamUpdate(queued_liverec_instance_id,
+                                                 65/*ModSample.PARAM_LIVEREC_STOP_IDX*/,
+                                                 queued_liverec_zone_idx / 127.0
+                                                 );
+                     b_liverec_active = false;
+                  }
                }
             }
 
@@ -972,12 +1000,37 @@ class Replay {
                // trace "xxx current_song.tick_nr="+current_song.tick_nr+" queued_liverec_start_ticks="+queued_liverec_start_ticks;
                if(current_song.tick_nr == queued_liverec_start_ticks)
                {
+                  active_liverec_start_ticks = queued_liverec_start_ticks;
                   queued_liverec_start_ticks = -1;
                   SysEx.SendRemoteParamUpdate(queued_liverec_instance_id,
                                               63/*ModSample.PARAM_LIVEREC_START_IDX*/,
                                               queued_liverec_zone_idx / 127.0
                                               );
                   b_liverec_active = true;
+               }
+            }
+
+            if(!b_liverec_active && -1 == queued_liverec_start_ticks)
+            {
+               // Eureka SampleTimeline
+               //  (note) does not use liverec sampler / records to AudioTrack
+               if(voice_modulo_num > 0 &&
+                  (current_song.tick_nr > 0) &&
+                  (0 == (current_song.tick_nr % voice_modulo_advance_ticks))
+                  )
+               {
+                  if(++voice_modulo_cur < voice_modulo_num)
+                  {
+                     // Next voice
+                     trace "[>>>] replay: next voice modulo: cur="+voice_modulo_cur+" num="+voice_modulo_num+" advance_ticks="+voice_modulo_advance_ticks;
+                     current_pipe_root.configureVoiceModulo(voice_modulo_cur, voice_modulo_num);
+                  }
+                  else
+                  {
+                     // All voices done, mute replay (select invalid voice idx)
+                     trace "[>>>] replay: voice modulo done";
+                     current_pipe_root.configureVoiceModulo(999000/*start*/, 999999/*num*/);
+                  }
                }
             }
          }
@@ -1996,7 +2049,7 @@ class Replay {
 
       pattern_node <= null;
 
-      configureVoiceModulo(-1/*start*/, voice_modulo_num);
+      configureVoiceModulo(-1/*start*/, 0/*moduloAdvance16ths*/, voice_modulo_num);
       current_pipe_root.configureVoiceModulo(-1/*start*/, voice_modulo_num);
 
       b_play_step_muted       = false;
@@ -2395,9 +2448,15 @@ class Replay {
    }
 
    // <method.png>
-   public =replay= method configureVoiceModulo(int _startVoiceIdx, int _numVoices) {
+   public =replay= method configureVoiceModulo(int _startVoiceIdx,
+                                               int _moduloAdvanceTicks,
+                                               int _numVoices
+                                               ) {
       // Called by AudioLiveRecForm
-      voice_modulo_start = _startVoiceIdx;
-      voice_modulo_num   = _numVoices;
+      // trace "[>>>] Replay::configureVoiceModulo: startVoiceIdx="+_startVoiceIdx+" moduloAdvanceTicks="+_moduloAdvanceTicks+" numVoices="+_numVoices;
+      voice_modulo_start         = _startVoiceIdx;
+      voice_modulo_cur           = _startVoiceIdx;
+      voice_modulo_advance_ticks = _moduloAdvanceTicks;
+      voice_modulo_num           = _numVoices;
    }
 }

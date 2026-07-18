@@ -15,7 +15,7 @@
 // ----          23Feb2023, 22Jul2023, 29Jul2023, 17Nov2023, 18Nov2023, 02Dec2023, 03Dec2023
 // ----          07Jul2024, 15Nov2024, 14Mar2025, 22May2025, 13Jun2025, 18Dec2025, 19Dec2025
 // ----          20Dec2025, 03Jan2026, 06Apr2026, 14Apr2026, 16Apr2026, 25Apr2026, 01May2026
-// ----          11Jul2026
+// ----          11Jul2026, 13Jul2026
 // ----
 // ----
 // ----
@@ -286,6 +286,9 @@ class SysEx {
    static boolean b_queued_send_remotequeryparams;
 
    static boolean b_queued_recv_seq_start;
+   static int     queued_recv_seq_start_voice_modulo;  // 0=no modulo
+   static int     queued_recv_seq_start_voice_modulo_advance_16ths;
+   static int     queued_recv_seq_start_auto_mute_16ths;  // 0=no auto-mute
    static boolean b_queued_recv_seq_stop;
 
    static SysExInstance *[] queued_recv_remotereplyinstanceids;
@@ -797,6 +800,10 @@ class SysEx {
                break;
 
             case SYX_MSGID_SEQ_START:
+               raw.offset = 0;
+               queued_recv_seq_start_voice_modulo               = raw.u8;
+               queued_recv_seq_start_voice_modulo_advance_16ths = raw.u16;
+               queued_recv_seq_start_auto_mute_16ths            = raw.u16;
                b_queued_recv_seq_start = true;
                b_seq_start_from_daw = true;
                break;
@@ -2226,8 +2233,49 @@ class SysEx {
 
          if(!replay.b_playing)
          {
-            if(dlg_audio_liverec.isFloatingLayerVisible())
-               f_audio_liverec.updateVoiceModulo();
+            if(0 != queued_recv_seq_start_voice_modulo ||
+               0 != queued_recv_seq_start_auto_mute_16ths
+               )
+            {
+               if(0 != queued_recv_seq_start_voice_modulo)
+               {
+                  replay.configureVoiceModulo(0/*modStart*/,
+                                              queued_recv_seq_start_voice_modulo_advance_16ths * current_song.getNumTicksPer16th(),
+                                              queued_recv_seq_start_voice_modulo
+                                              );
+               }
+               else
+               {
+                  replay.configureVoiceModulo(-1/*modStart*/,
+                                              0/*moduloAdvance16ths*/,
+                                              0/*num*/
+                                              );
+               }
+
+               if(0 != queued_recv_seq_start_auto_mute_16ths)
+               {
+                  replay.setCycle(maybe, true/*bQuiet*/);
+                  root_form.updateTransportCycle();
+                  int numTicks = queued_recv_seq_start_auto_mute_16ths * current_song.getNumTicksPer16th();
+                  int ticksPerBeat = current_song.getNumTicksPerBeat();
+                  int numBeats = ((numTicks / float(ticksPerBeat)) + 0.5f);
+                  if(0 != numBeats)
+                     current_song.setCycleLength(-numBeats);
+               }
+            }
+            else
+            {
+               // // // replay.configureVoiceModulo(-1/*modStart*/, 0/*num*/);
+               // // // replay.setCycle(false, true/*bQuiet*/);
+               // // // root_form.updateTransportCycle();
+               if(dlg_audio_liverec.isFloatingLayerVisible())
+                  f_audio_liverec.updateVoiceModulo();
+               else
+                  replay.configureVoiceModulo(-1/*modStart*/,
+                                              0/*moduloAdvance16ths*/,
+                                              0/*num*/
+                                              );
+            }
 
             root_form.handleToggleReplay(false/*bShift*/);
             // // replay.toggleReplay();
