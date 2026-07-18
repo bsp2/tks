@@ -3506,11 +3506,13 @@ void MIDIPipeFrame::emit(void) {
 
                         // Note already playing ?
                         //  (note) some synths can trigger the same note multiple times but this is not supported here
+                        //          (at least not on the same midiCh)
                         if(devCh->note_states[noteNr].ticks_left >= 0)
                         {
                            // Immediate note-off
                            if(pipeDev->b_note_off)
                            {
+                              // off
                               Dwritebytes(3u);
                               Dnotest(0x80);
                               lastNoteOnCh = -1;
@@ -3518,6 +3520,7 @@ void MIDIPipeFrame::emit(void) {
                            }
                            else if(!Drs() || (lastNoteOnCh != (sS8)ev->midi_ch) || (lastDevIdx != ev->dev_idx))
                            {
+                              // Running status disabled or dev/channel changed
                               Dwritebytes(3u);
                               Dnotest(0x90);
                               lastNoteOnCh = ev->midi_ch;
@@ -3525,6 +3528,7 @@ void MIDIPipeFrame::emit(void) {
                            }
                            else
                            {
+                              // Running status
                               Dwritebytes(2u);
                            }
                            Dnote(noteNr);
