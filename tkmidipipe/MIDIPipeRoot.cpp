@@ -773,6 +773,7 @@ sUI MIDIPipeRoot::getPipeDelay(void) {
 }
 
 void MIDIPipeRoot::configureVoiceModulo(sSI _startVoiceIdx, sUI _numVoices) {
+   // Dyac_host_printf("xxx MIDIPipeRoot::configureVoiceModulo: startVoiceIdx=%d numVoices=%u\n", _startVoiceIdx, _numVoices);
    voice_modulo_index = _startVoiceIdx;
    voice_modulo_num   = _numVoices;
 
@@ -786,7 +787,7 @@ void MIDIPipeRoot::applyVoiceModulo(MIDIPipeFrame *_frameEmit) {
    // Apply voice modulo (see Synergy AudioLiveRecForm)
    // if(numNoteOn > 0u)
    //    yac_host->printf("xxx MIDIPipeRoot::applyVoiceModulo: numNoteOn=%u voice_modulo_index=%d num=%u\n", numNoteOn, voice_modulo_index, voice_modulo_num);
-   if(voice_modulo_index >= 0)
+   if(voice_modulo_index >= 0 && voice_modulo_num > 0u)
    {
       const sUI numNoteOn = _frameEmit->getNumEventsNoteOn();
       if(numNoteOn > 0u)
