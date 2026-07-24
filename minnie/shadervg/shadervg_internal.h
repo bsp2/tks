@@ -105,8 +105,10 @@ void sdvg_int_debug_print_mem_info (void);
 #endif // SHADERVG_USE_SCRATCHBUFFERSUBDATA
 #ifdef MINNIE_LIB
 #define Dsdvg_glcall(f) f
+#define Dsdvg_glcall_safe(n,f) f
 #else
 #define Dsdvg_glcall(f) tkopengl_shared->_##f
+#define Dsdvg_glcall_safe(n,f) if(tkopengl_shared->_##n)tkopengl_shared->_##f
 #endif // MINNIE_LIB
 #define Dsdvg_uniform_1i(a,v) Dsdvg_glcall(glUniform1i(a,v))
 #define Dsdvg_uniform_1ui(a,v) Dsdvg_glcall(glUniform1ui(a,v))

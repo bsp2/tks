@@ -108,7 +108,7 @@ sBool ShaderVG_Shader::create(const char *_sVert, const char *_sFrag
    Dsdvg_glcall(glObjectLabel(GL_PROGRAM, prg_id, -1/*length*/, _sName));
 #else
    YAC_String sLabel; sLabel.visit(_sName);
-   Dsdvg_glcall(zglObjectLabel(GL_PROGRAM, prg_id, &sLabel));
+   Dsdvg_glcall_safe(zglObjectLabel,zglObjectLabel(GL_PROGRAM, prg_id, &sLabel));
 #endif // MINNIE_LIB
 #endif // SHADERVG_OBJECT_LABELS
 
