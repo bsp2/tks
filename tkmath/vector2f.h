@@ -67,9 +67,19 @@ YC class _Vector2f : public YAC_Object {
       floats[1] += _o->floats[1];
    }
 
+   inline void addScalef(const _Vector2f *_o, const sF32 _s) {
+      floats[0] += _o->floats[0] * _s;
+      floats[1] += _o->floats[1] * _s;
+   }
+
    inline void sub(const _Vector2f *_o) {
       floats[0] -= _o->floats[0];
       floats[1] -= _o->floats[1];
+   }
+
+   inline void subScalef(const _Vector2f *_o, const sF32 _s) {
+      floats[0] -= _o->floats[0] * _s;
+      floats[1] -= _o->floats[1] * _s;
    }
 
    inline void subFrom(const _Vector2f *_a, const _Vector2f *_b) {
@@ -145,6 +155,15 @@ YC class _Vector2f : public YAC_Object {
    YM void _add_YAC_RVAL (YAC_Object *, YAC_Value *);
    YM void _add_YAC_RARG (YAC_Object *, YAC_Object *) const;
 
+   /* @method addScalef,Vector2f v,float s
+      Scale and add another vector v to this instance
+      @arg v Vector to add
+      @arg s Scaling factor
+    */
+   YM void _addScalef_YAC_RSELF (YAC_Object *, sF32 _s);
+   YM void _addScalef_YAC_RVAL (YAC_Object *, sF32 _s, YAC_Value *);
+   YM void _addScalef_YAC_RARG (YAC_Object *, sF32 _s, YAC_Object *) const;
+
    /* @method sub,Vector2f v
       Substract another vector v from this instance
       @arg v Vector to substract
@@ -153,6 +172,22 @@ YC class _Vector2f : public YAC_Object {
    YM void _sub_YAC_RVAL (YAC_Object *, YAC_Value *);
    YM void _sub_YAC_RARG (YAC_Object *, YAC_Object *) const;
 
+   /* @method subRev,Vector2f v
+      Substract this instance from another vector v
+      @arg v Left-hand side vector
+    */
+   YM void _subRev_YAC_RSELF (YAC_Object *);
+   YM void _subRev_YAC_RVAL (YAC_Object *, YAC_Value *);
+   YM void _subRev_YAC_RARG (YAC_Object *, YAC_Object *) const;
+
+   /* @method subScalef,Vector2f v
+      Scale and substract another vector v from this instance
+      @arg v Vector to substract
+      @arg s Scaling factor
+    */
+   YM void _subScalef_YAC_RSELF (YAC_Object *, sF32 _s);
+   YM void _subScalef_YAC_RVAL (YAC_Object *, sF32 _s, YAC_Value *);
+   YM void _subScalef_YAC_RARG (YAC_Object *, sF32 _s, YAC_Object *) const;
 
    /* @method dot,Vector2f v:float
       Calculate dot product from this instance and v
@@ -211,6 +246,13 @@ YC class _Vector2f : public YAC_Object {
    YM void _mulf_YAC_RSELF (sF32);
    YM void _mulf_YAC_RVAL (sF32, YAC_Value *);
    YM void _mulf_YAC_RARG (sF32, YAC_Object *) const;
+
+   /* @method mulfFrom,Object o,float s
+      Multiply vector o by scalar value s and store result in this instance
+      @arg o Vector object
+      @arg s scalar value
+    */
+   YM void _mulfFrom (YAC_Object *_o, sF32 _s);
 
    /* @method mul2f,float sx,float sy
       Scale x / y components

@@ -1,6 +1,6 @@
 /// vector3f.cpp
 ///
-/// (c) 2008-2025 by Carsten Busse <carsten.busse@googlemail.com>,
+/// (c) 2008-2026 by Carsten Busse <carsten.busse@googlemail.com>,
 ///                  Bastian Spiegel <bs@tkscript.de> (additional coding)
 ///     - Distributed under terms of the Lesser GNU General Public License (LGPL).
 ///       See COPYING and <http://www.gnu.org/licenses/licenses.html#LGPL> for further information.
@@ -558,11 +558,22 @@ void _Vector3f::_add_YAC_RSELF(YAC_Object *_o) {
       floats[1] += o->floats[1];
       floats[2] += o->floats[2];
    }
+   else if(YAC_BCHK(_o, clid_Vector2f))
+   {
+      YAC_CAST_ARG(_Vector2f, o, _o);
+      floats[0] += o->floats[0];
+      floats[1] += o->floats[1];
+   }
+   else if(YAC_VALID(_o))
+   {
+      YAC_NEW_STACK(Vector3f, o);
+      o.assignGeneric(NULL/*context*/, _o);
+      floats[0] = floats[0] + o.floats[0];
+      floats[1] = floats[1] + o.floats[1];
+      floats[2] = floats[2] + o.floats[2];
+   }
    else
    {
-      /* // Add generic Object
-      YAC_Value r;
-      yacOperator(YAC_OP_ADD, _o, &r);*/
       Dyac_throw_def(NativeClassTypeMismatch,"tkmath::Vector3f::add_SELF Object not of Type Vector3f");
    }
 }
@@ -577,11 +588,26 @@ void _Vector3f::_add_YAC_RVAL(YAC_Object *_o, YAC_Value *_r) {
       r->floats[1] = floats[1] + o->floats[1];
       r->floats[2] = floats[2] + o->floats[2];
    }
+   else if(YAC_BCHK(_o, clid_Vector2f))
+   {
+      YAC_CAST_ARG(_Vector2f, o, _o);
+      _Vector3f *r = YAC_NEW_POOLED(Vector3f);
+      _r->initObject(r, YAC_TRUE);
+      r->floats[0] = floats[0] + o->floats[0];
+      r->floats[1] = floats[1] + o->floats[1];
+      r->floats[2] = floats[2];
+   }
+   else if(YAC_VALID(_o))
+   {
+      _Vector3f *r = YAC_NEW_POOLED(Vector3f);
+      r->assignGeneric(NULL/*context*/, _o);
+      _r->initObject(r, YAC_TRUE);
+      r->floats[0] = floats[0] + r->floats[0];
+      r->floats[1] = floats[1] + r->floats[1];
+      r->floats[2] = floats[2] + r->floats[2];
+   }
    else
    {
-      /* // Add generic Object
-      YAC_Value r;
-      yacOperator(YAC_OP_ADD, _o, &r);*/
       Dyac_throw_def(NativeClassTypeMismatch,"tkmath::Vector3f::add_VAL Object not of Type Vector3f");
    }
 }
@@ -595,12 +621,118 @@ void _Vector3f::_add_YAC_RARG(YAC_Object *_o, YAC_Object *_r) const {
       r->floats[1] = floats[1] + o->floats[1];
       r->floats[2] = floats[2] + o->floats[2];
    }
+   else if(YAC_BCHK(_o,clid_Vector2f) && YAC_BCHK(_r,clid_Vector3f))
+   {
+      YAC_CAST_ARG(_Vector2f, o, _o);
+      YAC_CAST_ARG(_Vector3f, r, _r);
+      r->floats[0] = floats[0] + o->floats[0];
+      r->floats[1] = floats[1] + o->floats[1];
+      r->floats[2] = floats[2];
+   }
+   else if(YAC_VALID(_o) && YAC_BCHK(_r,clid_Vector3f))
+   {
+      YAC_CAST_ARG(_Vector3f, r, _r);
+      r->assignGeneric(NULL/*context*/, _o);
+      r->floats[0] = floats[0] + r->floats[0];
+      r->floats[1] = floats[1] + r->floats[1];
+      r->floats[2] = floats[2] + r->floats[2];
+   }
    else
    {
-      /* // Add generic Object
-      YAC_Value r;
-      yacOperator(YAC_OP_ADD, _o, &r);*/
       Dyac_throw_def(NativeClassTypeMismatch,"tkmath::Vector3f::add_ARG Object not of Type Vector3f");
+   }
+}
+
+void _Vector3f::_addScalef_YAC_RSELF(YAC_Object *_o, sF32 _s) {
+   if(YAC_BCHK(_o, clid_Vector3f))
+   {
+      YAC_CAST_ARG(_Vector3f, o, _o);
+      floats[0] += o->floats[0] * _s;
+      floats[1] += o->floats[1] * _s;
+      floats[2] += o->floats[2] * _s;
+   }
+   else if(YAC_BCHK(_o, clid_Vector2f))
+   {
+      YAC_CAST_ARG(_Vector2f, o, _o);
+      floats[0] += o->floats[0] * _s;
+      floats[1] += o->floats[1] * _s;
+   }
+   else if(YAC_VALID(_o))
+   {
+      YAC_NEW_STACK(Vector3f, o);
+      o.assignGeneric(NULL/*context*/, _o);
+      floats[0] = floats[0] + o.floats[0] * _s;
+      floats[1] = floats[1] + o.floats[1] * _s;
+      floats[2] = floats[2] + o.floats[2] * _s;
+   }
+   else
+   {
+      Dyac_throw_def(NativeClassTypeMismatch,"tkmath::Vector3f::addScalef_SELF: invalid Vector3f object");
+   }
+}
+
+void _Vector3f::_addScalef_YAC_RVAL(YAC_Object *_o, sF32 _s, YAC_Value *_r) {
+   if(YAC_BCHK(_o, clid_Vector3f))
+   {
+      YAC_CAST_ARG(_Vector3f, o, _o);
+      _Vector3f *r = YAC_NEW_POOLED(Vector3f);
+      r->floats[0] = floats[0] + o->floats[0] * _s;
+      r->floats[1] = floats[1] + o->floats[1] * _s;
+      r->floats[2] = floats[2] + o->floats[2] * _s;
+      _r->initObject(r, YAC_TRUE);
+   }
+   else if(YAC_BCHK(_o, clid_Vector2f))
+   {
+      YAC_CAST_ARG(_Vector2f, o, _o);
+      _Vector3f *r = YAC_NEW_POOLED(Vector3f);
+      r->floats[0] = floats[0] + o->floats[0] * _s;
+      r->floats[1] = floats[1] + o->floats[1] * _s;
+      r->floats[2] = floats[2];
+      _r->initObject(r, YAC_TRUE);
+   }
+   else if(YAC_VALID(_o))
+   {
+      _Vector3f *r = YAC_NEW_POOLED(Vector3f);
+      r->assignGeneric(NULL/*context*/, _o);
+      _r->initObject(r, YAC_TRUE);
+      r->floats[0] = floats[0] + r->floats[0] * _s;
+      r->floats[1] = floats[1] + r->floats[1] * _s;
+      r->floats[2] = floats[2] + r->floats[2] * _s;
+   }
+   else
+   {
+      Dyac_throw_def(NativeClassTypeMismatch,"tkmath::Vector3f::addScalef_VAL: invalid Vector3f object");
+   }
+}
+
+void _Vector3f::_addScalef_YAC_RARG(YAC_Object *_o, sF32 _s, YAC_Object *_r) const {
+   if(YAC_BCHK(_o, clid_Vector3f) && YAC_BCHK(_r, clid_Vector3f))
+   {
+      YAC_CAST_ARG(_Vector3f, o, _o);
+      YAC_CAST_ARG(_Vector3f, r, _r);
+      r->floats[0] = floats[0] + o->floats[0] * _s;
+      r->floats[1] = floats[1] + o->floats[1] * _s;
+      r->floats[2] = floats[2] + o->floats[2] * _s;
+   }
+   else if(YAC_BCHK(_o, clid_Vector2f) && YAC_BCHK(_r, clid_Vector3f))
+   {
+      YAC_CAST_ARG(_Vector2f, o, _o);
+      YAC_CAST_ARG(_Vector3f, r, _r);
+      r->floats[0] = floats[0] + o->floats[0] * _s;
+      r->floats[1] = floats[1] + o->floats[1] * _s;
+      r->floats[2] = floats[2];
+   }
+   else if(YAC_VALID(_o) && YAC_BCHK(_r,clid_Vector3f))
+   {
+      YAC_CAST_ARG(_Vector3f, r, _r);
+      r->assignGeneric(NULL/*context*/, _o);
+      r->floats[0] = floats[0] + r->floats[0] * _s;
+      r->floats[1] = floats[1] + r->floats[1] * _s;
+      r->floats[2] = floats[2] + r->floats[2] * _s;
+   }
+   else
+   {
+      Dyac_throw_def(NativeClassTypeMismatch,"tkmath::Vector3f::addScalef_ARG: invalid Vector3f object");
    }
 }
 
@@ -612,11 +744,22 @@ void _Vector3f::_sub_YAC_RSELF(YAC_Object *_o) {
       floats[1] -= o->floats[1];
       floats[2] -= o->floats[2];
    }
+   else if(YAC_BCHK(_o, clid_Vector2f))
+   {
+      YAC_CAST_ARG(_Vector2f, o, _o);
+      floats[0] -= o->floats[0];
+      floats[1] -= o->floats[1];
+   }
+   else if(YAC_VALID(_o))
+   {
+      YAC_NEW_STACK(Vector3f, o);
+      o.assignGeneric(NULL/*context*/, _o);
+      floats[0] = floats[0] - o.floats[0];
+      floats[1] = floats[1] - o.floats[1];
+      floats[2] = floats[2] - o.floats[2];
+   }
    else
    {
-      /* // Subtract generic Object
-      YAC_Value r;
-      yacOperator(YAC_OP_ADD, _o, &r);*/
       Dyac_throw_def(NativeClassTypeMismatch,"tkmath::Vector3f::sub_SELF Object not of Type Vector3f");
    }
 }
@@ -631,11 +774,26 @@ void _Vector3f::_sub_YAC_RVAL(YAC_Object *_o, YAC_Value *_r) {
       r->floats[1] = floats[1] - o->floats[1];
       r->floats[2] = floats[2] - o->floats[2];
    }
+   else if(YAC_BCHK(_o, clid_Vector2f))
+   {
+      YAC_CAST_ARG(_Vector2f, o, _o);
+      _Vector3f *r = YAC_NEW_POOLED(Vector3f);
+      _r->initObject(r, YAC_TRUE);
+      r->floats[0] = floats[0] - o->floats[0];
+      r->floats[1] = floats[1] - o->floats[1];
+      r->floats[2] = floats[2];
+   }
+   else if(YAC_VALID(_o))
+   {
+      _Vector3f *r = YAC_NEW_POOLED(Vector3f);
+      r->assignGeneric(NULL/*context*/, _o);
+      _r->initObject(r, YAC_TRUE);
+      r->floats[0] = floats[0] - r->floats[0];
+      r->floats[1] = floats[1] - r->floats[1];
+      r->floats[2] = floats[2] - r->floats[2];
+   }
    else
    {
-      /* // Subtract generic Object
-      YAC_Value r;
-      yacOperator(YAC_OP_ADD, _o, &r);*/
       Dyac_throw_def(NativeClassTypeMismatch,"tkmath::Vector3f::sub_VAL Object not of Type Vector3f");
    }
 }
@@ -644,17 +802,217 @@ void _Vector3f::_sub_YAC_RARG(YAC_Object *_o, YAC_Object *_r) const {
    if(YAC_BCHK(_o, clid_Vector3f) && YAC_BCHK(_r,clid_Vector3f))
    {
       YAC_CAST_ARG(_Vector3f, o, _o);
-      _Vector3f *r = (_Vector3f*)_r;
+      YAC_CAST_ARG(_Vector3f, r, _r);
       r->floats[0] = floats[0] - o->floats[0];
       r->floats[1] = floats[1] - o->floats[1];
       r->floats[2] = floats[2] - o->floats[2];
    }
+   else if(YAC_BCHK(_o, clid_Vector2f) && YAC_BCHK(_r,clid_Vector3f))
+   {
+      YAC_CAST_ARG(_Vector2f, o, _o);
+      YAC_CAST_ARG(_Vector3f, r, _r);
+      r->floats[0] = floats[0] - o->floats[0];
+      r->floats[1] = floats[1] - o->floats[1];
+      r->floats[2] = floats[2];
+   }
+   else if(YAC_VALID(_o) && YAC_BCHK(_r,clid_Vector3f))
+   {
+      YAC_CAST_ARG(_Vector3f, r, _r);
+      r->assignGeneric(NULL/*context*/, _o);
+      r->floats[0] = r->floats[0] - floats[0];
+      r->floats[1] = r->floats[1] - floats[1];
+      r->floats[2] = r->floats[2] - floats[2];
+   }
    else
    {
-      /* // Subtract generic Object
-      YAC_Value r;
-      yacOperator(YAC_OP_ADD, _o, &r);*/
       Dyac_throw_def(NativeClassTypeMismatch,"tkmath::Vector3f::sub_ARG Object not of Type Vector3f");
+   }
+}
+
+void _Vector3f::_subRev_YAC_RSELF(YAC_Object *_o) {
+   if(YAC_BCHK(_o, clid_Vector3f))
+   {
+      YAC_CAST_ARG(_Vector3f, o, _o);
+      floats[0] = o->floats[0] - floats[0];
+      floats[1] = o->floats[1] - floats[1];
+      floats[2] = o->floats[2] - floats[2];
+   }
+   else if(YAC_BCHK(_o, clid_Vector2f))
+   {
+      YAC_CAST_ARG(_Vector2f, o, _o);
+      floats[0] = o->floats[0] - floats[0];
+      floats[1] = o->floats[1] - floats[1];
+      floats[2] = 0.0f         - floats[2];
+   }
+   else if(YAC_VALID(_o))
+   {
+      YAC_NEW_STACK(Vector3f, o);
+      o.assignGeneric(NULL/*context*/, _o);
+      floats[0] = o.floats[0] - floats[0];
+      floats[1] = o.floats[1] - floats[1];
+      floats[2] = o.floats[2] - floats[2];
+   }
+   else
+   {
+      Dyac_throw_def(NativeClassTypeMismatch,"tkmath::Vector3f::subRev_SELF Object not of Type Vector3f");
+   }
+}
+
+void _Vector3f::_subRev_YAC_RVAL(YAC_Object *_o, YAC_Value *_r) {
+   if(YAC_BCHK(_o, clid_Vector3f))
+   {
+      YAC_CAST_ARG(_Vector3f, o, _o);
+      _Vector3f *r = YAC_NEW_POOLED(Vector3f);
+      _r->initObject(r, YAC_TRUE);
+      r->floats[0] = o->floats[0] - floats[0];
+      r->floats[1] = o->floats[1] - floats[1];
+      r->floats[2] = o->floats[2] - floats[2];
+   }
+   else if(YAC_BCHK(_o, clid_Vector2f))
+   {
+      YAC_CAST_ARG(_Vector2f, o, _o);
+      _Vector3f *r = YAC_NEW_POOLED(Vector3f);
+      _r->initObject(r, YAC_TRUE);
+      r->floats[0] = o->floats[0] - floats[0];
+      r->floats[1] = o->floats[1] - floats[1];
+      r->floats[2] = 0.0f         - floats[2];
+   }
+   else if(YAC_VALID(_o))
+   {
+      _Vector3f *r = YAC_NEW_POOLED(Vector3f);
+      r->assignGeneric(NULL/*context*/, _o);
+      _r->initObject(r, YAC_TRUE);
+      r->floats[0] = r->floats[0] - floats[0];
+      r->floats[1] = r->floats[1] - floats[1];
+      r->floats[2] = r->floats[2] - floats[2];
+   }
+   else
+   {
+      Dyac_throw_def(NativeClassTypeMismatch,"tkmath::Vector3f::subRev_VAL Object not of Type Vector3f");
+   }
+}
+
+void _Vector3f::_subRev_YAC_RARG(YAC_Object *_o, YAC_Object *_r) const {
+   if(YAC_BCHK(_o, clid_Vector3f) && YAC_BCHK(_r,clid_Vector3f))
+   {
+      YAC_CAST_ARG(_Vector3f, o, _o);
+      YAC_CAST_ARG(_Vector3f, r, _r);
+      r->floats[0] = o->floats[0] - floats[0];
+      r->floats[1] = o->floats[1] - floats[1];
+      r->floats[2] = o->floats[2] - floats[2];
+   }
+   else if(YAC_BCHK(_o, clid_Vector2f) && YAC_BCHK(_r,clid_Vector3f))
+   {
+      YAC_CAST_ARG(_Vector2f, o, _o);
+      YAC_CAST_ARG(_Vector3f, r, _r);
+      r->floats[0] = o->floats[0] - floats[0];
+      r->floats[1] = o->floats[1] - floats[1];
+      r->floats[2] = 0.0f         - floats[2];
+   }
+   else if(YAC_VALID(_o) && YAC_BCHK(_r,clid_Vector3f))
+   {
+      YAC_CAST_ARG(_Vector3f, r, _r);
+      r->assignGeneric(NULL/*context*/, _o);
+      r->floats[0] = r->floats[0] - floats[0];
+      r->floats[1] = r->floats[1] - floats[1];
+      r->floats[2] = r->floats[2] - floats[2];
+   }
+   else
+   {
+      Dyac_throw_def(NativeClassTypeMismatch,"tkmath::Vector3f::subRev_ARG Object not of Type Vector3f");
+   }
+}
+
+void _Vector3f::_subScalef_YAC_RSELF(YAC_Object *_o, sF32 _s) {
+   if(YAC_BCHK(_o, clid_Vector3f))
+   {
+      YAC_CAST_ARG(_Vector3f, o, _o);
+      floats[0] -= o->floats[0] *_s;
+      floats[1] -= o->floats[1] *_s;
+      floats[2] -= o->floats[2] *_s;
+   }
+   else if(YAC_BCHK(_o, clid_Vector2f))
+   {
+      YAC_CAST_ARG(_Vector2f, o, _o);
+      floats[0] -= o->floats[0] *_s;
+      floats[1] -= o->floats[1] *_s;
+   }
+   else if(YAC_VALID(_o))
+   {
+      YAC_NEW_STACK(Vector3f, o);
+      o.assignGeneric(NULL/*context*/, _o);
+      floats[0] = floats[0] - o.floats[0] * _s;
+      floats[1] = floats[1] - o.floats[1] * _s;
+      floats[2] = floats[2] - o.floats[2] * _s;
+   }
+   else
+   {
+      Dyac_throw_def(NativeClassTypeMismatch,"tkmath::Vector3f::subScalef_SELF: invalid Vector3f object");
+   }
+}
+
+void _Vector3f::_subScalef_YAC_RVAL(YAC_Object *_o, sF32 _s, YAC_Value *_r) {
+   if(YAC_BCHK(_o, clid_Vector3f))
+   {
+      YAC_CAST_ARG(_Vector3f, o, _o);
+      _Vector3f *r = YAC_NEW_POOLED(Vector3f);
+      r->floats[0] = floats[0] - o->floats[0] * _s;
+      r->floats[1] = floats[1] - o->floats[1] * _s;
+      r->floats[2] = floats[2] - o->floats[2] * _s;
+      _r->initObject(r, YAC_TRUE);
+   }
+   else if(YAC_BCHK(_o, clid_Vector2f))
+   {
+      YAC_CAST_ARG(_Vector2f, o, _o);
+      _Vector3f *r = YAC_NEW_POOLED(Vector3f);
+      r->floats[0] = floats[0] - o->floats[0] * _s;
+      r->floats[1] = floats[1] - o->floats[1] * _s;
+      r->floats[2] = floats[2];
+      _r->initObject(r, YAC_TRUE);
+   }
+   else if(YAC_VALID(_o))
+   {
+      _Vector3f *r = YAC_NEW_POOLED(Vector3f);
+      r->assignGeneric(NULL/*context*/, _o);
+      _r->initObject(r, YAC_TRUE);
+      r->floats[0] = floats[0] - r->floats[0] * _s;
+      r->floats[1] = floats[1] - r->floats[1] * _s;
+      r->floats[2] = floats[2] - r->floats[2] * _s;
+   }
+   else
+   {
+      Dyac_throw_def(NativeClassTypeMismatch,"tkmath::Vector3f::subScalef_VAL: invalid Vector3f object");
+   }
+}
+
+void _Vector3f::_subScalef_YAC_RARG(YAC_Object *_o, sF32 _s, YAC_Object *_r) const {
+   if(YAC_BCHK(_o, clid_Vector3f) && YAC_BCHK(_r, clid_Vector3f))
+   {
+      YAC_CAST_ARG(_Vector3f, o, _o);
+      YAC_CAST_ARG(_Vector3f, r, _r);
+      r->floats[0] = floats[0] - o->floats[0] * _s;
+      r->floats[1] = floats[1] - o->floats[1] * _s;
+      r->floats[2] = floats[2] - o->floats[2] * _s;
+   }
+   else if(YAC_BCHK(_o, clid_Vector2f) && YAC_BCHK(_r, clid_Vector3f))
+   {
+      YAC_CAST_ARG(_Vector2f, o, _o);
+      YAC_CAST_ARG(_Vector3f, r, _r);
+      r->floats[0] = floats[0] - o->floats[0] * _s;
+      r->floats[1] = floats[1] - o->floats[1] * _s;
+      r->floats[2] = floats[2];
+   }
+   else if(YAC_VALID(_o) && YAC_BCHK(_r,clid_Vector3f))
+   {
+      YAC_CAST_ARG(_Vector3f, r, _r);
+      r->assignGeneric(NULL/*context*/, _o);
+      r->floats[0] = floats[0] - r->floats[0] * _s;
+      r->floats[1] = floats[1] - r->floats[1] * _s;
+      r->floats[2] = floats[2] - r->floats[2] * _s;
+   }
+   else
+   {
+      Dyac_throw_def(NativeClassTypeMismatch,"tkmath::Vector3f::subScalef_ARG: invalid Vector3f object");
    }
 }
 
@@ -864,6 +1222,37 @@ void _Vector3f::_mulf_YAC_RARG(sF32 _s, YAC_Object *_r) const {
    }
 }
 
+void _Vector3f::_mulfFrom(YAC_Object *_o, sF32 _s) {
+   if(YAC_BCHK(_o, clid_Vector3f))
+   {
+      YAC_CAST_ARG(_Vector3f, o, _o);
+      floats[0] = o->floats[0] * _s;
+      floats[1] = o->floats[1] * _s;
+      floats[2] = o->floats[2] * _s;
+      floats[3] = 1.0f         * _s;
+   }
+   else if(YAC_BCHK(_o, clid_Vector2f))
+   {
+      YAC_CAST_ARG(_Vector2f, o, _o);
+      floats[0] = o->floats[0] * _s;
+      floats[1] = o->floats[1] * _s;
+      floats[2] = 0.0f;
+      floats[3] = 1.0f         * _s;
+   }
+   else if(YAC_VALID(_o))
+   {
+      YAC_NEW_STACK(Vector3f, o);
+      o.assignGeneric(NULL/*context*/, _o);
+      floats[0] = o.floats[0] * _s;
+      floats[1] = o.floats[1] * _s;
+      floats[2] = o.floats[2] * _s;
+   }
+   else
+   {
+      Dyac_throw_def(NativeClassTypeMismatch, "tkmath::Vector3f::mulfFrom: invalid object");
+   }
+}
+
 void _Vector3f::_mul3f_YAC_RSELF(sF32 _sx, sF32 _sy, sF32 _sz) {
    floats[0] *= _sx;
    floats[1] *= _sy;
@@ -893,7 +1282,6 @@ void _Vector3f::_mul3f_YAC_RARG(sF32 _sx, sF32 _sy, sF32 _sz, YAC_Object *_r) co
 }
 
 void _Vector3f::_mul_YAC_RSELF(YAC_Object *_o) {
-   // multiply each element
    if(YAC_BCHK(_o, clid_Vector3f))
    {
       YAC_CAST_ARG(_Vector3f, o, _o);
@@ -901,18 +1289,21 @@ void _Vector3f::_mul_YAC_RSELF(YAC_Object *_o) {
       floats[1] *= o->floats[1];
       floats[2] *= o->floats[2];
    }
+   else if(YAC_VALID(_o))
+   {
+      YAC_NEW_STACK(Vector3f, o);
+      o.assignGeneric(NULL/*context*/, _o);
+      floats[0] = floats[0] * o.floats[0];
+      floats[1] = floats[1] * o.floats[1];
+      floats[2] = floats[2] * o.floats[2];
+   }
    else
    {
-      /* // Multiply by generic Object
-      YAC_Value r;
-      yacOperator(YAC_OP_MUL, _o, &r);*/
       Dyac_throw_def(NativeClassTypeMismatch,"tkmath::Vector3f::mul_SELF Invalid Vector3f object");
-
    }
 }
 
 void _Vector3f::_mul_YAC_RVAL(YAC_Object *_o, YAC_Value *_r) {
-   // multiply each element
    if(YAC_BCHK(_o, clid_Vector3f))
    {
       YAC_CAST_ARG(_Vector3f, o, _o);
@@ -922,11 +1313,17 @@ void _Vector3f::_mul_YAC_RVAL(YAC_Object *_o, YAC_Value *_r) {
       r->floats[1] = floats[1] * o->floats[1];
       r->floats[2] = floats[2] * o->floats[2];
    }
+   else if(YAC_VALID(_o))
+   {
+      _Vector3f *r = YAC_NEW_POOLED(Vector3f);
+      r->assignGeneric(NULL/*context*/, _o);
+      _r->initObject(r, YAC_TRUE);
+      r->floats[0] = floats[0] * r->floats[0];
+      r->floats[1] = floats[1] * r->floats[1];
+      r->floats[2] = floats[2] * r->floats[2];
+   }
    else
    {
-      /* // Multiply by generic Object
-      YAC_Value r;
-      yacOperator(YAC_OP_MUL, _o, &r);*/
       Dyac_throw_def(NativeClassTypeMismatch,"tkmath::Vector3f::mul_VAL Invalid Vector3f object");
    }
 }
@@ -934,20 +1331,23 @@ void _Vector3f::_mul_YAC_RVAL(YAC_Object *_o, YAC_Value *_r) {
 void _Vector3f::_mul_YAC_RARG(YAC_Object *_o, YAC_Object *_r) const {
    if(YAC_BCHK(_o, clid_Vector3f) && YAC_BCHK(_r, clid_Vector3f))
    {
-      // multiply each element
       YAC_CAST_ARG(_Vector3f, o, _o);
       YAC_CAST_ARG(_Vector3f, r, _r);
       r->floats[0] = floats[0] * o->floats[0];
       r->floats[1] = floats[1] * o->floats[1];
       r->floats[2] = floats[2] * o->floats[2];
    }
+   else if(YAC_VALID(_o) && YAC_BCHK(_r,clid_Vector3f))
+   {
+      YAC_CAST_ARG(_Vector3f, r, _r);
+      r->assignGeneric(NULL/*context*/, _o);
+      r->floats[0] = floats[0] * r->floats[0];
+      r->floats[1] = floats[1] * r->floats[1];
+      r->floats[2] = floats[2] * r->floats[2];
+   }
    else
    {
-      /* // Multiply by generic Object
-      YAC_Value r;
-      yacOperator(YAC_OP_MUL, _o, &r);*/
       Dyac_throw_def(NativeClassTypeMismatch,"tkmath::Vector3f::mul_ARG Invalid Vector3f object");
-
    }
 }
 
@@ -1473,7 +1873,7 @@ void _Vector3f::_bilinearQuadPos(YAC_Object *_vLT, YAC_Object *_vRT, YAC_Object 
       floats[0] = tx + (bx - tx) * _ny;
       floats[1] = ty + (by - ty) * _ny;
       floats[2] = tz + (bz - tz) * _ny;
-   }      
+   }
 }
 
 // void _Vector3f::_project(YAC_Object *_r, sF32 _vpX, sF32 _vpY, sF32 _vpW, sF32 _vpH, sF32 _depthRangeNear, sF32 _depthRangeFar) const {

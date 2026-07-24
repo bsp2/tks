@@ -1,6 +1,6 @@
 /// vector2f.cpp
 ///
-/// (c) 2008-2025 by Carsten Busse <carsten.busse@googlemail.com>
+/// (c) 2008-2026 by Carsten Busse <carsten.busse@googlemail.com>
 ///                  Bastian Spiegel <bs@tkscript.de> (additional coding)
 ///     - Distributed under terms of the Lesser GNU General Public License (LGPL).
 ///       See COPYING and <http://www.gnu.org/licenses/licenses.html#LGPL> for further information.
@@ -467,7 +467,6 @@ void _Vector2f::_getYx_YAC_RARG(YAC_Object *_o) const {
 }
 
 sBool YAC_VCALL _Vector2f::yacToString(YAC_String *s) const {
-   // generate string representation
    s->yacArrayAlloc(64, 0,0,0);
    s->printf("(%g, %g)", floats[0], floats[1]);
    s->fixLength();
@@ -475,7 +474,6 @@ sBool YAC_VCALL _Vector2f::yacToString(YAC_String *s) const {
 }
 
 void _Vector2f::_getString(YAC_Value *_r) const {
-   // create string object and fill with string representation
    YAC_String *s = (YAC_String*) YAC_NEW_CORE_POOLED(YAC_CLID_STRING64);
    yacToString(s);
    YAC_RETS(s, YAC_TRUE);
@@ -488,16 +486,17 @@ void _Vector2f::_add_YAC_RSELF(YAC_Object *_o) {
       floats[0] += o->floats[0];
       floats[1] += o->floats[1];
    }
+   else if(YAC_VALID(_o))
+   {
+      YAC_NEW_STACK(Vector2f, o);
+      o.assignGeneric(NULL/*context*/, _o);
+      floats[0] = floats[0] + o.floats[0];
+      floats[1] = floats[1] + o.floats[1];
+   }
    else
    {
       Dyac_throw_def(NativeClassTypeMismatch,"tkmath::Vector2f::add_SELF: invalid Vector2f object");
    }
-   /* else
-   {
-      // Add generic Object
-      YAC_Value r;
-      yacOperator(YAC_OP_ADD, _o, &r);
-   }*/
 }
 
 void _Vector2f::_add_YAC_RVAL(YAC_Object *_o, YAC_Value *_r) {
@@ -509,16 +508,18 @@ void _Vector2f::_add_YAC_RVAL(YAC_Object *_o, YAC_Value *_r) {
       r->floats[1] = floats[1] + o->floats[1];
       _r->initObject(r, YAC_TRUE);
    }
+   else if(YAC_VALID(_o))
+   {
+      _Vector2f *r = YAC_NEW_POOLED(Vector2f);
+      r->assignGeneric(NULL/*context*/, _o);
+      _r->initObject(r, YAC_TRUE);
+      r->floats[0] = floats[0] + r->floats[0];
+      r->floats[1] = floats[1] + r->floats[1];
+   }
    else
    {
       Dyac_throw_def(NativeClassTypeMismatch,"tkmath::Vector2f::add_VAL: invalid Vector2f object");
    }
-   /* else
-     {
-     // Add generic Object
-     YAC_Value r;
-      yacOperator(YAC_OP_ADD, _o, &r);
-   }*/
 }
 
 void _Vector2f::_add_YAC_RARG(YAC_Object *_o, YAC_Object *_r) const {
@@ -529,40 +530,104 @@ void _Vector2f::_add_YAC_RARG(YAC_Object *_o, YAC_Object *_r) const {
       r->floats[0] = floats[0] + o->floats[0];
       r->floats[1] = floats[1] + o->floats[1];
    }
+   else if(YAC_VALID(_o) && YAC_BCHK(_r,clid_Vector2f))
+   {
+      YAC_CAST_ARG(_Vector2f, r, _r);
+      r->assignGeneric(NULL/*context*/, _o);
+      r->floats[0] = floats[0] + r->floats[0];
+      r->floats[1] = floats[1] + r->floats[1];
+   }
    else
    {
       Dyac_throw_def(NativeClassTypeMismatch,"tkmath::Vector2f::add_ARG: invalid Vector2f object");
    }
-   /* else
+}
+
+void _Vector2f::_addScalef_YAC_RSELF(YAC_Object *_o, sF32 _s) {
+   if(YAC_BCHK(_o, clid_Vector2f))
    {
-      // Add generic Object
-      YAC_Value r;
-      yacOperator(YAC_OP_ADD, _o, &r);
-   }*/
+      YAC_CAST_ARG(_Vector2f, o, _o);
+      floats[0] += o->floats[0] *_s;
+      floats[1] += o->floats[1] *_s;
+   }
+   else if(YAC_VALID(_o))
+   {
+      YAC_NEW_STACK(Vector2f, o);
+      o.assignGeneric(NULL/*context*/, _o);
+      floats[0] = floats[0] + o.floats[0] * _s;
+      floats[1] = floats[1] + o.floats[1] * _s;
+   }
+   else
+   {
+      Dyac_throw_def(NativeClassTypeMismatch,"tkmath::Vector2f::addScalef_SELF: invalid Vector2f object");
+   }
+}
+
+void _Vector2f::_addScalef_YAC_RVAL(YAC_Object *_o, sF32 _s, YAC_Value *_r) {
+   if(YAC_BCHK(_o, clid_Vector2f))
+   {
+      YAC_CAST_ARG(_Vector2f, o, _o);
+      _Vector2f *r = YAC_NEW_POOLED(Vector2f);
+      r->floats[0] = floats[0] + o->floats[0] * _s;
+      r->floats[1] = floats[1] + o->floats[1] * _s;
+      _r->initObject(r, YAC_TRUE);
+   }
+   else if(YAC_VALID(_o))
+   {
+      _Vector2f *r = YAC_NEW_POOLED(Vector2f);
+      r->assignGeneric(NULL/*context*/, _o);
+      _r->initObject(r, YAC_TRUE);
+      r->floats[0] = floats[0] + r->floats[0] * _s;
+      r->floats[1] = floats[1] + r->floats[1] * _s;
+   }
+   else
+   {
+      Dyac_throw_def(NativeClassTypeMismatch,"tkmath::Vector2f::addScalef_VAL: invalid Vector2f object");
+   }
+}
+
+void _Vector2f::_addScalef_YAC_RARG(YAC_Object *_o, sF32 _s, YAC_Object *_r) const {
+   if(YAC_BCHK(_o, clid_Vector2f) && YAC_BCHK(_r, clid_Vector2f))
+   {
+      YAC_CAST_ARG(_Vector2f, o, _o);
+      YAC_CAST_ARG(_Vector2f, r, _r);
+      r->floats[0] = floats[0] + o->floats[0] * _s;
+      r->floats[1] = floats[1] + o->floats[1] * _s;
+   }
+   else if(YAC_VALID(_o) && YAC_BCHK(_r,clid_Vector2f))
+   {
+      YAC_CAST_ARG(_Vector2f, r, _r);
+      r->assignGeneric(NULL/*context*/, _o);
+      r->floats[0] = floats[0] + r->floats[0] * _s;
+      r->floats[1] = floats[1] + r->floats[1] * _s;
+   }
+   else
+   {
+      Dyac_throw_def(NativeClassTypeMismatch,"tkmath::Vector2f::addScalef_ARG: invalid Vector2f object");
+   }
 }
 
 void _Vector2f::_sub_YAC_RSELF(YAC_Object *_o) {
-   // sub two vector2f
    if(YAC_BCHK(_o, clid_Vector2f))
    {
       YAC_CAST_ARG(_Vector2f, o, _o);
       floats[0] -= o->floats[0];
       floats[1] -= o->floats[1];
    }
+   else if(YAC_VALID(_o))
+   {
+      YAC_NEW_STACK(Vector2f, o);
+      o.assignGeneric(NULL/*context*/, _o);
+      floats[0] = floats[0] - o.floats[0];
+      floats[1] = floats[1] - o.floats[1];
+   }
    else
    {
       Dyac_throw_def(NativeClassTypeMismatch,"tkmath::Vector2f::sub_SELF Invalid Vector2f object");
    }
-   /* else
-   {
-      // Subtract generic Object
-      YAC_Value r;
-      yacOperator(YAC_OP_SUB, _o, &r);
-   }*/
 }
 
 void _Vector2f::_sub_YAC_RVAL(YAC_Object *_o, YAC_Value *_r) {
-   // sub two vector2f
    if(YAC_BCHK(_o, clid_Vector2f))
    {
       YAC_CAST_ARG(_Vector2f, o, _o);
@@ -571,20 +636,21 @@ void _Vector2f::_sub_YAC_RVAL(YAC_Object *_o, YAC_Value *_r) {
       r->floats[1] = floats[1] - o->floats[1];
       _r->initObject(r, YAC_TRUE);
    }
+   else if(YAC_VALID(_o))
+   {
+      _Vector2f *r = YAC_NEW_POOLED(Vector2f);
+      r->assignGeneric(NULL/*context*/, _o);
+      _r->initObject(r, YAC_TRUE);
+      r->floats[0] = floats[0] - r->floats[0];
+      r->floats[1] = floats[1] - r->floats[1];
+   }
    else
    {
       Dyac_throw_def(NativeClassTypeMismatch,"tkmath::Vector2f::sub_VAL invalid Vector2f object");
    }
-   /* else
-   {
-      // Subtract generic Object
-      YAC_Value r;
-      yacOperator(YAC_OP_SUB, _o, &r);
-   }*/
 }
 
 void _Vector2f::_sub_YAC_RARG(YAC_Object *_o, YAC_Object *_r) const {
-   // sub two vector2f
    if(YAC_BCHK(_o, clid_Vector2f) && YAC_BCHK(_r, clid_Vector2f))
    {
       YAC_CAST_ARG(_Vector2f, o, _o);
@@ -592,16 +658,145 @@ void _Vector2f::_sub_YAC_RARG(YAC_Object *_o, YAC_Object *_r) const {
       r->floats[0] = floats[0] - o->floats[0];
       r->floats[1] = floats[1] - o->floats[1];
    }
+   else if(YAC_VALID(_o) && YAC_BCHK(_r,clid_Vector2f))
+   {
+      YAC_CAST_ARG(_Vector2f, r, _r);
+      r->assignGeneric(NULL/*context*/, _o);
+      r->floats[0] = floats[0] - r->floats[0];
+      r->floats[1] = floats[1] - r->floats[1];
+   }
    else
    {
       Dyac_throw_def(NativeClassTypeMismatch,"tkmath::Vector2f::sub: invalid Vector2f object");
    }
-   /*   else
+}
+
+void _Vector2f::_subRev_YAC_RSELF(YAC_Object *_o) {
+   if(YAC_BCHK(_o, clid_Vector2f))
    {
-      // Subtract generic Object
-      YAC_Value r;
-      yacOperator(YAC_OP_SUB, _o, &r);
-   }*/
+      YAC_CAST_ARG(_Vector2f, o, _o);
+      floats[0] = o->floats[0] - floats[0];
+      floats[1] = o->floats[1] - floats[1];
+   }
+   else if(YAC_VALID(_o))
+   {
+      YAC_NEW_STACK(Vector2f, o);
+      o.assignGeneric(NULL/*context*/, _o);
+      floats[0] = o.floats[0] - floats[0];
+      floats[1] = o.floats[1] - floats[1];
+   }
+   else
+   {
+      Dyac_throw_def(NativeClassTypeMismatch,"tkmath::Vector2f::subRev_SELF Invalid Vector2f object");
+   }
+}
+
+void _Vector2f::_subRev_YAC_RVAL(YAC_Object *_o, YAC_Value *_r) {
+   if(YAC_BCHK(_o, clid_Vector2f))
+   {
+      YAC_CAST_ARG(_Vector2f, o, _o);
+      _Vector2f *r = YAC_NEW_POOLED(Vector2f);
+      r->floats[0] = o->floats[0] - floats[0];
+      r->floats[1] = o->floats[1] - floats[1];
+      _r->initObject(r, YAC_TRUE);
+   }
+   else if(YAC_VALID(_o))
+   {
+      _Vector2f *r = YAC_NEW_POOLED(Vector2f);
+      r->assignGeneric(NULL/*context*/, _o);
+      _r->initObject(r, YAC_TRUE);
+      r->floats[0] = r->floats[0] - floats[0];
+      r->floats[1] = r->floats[1] - floats[1];
+   }
+   else
+   {
+      Dyac_throw_def(NativeClassTypeMismatch,"tkmath::Vector2f::subRev_VAL invalid Vector2f object");
+   }
+}
+
+void _Vector2f::_subRev_YAC_RARG(YAC_Object *_o, YAC_Object *_r) const {
+   if(YAC_BCHK(_o, clid_Vector2f) && YAC_BCHK(_r, clid_Vector2f))
+   {
+      YAC_CAST_ARG(_Vector2f, o, _o);
+      YAC_CAST_ARG(_Vector2f, r, _r);
+      r->floats[0] = o->floats[0] - floats[0];
+      r->floats[1] = o->floats[1] - floats[1];
+   }
+   else if(YAC_VALID(_o) && YAC_BCHK(_r,clid_Vector2f))
+   {
+      YAC_CAST_ARG(_Vector2f, r, _r);
+      r->assignGeneric(NULL/*context*/, _o);
+      r->floats[0] = r->floats[0] - floats[0];
+      r->floats[1] = r->floats[1] - floats[1];
+   }
+   else
+   {
+      Dyac_throw_def(NativeClassTypeMismatch,"tkmath::Vector2f::subRev: invalid Vector2f object");
+   }
+}
+
+void _Vector2f::_subScalef_YAC_RSELF(YAC_Object *_o, sF32 _s) {
+   if(YAC_BCHK(_o, clid_Vector2f))
+   {
+      YAC_CAST_ARG(_Vector2f, o, _o);
+      floats[0] -= o->floats[0] * _s;
+      floats[1] -= o->floats[1] * _s;
+   }
+   else if(YAC_VALID(_o))
+   {
+      YAC_NEW_STACK(Vector2f, o);
+      o.assignGeneric(NULL/*context*/, _o);
+      floats[0] = floats[0] - o.floats[0] * _s;
+      floats[1] = floats[1] - o.floats[1] * _s;
+   }
+   else
+   {
+      Dyac_throw_def(NativeClassTypeMismatch,"tkmath::Vector2f::subScalef_SELF Invalid Vector2f object");
+   }
+}
+
+void _Vector2f::_subScalef_YAC_RVAL(YAC_Object *_o, sF32 _s, YAC_Value *_r) {
+   if(YAC_BCHK(_o, clid_Vector2f))
+   {
+      YAC_CAST_ARG(_Vector2f, o, _o);
+      _Vector2f *r = YAC_NEW_POOLED(Vector2f);
+      r->floats[0] = floats[0] - o->floats[0] * _s;
+      r->floats[1] = floats[1] - o->floats[1] * _s;
+      _r->initObject(r, YAC_TRUE);
+   }
+   else if(YAC_VALID(_o))
+   {
+      _Vector2f *r = YAC_NEW_POOLED(Vector2f);
+      r->assignGeneric(NULL/*context*/, _o);
+      _r->initObject(r, YAC_TRUE);
+      r->floats[0] = floats[0] - r->floats[0] * _s;
+      r->floats[1] = floats[1] - r->floats[1] * _s;
+   }
+   else
+   {
+      Dyac_throw_def(NativeClassTypeMismatch,"tkmath::Vector2f::subScalef_VAL invalid Vector2f object");
+   }
+}
+
+void _Vector2f::_subScalef_YAC_RARG(YAC_Object *_o, sF32 _s, YAC_Object *_r) const {
+   if(YAC_BCHK(_o, clid_Vector2f) && YAC_BCHK(_r, clid_Vector2f))
+   {
+      YAC_CAST_ARG(_Vector2f, o, _o);
+      YAC_CAST_ARG(_Vector2f, r, _r);
+      r->floats[0] = floats[0] - o->floats[0] * _s;
+      r->floats[1] = floats[1] - o->floats[1] * _s;
+   }
+   else if(YAC_VALID(_o) && YAC_BCHK(_r,clid_Vector2f))
+   {
+      YAC_CAST_ARG(_Vector2f, r, _r);
+      r->assignGeneric(NULL/*context*/, _o);
+      r->floats[0] = floats[0] - r->floats[0] * _s;
+      r->floats[1] = floats[1] - r->floats[1] * _s;
+   }
+   else
+   {
+      Dyac_throw_def(NativeClassTypeMismatch,"tkmath::Vector2f::subScalef: invalid Vector2f object");
+   }
 }
 
 sF32 _Vector2f::_dot(YAC_Object *_o) {
@@ -610,19 +805,17 @@ sF32 _Vector2f::_dot(YAC_Object *_o) {
       YAC_CAST_ARG(_Vector2f, o, _o);
       return floats[0] * o->floats[0] + floats[1] * o->floats[1];
    }
+   else if(YAC_VALID(_o))
+   {
+      YAC_NEW_STACK(Vector2f, o);
+      o.assignGeneric(NULL/*context*/, _o);
+      return floats[0] * o.floats[0] + floats[1] * o.floats[1];
+   }
    else
    {
       Dyac_throw_def(NativeClassTypeMismatch, "tkmath::Vector2f::dot: invalid Vector2f object");
       return 0.0f;
    }
-   // there is no such thing like a dot product from a vector2f with a generic object!
-   /*   else
-   {
-      // Dot product with generic Object
-      _Vector2f t;
-      t.assignGeneric(NULL, _o);
-      return (floats[0] * t.floats[0] + floats[1] * t.floats[1]);
-   }*/
 }
 
 sF32 _Vector2f::_cross(YAC_Object *_o) const {
@@ -635,6 +828,12 @@ sF32 _Vector2f::_cross(YAC_Object *_o) const {
    {
       YAC_CAST_ARG(_Vector2f, o, _o);
       return floats[0]*o->floats[1] - floats[1]*o->floats[0];
+   }
+   else if(YAC_VALID(_o))
+   {
+      YAC_NEW_STACK(Vector2f, o);
+      o.assignGeneric(NULL/*context*/, _o);
+      return floats[0]*o.floats[1] - floats[1]*o.floats[0];
    }
    else
    {
@@ -780,6 +979,26 @@ void _Vector2f::_mulf_YAC_RARG(sF32 _s, YAC_Object *_r) const {
    }
 }
 
+void _Vector2f::_mulfFrom(YAC_Object *_o, sF32 _s) {
+   if(YAC_BCHK(_o, clid_Vector2f))
+   {
+      YAC_CAST_ARG(_Vector2f, o, _o);
+      floats[0] = o->floats[0] * _s;
+      floats[1] = o->floats[1] * _s;
+   }
+   else if(YAC_VALID(_o))
+   {
+      YAC_NEW_STACK(Vector2f, o);
+      o.assignGeneric(NULL/*context*/, _o);
+      floats[0] = o.floats[0] * _s;
+      floats[1] = o.floats[1] * _s;
+   }
+   else
+   {
+      Dyac_throw_def(NativeClassTypeMismatch, "tkmath::Vector2f::mulfFrom: invalid object");
+   }
+}
+
 void _Vector2f::_mul2f_YAC_RSELF(sF32 _sx, sF32 _sy) {
    floats[0] *= _sx;
    floats[1] *= _sy;
@@ -812,16 +1031,17 @@ void _Vector2f::_mul_YAC_RSELF(YAC_Object *_o) {
       floats[0] *= o->floats[0];
       floats[1] *= o->floats[1];
    }
+   else if(YAC_VALID(_o))
+   {
+      YAC_NEW_STACK(Vector2f, o);
+      o.assignGeneric(NULL/*context*/, _o);
+      floats[0] = floats[0] * o.floats[0];
+      floats[1] = floats[1] * o.floats[1];
+   }
    else
    {
       Dyac_throw_def(NativeClassTypeMismatch,"tkmath::vector2f::mul_SELF Invalid Vector2f object");
    }
-   /* else
-   {
-      // Multiply by generic Object
-      YAC_Value r;
-      yacOperator(YAC_OP_MUL, _o, &r);
-   }*/
 }
 
 void _Vector2f::_mul_YAC_RVAL(YAC_Object *_o, YAC_Value *_r) {
@@ -833,16 +1053,18 @@ void _Vector2f::_mul_YAC_RVAL(YAC_Object *_o, YAC_Value *_r) {
       r->floats[0] = floats[0] * o->floats[0];
       r->floats[1] = floats[1] * o->floats[1];
    }
+   else if(YAC_VALID(_o))
+   {
+      _Vector2f *r = YAC_NEW_POOLED(Vector2f);
+      r->assignGeneric(NULL/*context*/, _o);
+      _r->initObject(r, YAC_TRUE);
+      r->floats[0] = floats[0] * r->floats[0];
+      r->floats[1] = floats[1] * r->floats[1];
+   }
    else
    {
       Dyac_throw_def(NativeClassTypeMismatch,"tkmath::vector2f::mul_VAL Invalid Vector2f object");
    }
-   /* else
-   {
-      // Multiply by generic Object
-      YAC_Value r;
-      yacOperator(YAC_OP_MUL, _o, &r);
-   }*/
 }
 
 void _Vector2f::_mul_YAC_RARG(YAC_Object *_o, YAC_Object *_r) const {
@@ -853,16 +1075,17 @@ void _Vector2f::_mul_YAC_RARG(YAC_Object *_o, YAC_Object *_r) const {
       r->floats[0] = floats[0] * o->floats[0];
       r->floats[1] = floats[1] * o->floats[1];
    }
+   else if(YAC_VALID(_o) && YAC_BCHK(_r,clid_Vector2f))
+   {
+      YAC_CAST_ARG(_Vector2f, r, _r);
+      r->assignGeneric(NULL/*context*/, _o);
+      r->floats[0] = floats[0] * r->floats[0];
+      r->floats[1] = floats[1] * r->floats[1];
+   }
    else
    {
       Dyac_throw_def(NativeClassTypeMismatch,"tkmath::vector2f::mul_ARG Invalid Vector2f object");
    }
-   /* else
-   {
-      // Multiply by generic Object
-      YAC_Value r;
-      yacOperator(YAC_OP_MUL, _o, &r);
-   }*/
 }
 
 void _Vector2f::_transform_YAC_RSELF(YAC_Object *_m) {

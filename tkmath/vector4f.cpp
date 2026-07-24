@@ -1,6 +1,6 @@
 /// vector4f.cpp
 ///
-/// (c) 2008-2025 by Carsten Busse <carsten.busse@googlemail.com>,
+/// (c) 2008-2026 by Carsten Busse <carsten.busse@googlemail.com>,
 ///                  Bastian Spiegel <bs@tkscript.de> (additional coding)
 ///     - Distributed under terms of the Lesser GNU General Public License (LGPL).
 ///       See COPYING and <http://www.gnu.org/licenses/licenses.html#LGPL> for further information.
@@ -76,7 +76,7 @@ void YAC_VCALL _Vector4f::yacArraySet(YAC_ContextHandle _ctx, sUI _idx, YAC_Valu
 
          default:
             // Should never ever happen!
-            Dyac_throw(TypeMismatch, "tkmath::Vector3f::yacArraySet: unknown type");
+            Dyac_throw(TypeMismatch, "tkmath::Vector4f::yacArraySet: unknown type");
             v = 0.0f;
             break;
       }
@@ -665,14 +665,25 @@ void _Vector4f::_add_YAC_RVAL(YAC_Object *_o, YAC_Value *_r) {
       r->floats[3] = floats[3] + 1.0f;
       _r->initObject(r, YAC_TRUE);
    }
+   else if(YAC_BCHK(_o, clid_Vector2f))
+   {
+      YAC_CAST_ARG(_Vector2f, o, _o);
+      _Vector4f *r = YAC_NEW_POOLED(Vector4f);
+      r->floats[0] = floats[0] + o->floats[0];
+      r->floats[1] = floats[1] + o->floats[1];
+      r->floats[2] = floats[2];
+      r->floats[3] = floats[3] + 1.0f;
+      _r->initObject(r, YAC_TRUE);
+   }
    else if(YAC_VALID(_o))
    {
-      YAC_NEW_STACK(Vector4f, o);
-      o.assignGeneric(NULL/*context*/, _o);
-      r->floats[0] = floats[0] + o.floats[0];
-      r->floats[1] = floats[1] + o.floats[1];
-      r->floats[2] = floats[2] + o.floats[2];
-      r->floats[3] = floats[3] + o.floats[3];
+      _Vector4f *r = YAC_NEW_POOLED(Vector4f);
+      r->assignGeneric(NULL/*context*/, _o);
+      _r->initObject(r, YAC_TRUE);
+      r->floats[0] = floats[0] + r->floats[0];
+      r->floats[1] = floats[1] + r->floats[1];
+      r->floats[2] = floats[2] + r->floats[2];
+      r->floats[3] = floats[3] + r->floats[3];
    }
    else
    {
@@ -704,12 +715,11 @@ void _Vector4f::_add_YAC_RARG(YAC_Object *_o, YAC_Object *_r) const {
       }
       else if(YAC_VALID(_o))
       {
-         YAC_NEW_STACK(Vector4f, o);
-         o.assignGeneric(NULL/*context*/, _o);
-         r->floats[0] = floats[0] + o.floats[0];
-         r->floats[1] = floats[1] + o.floats[1];
-         r->floats[2] = floats[2] + o.floats[2];
-         r->floats[3] = floats[3] + o.floats[3];
+         r->assignGeneric(NULL/*context*/, _o);
+         r->floats[0] = floats[0] + r->floats[0];
+         r->floats[1] = floats[1] + r->floats[1];
+         r->floats[2] = floats[2] + r->floats[2];
+         r->floats[3] = floats[3] + r->floats[3];
       }
       else
       {
@@ -719,6 +729,133 @@ void _Vector4f::_add_YAC_RARG(YAC_Object *_o, YAC_Object *_r) const {
    else
    {
       Dyac_throw_def(NativeClassTypeMismatch,"tkmath::Vector4f::add_RARG: return object is not a Vector4f");
+   }
+}
+
+void _Vector4f::_addScalef_YAC_RSELF(YAC_Object *_o, sF32 _s) {
+   if(YAC_BCHK(_o, clid_Vector4f))
+   {
+      YAC_CAST_ARG(_Vector4f, o, _o);
+      floats[0] += o->floats[0] * _s;
+      floats[1] += o->floats[1] * _s;
+      floats[2] += o->floats[2] * _s;
+      floats[3] += o->floats[3] * _s;
+   }
+   else if(YAC_BCHK(_o, clid_Vector3f))
+   {
+      YAC_CAST_ARG(_Vector3f, o, _o);
+      floats[0] += o->floats[0] * _s;
+      floats[1] += o->floats[1] * _s;
+      floats[2] += o->floats[2] * _s;
+   }
+   else if(YAC_BCHK(_o, clid_Vector2f))
+   {
+      YAC_CAST_ARG(_Vector2f, o, _o);
+      floats[0] += o->floats[0] * _s;
+      floats[1] += o->floats[1] * _s;
+   }
+   else if(YAC_VALID(_o))
+   {
+      YAC_NEW_STACK(Vector4f, o);
+      o.assignGeneric(NULL/*context*/, _o);
+      floats[0] = floats[0] + o.floats[0] * _s;
+      floats[1] = floats[1] + o.floats[1] * _s;
+      floats[2] = floats[2] + o.floats[2] * _s;
+      floats[3] = floats[3] + o.floats[3] * _s;
+   }
+   else
+   {
+      Dyac_throw_def(NativeClassTypeMismatch,"tkmath::Vector4f::addScalef_SELF: invalid Vector4f object");
+   }
+}
+
+void _Vector4f::_addScalef_YAC_RVAL(YAC_Object *_o, sF32 _s, YAC_Value *_r) {
+   if(YAC_BCHK(_o, clid_Vector4f))
+   {
+      YAC_CAST_ARG(_Vector4f, o, _o);
+      _Vector4f *r = YAC_NEW_POOLED(Vector4f);
+      r->floats[0] = floats[0] + o->floats[0] * _s;
+      r->floats[1] = floats[1] + o->floats[1] * _s;
+      r->floats[2] = floats[2] + o->floats[2] * _s;
+      r->floats[3] = floats[3] + o->floats[3] * _s;
+      _r->initObject(r, YAC_TRUE);
+   }
+   else if(YAC_BCHK(_o, clid_Vector3f))
+   {
+      YAC_CAST_ARG(_Vector3f, o, _o);
+      _Vector4f *r = YAC_NEW_POOLED(Vector4f);
+      r->floats[0] = floats[0] + o->floats[0] * _s;
+      r->floats[1] = floats[1] + o->floats[1] * _s;
+      r->floats[2] = floats[2] + o->floats[2] * _s;
+      r->floats[3] = floats[3];
+      _r->initObject(r, YAC_TRUE);
+   }
+   else if(YAC_BCHK(_o, clid_Vector2f))
+   {
+      YAC_CAST_ARG(_Vector2f, o, _o);
+      _Vector4f *r = YAC_NEW_POOLED(Vector4f);
+      r->floats[0] = floats[0] + o->floats[0] * _s;
+      r->floats[1] = floats[1] + o->floats[1] * _s;
+      r->floats[2] = floats[2];
+      r->floats[3] = floats[3];
+      _r->initObject(r, YAC_TRUE);
+   }
+   else if(YAC_VALID(_o))
+   {
+      _Vector4f *r = YAC_NEW_POOLED(Vector4f);
+      r->assignGeneric(NULL/*context*/, _o);
+      _r->initObject(r, YAC_TRUE);
+      r->floats[0] = floats[0] + r->floats[0] * _s;
+      r->floats[1] = floats[1] + r->floats[1] * _s;
+      r->floats[2] = floats[2] + r->floats[2] * _s;
+      r->floats[3] = floats[3] + r->floats[3] * _s;
+   }
+   else
+   {
+      Dyac_throw_def(NativeClassTypeMismatch,"tkmath::Vector4f::addScalef_VAL: invalid Vector4f object");
+   }
+}
+
+void _Vector4f::_addScalef_YAC_RARG(YAC_Object *_o, sF32 _s, YAC_Object *_r) const {
+   if(YAC_BCHK(_o, clid_Vector4f) && YAC_BCHK(_r, clid_Vector4f))
+   {
+      YAC_CAST_ARG(_Vector4f, o, _o);
+      YAC_CAST_ARG(_Vector4f, r, _r);
+      r->floats[0] = floats[0] + o->floats[0] * _s;
+      r->floats[1] = floats[1] + o->floats[1] * _s;
+      r->floats[2] = floats[2] + o->floats[2] * _s;
+      r->floats[3] = floats[3] + o->floats[3] * _s;
+   }
+   else if(YAC_BCHK(_o, clid_Vector3f) && YAC_BCHK(_r, clid_Vector4f))
+   {
+      YAC_CAST_ARG(_Vector3f, o, _o);
+      YAC_CAST_ARG(_Vector4f, r, _r);
+      r->floats[0] = floats[0] + o->floats[0] * _s;
+      r->floats[1] = floats[1] + o->floats[1] * _s;
+      r->floats[2] = floats[2] + o->floats[2] * _s;
+      r->floats[3] = floats[3];
+   }
+   else if(YAC_BCHK(_o, clid_Vector2f) && YAC_BCHK(_r, clid_Vector4f))
+   {
+      YAC_CAST_ARG(_Vector2f, o, _o);
+      YAC_CAST_ARG(_Vector4f, r, _r);
+      r->floats[0] = floats[0] + o->floats[0] * _s;
+      r->floats[1] = floats[1] + o->floats[1] * _s;
+      r->floats[2] = floats[2];
+      r->floats[3] = floats[3];
+   }
+   else if(YAC_VALID(_o) && YAC_BCHK(_r,clid_Vector3f))
+   {
+      YAC_CAST_ARG(_Vector4f, r, _r);
+      r->assignGeneric(NULL/*context*/, _o);
+      r->floats[0] = floats[0] + r->floats[0] * _s;
+      r->floats[1] = floats[1] + r->floats[1] * _s;
+      r->floats[2] = floats[2] + r->floats[2] * _s;
+      r->floats[3] = floats[3] + r->floats[3] * _s;
+   }
+   else
+   {
+      Dyac_throw_def(NativeClassTypeMismatch,"tkmath::Vector4f::addScalef_ARG: invalid Vector4f object");
    }
 }
 
@@ -737,6 +874,14 @@ void _Vector4f::_sub_YAC_RSELF(YAC_Object *_o) {
       floats[0] -= o->floats[0];
       floats[1] -= o->floats[1];
       floats[2] -= o->floats[2];
+   }
+   else if(YAC_VALID(_o))
+   {
+      YAC_NEW_STACK(Vector4f, o);
+      o.assignGeneric(NULL/*context*/, _o);
+      floats[0] = floats[0] - o.floats[0];
+      floats[1] = floats[1] - o.floats[1];
+      floats[2] = floats[2] - o.floats[2];
    }
    else
    {
@@ -767,12 +912,13 @@ void _Vector4f::_sub_YAC_RVAL(YAC_Object *_o, YAC_Value *_r) {
    }
    else if(YAC_VALID(_o))
    {
-      YAC_NEW_STACK(Vector4f, o);
-      o.assignGeneric(NULL/*context*/, _o);
-      floats[0] -= o.floats[0];
-      floats[1] -= o.floats[1];
-      floats[2] -= o.floats[2];
-      floats[3] -= o.floats[3];
+      _Vector4f *r = YAC_NEW_POOLED(Vector4f);
+      r->assignGeneric(NULL/*context*/, _o);
+      _r->initObject(r, YAC_TRUE);
+      r->floats[0] = floats[0] - r->floats[0];
+      r->floats[1] = floats[1] - r->floats[1];
+      r->floats[2] = floats[2] - r->floats[2];
+      r->floats[3] = floats[3] - r->floats[3];
    }
    else
    {
@@ -788,7 +934,6 @@ void _Vector4f::_sub_YAC_RARG(YAC_Object *_o, YAC_Object *_r) const {
       if(YAC_BCHK(_o, clid_Vector4f))
       {
          YAC_CAST_ARG(_Vector4f, o, _o);
-         YAC_CAST_ARG(_Vector4f, r, _r);
          r->floats[0] = floats[0] - o->floats[0];
          r->floats[1] = floats[1] - o->floats[1];
          r->floats[2] = floats[2] - o->floats[2];
@@ -796,7 +941,7 @@ void _Vector4f::_sub_YAC_RARG(YAC_Object *_o, YAC_Object *_r) const {
       }
       else if(YAC_BCHK(_o, clid_Vector3f))
       {
-         YAC_CAST_ARG(_Vector3f, o, _o);
+         YAC_CAST_ARG(_Vector4f, o, _o);
          r->floats[0] = floats[0] - o->floats[0];
          r->floats[1] = floats[1] - o->floats[1];
          r->floats[2] = floats[2] - o->floats[2];
@@ -804,12 +949,11 @@ void _Vector4f::_sub_YAC_RARG(YAC_Object *_o, YAC_Object *_r) const {
       }
       else if(YAC_VALID(_o))
       {
-         YAC_NEW_STACK(Vector4f, o);
-         o.assignGeneric(NULL/*context*/, _o);
-         r->floats[0] = floats[0] - o.floats[0];
-         r->floats[1] = floats[1] - o.floats[1];
-         r->floats[2] = floats[2] - o.floats[2];
-         r->floats[3] = floats[3] - o.floats[3];
+         r->assignGeneric(NULL/*context*/, _o);
+         r->floats[0] = floats[0] - r->floats[0];
+         r->floats[1] = floats[1] - r->floats[1];
+         r->floats[2] = floats[2] - r->floats[2];
+         r->floats[3] = floats[3] - r->floats[3];
       }
       else
       {
@@ -819,6 +963,242 @@ void _Vector4f::_sub_YAC_RARG(YAC_Object *_o, YAC_Object *_r) const {
    else
    {
       Dyac_throw_def(NativeClassTypeMismatch,"tkmath::Vector4f::sub_RARG: return object is not a Vector4f");
+   }
+}
+
+void _Vector4f::_subRev_YAC_RSELF(YAC_Object *_o) {
+   if(YAC_BCHK(_o, clid_Vector4f))
+   {
+      YAC_CAST_ARG(_Vector4f, o, _o);
+      floats[0] = o->floats[0] - floats[0];
+      floats[1] = o->floats[1] - floats[1];
+      floats[2] = o->floats[2] - floats[2];
+      floats[3] = o->floats[3] - floats[3];
+   }
+   else if(YAC_BCHK(_o, clid_Vector3f))
+   {
+      YAC_CAST_ARG(_Vector3f, o, _o);
+      floats[0] = o->floats[0] - floats[0];
+      floats[1] = o->floats[1] - floats[1];
+      floats[2] = o->floats[2] - floats[2];
+      floats[3] = 1.0f         - floats[3];
+   }
+   else if(YAC_VALID(_o))
+   {
+      YAC_NEW_STACK(Vector4f, o);
+      o.assignGeneric(NULL/*context*/, _o);
+      floats[0] = o.floats[0] - floats[0];
+      floats[1] = o.floats[1] - floats[1];
+      floats[2] = o.floats[2] - floats[2];
+      floats[3] = o.floats[3] - floats[3];
+   }
+   else
+   {
+      Dyac_throw_def(NativeClassTypeMismatch,"tkmath::Vector4f::subRev_RSELF: invalid arg object");
+   }
+}
+
+void _Vector4f::_subRev_YAC_RVAL(YAC_Object *_o, YAC_Value *_r) {
+   if(YAC_BCHK(_o, clid_Vector4f))
+   {
+      YAC_CAST_ARG(_Vector4f, o, _o);
+      _Vector4f *r = YAC_NEW_POOLED(Vector4f);
+      _r->initObject(r, YAC_TRUE);
+      r->floats[0] = o->floats[0] - floats[0];
+      r->floats[1] = o->floats[1] - floats[1];
+      r->floats[2] = o->floats[2] - floats[2];
+      r->floats[3] = o->floats[3] - floats[3];
+   }
+   else if(YAC_BCHK(_o, clid_Vector3f))
+   {
+      YAC_CAST_ARG(_Vector3f, o, _o);
+      _Vector4f *r = YAC_NEW_POOLED(Vector4f);
+      _r->initObject(r, YAC_TRUE);
+      r->floats[0] = o->floats[0] - floats[0];
+      r->floats[1] = o->floats[1] - floats[1];
+      r->floats[2] = o->floats[2] - floats[2];
+      r->floats[3] = 1.0f         - floats[3];
+   }
+   else if(YAC_VALID(_o))
+   {
+      _Vector4f *r = YAC_NEW_POOLED(Vector4f);
+      r->assignGeneric(NULL/*context*/, _o);
+      _r->initObject(r, YAC_TRUE);
+      r->floats[0] = r->floats[0] - floats[0];
+      r->floats[1] = r->floats[1] - floats[1];
+      r->floats[2] = r->floats[2] - floats[2];
+      r->floats[3] = r->floats[3] - floats[3];
+   }
+   else
+   {
+      Dyac_throw_def(NativeClassTypeMismatch,"tkmath::Vector4f::subRev_RVAL: invalid arg object");
+   }
+}
+
+void _Vector4f::_subRev_YAC_RARG(YAC_Object *_o, YAC_Object *_r) const {
+   if(YAC_BCHK(_r, clid_Vector4f))
+   {
+      YAC_CAST_ARG(_Vector4f, r, _r);
+
+      if(YAC_BCHK(_o, clid_Vector4f))
+      {
+         YAC_CAST_ARG(_Vector4f, o, _o);
+         r->floats[0] = o->floats[0] - floats[0];
+         r->floats[1] = o->floats[1] - floats[1];
+         r->floats[2] = o->floats[2] - floats[2];
+         r->floats[3] = o->floats[3] - floats[3];
+      }
+      else if(YAC_BCHK(_o, clid_Vector3f))
+      {
+         YAC_CAST_ARG(_Vector3f, o, _o);
+         r->floats[0] = o->floats[0] - floats[0];
+         r->floats[1] = o->floats[1] - floats[1];
+         r->floats[2] = o->floats[2] - floats[2];
+         r->floats[3] = 1.0f         - floats[3];
+      }
+      else if(YAC_VALID(_o))
+      {
+         r->assignGeneric(NULL/*context*/, _o);
+         r->floats[0] = r->floats[0] - floats[0];
+         r->floats[1] = r->floats[1] - floats[1];
+         r->floats[2] = r->floats[2] - floats[2];
+         r->floats[3] = r->floats[3] - floats[3];
+      }
+      else
+      {
+         Dyac_throw_def(NativeClassTypeMismatch,"tkmath::Vector4f::subRev_RARG: invalid arg object");
+      }
+   }
+   else
+   {
+      Dyac_throw_def(NativeClassTypeMismatch,"tkmath::Vector4f::subRev_RARG: return object is not a Vector4f");
+   }
+}
+
+void _Vector4f::_subScalef_YAC_RSELF(YAC_Object *_o, sF32 _s) {
+   if(YAC_BCHK(_o, clid_Vector4f))
+   {
+      YAC_CAST_ARG(_Vector4f, o, _o);
+      floats[0] -= o->floats[0] * _s;
+      floats[1] -= o->floats[1] * _s;
+      floats[2] -= o->floats[2] * _s;
+      floats[3] -= o->floats[3] * _s;
+   }
+   else if(YAC_BCHK(_o, clid_Vector3f))
+   {
+      YAC_CAST_ARG(_Vector3f, o, _o);
+      floats[0] -= o->floats[0] * _s;
+      floats[1] -= o->floats[1] * _s;
+      floats[2] -= o->floats[2] * _s;
+   }
+   else if(YAC_BCHK(_o, clid_Vector2f))
+   {
+      YAC_CAST_ARG(_Vector2f, o, _o);
+      floats[0] -= o->floats[0] * _s;
+      floats[1] -= o->floats[1] * _s;
+   }
+   else if(YAC_VALID(_o))
+   {
+      YAC_NEW_STACK(Vector4f, o);
+      o.assignGeneric(NULL/*context*/, _o);
+      floats[0] = floats[0] - o.floats[0] * _s;
+      floats[1] = floats[1] - o.floats[1] * _s;
+      floats[2] = floats[2] - o.floats[2] * _s;
+      floats[3] = floats[3] - o.floats[3] * _s;
+   }
+   else
+   {
+      Dyac_throw_def(NativeClassTypeMismatch,"tkmath::Vector4f::subScalef_SELF: invalid Vector4f object");
+   }
+}
+
+void _Vector4f::_subScalef_YAC_RVAL(YAC_Object *_o, sF32 _s, YAC_Value *_r) {
+   if(YAC_BCHK(_o, clid_Vector4f))
+   {
+      YAC_CAST_ARG(_Vector4f, o, _o);
+      _Vector4f *r = YAC_NEW_POOLED(Vector4f);
+      r->floats[0] = floats[0] - o->floats[0] * _s;
+      r->floats[1] = floats[1] - o->floats[1] * _s;
+      r->floats[2] = floats[2] - o->floats[2] * _s;
+      r->floats[3] = floats[3] - o->floats[3] * _s;
+      _r->initObject(r, YAC_TRUE);
+   }
+   else if(YAC_BCHK(_o, clid_Vector3f))
+   {
+      YAC_CAST_ARG(_Vector3f, o, _o);
+      _Vector4f *r = YAC_NEW_POOLED(Vector4f);
+      r->floats[0] = floats[0] - o->floats[0] * _s;
+      r->floats[1] = floats[1] - o->floats[1] * _s;
+      r->floats[2] = floats[2] - o->floats[2] * _s;
+      r->floats[3] = floats[3];
+      _r->initObject(r, YAC_TRUE);
+   }
+   else if(YAC_BCHK(_o, clid_Vector2f))
+   {
+      YAC_CAST_ARG(_Vector2f, o, _o);
+      _Vector4f *r = YAC_NEW_POOLED(Vector4f);
+      r->floats[0] = floats[0] - o->floats[0] * _s;
+      r->floats[1] = floats[1] - o->floats[1] * _s;
+      r->floats[2] = floats[2];
+      r->floats[3] = floats[3];
+      _r->initObject(r, YAC_TRUE);
+   }
+   else if(YAC_VALID(_o))
+   {
+      _Vector4f *r = YAC_NEW_POOLED(Vector4f);
+      r->assignGeneric(NULL/*context*/, _o);
+      _r->initObject(r, YAC_TRUE);
+      r->floats[0] = floats[0] - r->floats[0] * _s;
+      r->floats[1] = floats[1] - r->floats[1] * _s;
+      r->floats[2] = floats[2] - r->floats[2] * _s;
+      r->floats[3] = floats[3] - r->floats[3] * _s;
+   }
+   else
+   {
+      Dyac_throw_def(NativeClassTypeMismatch,"tkmath::Vector4f::subScalef_VAL: invalid Vector4f object");
+   }
+}
+
+void _Vector4f::_subScalef_YAC_RARG(YAC_Object *_o, sF32 _s, YAC_Object *_r) const {
+   if(YAC_BCHK(_o, clid_Vector4f) && YAC_BCHK(_r, clid_Vector4f))
+   {
+      YAC_CAST_ARG(_Vector4f, o, _o);
+      YAC_CAST_ARG(_Vector4f, r, _r);
+      r->floats[0] = floats[0] - o->floats[0] * _s;
+      r->floats[1] = floats[1] - o->floats[1] * _s;
+      r->floats[2] = floats[2] - o->floats[2] * _s;
+      r->floats[3] = floats[3] - o->floats[3] * _s;
+   }
+   else if(YAC_BCHK(_o, clid_Vector3f) && YAC_BCHK(_r, clid_Vector4f))
+   {
+      YAC_CAST_ARG(_Vector3f, o, _o);
+      YAC_CAST_ARG(_Vector4f, r, _r);
+      r->floats[0] = floats[0] - o->floats[0] * _s;
+      r->floats[1] = floats[1] - o->floats[1] * _s;
+      r->floats[2] = floats[2] - o->floats[2] * _s;
+      r->floats[3] = floats[3];
+   }
+   else if(YAC_BCHK(_o, clid_Vector2f) && YAC_BCHK(_r, clid_Vector4f))
+   {
+      YAC_CAST_ARG(_Vector2f, o, _o);
+      YAC_CAST_ARG(_Vector4f, r, _r);
+      r->floats[0] = floats[0] - o->floats[0] * _s;
+      r->floats[1] = floats[1] - o->floats[1] * _s;
+      r->floats[2] = floats[2];
+      r->floats[3] = floats[3];
+   }
+   else if(YAC_VALID(_o) && YAC_BCHK(_r,clid_Vector4f))
+   {
+      YAC_CAST_ARG(_Vector4f, r, _r);
+      r->assignGeneric(NULL/*context*/, _o);
+      r->floats[0] = floats[0] - r->floats[0] * _s;
+      r->floats[1] = floats[1] - r->floats[1] * _s;
+      r->floats[2] = floats[2] - r->floats[2] * _s;
+      r->floats[3] = floats[3] - r->floats[3] * _s;
+   }
+   else
+   {
+      Dyac_throw_def(NativeClassTypeMismatch,"tkmath::Vector4f::subScalef_ARG: invalid Vector4f object");
    }
 }
 
@@ -981,6 +1361,46 @@ void _Vector4f::_mulf_YAC_RARG(sF32 s, YAC_Object *_r) const {
    }
 }
 
+void _Vector4f::_mulfFrom(YAC_Object *_o, sF32 _s) {
+   if(YAC_BCHK(_o, clid_Vector4f))
+   {
+      YAC_CAST_ARG(_Vector4f, o, _o);
+      floats[0] = o->floats[0] * _s;
+      floats[1] = o->floats[1] * _s;
+      floats[2] = o->floats[2] * _s;
+      floats[3] = o->floats[3] * _s;
+   }
+   else if(YAC_BCHK(_o, clid_Vector3f))
+   {
+      YAC_CAST_ARG(_Vector3f, o, _o);
+      floats[0] = o->floats[0] * _s;
+      floats[1] = o->floats[1] * _s;
+      floats[2] = o->floats[2] * _s;
+      floats[3] = 1.0f         * _s;
+   }
+   else if(YAC_BCHK(_o, clid_Vector2f))
+   {
+      YAC_CAST_ARG(_Vector2f, o, _o);
+      floats[0] = o->floats[0] * _s;
+      floats[1] = o->floats[1] * _s;
+      floats[2] = 0.0f;
+      floats[3] = 1.0f         * _s;
+   }
+   else if(YAC_VALID(_o))
+   {
+      YAC_NEW_STACK(Vector4f, o);
+      o.assignGeneric(NULL/*context*/, _o);
+      floats[0] = o.floats[0] * _s;
+      floats[1] = o.floats[1] * _s;
+      floats[2] = o.floats[2] * _s;
+      floats[3] = o.floats[3] * _s;
+   }
+   else
+   {
+      Dyac_throw_def(NativeClassTypeMismatch, "tkmath::Vector4f::mulfFrom: invalid object");
+   }
+}
+
 void _Vector4f::_mul_YAC_RSELF(YAC_Object *_o) {
    if(YAC_BCHK(_o, clid_Vector4f))
    {
@@ -1036,12 +1456,13 @@ void _Vector4f::_mul_YAC_RVAL(YAC_Object *_o, YAC_Value *_r) {
    }
    else if(YAC_VALID(_o))
    {
-      YAC_NEW_STACK(Vector4f, o);
-      o.assignGeneric(NULL/*context*/, _o);
-      r->floats[0] = floats[0] * o.floats[0];
-      r->floats[1] = floats[1] * o.floats[1];
-      r->floats[2] = floats[2] * o.floats[2];
-      r->floats[3] = floats[3] * o.floats[3];
+      _Vector4f *r = YAC_NEW_POOLED(Vector4f);
+      r->assignGeneric(NULL/*context*/, _o);
+      _r->initObject(r, YAC_TRUE);
+      r->floats[0] = floats[0] * r->floats[0];
+      r->floats[1] = floats[1] * r->floats[1];
+      r->floats[2] = floats[2] * r->floats[2];
+      r->floats[3] = floats[3] * r->floats[3];
    }
    else
    {
@@ -1072,12 +1493,11 @@ void _Vector4f::_mul_YAC_RARG(YAC_Object *_o, YAC_Object *_r) const {
       }
       else if(YAC_VALID(_o))
       {
-         YAC_NEW_STACK(Vector4f, o);
-         o.assignGeneric(NULL/*context*/, _o);
-         r->floats[0] = floats[0] * o.floats[0];
-         r->floats[1] = floats[1] * o.floats[1];
-         r->floats[2] = floats[2] * o.floats[2];
-         r->floats[3] = floats[3] * o.floats[3];
+         r->assignGeneric(NULL/*context*/, _o);
+         r->floats[0] = floats[0] * r->floats[0];
+         r->floats[1] = floats[1] * r->floats[1];
+         r->floats[2] = floats[2] * r->floats[2];
+         r->floats[3] = floats[3] * r->floats[3];
       }
       else
       {

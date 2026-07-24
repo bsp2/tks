@@ -1,6 +1,6 @@
 /// vector4f.h
 ///
-/// (c) 2008-2025 by Carsten Busse <carsten.busse@googlemail.com>,
+/// (c) 2008-2026 by Carsten Busse <carsten.busse@googlemail.com>,
 ///                  Bastian Spiegel <bs@tkscript.de> (additional coding)
 ///     - Distributed under terms of the Lesser GNU General Public License (LGPL).
 ///       See COPYING and <http://www.gnu.org/licenses/licenses.html#LGPL> for further information.
@@ -197,6 +197,15 @@ YC class _Vector4f : public YAC_Object {
    YM void _add_YAC_RVAL (YAC_Object *, YAC_Value *);
    YM void _add_YAC_RARG (YAC_Object *, YAC_Object *) const;
 
+   /* @method addScalef,Vector4f v,float s
+      Scale and add another vector v to this instance
+      @arg v Vector to add
+      @arg s Scaling factor
+    */
+   YM void _addScalef_YAC_RSELF (YAC_Object *, sF32 _s);
+   YM void _addScalef_YAC_RVAL (YAC_Object *, sF32 _s, YAC_Value *);
+   YM void _addScalef_YAC_RARG (YAC_Object *, sF32 _s, YAC_Object *) const;
+
    /* @method sub,Vector4f v
       Substract vector or array-like object
       @arg v vector to substract
@@ -204,6 +213,23 @@ YC class _Vector4f : public YAC_Object {
    YM void _sub_YAC_RSELF (YAC_Object *);
    YM void _sub_YAC_RVAL (YAC_Object *, YAC_Value *);
    YM void _sub_YAC_RARG (YAC_Object *, YAC_Object *) const;
+
+   /* @method subRev,Vector4f v
+      Substract this instance from another vector v
+      @arg v Left-hand side vector
+    */
+   YM void _subRev_YAC_RSELF (YAC_Object *);
+   YM void _subRev_YAC_RVAL (YAC_Object *, YAC_Value *);
+   YM void _subRev_YAC_RARG (YAC_Object *, YAC_Object *) const;
+
+   /* @method subScalef,Vector4f v
+      Scale and substract another vector v from this instance
+      @arg v Vector to substract
+      @arg s Scaling factor
+    */
+   YM void _subScalef_YAC_RSELF (YAC_Object *, sF32 _s);
+   YM void _subScalef_YAC_RVAL (YAC_Object *, sF32 _s, YAC_Value *);
+   YM void _subScalef_YAC_RARG (YAC_Object *, sF32 _s, YAC_Object *) const;
 
    /* @method dot,Vector4f v:float
       Calculate scalar dot product from this instance and v
@@ -228,13 +254,20 @@ YC class _Vector4f : public YAC_Object {
    YM void _addf_YAC_RVAL (sF32, YAC_Value *);
    YM void _addf_YAC_RARG (sF32, YAC_Object *) const;
 
-   /* @method mulf,float v
-      Multiply this instance by scalar value v
-      @arg v scalar value
+   /* @method mulf,float s
+      Multiply this instance by scalar value s
+      @arg s scalar value
     */
    YM void _mulf_YAC_RSELF (sF32);
    YM void _mulf_YAC_RVAL (sF32, YAC_Value *);
    YM void _mulf_YAC_RARG (sF32, YAC_Object *) const;
+
+   /* @method mulfFrom,Object o,float s
+      Multiply vector o by scalar value s and store result in this instance
+      @arg o Vector object
+      @arg s scalar value
+    */
+   YM void _mulfFrom (YAC_Object *_o, sF32 _s);
 
    /* @method mul,Vector4f v
       Multiply the x element of this instance by the x element of v and do the same with the y, z and w elements
