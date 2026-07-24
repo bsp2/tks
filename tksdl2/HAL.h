@@ -1,6 +1,6 @@
 /// tkshal.h
 ///
-/// (c) 2001-2025 by Bastian Spiegel <bs@tkscript.de>
+/// (c) 2001-2026 by Bastian Spiegel <bs@tkscript.de>
 ///     - Distributed under terms of the Lesser GNU General Public License (LGPL).
 ///       See COPYING and <http://www.gnu.org/licenses/licenses.html#LGPL> for further information.
 ///
@@ -285,6 +285,7 @@ public:
       sSI       warp_y;
       sU8       show;
       sU8       pointer_mode;
+      sSI       queued_show;  // -1=not queued, 0=hide cursor (auto-hide), 1=show cursor
       sU32      auto_hide_timeout;
       sU32      def_auto_hide_timeout;
       sBool     b_touch_input;  // 1=use win8+ WM_POINTER* messages (for simulating LBUTTON events with tablet devices)

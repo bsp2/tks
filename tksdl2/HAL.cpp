@@ -1,6 +1,6 @@
 /// HAL.cpp
 ///
-/// (c) 2001-2025 by Bastian Spiegel <bs@tkscript.de>
+/// (c) 2001-2026 by Bastian Spiegel <bs@tkscript.de>
 ///     - Distributed under terms of the Lesser GNU General Public License (LGPL).
 ///       See COPYING and <http://www.gnu.org/licenses/licenses.html#LGPL> for further information.
 ///
@@ -597,7 +597,7 @@ _HAL::_HAL(void) {
 
    mouse.show                  = 1;
    mouse.def_auto_hide_timeout = 1500;
-   mouse.auto_hide_timeout     = 0;
+   mouse.auto_hide_timeout     = 1500;
    mouse.pointer_mode          = TKS_MOUSE_POINTER_MOVE;
    mouse.b_touch_input         = YAC_FALSE;
 
@@ -968,7 +968,7 @@ void _HAL::_exitEventLoop(void) {
 
    if(b_graphics_active)
    {
-      showCursor(1);
+      showCursor(YAC_TRUE);
    }
 
    closeView();
@@ -1758,7 +1758,7 @@ sBool _HAL::processSDLEvent(sBool _poll) {
                   if(TKS_MOUSE_POINTER_ENTER == mouse.pointer_mode)
                   {
                      mouse.auto_hide_timeout = mouse.def_auto_hide_timeout;
-                     mouse.show = TKS_MOUSE_SHOW_ENABLE;
+                     mouse.queued_show = TKS_MOUSE_SHOW_ENABLE;
                   }
                   callOnMouseFocusActive(YAC_TRUE);
                   break;
@@ -2001,10 +2001,10 @@ sBool _HAL::processSDLEvent(sBool _poll) {
                callOnMouse(ev.motion.x, ev.motion.y, mouse.cstate, 0);
             }
 
-            if(!mouse.grabbed && mouse.pointer_mode==TKS_MOUSE_POINTER_MOVE)
+            if(!mouse.grabbed && TKS_MOUSE_POINTER_MOVE == mouse.pointer_mode)
             {
                mouse.auto_hide_timeout = mouse.def_auto_hide_timeout;
-               mouse.show              = TKS_MOUSE_SHOW_ENABLE;
+               mouse.queued_show       = TKS_MOUSE_SHOW_ENABLE;
             }
             else
             {
@@ -2308,16 +2308,6 @@ void _HAL::_eventLoop(void) {
                         }
                      }
 
-                     // Note: hack to keep the cursor disabled/enabled
-                     if(TKS_MOUSE_SHOW_ENABLE == mouse.show)
-                     {
-                        showCursor(YAC_TRUE);
-                     }
-                     else if(TKS_MOUSE_SHOW_DISABLE == mouse.show)
-                     {
-                        showCursor(YAC_FALSE);
-                     }
-
                   } while( b_running && processSDLEvent(YAC_TRUE/*bPoll*/) );
                } // if processSDLEvent()
                else
@@ -2333,6 +2323,17 @@ void _HAL::_eventLoop(void) {
                         draw();
                      }
                   }
+               }
+
+               if(TKS_MOUSE_SHOW_ENABLE == mouse.queued_show)
+               {
+                  mouse.queued_show = -1;
+                  showCursor(YAC_TRUE);
+               }
+               else if(TKS_MOUSE_SHOW_DISABLE == mouse.queued_show)
+               {
+                  mouse.queued_show = -1;
+                  showCursor(YAC_FALSE);
                }
 
                if(0u != last_vkey)
@@ -2357,13 +2358,14 @@ void _HAL::_eventLoop(void) {
                   delta_ticks = last_ticks - delta_ticks;
                }
 
-               if(mouse.auto_hide_timeout)
+               if(TKS_MOUSE_POINTER_MOVE == mouse.pointer_mode && mouse.auto_hide_timeout)
                {
                   mouse.auto_hide_timeout -= delta_ticks;
-                  if(((sSI)mouse.auto_hide_timeout)<=0)
+                  if(sSI(mouse.auto_hide_timeout) <= 0)
                   {
+                     // Dyac_host_printf("xxx auto hide mouse.show=%d\n", mouse.show);
                      mouse.auto_hide_timeout = 0;
-                     mouse.show = TKS_MOUSE_SHOW_DISABLE;
+                     mouse.queued_show = TKS_MOUSE_SHOW_DISABLE;
                   }
                }
 
@@ -3289,10 +3291,11 @@ sSI _HAL::_getEventPolling(void) {
 }
 
 void _HAL::showCursor(sBool _st) {
+   // Dyac_host_printf("xxx _HAL::showCursor(%d)\n", _st);
    if(mouse.show != _st)
    {
       mouse.show = _st;
-      ::SDL_ShowCursor(_st?SDL_ENABLE:SDL_DISABLE);
+      ::SDL_ShowCursor(_st ? SDL_ENABLE : SDL_DISABLE);
    }
 }
 
