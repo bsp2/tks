@@ -86,8 +86,8 @@ static sUI   auto_cycle_num_frames =  // >0:auto-cycle tests (any key stroke int
 #endif // AUTO_CYCLE_NUM_FRAMES
    ;
 
-static uint32_t display_width;
-static uint32_t display_height;
+static sUI display_width;
+static sUI display_height;
 
 static sBool b_sym_radius    = 1;     // 'l'(removed)  (rx=ry)
 static sF32  stroke_scale    = 1.0f;  // LEFT/RIGHT

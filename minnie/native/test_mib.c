@@ -197,8 +197,8 @@ static MinnieDrawable *drawable;
 
 static sF32 rot_ang = 0.0f;
 
-static uint32_t display_width;
-static uint32_t display_height;
+static sUI display_width;
+static sUI display_height;
 
 #if 0
 static sBool b_reopen = YAC_FALSE;

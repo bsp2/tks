@@ -86,8 +86,8 @@ static sUI auto_exit_frames =
    ;
 static sUI auto_exit_num_iter = 1u;
 
-static uint32_t display_width;
-static uint32_t display_height;
+static sUI display_width;
+static sUI display_height;
 
 static sU32 last_ticks = 0u;  // 1000 ticks per second
 static sU32 num_frames_rendered = 0u;
