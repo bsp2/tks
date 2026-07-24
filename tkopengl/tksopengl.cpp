@@ -62,7 +62,8 @@ extern YAC_Host *yac_host;
 //
 // Utility macros to handle extension functions
 //
-#define Dresolveext(a) a##_xref = (a##_t) int_GetProcAddressA3(#a, #a "ARB", #a "EXT")
+#define Dresolveext(a) a##_xref = (a##_t) int_GetProcAddressA3(#a, #a "ARB", #a "EXT", YAC_TRUE/*bVerbose*/)
+#define Dresolveext_quiet(a) a##_xref = (a##_t) int_GetProcAddressA3(#a, #a "ARB", #a "EXT", YAC_FALSE/*bVerbose*/)
 
 #define Ddbghaveext(a, n) \
       if(yac_host->yacGetDebugLevel() > 0)\
@@ -295,7 +296,7 @@ static glanyfun_t int_GetProcAddress(const char *_name) {
 #endif // YAC_WIN32
 }
 
-static glanyfun_t int_GetProcAddressA3(const char *_name1, const char *_name2, const char *_name3) {
+static glanyfun_t int_GetProcAddressA3(const char *_name1, const char *_name2, const char *_name3, sBool _bVerbose = YAC_TRUE) {
    glanyfun_t r = NULL;
 
    if(NULL != _name1)
@@ -319,7 +320,7 @@ static glanyfun_t int_GetProcAddressA3(const char *_name1, const char *_name2, c
       }
    }
 
-   if(NULL == r)
+   if(NULL == r && _bVerbose)
    {
       yac_host->printf("[~~~] tkopengl: failed to resolve extension fxn \"%s\" / \"%s\" / \"%s\".\n", _name1, _name2, _name3);
    }
@@ -621,7 +622,7 @@ void YAC_CALL _zglLoadExtensions(void) {
       Dresolveext(glGetStringi);
 
       // KHR_debug
-      Dresolveext(glObjectLabel);
+      Dresolveext_quiet(glObjectLabel);
    }
 }
 
