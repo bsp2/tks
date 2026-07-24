@@ -1229,7 +1229,6 @@ void _Vector3f::_mulfFrom(YAC_Object *_o, sF32 _s) {
       floats[0] = o->floats[0] * _s;
       floats[1] = o->floats[1] * _s;
       floats[2] = o->floats[2] * _s;
-      floats[3] = 1.0f         * _s;
    }
    else if(YAC_BCHK(_o, clid_Vector2f))
    {
@@ -1237,7 +1236,6 @@ void _Vector3f::_mulfFrom(YAC_Object *_o, sF32 _s) {
       floats[0] = o->floats[0] * _s;
       floats[1] = o->floats[1] * _s;
       floats[2] = 0.0f;
-      floats[3] = 1.0f         * _s;
    }
    else if(YAC_VALID(_o))
    {
