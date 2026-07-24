@@ -3,6 +3,7 @@
 #
 
 CPPFLAGS += -I${TKS_ROOT}/yac
+CFLAGS += -I${TKS_ROOT}/yac
 # -Wall -I$(CROSS_ROOT)/usr/include
 #CFLAGS += -Wall
 # -Wall-I$(CROSS_ROOT)/usr/include
