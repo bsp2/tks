@@ -1,6 +1,6 @@
 /// main.cpp
 ///
-/// (c) 2001-2025 Bastian Spiegel <bs@tkscript.de>
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
 ///     - distributed under terms of the GNU general public license (GPL).
 ///
 ///
@@ -259,7 +259,7 @@ int print_version(void) {
 
 int print_usage(void) {
 
-   ::printf("TKS - an extensible c++ glue script language %s. (C) 2001-2025 Bastian Spiegel.\n\n", TKS_VERSION_STR);
+   ::printf("TKS - an extensible c++ glue script language %s. (C) 2001-2026 Bastian Spiegel.\n\n", TKS_VERSION_STR);
    ::printf("          -- visit http://tkscript.de for further information.\n");
    ::printf("\n USAGE:\n");
    ::printf("        %s source [args]\n", (char*)loc_exe_name.chars);
