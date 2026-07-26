@@ -26,7 +26,7 @@ public:
 public:
   PTN_Statement  *next;
   PTN_Statement  *prev;
-  const PTN_Statement **st_list; 
+  const PTN_Statement **st_list;
 
   Fevalst        *st_list_opt;
 
@@ -43,11 +43,11 @@ public:
 
   // query arg for optimized getEvalCallSt fxn ptr
   // used for expressions that can be called used as statements (e.g. PTN_FunctionECall, PTN_FunctionECallY)
-  virtual const PTN_Statement *getEvalStArg   (void) const {return this;} 
+  virtual const PTN_Statement *getEvalStArg   (void) const {return this;}
   virtual void           subGenCallList (void);
           sBool          resolveXRef    (void);
   virtual void           useBreak       (void);
-          
+
           void           optimizeAll      (void);
           sBool          resolveXRefAll   (void);
           sBool          semanticCheckAll (void);
