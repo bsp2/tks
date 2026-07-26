@@ -14539,6 +14539,19 @@ static sF32 YAC_CALL _APIC_mathLogf(yacmemptr _args) { return APIC_mathLogf(_arg
 #endif // TKS_ALLOWINTFLOATMIXUP
 
 
+/* @function mathSigmoidf,float x y:float
+The standard logistic function (sigmoid) squashes the input parameter to the range 0..1.
+As x approaches negative infinity, the return value approaches 0.
+As x approaches positive infinity, the return value approaches 1.
+@arg x
+@return Value in the range 0..1
+*/
+static sF32 YAC_CALL APIC_mathSigmoidf(sF32 _x) {
+   return 1.0f / (1.0f + powf(sM_Ef, -_x));
+}
+#ifndef TKS_ALLOWINTFLOATMIXUP
+static sF32 YAC_CALL _APIC_mathSigmoidf(yacmemptr _args) { return APIC_mathSigmoidf(_args.mem[0].f32); }
+#endif // TKS_ALLOWINTFLOATMIXUP
 
 
 /* @function system,String cmd
@@ -15075,6 +15088,7 @@ sBool TKS_ScriptEngine::registerBuiltinClasses(void) {
    yacRegisterFunction((void*)APIC_mathLogLinExpf,    "mathLogLinExpf",  2,0,   2,arg_ff,  argt, 22);
    yacRegisterFunction((void*)APIC_mathAtan2f,        "mathAtan2f",      2,0,   2,arg_ff,  argt, 22);
    yacRegisterFunction((void*)APIC_mathLogf,          "mathLogf",        2,0,   1,arg_f,   argt, 14);
+   yacRegisterFunction((void*)APIC_mathSigmoidf,      "mathSigmoidf",    2,0,   1,arg_f,   argt, 14);
    yacRegisterFunction((void*)APIC_floor,             "floor",           2,0,   1,arg_f,   argt, 14);
    yacRegisterFunction((void*)APIC_ceil,              "ceil",            2,0,   1,arg_f,   argt, 14);
    yacRegisterFunction((void*)APIC_milliSeconds,      "milliSeconds",    1,0,   0,0,       argt, 9);
@@ -15125,6 +15139,7 @@ sBool TKS_ScriptEngine::registerBuiltinClasses(void) {
    yacRegisterFunction((void*)_APIC_mathLogLinExpf,     "mathLogLinExpf",    2,0, 2,arg_ff,  argt, 2);
    yacRegisterFunction((void*)_APIC_mathAtan2f,         "mathAtan2f",        2,0, 2,arg_ff,  argt, 2);
    yacRegisterFunction((void*)_APIC_mathLogf,           "mathLogf",          2,0, 1,arg_f,   argt, 2);
+   yacRegisterFunction((void*)_APIC_mathSigmoidf,       "mathSigmoidf",      2,0, 1,arg_f,   argt, 2);
    yacRegisterFunction((void*)_APIC_floor,              "floor",             2,0, 1,arg_f,   argt, 2);
    yacRegisterFunction((void*)_APIC_ceil,               "ceil",              2,0, 1,arg_f,   argt, 2);
    yacRegisterFunction((void*)_APIC_system,             "system",            1,0, 1,arg_o,   argt, 1);
