@@ -1,6 +1,6 @@
 /// PTN_LoopStatement.cpp
 ///
-/// (c) 2001-2024 Bastian Spiegel <bs@tkscript.de>
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
 ///     - distributed under the terms of the GNU general public license (GPL).
 ///
 
@@ -21,17 +21,17 @@ PTN_LoopStatement::PTN_LoopStatement(void) {
    expr         = NULL;
    expr_opt     = NULL;
    body         = NULL;
-   const_expr   = 0;
-   const_intval = 0;
-   break_tag    = 0;
+   const_expr   = YAC_FALSE;
+   const_intval = 0u;
+   break_tag    = YAC_FALSE;
 }
 
 void PTN_LoopStatement::init(PTN_Expr *_expr, PTN_Statement *_body) {
    expr         = _expr;
    expr_opt     = expr->getEval();
    body         = _body;
-   const_expr   = 0;
-   const_intval = 0;
+   const_expr   = YAC_FALSE;
+   const_intval = 0u;
 }
 
 PTN_LoopStatement::~PTN_LoopStatement() {
@@ -74,12 +74,13 @@ void PTN_LoopStatement::optimize(void) {
          PTN_NEW_STATIC_NODE(cv, PTN_ConstVal)();
          cv->const_value = &r;
          expr = cv;
-         if(r.type!=1)
+         if(YAC_TYPE_INT != r.type)
          {
             Dprintf("\n[---] warning: loop argument is not integer. In module \"%s\":%d\n",
                     Dtkscompiler->getModuleNameByIndex(Dsrcloc_module(src_loc)),
                     Dsrcloc_linenr(src_loc)
                     );
+            r.typecast(YAC_TYPE_INT);
          }
          const_intval = r.value.int_val;
       }
@@ -122,19 +123,19 @@ static void PTN_LoopStatement__eval(PTN_Env *_env, const PTN_Statement *_st) {
       }
 
       sSI ival=0;
-      if(re.type==YAC_TYPE_FLOAT)
+      if(YAC_TYPE_FLOAT == re.type)
       {
-         ival=(sSI)re.value.float_val;
+         ival = (sSI)re.value.float_val;
       }
       else
       {
-         if(re.type==YAC_TYPE_INT)
+         if(YAC_TYPE_INT == re.type)
          {
-            ival=re.value.int_val;
+            ival = re.value.int_val;
          }
          else
          {
-            if(re.type>=YAC_TYPE_OBJECT)
+            if(re.type >= YAC_TYPE_OBJECT)
             {
                if(YAC_VALID(re.value.object_val))
                {
@@ -146,7 +147,7 @@ static void PTN_LoopStatement__eval(PTN_Env *_env, const PTN_Statement *_st) {
          }
       }
 
-      while((--ival>=0)&&_env->context->b_running&&_env->continue_flag)
+      while(--ival >= 0 && _env->context->b_running && _env->continue_flag)
          st->body->evalFirst(_env);
    }
 }
@@ -177,19 +178,19 @@ static void PTN_LoopStatement__eval_break(PTN_Env *_env, const PTN_Statement *_s
       }
 
       sSI ival=0;
-      if(re.type==YAC_TYPE_FLOAT)
+      if(YAC_TYPE_FLOAT == re.type)
       {
-         ival=(sSI)re.value.float_val;
+         ival = (sSI)re.value.float_val;
       }
       else
       {
-         if(re.type==YAC_TYPE_INT)
+         if(YAC_TYPE_INT == re.type)
          {
             ival=re.value.int_val;
          }
          else
          {
-            if(re.type>=YAC_TYPE_OBJECT)
+            if(re.type >= YAC_TYPE_OBJECT)
             {
                if(YAC_VALID(re.value.object_val))
                {
@@ -200,7 +201,7 @@ static void PTN_LoopStatement__eval_break(PTN_Env *_env, const PTN_Statement *_s
             }
          }
       }
-      while(!*bBreak && _env->context->b_running &&(-- ival>=0) && _env->continue_flag)
+      while(!*bBreak && _env->context->b_running && --ival >= 0 && _env->continue_flag)
       {
          st->body->evalFirst(_env);
       }
@@ -208,7 +209,7 @@ static void PTN_LoopStatement__eval_break(PTN_Env *_env, const PTN_Statement *_s
 
    if(*bBreak)
    {
-      _env->continue_flag=1;
+      _env->continue_flag = YAC_TRUE;
    }
    _env->context->popBreak();
 }
