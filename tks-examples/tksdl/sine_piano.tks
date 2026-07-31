@@ -17,10 +17,12 @@ float octave = 48;
 float cur_pitch;
 float pitch;
 float sine_phase;
-int   note;
+int   last_note;
 float total_sec;
 int   framenr;
 float last_out_lvl;
+float seq_cur_level = 0.0f;
+float seq_dst_level = 1.0f;
 
 int tick_idx = 0;
 
@@ -33,12 +35,13 @@ seq1.init([ 0, 5, 7, ],                             // note
           [ 4, 1, 1, ],                             // duration
           [ 0, 0, 0, 0, 5, 5, 5, 5, 7, 7, -5, -5 ]  // transpose
           );
-seq2.init([ 0, 0, 12, 0, 0, 12, 0, 12, ],
-          [ 2, 6, 2, 2, 3, 1 ],
+seq2.init([ 0, 12, 0, 0, 12, 0, 12, ],
+          [ 4, 6, 2, 2, 3, 1 ],
           [ 2, 4, 4, 1, 2 ],
           [ 0, 0, -5, -5, -2, 10 ]
           );
 boolean b_seq = true;
+Echo echo;
 
 function SendNote(int _note, boolean _bNoteOn) {
    Event ev;
@@ -47,13 +50,13 @@ function SendNote(int _note, boolean _bNoteOn) {
 }
 
 class ADSR {
-   define float ATTACK_SPD  = (1/5.0f);
-   define float ATTACK_EXP  = 0.7f;
-   define float DECAY_SPD   = (1/150.0f);
-   define float DECAY_EXP   = 4.6f;
+   define float ATTACK_SPD  = (1/4.0f);
+   define float ATTACK_EXP  = 0.9f;
+   define float DECAY_SPD   = (1/140.0f);
+   define float DECAY_EXP   = 6.4f;
    define float SUSTAIN_LVL = 0.125;
    define float RELEASE_SPD = (1/2000.0f);
-   define float RELEASE_EXP = 7.0f;
+   define float RELEASE_EXP = 8.0f;
 
    define int ST_ATTACK  = 0;
    define int ST_DECAY   = 1;
@@ -197,11 +200,71 @@ function onTimer() {
    Viewport.needRedraw();
 }
 
-function NoteOn(int _note) {
-   note = _note;
+function NoteOn(int _note, float _level) {
+   last_note = _note;
    adsr.noteOn();
    float freq = MIDINoteToFrequency(_note);
    pitch = (2PI*freq) / SAMPLE_RATE;
+   seq_dst_level = _level;
+}
+
+class Echo {
+   int delay = (96.0/4) * 3;
+   IntArray notes;
+   IntArray times;
+   IntArray durations;
+   FloatArray levels;
+   int dur_ticks_left;
+
+   addNote(int _note, int _time, int _dur, float _level) {
+      notes.add(_note);
+      times.add(_time);
+      durations.add(_dur);
+      levels.add(_level);
+   }
+
+   tick(boolean _bAllowNoteOnOff) {
+
+      if(--dur_ticks_left <= 0)
+      {
+         if(_bAllowNoteOnOff)
+            adsr.noteOff();
+         dur_ticks_left = 9999999;
+      }
+
+      int i = 0;
+      while(i < notes.numElements)
+      {
+         times[i] = times[i] - 1;
+         if(0 == times[i])
+         {
+            boolean bDelete = true;
+            if(_bAllowNoteOnOff)
+            {
+               float level = levels[i];
+               NoteOn(notes[i], level);
+               dur_ticks_left = durations[i];
+               if(level > 0.03125)
+               {
+                  levels[i] = level * 0.5f;
+                  times[i] = delay;
+                  bDelete = false;
+               }
+            }
+            if(bDelete)
+            {
+               notes.delete(i);
+               times.delete(i);
+               durations.delete(i);
+               levels.delete(i);
+            }
+         }
+         else
+         {
+            i++;
+         }
+      }
+   }
 }
 
 class Seq {
@@ -230,6 +293,8 @@ class Seq {
          if(note_idx >= 0)
          {
             r = octave + note_seq[note_idx] + trp_seq[trp_idx];
+            if(rand(10) > 7)
+               r += 12;
             note_idx = (note_idx + 1) % note_seq.numElements;
             if(0 == note_idx)
                trp_idx = (trp_idx + 1) % trp_seq.numElements;
@@ -239,34 +304,85 @@ class Seq {
    }
 }
 
-function onAudioFrame() {
-   // called periodically @125bpm, 96ppq (beats-per-minute, precision-per-quarter)
-   int note;
+function ProcessSeqAndEcho() {
+   int note, dur;
+   Integer dur1, dur2;
    if(b_seq)
    {
       int note1 = seq1.play();
       int note2 = seq2.play();
-      note = (-1 != note1) ? (-1 != note2) ? (rand(10) > 5 ? note1 : note2) : note1 : note2;
+      if(-1 != note1)
+      {
+         if(-1 != note2)
+         {
+            if(rand(10) > 5)
+            {
+               note = note1;
+               dur = seq1.dur_ticks_left;
+            }
+            else
+            {
+               note = note2;
+               dur = seq2.dur_ticks_left;
+            }
+         }
+         else
+         {
+            note = note1;
+            dur = seq1.dur_ticks_left;
+         }
+      }
+      else
+      {
+         note = note2;
+         dur = seq2.dur_ticks_left;
+      }
+      boolean bNoteOn = false;
       if(note >= 0)
       {
          adsr.noteOff();
          if(note > 0)
-            NoteOn(note);
+         {
+            if(note != last_note || (rand(10) > 3))
+            {
+               float level = 1.0f;
+               if(note > 60)
+                  level *= 1.0f - (mathMini(15,(note-60))/15.0);
+               NoteOn(note, level);
+               echo.tick(false/*bAllowNoteOnOff*/);
+               echo.addNote(note, echo.delay, dur, level*0.2f);
+               bNoteOn = true;
+            }
+            else
+            {
+            }
+         }
       }
+      if(!bNoteOn)
+         echo.tick(true/*bAllowNoteOnOff*/);
    }
+}
+
+function ProcessQueuedEvents() {
    while(mbox.numQueuedEvents)
    {
       Event ev <= mbox.waitEvent(0);
-      note = ev.intValue;
+      int note = ev.intValue;
       if(note > 0)
       {
-         NoteOn(note);
+         NoteOn(note, 1.0f/*level*/);
       }
       else
       {
          adsr.noteOff();
       }
    }
+}
+
+function onAudioFrame() {
+   // called periodically @125bpm, 96ppq (beats-per-minute, precision-per-quarter)
+   ProcessSeqAndEcho();
+   ProcessQueuedEvents();
    total_sec += (60.0/125.0)/96.0;
 }
 
@@ -281,12 +397,14 @@ function onAudioRender(FloatArray _fa) {
    int numFrames = _fa.numElements >> 1;  // interleaved stereo
    compile loop(numFrames) {
       float level = adsr.tick(1000.0f / SAMPLE_RATE);
-      cval = sin(sine_phase) * level;
+      cval = sin(sine_phase) * level * seq_cur_level;
       _fa[i++] = cval;
       _fa[i++] = cval;
 
       sine_phase += cur_pitch;
-      cur_pitch += (pitch-cur_pitch)*0.01; // interpolate pitch
+      float pitchDelta = (pitch - cur_pitch);
+      cur_pitch += pitchDelta * ((pitchDelta > 0.0f) ? 0.01 : 0.003f); // interpolate pitch
+      seq_cur_level += (seq_dst_level - seq_cur_level) * 0.015; // interpolate level
       last_out_lvl = level;
    }
    wrap sine_phase 0 2PI;
