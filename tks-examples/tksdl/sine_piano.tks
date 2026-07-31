@@ -1,0 +1,261 @@
+// 22Apr2006, 31Jul2026
+
+// (note) a simple monophonic audio-synth example
+// (note) the main thread converts key-strokes to MIDI notes and sends them to the audio thread via a Mailbox object
+// (note) the audio thread synthesizes a sine-wave whose amplitude is modulated by an ADSR generator
+// (note) the screen background color reflects the current ADSR output level
+// (note) until the first key press note-on, an automatic step-sequence is played
+
+use tksdl;
+use tkopengl;
+
+int numframesrendered = 0;
+
+int SAMPLE_RATE = 48000;
+float out_amp = mathPowerf(2.0f, -20/*db*/ * (1.0f / 6));
+float octave = 60;
+float cur_pitch;
+float pitch;
+float sine_phase;
+float note;
+float total_sec;
+int   framenr;
+float last_out_lvl;
+
+IntArray step_seq = [ 0,0,12,0,10,0,0,7 ];
+int step_idx = 0;  // >=0: play seq
+int tick_idx = 0;
+
+ADSR adsr;
+Mailbox mbox; mbox.allocEventQueue(8);
+
+function SendNote(float _note, boolean _bNoteOn) {
+   Event ev;
+   ev.floatValue = _bNoteOn ? _note : -_note;
+   mbox.sendEvent(ev);
+}
+
+class ADSR {
+   define float ATTACK_SPD  = (1/10.0f);
+   define float ATTACK_EXP  = 0.7f;
+   define float DECAY_SPD   = (1/150.0f);
+   define float DECAY_EXP   = 2.3f;
+   define float SUSTAIN_LVL = 0.125;
+   define float RELEASE_SPD = (1/1000.0f);
+   define float RELEASE_EXP = 2.3f;
+
+   define int ST_ATTACK  = 0;
+   define int ST_DECAY   = 1;
+   define int ST_SUSTAIN = 2;
+   define int ST_RELEASE = 3;
+
+   protected float level;
+   protected float attack_level;
+   protected float release_level;
+   protected int state = ST_RELEASE;
+   protected float out_level;
+
+   noteOn() {
+      state = ST_ATTACK;
+      attack_level = out_level;
+      level = 0.0f;
+   }
+
+   noteOff() {
+      state = ST_RELEASE;
+      release_level = out_level;
+      level = 1.0f;
+   }
+
+   tick(float _dt) : float {
+      // dt: sample rate to millisec scaling factor
+      switch(state)
+      {
+         case ST_ATTACK:
+            level += ATTACK_SPD * _dt;
+            if(level >= 1.0f)
+            {
+               level = 1.0f;
+               state = ST_DECAY;
+            }
+            out_level = attack_level + (1.0f - attack_level) * mathPowerf(level, ATTACK_EXP);
+            break;
+
+         case ST_DECAY:
+            level -= DECAY_SPD * _dt;
+            if(level <= 0.0f)
+            {
+               state = ST_SUSTAIN;
+               level = 1.0f;
+               out_level = SUSTAIN_LVL;
+            }
+            else
+            {
+               out_level = SUSTAIN_LVL + (1.0f - SUSTAIN_LVL) * mathPowerf(level, DECAY_EXP);
+            }
+            release_level = out_level;
+            break;
+
+         case ST_SUSTAIN:
+            out_level = release_level;
+            break;
+
+         case ST_RELEASE:
+            level -= RELEASE_SPD * _dt;
+            if(level < 0.0f)
+            {
+               level = 0.0f;
+            }
+            out_level = mathPowerf(level, RELEASE_EXP) * release_level;
+            break;
+      }
+      return out_level;
+   }
+}
+
+function KeycodeToMidiNote(int _code):float {
+   switch(_code) {
+      case 122: return  0; // c-0: 122
+      case 115: return  1; // c#0: 115
+      case 120: return  2; // d-0: 120
+      case 100: return  3; // d#0: 100
+      case  99: return  4; // e-0: 99
+      case 118: return  5; // f-0: 118
+      case 103: return  6; // f#0: 103
+      case  98: return  7; // g-0: 98
+      case 104: return  8; // g#0: 104
+      case 110: return  9; // a-0: 110
+      case 106: return 10; // a#0: 106
+      case 109: return 11; // b-0: 109
+      case  44: return 12; // c-1: 44
+      case 108: return 13; // c#1: 108
+      case  46: return 14; // d-1: 46
+      case  59: return 15; // d#1: 59
+      case  47: return 16; // e-1: 47
+      case 113: return 12; // c-1: 113
+      case  50: return 13; // c#1: 50
+      case 119: return 14; // d-1: 119
+      case  51: return 15; // d#1: 51
+      case 101: return 16; // e-1: 101
+      case 114: return 17; // f-1: 114
+      case  53: return 18; // f#1: 53
+      case 116: return 19; // g-1: 116
+      case  54: return 20; // g#1: 54
+      case 121: return 21; // a-1: 121
+      case  55: return 22; // a#1: 55
+      case 117: return 23; // h-1: 117
+      case 105: return 24; // c-2: 105
+      case  57: return 25; // c#2: 57
+      case 111: return 26; // d-2: 111
+      case  48: return 27; // d#2: 48
+      case 112: return 28; // e-2: 112
+      case  91: return 29; // f-2: 91
+      case  61: return 30; // f#2: 61
+      case  93: return 31; // g-2: 93
+   }
+   return -1;
+}
+
+function onKeyboard(Key _k) {
+   if(_k.code)
+   {
+      if(_k.pressed == VKEY_ESCAPE) SDL.exitEventLoop();
+      if(_k.pressed == VKEY_SPACE) step_idx = 0;  // start step sequencer
+      float note = KeycodeToMidiNote(_k.code);
+      if(note >= 0)
+      {
+         if(_k.pressed) { step_idx = -1; print octave + note; }  // stop step sequencer
+         SendNote(octave + note, (0 != _k.pressed));
+      }
+   }
+}
+
+function onDraw() {
+   float db = 20.0f * log(last_out_lvl) / log(10.0f);
+   if(db < -90) db = -90;
+   float c = mathLerpf(1.0,0.3,db/-90);
+   glClearColor(0,c,c,1);
+   glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+   if(last_out_lvl > 0.0f)
+      Viewport.needRedraw();
+   if(0 == (framenr++ & 127))
+      trace "total_sec="+total_sec;
+}
+
+function onTimer() {
+   Viewport.needRedraw();
+}
+
+function NoteOn(int note) {
+   adsr.noteOn();
+   float freq = MIDINoteToFrequency(note);
+   pitch = (freq/(SAMPLE_RATE*0.5));
+}
+
+function onAudioFrame() {
+   // called periodically @125bpm, 96ppq (beats-per-minute, precision-per-quarter)
+   if(0 == (tick_idx++ % (96/4)))  // 16th notes
+   {
+      if(step_idx >= 0)
+      {
+         NoteOn(octave + step_seq[step_idx]);
+         step_idx = (step_idx + 1) % step_seq.numElements;
+      }
+   }
+   while(mbox.numQueuedEvents)
+   {
+      Event ev <= mbox.waitEvent(0);
+      float note = ev.floatValue;
+      if(note > 0.0f)
+      {
+         NoteOn(note);
+      }
+      else
+      {
+         adsr.noteOff();
+      }
+   }
+   total_sec += (60.0/125.0)/96.0;
+}
+
+function onAudioBeginBlock(FloatArray _fa) {
+   AudioDevice.processTimeFrames();
+   AudioDevice.finishBlock();
+}
+
+function onAudioRender(FloatArray _fa) {
+   int i = 0;
+   float cval;
+   int numFrames = _fa.numElements >> 1;  // interleaved stereo
+   compile loop(numFrames) {
+      float level = adsr.tick(1000.0f / SAMPLE_RATE);
+      cval = sin(sine_phase) * level;
+      _fa[i++] = cval;
+      _fa[i++] = cval;
+
+      sine_phase += cur_pitch;
+      cur_pitch += (pitch-cur_pitch)*0.08; // interpolate pitch
+      last_out_lvl = level;
+   }
+   wrap sine_phase 0 2PI;
+}
+
+function main() {
+   use callbacks;
+   AudioDevice.openDSP(SAMPLE_RATE, 1024);
+   AudioDevice.ppq = 96;
+   AudioDevice.bpm = 125;
+   AudioDevice.volume = out_amp;
+   AudioDevice.start();
+   Viewport.openWindow(640, 480);
+   Viewport.caption = "sine_piano";
+   use callbacks;
+   FPS.tickInterval = 1000.0/60;
+   FPS.limit = 60;
+   SDL.eventPolling = true;
+   SDL.redrawFlag = REDRAW_DIRTY;
+   SDL.enableKeyRepeat(0,0);
+   SDL.timerInterval = 100;
+   SDL.eventLoop();
+   AudioDevice.stop();
+}
