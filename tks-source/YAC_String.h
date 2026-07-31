@@ -1,11 +1,11 @@
 /// YAC_String.h
 ///
-/// (c) 1998-2025 Bastian Spiegel <bs@tkscript.de>
+/// (c) 1998-2026 Bastian Spiegel <bs@tkscript.de>
 ///     - distributed under terms of the GNU general public license (GPL).
 ///
 
-#ifndef __YAC_STRING_H__
-#define __YAC_STRING_H__
+#ifndef YAC_STRING_H__
+#define YAC_STRING_H__
 
 enum __stringflags {
    TKS_STRFL_QUOT   = (1u << 24),  // \"\"
@@ -160,6 +160,7 @@ public:
    void          _appendRepeat_YAC_RSELF (const YAC_String *_s, sSI _numRepeats);
    void          _appendRepeat_YAC_RARG  (const YAC_String *_s, sSI _numRepeats, YAC_Object *_r);
    void          _appendRepeat_YAC_RVAL  (const YAC_String *_s, sSI _numRepeats, YAC_Value *_r);
+   sBool         _appendChar         (sUI _c);
    sBool         insert              (sUI _i, const YAC_String *_s);
    sBool         insert              (sUI _i, const char *_s);
    void          insert_INT          (sSI _index, const YAC_Object *_s);
@@ -339,4 +340,4 @@ public:
 };
 
 
-#endif // __YAC_STRING_H__
+#endif // YAC_STRING_H__

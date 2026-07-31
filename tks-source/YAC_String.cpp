@@ -1,6 +1,6 @@
 /// YAC_String.cpp
 ///
-/// (c) 1998-2025 Bastian Spiegel <bs@tkscript.de>
+/// (c) 1998-2026 Bastian Spiegel <bs@tkscript.de>
 ///     - distributed under terms of the GNU General Public License (GPL).
 ///
 ///
@@ -1290,6 +1290,10 @@ sBool YAC_String::append(const sChar *e) {
 	}
 
 	return YAC_TRUE;
+}
+
+sBool YAC_String::_appendChar(sUI _c) {
+   return append((const sChar)_c);
 }
 
 sBool YAC_String::startsWith(const sChar *e) const {
