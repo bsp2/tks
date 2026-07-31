@@ -1,6 +1,6 @@
 /// TKS_ObjectCache.cpp
 ///
-/// (c) 2001-2024 Bastian Spiegel <bs@tkscript.de>
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
 ///     - distributed under terms of the GNU general public license (GPL).
 ///
 #include "tks.h"
@@ -29,21 +29,25 @@ TKS_ObjectCache::~TKS_ObjectCache(void) {
    TKS_ObjectCache::freeCache();
 }
 
+void TKS_ObjectCache::freeCacheEntries(sBool _bDebug) {
+   for(sUI i = 0u; i < max_entries; i++)
+   {
+      TKS_CachedObject *co = objects[i];
+      if(co)
+      {
+         if(_bDebug) ::printf("TKS_ObjectCache::freeCache: delete co name=\"%s\"\n", (const char*)co->name.chars);
+         delete co;
+         objects[i] = NULL;
+      }
+   }
+   num_entries = 0u;
+}
+
 void TKS_ObjectCache::freeCache(sBool _bDebug) {
    if(objects)
    {
-      for(sUI i = 0u; i < max_entries; i++)
-      {
-         TKS_CachedObject *co = objects[i];
-         if(co)
-         {
-            if(_bDebug) ::printf("TKS_ObjectCache::freeCache: delete co name=\"%s\"\n", (const char*)co->name.chars);
-            delete co;
-            objects[i] = NULL;
-         }
-      }
+      freeCacheEntries(_bDebug);
       max_entries = 0u;
-      num_entries = 0u;
       delete[] objects;
       objects = NULL;
    }

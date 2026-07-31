@@ -1,6 +1,6 @@
 /// TKS_ObjectCache.h
 ///
-/// (c) 1999-2025 Bastian Spiegel <bs@tkscript.de>
+/// (c) 1999-2026 Bastian Spiegel <bs@tkscript.de>
 ///     - distributed under terms of the GNU general public license (GPL).
 ///
 
@@ -33,6 +33,7 @@ public:
 
    sBool             allocCache          (sUI _max_num_of_cache_entries); // find nearest prime number for _max..
    sBool             allocCache2         (sUI _max_num_of_cache_entries); // alloc exactly _max.. entries
+   void              freeCacheEntries    (sBool _bDebug = YAC_FALSE);
    void              freeCache           (sBool _bDebug = YAC_FALSE);
 
    TKS_CachedObject *findEntry   (YAC_String *_name) const;

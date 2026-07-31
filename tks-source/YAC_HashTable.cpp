@@ -1,6 +1,6 @@
 /// YAC_HashTable.cpp
 ///
-/// (c) 2001-2024 Bastian Spiegel <bs@tkscript.de>
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
 ///     - distributed under the terms of the GNU general public license (GPL).
 ///
 #include "tks.h"
@@ -365,6 +365,10 @@ sUI YAC_VCALL YAC_HashTable::yacDeserialize(YAC_Object *_ifs, sUI _rtti) {
    // // varcache.max_entries=me; // note: max_entries was already set by allocCache()!!
    varcache.num_entries = ne;
    return 1u;
+}
+
+void YAC_HashTable::_empty(void) {
+   varcache.freeCacheEntries(YAC_FALSE/*bDebug*/);
 }
 
 sBool YAC_HashTable::_alloc(sUI _cachesize) {
