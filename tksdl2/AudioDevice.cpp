@@ -192,6 +192,7 @@ void _AudioDevice::beginTimeframe(void) {
    // ---- invoke TKS callback ----
    if(sig_time)
    {
+      yac_host->yacContextSetDefault(sc_audiocontext);
       yac_host->yacEvalFunction(sc_audiocontext, sig_time, 0, 0);
    }
 }
@@ -213,6 +214,7 @@ void _AudioDevice::beginBlock(sU32 _rs, sS16 *_d) {
       YAC_Value args[1];
       args[0].initObject(fa, 0);
 
+      yac_host->yacContextSetDefault(sc_audiocontext);
       yac_host->yacEvalFunction(sc_audiocontext, sig_block, 1, args);
       fa->elements     = 0;
       fa->num_elements = fa->max_elements = 0;
@@ -264,7 +266,13 @@ void _AudioDevice::_processTimeFrames(void) {
          YAC_Value args[1];
          args[0].initObject(fa, 0);
 
+         yac_host->yacContextSetDefault(sc_audiocontext);
          yac_host->yacEvalFunction(sc_audiocontext, sig_render, 1, args);
+         if(1.0f != volume)
+         {
+            for(sUI i = 0u; i < fa->num_elements; i++)
+               fa->elements[i] *= volume;
+         }
          fa->elements = NULL;
          fa->num_elements = fa->max_elements = 0;
       }
@@ -289,6 +297,7 @@ void _AudioDevice::_finishBlock(void) {
       fa->elements=mix_buffer;
       YAC_Value args[1];
       args[0].initObject(fa, 0);
+      yac_host->yacContextSetDefault(sc_audiocontext);
       yac_host->yacEvalFunction(sc_audiocontext, f, 1, args);
       fa->elements=0;
       fa->num_elements=0;
