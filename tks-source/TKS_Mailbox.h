@@ -1,10 +1,10 @@
 /// TKS_Mailbox.h
 ///
-/// (c) 2009-2023 Bastian Spiegel <bs@tkscript.de>
+/// (c) 2009-2026 Bastian Spiegel <bs@tkscript.de>
 ///     - distributed under the terms of the GNU general public license (GPL).
 ///
-#ifndef __TKS_MAILBOX_H__
-#define __TKS_MAILBOX_H__
+#ifndef TKS_MAILBOX_H__
+#define TKS_MAILBOX_H__
 
 
 class TKS_Mailbox : public YAC_Object {
@@ -55,4 +55,4 @@ public:
 };
 
 
-#endif // __TKS_MAILBOX_H__
+#endif // TKS_MAILBOX_H__

@@ -1,14 +1,14 @@
 /// TKS_SharedBuffer.h
 ///
-/// (c) 2005-2024 Bastian Spiegel <bs@tkscript.de>
+/// (c) 2005-2026 Bastian Spiegel <bs@tkscript.de>
 ///     - distributed under terms of the GNU general public license (GPL).
 ///
-#ifndef __TKS_SHAREDBUFFER_H__
-#define __TKS_SHAREDBUFFER_H__
+#ifndef TKS_SHAREDBUFFER_H__
+#define TKS_SHAREDBUFFER_H__
 
 enum __TKS_SharedBufferHeader {
    TKS_SBH_SIZE = 0, // size of region excluding this header
-      
+
    TKS_SHAREDBUFFERHEADER_SIZE = sizeof(sSI)
 };
 
@@ -16,7 +16,7 @@ class TKS_SharedBuffer : public YAC_Buffer {
 public:
    YAC_String shmKey;
    sBool      shmOwner;
-   
+
    union {
       void *ptr;   // OS-dependent shared memory handle
       int   id;    // fdMapFile on Linux/macOS
@@ -51,7 +51,7 @@ public:
    sBool       isOwner                (void);
 
    // The following methods fail and issue a warning in this class
-   sBool setSize    (sUI _numbytes); 
+   sBool setSize    (sUI _numbytes);
    sBool resize     (sUI _numbytes);
 
    sBool YAC_VCALL yacArrayAlloc  (sUI _sx, sUI, sUI, sUI);
@@ -68,8 +68,8 @@ public:
 
    // overrides YAC_Buffer::ringReadBuffer() (volatile read)
    sUI ringReadBuffer(sUI _ringStartOff, sUI _ringSz, sUI _readOff, YAC_Buffer *_dst, sUI _dstOff, sUI _numBytes);
-   
+
 };
 
 
-#endif
+#endif // TKS_SHAREDBUFFER_H__
