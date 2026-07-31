@@ -13,36 +13,47 @@ int numframesrendered = 0;
 
 int SAMPLE_RATE = 48000;
 float out_amp = mathPowerf(2.0f, -20/*db*/ * (1.0f / 6));
-float octave = 60;
+float octave = 48;
 float cur_pitch;
 float pitch;
 float sine_phase;
-float note;
+int   note;
 float total_sec;
 int   framenr;
 float last_out_lvl;
 
-IntArray step_seq = [ 0,0,12,0,10,0,0,7 ];
-int step_idx = 0;  // >=0: play seq
 int tick_idx = 0;
 
 ADSR adsr;
 Mailbox mbox; mbox.allocEventQueue(8);
 
-function SendNote(float _note, boolean _bNoteOn) {
+Seq seq1, seq2;
+seq1.init([ 0, 5, 7, ],                             // note
+          [ 2, 3, 3 ],                              // time
+          [ 4, 1, 1, ],                             // duration
+          [ 0, 0, 0, 0, 5, 5, 5, 5, 7, 7, -5, -5 ]  // transpose
+          );
+seq2.init([ 0, 0, 12, 0, 0, 12, 0, 12, ],
+          [ 2, 6, 2, 2, 3, 1 ],
+          [ 2, 4, 4, 1, 2 ],
+          [ 0, 0, -5, -5, -2, 10 ]
+          );
+boolean b_seq = true;
+
+function SendNote(int _note, boolean _bNoteOn) {
    Event ev;
-   ev.floatValue = _bNoteOn ? _note : -_note;
+   ev.intValue = _bNoteOn ? _note : -_note;
    mbox.sendEvent(ev);
 }
 
 class ADSR {
-   define float ATTACK_SPD  = (1/10.0f);
+   define float ATTACK_SPD  = (1/5.0f);
    define float ATTACK_EXP  = 0.7f;
    define float DECAY_SPD   = (1/150.0f);
-   define float DECAY_EXP   = 2.3f;
+   define float DECAY_EXP   = 4.6f;
    define float SUSTAIN_LVL = 0.125;
-   define float RELEASE_SPD = (1/1000.0f);
-   define float RELEASE_EXP = 2.3f;
+   define float RELEASE_SPD = (1/2000.0f);
+   define float RELEASE_EXP = 7.0f;
 
    define int ST_ATTACK  = 0;
    define int ST_DECAY   = 1;
@@ -160,11 +171,11 @@ function onKeyboard(Key _k) {
    if(_k.code)
    {
       if(_k.pressed == VKEY_ESCAPE) SDL.exitEventLoop();
-      if(_k.pressed == VKEY_SPACE) step_idx = 0;  // start step sequencer
-      float note = KeycodeToMidiNote(_k.code);
+      if(_k.pressed == VKEY_SPACE) b_seq = true;  // start step sequencer
+      int note = KeycodeToMidiNote(_k.code);
       if(note >= 0)
       {
-         if(_k.pressed) { step_idx = -1; print octave + note; }  // stop step sequencer
+         if(_k.pressed) { b_seq = false; print octave + note; }  // stop step sequencer
          SendNote(octave + note, (0 != _k.pressed));
       }
    }
@@ -186,27 +197,68 @@ function onTimer() {
    Viewport.needRedraw();
 }
 
-function NoteOn(int note) {
+function NoteOn(int _note) {
+   note = _note;
    adsr.noteOn();
-   float freq = MIDINoteToFrequency(note);
-   pitch = (freq/(SAMPLE_RATE*0.5));
+   float freq = MIDINoteToFrequency(_note);
+   pitch = (2PI*freq) / SAMPLE_RATE;
+}
+
+class Seq {
+   IntArray note_seq, time_seq, dur_seq, trp_seq;
+   int note_idx, time_idx, dur_idx;  // note_idx >=0: play seq
+   int time_ticks_left;
+   int dur_ticks_left;
+   int trp_idx;
+   init(IntArray notes, IntArray times, IntArray durations, IntArray trp) {
+      note_seq = notes; time_seq = times; dur_seq = durations; trp_seq = trp;
+   }
+
+   play() : int {
+      int r = -1;
+      if(--dur_ticks_left <= 0)
+      {
+         r = 0;
+         dur_ticks_left = 9999999;
+      }
+      if(--time_ticks_left <= 0)
+      {
+         time_ticks_left = (96/4)/*16th*/ * time_seq[time_idx];
+         time_idx = (time_idx + 1) % time_seq.numElements;
+         dur_ticks_left = (96/16)/*64th*/ * dur_seq[dur_idx];
+         dur_idx = (dur_idx + 1) % dur_seq.numElements;
+         if(note_idx >= 0)
+         {
+            r = octave + note_seq[note_idx] + trp_seq[trp_idx];
+            note_idx = (note_idx + 1) % note_seq.numElements;
+            if(0 == note_idx)
+               trp_idx = (trp_idx + 1) % trp_seq.numElements;
+         }
+      }
+      return r;
+   }
 }
 
 function onAudioFrame() {
    // called periodically @125bpm, 96ppq (beats-per-minute, precision-per-quarter)
-   if(0 == (tick_idx++ % (96/4)))  // 16th notes
+   int note;
+   if(b_seq)
    {
-      if(step_idx >= 0)
+      int note1 = seq1.play();
+      int note2 = seq2.play();
+      note = (-1 != note1) ? (-1 != note2) ? (rand(10) > 5 ? note1 : note2) : note1 : note2;
+      if(note >= 0)
       {
-         NoteOn(octave + step_seq[step_idx]);
-         step_idx = (step_idx + 1) % step_seq.numElements;
+         adsr.noteOff();
+         if(note > 0)
+            NoteOn(note);
       }
    }
    while(mbox.numQueuedEvents)
    {
       Event ev <= mbox.waitEvent(0);
-      float note = ev.floatValue;
-      if(note > 0.0f)
+      note = ev.intValue;
+      if(note > 0)
       {
          NoteOn(note);
       }
@@ -234,7 +286,7 @@ function onAudioRender(FloatArray _fa) {
       _fa[i++] = cval;
 
       sine_phase += cur_pitch;
-      cur_pitch += (pitch-cur_pitch)*0.08; // interpolate pitch
+      cur_pitch += (pitch-cur_pitch)*0.01; // interpolate pitch
       last_out_lvl = level;
    }
    wrap sine_phase 0 2PI;
