@@ -1,8 +1,8 @@
 % Synergy MIDI Tracker - Keyboard Shortcuts
 % bsp
-% 16-May-2026
+% 31-Jul-2026
 >>>
-17Nov2019, 15May2020, 30Oct2020, 19Apr2021, 13May2021, 14May2021, 02Jun2021, 13Feb2022, 24Feb2022, 07May2022, 08May2022, 24Jun2022, 19Nov2022, 04Feb2023, 18Mar2023, 24Mar2023, 23Jun2023, 24Jun2023, 17Aug2023, 31Oct2023, 03Nov2023, 10Nov2023, 14Nov2023, 16Nov2023, 17Nov2023, 19Nov2023, 02Dec2023, 16Dec2023, 02Feb2024, 03Feb2024, 01Oct2024, 05Oct2024, 06Oct2024, 02Nov2024, 07Jan2025, 16Jan2025, 25Jan2025, 26Jan2025, 28Feb2025, 07Mar2025, 09Mar2025, 28May2025, 01Jun2025, 12Jun2025, 13Jun2025, 20Jun2025, 18Dec2025, 02Jan2026, 14Apr2026, 09May2026, 10May2026, 16May2026
+17Nov2019, 15May2020, 30Oct2020, 19Apr2021, 13May2021, 14May2021, 02Jun2021, 13Feb2022, 24Feb2022, 07May2022, 08May2022, 24Jun2022, 19Nov2022, 04Feb2023, 18Mar2023, 24Mar2023, 23Jun2023, 24Jun2023, 17Aug2023, 31Oct2023, 03Nov2023, 10Nov2023, 14Nov2023, 16Nov2023, 17Nov2023, 19Nov2023, 02Dec2023, 16Dec2023, 02Feb2024, 03Feb2024, 01Oct2024, 05Oct2024, 06Oct2024, 02Nov2024, 07Jan2025, 16Jan2025, 25Jan2025, 26Jan2025, 28Feb2025, 07Mar2025, 09Mar2025, 28May2025, 01Jun2025, 12Jun2025, 13Jun2025, 20Jun2025, 18Dec2025, 02Jan2026, 14Apr2026, 09May2026, 10May2026, 16May2026, 31Jul2026
 <<<
 $(var:header)
 
@@ -21,6 +21,9 @@ All keyboard shortcuts assume a US keyboard layout.
 The key names for german keyboards are stated in the comments.
 
 caution: a real US keyboard has no `<` key (between lshift and z). Please set `UI.b\_key\_map\_slash\_to\_less = true;` in `synergy_config.tks` (default setting). `/` can then be used to e.g. clear events in the tracker editor. This also works on Windows with german or UK keyboards.
+
+## Macbook keyboards
+On Macbooks, the missing `DELETE`, `INSERT` and `RCTRL` keys are emulated via `lmeta-LEFT` (delete), `lmeta-RIGHT` (insert), `lmeta-LSHIFT` (rctrl) by default. This can be disabled in `synergy_config.tks` (look for `UI.SetEnableMap`).
 
 ## Triadic keyboard shortcuts
 
