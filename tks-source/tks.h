@@ -134,7 +134,7 @@ extern TKS_ScriptEngine *tkscript;
 #define TKS_MAX_FLOATARRAYALLOCSIZE (1024*1024*128)
 
 // Maximum generic array size; values beyond this one are considered "insane"
-#define TKS_MAX_ARRAYALLOCSIZE (1024*1024*4)
+#define TKS_MAX_ARRAYALLOCSIZE (1024*1024*128)
 
 // Maximum number of named constraints (all modules)
 #define TKS_MAX_CONSTRAINTS 512

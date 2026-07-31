@@ -10440,6 +10440,14 @@ This method supports the => operator.
       YM //void        _appendRepeat_YAC_RVAL    (YAC_String *_s, sSI _numRepeats, YAC_Value *_r);
       YM //void        _appendRepeat_YAC_RSELF   (YAC_String *_s, sSI _numRepeats);
 
+/* @method appendChar,int c:boolean
+Append single character to string
+
+@arg c
+@return
+*/
+      YM //sBool       _appendChar               (sUI _c);
+
 /* @method load,String fileName,boolean bRemoveCR:boolean
 
 @arg fileName
@@ -11275,15 +11283,26 @@ public:
 /* @method free
 
 
+@see empty
 @see alloc
 */
       YM //void _free                   (void);
+
+/* @method empty
+Free cache entries but not the entry array itself (keep maxElements)
+
+@see free
+@see alloc
+@see realloc
+*/
+      YM //void _empty                   (void);
 
 /* @method alloc,int cacheSize:boolean
 Set new capacity and discard all entries.
 
 @arg cacheSize
 @return
+@see empty
 @see free
 @see realloc
 */
@@ -11294,6 +11313,7 @@ Set new capacity while keeping current entries.
 
 @arg cacheSize
 @return
+@see empty
 @see free
 @see alloc
 */
