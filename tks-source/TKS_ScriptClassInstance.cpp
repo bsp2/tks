@@ -1,6 +1,6 @@
 /// TKS_ScriptClassInstance.cpp
 ///
-/// (c) 2001-2025 Bastian Spiegel <bs@tkscript.de>
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
 ///     - distributed under the terms of the GNU general public license (GPL).
 ///
 
@@ -735,75 +735,78 @@ void TKS_ScriptClassInstance::callMemberInitializers(PTN_Env *_env) {
             // if(bDebug) yac_host->printf("xxx ScriptClassInstance::callMemberInitializers: im->member->name.chars=\"%s\"\n", im->member->name.chars);
             // if(bDebug) yac_host->printf("xxx ScriptClassInstance::callMemberInitializers: im->member->init_expr=%p\n", im->member->init_expr);
             // if(bDebug) yac_host->printf("xxx ScriptClassInstance::callMemberInitializers: init_expr->getID()=%u\n", im->member->init_expr->getID());
-            YAC_Value r; im->member->init_expr->eval(_env, &r);
-            // if(bDebug) yac_host->printf("xxx ScriptClassInstance::callMemberInitializers: init_expr OK\n");
-            YAC_Value ar;
-            sUI rtti = im->member->rtti;
-            if(rtti > YAC_TYPE_STRING)
-               rtti = YAC_TYPE_OBJECT;
-            switch(im->member->rtti)
+            if(NULL != im->member->init_expr)
             {
-               case YAC_TYPE_VOID:
-                  r.unset();
-                  break;
-               case YAC_TYPE_INT:
-                  member_data[im->shifted_offset].s32 = r.getIntValue();
-                  r.unset();
-                  break;
-               case YAC_TYPE_FLOAT:
-                  member_data[im->shifted_offset].f32 = r.getFloatValue();
-                  break;
-               default:
-                  if( (!im->member->deref_init_expr) && member_data[im->shifted_offset+1].si ) // object ptr set??
-                  {
-                     switch(r.type)
+               YAC_Value r; im->member->init_expr->eval(_env, &r);
+               // if(bDebug) yac_host->printf("xxx ScriptClassInstance::callMemberInitializers: init_expr OK\n");
+               YAC_Value ar;
+               sUI rtti = im->member->rtti;
+               if(rtti > YAC_TYPE_STRING)
+                  rtti = YAC_TYPE_OBJECT;
+               switch(im->member->rtti)
+               {
+                  case YAC_TYPE_VOID:
+                     r.unset();
+                     break;
+                  case YAC_TYPE_INT:
+                     member_data[im->shifted_offset].s32 = r.getIntValue();
+                     r.unset();
+                     break;
+                  case YAC_TYPE_FLOAT:
+                     member_data[im->shifted_offset].f32 = r.getFloatValue();
+                     break;
+                  default:
+                     if( (!im->member->deref_init_expr) && member_data[im->shifted_offset+1].si ) // object ptr set??
                      {
-                        case YAC_TYPE_VOID:
-                           break;
-                        case YAC_TYPE_INT:
-                           member_data[im->shifted_offset+1].o->yacOperatorI(YAC_OP_ASSIGN, r.value.int_val, &ar);
-                           ar.unset();
-                           break;
-                        case YAC_TYPE_FLOAT:
-                           member_data[im->shifted_offset+1].o->yacOperatorF32(YAC_OP_ASSIGN, r.value.float_val, &ar);
-                           ar.unset();
-                           break;
-                        default:
-                           member_data[im->shifted_offset+1].o->yacOperatorAssign(r.value.object_val);
-                           ar.unset();
-                           r.unset();
-                           break;
-                     }
-                  }
-                  else
-                  {
-                     // ---- just a Pointer, grab object from expression ----
-                     // ---- e.g. class MyClass { Pointer p=[1,2,3,4]; }
-                     if(r.type >= YAC_TYPE_OBJECT)
-                     {
-                        // ---- grab object pointer ----
-                        if(member_data[im->shifted_offset].b)
+                        switch(r.type)
                         {
-                           YAC_DELETE(member_data[im->shifted_offset+1].o);
+                           case YAC_TYPE_VOID:
+                              break;
+                           case YAC_TYPE_INT:
+                              member_data[im->shifted_offset+1].o->yacOperatorI(YAC_OP_ASSIGN, r.value.int_val, &ar);
+                              ar.unset();
+                              break;
+                           case YAC_TYPE_FLOAT:
+                              member_data[im->shifted_offset+1].o->yacOperatorF32(YAC_OP_ASSIGN, r.value.float_val, &ar);
+                              ar.unset();
+                              break;
+                           default:
+                              member_data[im->shifted_offset+1].o->yacOperatorAssign(r.value.object_val);
+                              ar.unset();
+                              r.unset();
+                              break;
                         }
-                        member_data[im->shifted_offset].b = r.deleteme;
-                        r.deleteme = YAC_FALSE;
-                        member_data[im->shifted_offset+1].o = r.value.object_val;
                      }
-                     else if(im->member->deref_init_expr)
+                     else
                      {
-                        // ---- unset class member object pointer ----
-                        if(member_data[im->shifted_offset].s32)
+                        // ---- just a Pointer, grab object from expression ----
+                        // ---- e.g. class MyClass { Pointer p=[1,2,3,4]; }
+                        if(r.type >= YAC_TYPE_OBJECT)
                         {
-                           YAC_DELETE(member_data[im->shifted_offset+1].o);
+                           // ---- grab object pointer ----
+                           if(member_data[im->shifted_offset].b)
+                           {
+                              YAC_DELETE(member_data[im->shifted_offset+1].o);
+                           }
+                           member_data[im->shifted_offset].b = r.deleteme;
+                           r.deleteme = YAC_FALSE;
+                           member_data[im->shifted_offset+1].o = r.value.object_val;
                         }
-                        member_data[im->shifted_offset].b  = YAC_FALSE;
-                        member_data[im->shifted_offset+1].o = NULL;
+                        else if(im->member->deref_init_expr)
+                        {
+                           // ---- unset class member object pointer ----
+                           if(member_data[im->shifted_offset].s32)
+                           {
+                              YAC_DELETE(member_data[im->shifted_offset+1].o);
+                           }
+                           member_data[im->shifted_offset].b  = YAC_FALSE;
+                           member_data[im->shifted_offset+1].o = NULL;
+                        }
                      }
-                  }
-                  break;
-            }
-         }
+                     break;
+               }
+            } // if init_expr
+         } // if im
          c = c->next;
       }
    }

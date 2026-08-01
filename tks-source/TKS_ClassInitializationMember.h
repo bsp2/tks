@@ -1,14 +1,14 @@
-/// TKS_ClassInitializationMember.h  
-///  
-/// (c) 2005-2009 Bastian Spiegel <bs@tkscript.de>  
+/// TKS_ClassInitializationMember.h
+///
+/// (c) 2005-2026 Bastian Spiegel <bs@tkscript.de>
 ///    - distributed under terms of the GNU general public license (GPL).
-/// 
-/// 
-#ifndef __TKS_CLASSINITIALIZATION_MEMBER_H__
-#define __TKS_CLASSINITIALIZATION_MEMBER_H__
- 
+///
+///
+#ifndef TKS_CLASSINITIALIZATION_MEMBER_H__
+#define TKS_CLASSINITIALIZATION_MEMBER_H__
 
-class TKS_ClassInitializationMember { 
+
+class TKS_ClassInitializationMember {
 
 #ifdef TKS_USE_NODEALLOCATOR
 public:
@@ -16,10 +16,10 @@ public:
    void *operator new    (size_t, void *_this) { return _this; }
 #endif // TKS_USE_NODEALLOCATOR
 
-public: 
-     TKS_ClassDeclMember *member; 
-     sUI                  shifted_offset; 
-}; 
+public:
+     TKS_ClassDeclMember *member;
+     sUI                  shifted_offset;
+};
 
 
-#endif // __TKS_CLASSINITIALIZATION_MEMBER_H__
+#endif // TKS_CLASSINITIALIZATION_MEMBER_H__
