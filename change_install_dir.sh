@@ -1,7 +1,8 @@
 # change installation directory (m all_install)
 #  (note) e.g. % . ./change_install_dir.sh `realpath local_install/`
 if [ -z "${1}" ]; then
-export TKS_PREFIX=/d/bsp/tools/tks/
+#export TKS_PREFIX=/d/bsp/tools/tks/
+export TKS_PREFIX="`realpath local_install/`"
 else
 export TKS_PREFIX="${1}"
 fi
