@@ -1,6 +1,6 @@
 
-INSTALL_GFX:="$(TKS_TARGET_SITE_PREFIX)/applications/gfx"
-INSTALL_AUDIO:="$(TKS_TARGET_SITE_PREFIX)/applications/audio"
+INSTALL_GFX:=$(TKS_TARGET_SITE_PREFIX)/applications/gfx
+INSTALL_AUDIO:=$(TKS_TARGET_SITE_PREFIX)/applications/audio
 
 TKX_OPT:= -ps -nln
 
