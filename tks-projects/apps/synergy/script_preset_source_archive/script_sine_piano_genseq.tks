@@ -1,0 +1,217 @@
+//
+// generative sequence, based on "tks-examples/tksdl/sine_piano.tks"
+//
+
+int tick_nr;
+
+float octave = 48;
+
+Seq seq1, seq2;
+seq1.init([ 0, 5, 7, ],                             // note
+          [ 2, 3, 3 ],                              // time
+          [ 4, 1, 1, ],                             // duration
+          [ 0, 0, 0, 0, 5, 5, 5, 5, 7, 7, -5, -5 ]  // transpose
+          );
+seq2.init([ 0, 12, 0, 0, 12, 0, 12, ],
+          [ 4, 6, 2, 2, 3, 1 ],
+          [ 2, 4, 4, 1, 2 ],
+          [ 0, 0, -5, -5, -2, 10 ]
+          );
+boolean b_seq = true;
+Echo echo;
+
+int last_note;
+
+class Echo {
+   int delay;
+   IntArray notes;
+   IntArray times;
+   IntArray durations;
+   FloatArray levels;
+   int dur_ticks_left;
+
+   addNote(int _note, int _time, int _dur, float _level) {
+      notes.add(_note);
+      times.add(_time);
+      durations.add(_dur);
+      levels.add(_level);
+      //trace "xxx echo addNote: delay="+delay+" note="+_note+" time="+_time+" dur="+_dur+" level="+_level;
+   }
+
+   tick(MIDIPipeFrame _frOut, boolean _bAllowNoteOnOff) {
+
+      if(--dur_ticks_left <= 0)
+      {
+         dur_ticks_left = 9999999;
+      }
+
+      //trace "xxx notes="+notes.numElements;
+
+      int i = 0;
+      while(i < notes.numElements)
+      {
+         //trace "xxx process echo times["+i+"]="+times[i];
+         times[i] = times[i] - 1;
+         if(0 == times[i])
+         {
+            boolean bDelete = true;
+            if(_bAllowNoteOnOff)
+            {
+               float level = levels[i];
+               int dur = durations[i];
+               //NoteOn(notes[i], level);
+               _frOut.noteOn(true/*bSet*/, out_1_dev, out_1_ch, notes[i], 1+level*126, dur);
+               //trace "xxx echo note="+notes[i]+" vel="+(1+level*126);
+               dur_ticks_left = durations[i];
+               if(level > 0.03125)
+               {
+                  levels[i] = level * 0.5f;
+                  times[i] = delay;
+                  bDelete = false;
+               }
+            }
+            if(bDelete)
+            {
+               notes.delete(i);
+               times.delete(i);
+               durations.delete(i);
+               levels.delete(i);
+            }
+         }
+         else
+         {
+            i++;
+         }
+      }
+   }
+}
+
+class Seq {
+   IntArray note_seq, time_seq, dur_seq, trp_seq;
+   int note_idx, time_idx, dur_idx;
+   int time_ticks_left;
+   int dur_ticks_left;
+   int trp_idx;
+
+   init(IntArray notes, IntArray times, IntArray durations, IntArray trp) {
+      note_seq = notes; time_seq = times; dur_seq = durations; trp_seq = trp;
+   }
+
+   reset() {
+      note_idx = 0;
+      time_idx = 0;
+      dur_idx  = 0;
+      trp_idx  = 0;
+   }
+
+   play() : int {
+      int r = -1;
+      if(--dur_ticks_left <= 0)
+      {
+         r = 0;
+         dur_ticks_left = 9999999;
+      }
+      if(--time_ticks_left <= 0)
+      {
+         time_ticks_left = (st2::current_song.ppq/4)/*16th*/ * time_seq[time_idx];
+         time_idx = (time_idx + 1) % time_seq.numElements;
+         dur_ticks_left = (st2::current_song.ppq/16)/*64th*/ * dur_seq[dur_idx];
+         dur_idx = (dur_idx + 1) % dur_seq.numElements;
+         if(note_idx >= 0)
+         {
+            r = octave + note_seq[note_idx] + trp_seq[trp_idx];
+            if(rand(10) > 7)
+               r += 12;
+            note_idx = (note_idx + 1) % note_seq.numElements;
+            if(0 == note_idx)
+               trp_idx = (trp_idx + 1) % trp_seq.numElements;
+         }
+      }
+      return r;
+   }
+}
+
+function ProcessSeqAndEcho(MIDIPipeFrame _frOut) {
+   int note, dur;
+   Integer dur1, dur2;
+   if(b_seq)
+   {
+      int note1 = seq1.play();
+      int note2 = seq2.play();
+      if(-1 != note1)
+      {
+         if(-1 != note2)
+         {
+            if(rand(10) > 5)
+            {
+               note = note1;
+               dur = seq1.dur_ticks_left;
+            }
+            else
+            {
+               note = note2;
+               dur = seq2.dur_ticks_left;
+            }
+         }
+         else
+         {
+            note = note1;
+            dur = seq1.dur_ticks_left;
+         }
+      }
+      else
+      {
+         note = note2;
+         dur = seq2.dur_ticks_left;
+      }
+      boolean bNoteOn = false;
+      if(note >= 0)
+      {
+         if(note > 0)
+         {
+            if(note != last_note || (rand(10) > 3))
+            {
+               float level = 1.0f;
+               if(note > 60)
+                  level *= 1.0f - (mathMini(15,(note-60))/15.0);
+               _frOut.noteOn(true/*bSet*/, out_1_dev, out_1_ch, note, 1+level*126, dur);
+               echo.tick(_frOut, false/*bAllowNoteOnOff*/);
+               echo.addNote(note, echo.delay, dur, level*0.2f);
+               bNoteOn = true;
+            }
+         }
+      }
+      if(!bNoteOn)
+         echo.tick(_frOut, true/*bAllowNoteOnOff*/);
+   }
+}
+
+
+function OnReset() {
+   last_note = -1;
+   echo.delay = (st2::current_song.ppq/4) * 3;
+   trace "[dbg] OnReset: echo.delay="+echo.delay;
+   seq1.reset();
+   seq2.reset();
+}
+
+function OnSeek(int ticks) {
+   tick_nr = ticks;
+}
+
+function OnAction(ui::Layer layer, String id, String acName, MIDIPipeFrame frameOut) {
+
+}
+
+function OnProcess(MIDIPipeFrame framePlay,
+                   MIDIPipeFrame frameRec,
+                   boolean       bMuted,
+                   boolean       bPlaySeq
+                   ) {
+   if(bPlaySeq && !bMuted)
+   {
+      ProcessSeqAndEcho(framePlay);
+
+      tick_nr++;
+   }
+}
