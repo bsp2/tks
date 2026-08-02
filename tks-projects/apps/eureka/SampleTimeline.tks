@@ -12,6 +12,7 @@
 // ----          04Apr2025, 05Apr2025, 06Apr2025, 07Apr2025, 09Apr2025, 01May2025, 04May2025
 // ----          06May2025, 20May2025, 22May2025, 29May2025, 30May2025, 04Jun2025, 14Jun2025
 // ----          22Jun2025, 20Dec2025, 02Jan2026, 03Jan2026, 07Apr2026, 08Apr2026, 11Jul2026
+// ----          02Aug2026
 // ----
 // ----
 // ----
@@ -28,6 +29,7 @@ class SampleTimeline {
    define int MAX_TIMELINES = 128;
    define int SEQ_TRIG_NOTE   = (3*12)/*C-3*/;   // which externally sent note starts the replay
    define int SEQ_REPLAY_NOTE = (5*12)/*C-5*/;   // sample base note (should be C-5)
+   define int SEQ_JAM_BASE_NOTE = (4*12)/*C-4*/; // trigger clips with C-4..G-A while timeline replay is idle
 
    Track *parent_track;
 
@@ -56,6 +58,13 @@ class SampleTimeline {
    protected int seek_ms_lo;
    protected MIDIPipeEvent pev;
 
+   int jam_clip_idx;
+   IntArray jam_queued_clip_start;  // unitPos, trackIdx, clipIdx
+   IntArray jam_queued_clip_stop;   // unitPos, trackIdx, clipIdx
+   int jam_pending_stop_clip_idx;
+   static SampleTimelineModelClip *[] jam_rec_clips;  // cleared when replay starts
+   static SampleTimelineModelClip *jam_rec_cur_clip;
+
 
    // <method_init.png>
    public method initSampleTimeline(Track _track) {
@@ -83,6 +92,18 @@ class SampleTimeline {
       }
 
       b_update_lane_sends = true;
+   }
+
+   // <method.png>
+   public static =replay= ResetJamRec() {
+      Global.Debug("SampleTimeline::ResetJamRec()");
+      jam_rec_clips.free();
+      jam_rec_cur_clip <= null;
+   }
+
+   // <method.png>
+   public static =replay= HaveJamRec() : boolean {
+      return (jam_rec_clips.numElements > 0);
    }
 
    // <method_new.png>
@@ -510,6 +531,10 @@ class SampleTimeline {
             replay_model.invalidateClipIndexHints();
          // // pre_delay_frames = _preDelayFrames;
          b_playing = true;
+         jam_clip_idx = -1;
+         jam_queued_clip_start.empty();
+         jam_queued_clip_stop.empty();
+         jam_rec_cur_clip <= null;
       }
       play_pos = _playPos;
       Global.Debug("SampleTimeline::toggleReplay: b_playing="+b_playing+" preDelayFrames="+_preDelayFrames);
@@ -672,13 +697,14 @@ class SampleTimeline {
    }
 
    // <replay.png>
-   protected method processCCs(local MIDIPipeFrame _frInput,
-                               local int           _devIdx,
-                               local int           _midiCh,
-                               local int           _fltReplayTrackIdx,
-                               local boolean       _bAllowReset  // CC121
-                               ) {
+   public method processCCs(local MIDIPipeFrame _frInput,
+                            local int           _devIdx,
+                            local int           _midiCh,
+                            local int           _fltReplayTrackIdx,
+                            local boolean       _bAllowReset  // CC121
+                            ) {
       // (note) update all tracks if replayTrackIdx == -1
+      // (note) called by SampleTimelineReplayTrack::startClip()
       local int numEv = _frInput.getNumEventsCCByFlt(_devIdx, _midiCh);
       local int evIdx  = 0;
       loop(numEv)
@@ -850,11 +876,14 @@ class SampleTimeline {
          // // // b_playing = false;
       }
 
+      local int  devIdx = _curTrack.dev_idx;
+      local byte midiCh = _curTrack.midi_ch;  // -1=MIDI channel per timeline replay track (perf.ctl)
+
+      local int numEv;
+      local int evIdx;
+
       if(replay.b_have_events)
       {
-         local int  devIdx = _curTrack.dev_idx;
-         local byte midiCh = _curTrack.midi_ch;  // -1=MIDI channel per timeline replay track (perf.ctl)
-
          if(bDebug) trace "[>>>] SampleTimeline: have events";
 
          // (note) MIDI all notes off is received via CC 123
@@ -880,8 +909,7 @@ class SampleTimeline {
          if(prg >= 0)
          {
             local int curPrg = (null != replay_model) ? all_models.indexOfPointer(replay_model, 0) : -1;
-            // if(bDebug)
-               trace "[>>>] SampleTimeline: select replay model idx="+prg+" cur="+curPrg;
+            if(bDebug) trace "[>>>] SampleTimeline: select replay model idx="+prg+" cur="+curPrg;
             if(prg != curPrg)
             {
                if(bDebug) trace "[>>>] SampleTimeline: switch to new replay model idx="+prg;
@@ -904,8 +932,6 @@ class SampleTimeline {
          }
 
          // Process performance controllers and relay to track sampleplayers
-         local int numEv;
-         local int evIdx;
 
          // CC
          processCCs(_frInput, devIdx, midiCh, -1/*fltReplayTrackIdx*/, true/*bAllowReset*/);
@@ -927,8 +953,7 @@ class SampleTimeline {
             // Next pitchbend event
             evIdx++;
          }
-
-      }
+      } // if replay.b_have_events
 
       local float bpm = getCurrentReplayBPM();
       local float numFramesPerBeat = Audio.mix_rate * (60.0f / bpm);
@@ -973,19 +998,24 @@ class SampleTimeline {
       }
 
       // (todo) add option (checkbox) to sync playback with project play state
-      local boolean bAdvSeq = b_playing;
       local SampleTimelineModelTrack *track;
       local SampleTimelineModelClip *clip;
       local int trackIdx;
+      // // local StSamplePlayer *sp;
+      local int clipIdx;
+      local int playPos;
+      local int playPosQ;  // quantized play pos
+      local int unitsQ;
+      local float masterVol;
 
       while(num_tick_frames_left <= 0.0f)
       {
-         if(bAdvSeq)
+         if(b_playing)
          {
             if(null != replay_model)
             {
                // Start / stop clips at play_pos and update volume
-               local float masterVol = 1.0f;
+               masterVol = 1.0f;
                trackIdx = 0;
                foreach track in replay_model.tracks
                {
@@ -993,10 +1023,10 @@ class SampleTimeline {
 
                   // can be null if SampleTimeline.MAX_REPLAY_TRACKS is exceeded
                   replayTrack <= replay_tracks.get(trackIdx);
-                  local StSamplePlayer sp <= (null != replayTrack) ? replayTrack.sample_player : null;
+                  // // sp <= (null != replayTrack) ? replayTrack.sample_player : null;
 
                   local boolean bCalcStartOffset = (-1 == track.replay_clip_idx_hint);  // after seek
-                  local int clipIdx = mathMaxi(0, track.replay_clip_idx_hint);
+                  clipIdx = mathMaxi(0, track.replay_clip_idx_hint);
                   for(;;)
                   {
                      clip <= track.clips.get(clipIdx);
@@ -1009,88 +1039,23 @@ class SampleTimeline {
                            track.replay_clip_idx_hint = clipIdx;
                            if(!clip.b_mute)
                            {
-                              if(null != sp)
+                              if(null != replayTrack)
                               {
-                                 local Sample sample <= current_project.getSampleByIdx(clip.sample_idx);
-                                 if(null != sample && !sample.b_clip_recording)
-                                 {
-                                    sp.setLastStartedSampleBankHint(sample.sample_bank);
-                                    local float modVal = replayTrack.getModVal(sample, clip);
-                                    if(-1 == sample.solo_zone_idx)
-                                    {
-                                       replayTrack.last_voice_key =
-                                          sp.startSampleBank(sample.sample_bank,
-                                                             null/*freqTable*/,
-                                                             SEQ_REPLAY_NOTE,
-                                                             clip.vel_on/127.0f/*velocity*/,
-                                                             modVal,
-                                                             1.0f/*volume*/,
-                                                             0.0f/*pan*/,
-                                                             0/*freq*/
-                                                             );
-                                    }
-                                    else
-                                    {
-                                       local StSample s <= sample.sample_bank.getSampleByIdx(sample.solo_zone_idx);
-                                       if(null != s)
-                                       {
-                                          replayTrack.last_voice_key =
-                                             sp.startSample(s,
-                                                            null/*freqTable=default*/,
-                                                            SEQ_REPLAY_NOTE,
-                                                            clip.vel_on/127.0f/*velocity*/,
-                                                            modVal,
-                                                            1.0f/*volume*/,
-                                                            0.0f/*pan*/,
-                                                            0/*freq*/
-                                                            );
-                                       }
-                                    }
-
-                                    local float offsetMS = (clip.offset / numUnitsPerMS);
-                                    if(bCalcStartOffset)
-                                       offsetMS += (play_pos - clip.start) / numUnitsPerMS;  // after seek
-                                    if(bDebug && offsetMS > 0)
-                                       trace "[>>>] SampleTimeline:: start clip noteOn voiceKey="+replayTrack.last_voice_key+" offsetMs="+offsetMS;
-                                    sp.setInitialSampleOffsetMsByKey(replayTrack.last_voice_key, offsetMS);
-
-                                    // Update initial performance controllers
-                                    //  - baseline = sample clip perf.ctls
-                                    //  - override by clip MW/BC/FC/EX perf.ctls
-                                    //  - override by MIDI ctl that were received on same tick
-                                    sp.updatePerfCtls(sample.initial_perf_ctl);  // (note) skip ctl if val is -1
-
-                                    if(clip.cc_mw >= 0.0f)
-                                       sp.updatePerfCtl(STSAMPLEPLAYER_PERFCTL_CC1_MODWHEEL, clip.cc_mw);
-
-                                    if(clip.cc_bc >= 0.0f)
-                                       sp.updatePerfCtl(STSAMPLEPLAYER_PERFCTL_CC2_BREATHCTL, clip.cc_bc);
-
-                                    if(clip.cc_fc >= 0.0f)
-                                       sp.updatePerfCtl(STSAMPLEPLAYER_PERFCTL_CC4_FOOTCTL, clip.cc_fc);
-
-                                    if(clip.cc_ex >= 0.0f)
-                                       sp.updatePerfCtl(STSAMPLEPLAYER_PERFCTL_CC11_EXPRESSION, clip.cc_ex);
-
-                                    processCCs(_frInput, devIdx, midiCh, trackIdx, false/*bAllowReset*/);
-
-                                    replayTrack.fade_in_start_units = clip.start;
-                                    replayTrack.fade_in_end_units   =
-                                       mathMini(clip.end, clip.start + clip.fade_in_beats * numUnitsPerBeat);
-
-                                    replayTrack.fade_out_start_units =
-                                       mathMaxi(clip.start, clip.end - clip.fade_out_beats * numUnitsPerBeat);
-                                    replayTrack.fade_out_end_units   = clip.end;
-
-                                    replayTrack.calcFadingAndUpdateSP(play_pos, masterVol * (clip.vel_on/127.0f));  // calc fade_vol
-                                    if(track.b_master_volume)
-                                    {
-                                       // trace "xxx start mastervol old="+masterVol+" new="+(masterVol * replayTrack.fade_vol * replayTrack.perf_vol * (clip.vel_on/127.0f));
-                                       masterVol *= replayTrack.fade_vol * replayTrack.perf_vol * (clip.vel_on/127.0f);
-                                    }
-
-                                    sp.initStartedVoicesByKey(replayTrack.last_voice_key);
-                                 }
+                                 masterVol = replayTrack.startClip(_frInput,
+                                                                   devIdx,
+                                                                   midiCh,
+                                                                   trackIdx,
+                                                                   track,
+                                                                   clip,
+                                                                   masterVol,
+                                                                   numUnitsPerBeat,
+                                                                   numUnitsPerMS,
+                                                                   bDebug,
+                                                                   play_pos,
+                                                                   bCalcStartOffset,
+                                                                   clip.start,
+                                                                   clip.end
+                                                                   );
                               }
 
                               b_update_lane_sends = true;
@@ -1101,13 +1066,9 @@ class SampleTimeline {
                         {
                            // Stop clip
                            if(bDebug) trace "[>>>] SampleTimeline: stop clip uid="+clip.uid+" range=("+clip.start+","+clip.end+") track_idx="+track.track_idx;
-                           if(null != sp)
+                           if(null != replayTrack)
                            {
-                              // trace "xxx stop clip b_release="+clip.b_release;
-                              if(clip.b_release)
-                                 sp.noteOff(SEQ_REPLAY_NOTE, clip.vel_off/127.0f/*velocity*/);
-                              else
-                                 sp.allNotesOff();
+                              replayTrack.stopClip(clip);
                            }
                            track.replay_clip_idx_hint++;
 
@@ -1119,16 +1080,7 @@ class SampleTimeline {
                            {
                               if(clip.start <= play_pos < clip.end)
                               {
-                                 replayTrack.calcFadingAndUpdateSP(play_pos, masterVol * (clip.vel_on/127.0f));  // calc fade_vol
-                                 // if(1 == trackIdx)
-                                 //    trace "xxx masterVol="+masterVol+" replayTrack.fade_vol="+replayTrack.fade_vol;
-                                 if(track.b_master_volume)
-                                 {
-                                    // local float masterVolOld = masterVol;
-                                    masterVol *= replayTrack.fade_vol * replayTrack.perf_vol;
-                                    masterVol *= (clip.vel_on/127.0f);
-                                    // trace "xxx trackIdx="+trackIdx+" update mastervol old="+masterVolOld+" new="+masterVol;
-                                 }
+                                 masterVol = replayTrack.updateClipVolume(track, clip, masterVol, play_pos);
                                  break;
                               }
                            }
@@ -1171,10 +1123,165 @@ class SampleTimeline {
                }
             }
 
-         } // if bAdvSeq
+            playPos = play_pos;
+         } // if b_playing
 
          num_tick_frames_left += numFramesPerUnit;
       }
+
+      if(!b_playing && null != replay_model)
+      {
+         // JAM mode
+         masterVol = 1.0f;
+         playPos = (replay.mono_ticks * numUnitsPerBeat) / current_project.ppq;
+         PageTrack pgTrack <= root_form.pg_track;
+         SampleTimelineForm *sampleTimelineForm;
+         SampleTimelineEditor *sampleTimelineEditor;
+
+         // if(0 == (playPos % replay_model.num_units_per_beat))
+         //    trace "xxx timeline beat: playPos="+playPos;
+
+         if(replay.b_have_events)
+         {
+            // Note-off
+            numEv = _frInput.getNumEventsNoteOffByFlt(devIdx, midiCh);
+            evIdx = 0;
+            loop(numEv)
+            {
+               if(_frInput.getEventByIdxAndFlt(evIdx, pev, MIDIPIPE_EVENT_TYPE_NOTE_OFF, devIdx, midiCh))
+               {
+                  if(pgTrack.pageIsCurrent())
+                  {
+                     sampleTimelineForm <= pgTrack.f_sampletimeline;
+                     sampleTimelineEditor <= sampleTimelineForm.sample_timeline_editor;
+                     trackIdx = sampleTimelineEditor.cursor_track;
+                  }
+                  else
+                  {
+                     trackIdx = 0;
+                  }
+                  track <= (null != replay_model) ? replay_model.tracks.get(trackIdx) : null;
+                  if(null != track)
+                  {
+                     replayTrack <= replay_tracks.get(trackIdx);
+                     clipIdx = pev.note - SEQ_JAM_BASE_NOTE;
+                     if(jam_pending_stop_clip_idx == clipIdx)
+                     {
+                        clip <= track.clips.get(clipIdx);
+                        if(null != clip)
+                        {
+                           // trace "xxx JAM stop clipIdx="+clipIdx+" trackIdx="+trackIdx+" jam_rec_cur_clip="+#(jam_rec_cur_clip);
+                           replayTrack.stopClip(clip);
+                           jam_queued_clip_start.empty();
+                           if(null != jam_rec_cur_clip)
+                           {
+                              jam_rec_cur_clip.end = playPos;
+                              jam_rec_cur_clip <= null;
+                           }
+                        }
+                     }
+                  }
+               }
+            }
+
+            // Note-on
+            numEv = _frInput.getNumEventsNoteOnByFlt(devIdx, midiCh);
+            evIdx = 0;
+            loop(numEv)
+            {
+               if(_frInput.getEventByIdxAndFlt(evIdx, pev, MIDIPIPE_EVENT_TYPE_NOTE_ON, devIdx, midiCh))
+               {
+                  if(pgTrack.pageIsCurrent())
+                  {
+                     sampleTimelineForm <= pgTrack.f_sampletimeline;
+                     sampleTimelineEditor <= sampleTimelineForm.sample_timeline_editor;
+                     trackIdx = sampleTimelineEditor.cursor_track;
+                  }
+                  else
+                  {
+                     trackIdx = 0;
+                  }
+                  track <= (null != replay_model) ? replay_model.tracks.get(trackIdx) : null;
+                  if(null != track)
+                  {
+                     replayTrack <= replay_tracks.get(trackIdx);
+                     clipIdx = pev.note - SEQ_JAM_BASE_NOTE;
+                     clip <= track.clips.get(clipIdx);
+                     // trace "xxx playPos="+playPos+" replay.b_have_events="+replay.b_have_events+" numEv="+numEv+" devIdx="+devIdx+" midiCh="+midiCh+" => trackIdx="+trackIdx+" clipIdx="+clipIdx+" clip="+#(clip);
+                     if(null != clip)
+                     {
+                        unitsQ = replay_model.num_units_per_beat / 4;  // 16th
+                        playPosQ = ((playPos + (unitsQ/2)) / unitsQ) * unitsQ;
+                        jam_queued_clip_start.add3(playPosQ, trackIdx, clipIdx);
+                        // trace "xxx JAM: queue start clip idx="+clipIdx+" playPosQ="+playPosQ;
+                     } // if clip
+                  } // if track
+               } // if get event
+               evIdx++;
+            } // loop ev
+         } // if have events
+
+         // Handle quantized clip start
+         if(jam_queued_clip_start.numElements > 0)
+         {
+            playPosQ = jam_queued_clip_start.get(0);
+            // trace "xxx playPos="+playPos+" playPosQ="+playPosQ;
+            if(playPos >= playPosQ)
+            {
+               trackIdx = jam_queued_clip_start.get(1);
+               clipIdx  = jam_queued_clip_start.get(2);
+               track <= (null != replay_model) ? replay_model.tracks.get(trackIdx) : null;
+               if(null != track)
+               {
+                  replayTrack <= replay_tracks.get(trackIdx);
+                  clip <= track.clips.get(clipIdx);
+                  if(null != clip)
+                  {
+                     // trace "xxx JAM queued start clipIdx="+clipIdx+" trackIdx="+trackIdx+" playPosQ="+playPosQ+" playPos="+playPos+" jam_rec_cur_clip="+#(jam_rec_cur_clip);
+                     allNotesOff(true/*bRelease*/);
+
+                     masterVol = replayTrack.startClip(_frInput,
+                                                       devIdx,
+                                                       midiCh,
+                                                       trackIdx,
+                                                       track,
+                                                       clip,
+                                                       masterVol,
+                                                       numUnitsPerBeat,
+                                                       numUnitsPerMS,
+                                                       bDebug,
+                                                       playPos,
+                                                       true/*bCalcStartOffset*/,
+                                                       playPosQ/*clipStartUnits*/,
+                                                       (playPosQ + (clip.end - clip.start))/*clipEndUnits*/
+                                                       );
+                     b_update_lane_sends = true;
+                     jam_pending_stop_clip_idx = clipIdx;
+
+                     // Clip recording
+                     if(null != jam_rec_cur_clip)
+                     {
+                        jam_rec_cur_clip.end = playPos;
+                        jam_rec_cur_clip <= null;
+                     }
+
+                     local SampleTimelineModelClip recClip <= new SampleTimelineModelClip;
+                     recClip.initClip();
+                     recClip.copyFrom(clip, false/*bCopyTrackIdx*/);
+                     recClip.start = playPosQ;
+                     recClip.end   = (playPosQ + (clip.end - clip.start));
+                     recClip.track_idx = trackIdx;
+
+                     jam_rec_clips.add(#(deref recClip));
+                     jam_rec_cur_clip <= recClip;
+                     trace "xxx #recorded_clips="+jam_rec_clips.numElements;
+                  }
+                  jam_queued_clip_start.empty();
+               }
+            }
+         }
+
+      } // if !b_playing
 
       // Process replay tracks
       trackIdx = 0;

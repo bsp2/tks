@@ -9,7 +9,7 @@
 // ----           (note) adapted from DrumPadDialog
 // ----
 // ---- created: 07Apr2025
-// ---- changed: 09Apr2025, 01May2025, 13Jun2025, 07Apr2026, 08Apr2026, 11Jul2026
+// ---- changed: 09Apr2025, 01May2025, 13Jun2025, 07Apr2026, 08Apr2026, 11Jul2026, 02Aug2026
 // ----
 // ----
 // ----
@@ -54,8 +54,8 @@ class SampleTimelineReplayTrack {
    int fade_out_end_units;
 
    float fade_vol;  // 0..1
-
    float perf_vol;  // 0..1
+
 
 
    public method init(SampleTimeline _parent) {
@@ -334,6 +334,132 @@ plot (1-sin(((1-x)**1.6)*pi*0.5)) title "fade in",  cos( (1-((1-x)**1.6))*pi*0.5
          // Next send
          sendIdx++;
       }
+   }
+
+   public method startClip(local MIDIPipeFrame _frInput,
+                           local int _devIdx,
+                           local int _midiCh,
+                           local int _trackIdx,
+                           local SampleTimelineModelTrack _track,
+                           local SampleTimelineModelClip  _clip,
+                           local float                    _masterVol,
+                           local int   _numUnitsPerBeat,
+                           local float _numUnitsPerMS,
+                           local boolean _bDebug,
+                           local int     _playPos,
+                           local boolean _bCalcStartOffset,
+                           local int     _clipStartUnits,
+                           local int     _clipEndUnits
+                           ) : float {
+      // returns new 'masterVol'
+      local Sample sample <= current_project.getSampleByIdx(_clip.sample_idx);
+      if(null != sample && !sample.b_clip_recording)
+      {
+         sample_player.setLastStartedSampleBankHint(sample.sample_bank);
+         local float modVal = getModVal(sample, _clip);
+         if(-1 == sample.solo_zone_idx)
+         {
+            last_voice_key =
+               sample_player.startSampleBank(sample.sample_bank,
+                                             null/*freqTable*/,
+                                             SampleTimeline.SEQ_REPLAY_NOTE,
+                                             _clip.vel_on/127.0f/*velocity*/,
+                                             modVal,
+                                             1.0f/*volume*/,
+                                             0.0f/*pan*/,
+                                             0/*freq*/
+                                             );
+         }
+         else
+         {
+            local StSample s <= sample.sample_bank.getSampleByIdx(sample.solo_zone_idx);
+            if(null != s)
+            {
+               last_voice_key =
+                  sample_player.startSample(s,
+                                            null/*freqTable=default*/,
+                                            SampleTimeline.SEQ_REPLAY_NOTE,
+                                            _clip.vel_on/127.0f/*velocity*/,
+                                            modVal,
+                                            1.0f/*volume*/,
+                                            0.0f/*pan*/,
+                                            0/*freq*/
+                                            );
+            }
+         }
+
+         local float offsetMS = (_clip.offset / _numUnitsPerMS);
+         if(_bCalcStartOffset)
+            offsetMS += (_playPos - _clipStartUnits) / _numUnitsPerMS;  // after seek
+         if(_bDebug && offsetMS > 0)
+            trace "[>>>] SampleTimeline:: start clip noteOn voiceKey="+last_voice_key+" offsetMs="+offsetMS;
+         sample_player.setInitialSampleOffsetMsByKey(last_voice_key, offsetMS);
+
+         // Update initial performance controllers
+         //  - baseline = sample clip perf.ctls
+         //  - override by clip MW/BC/FC/EX perf.ctls
+         //  - override by MIDI ctl that were received on same tick
+         sample_player.updatePerfCtls(sample.initial_perf_ctl);  // (note) skip ctl if val is -1
+
+         if(_clip.cc_mw >= 0.0f)
+            sample_player.updatePerfCtl(STSAMPLEPLAYER_PERFCTL_CC1_MODWHEEL, _clip.cc_mw);
+
+         if(_clip.cc_bc >= 0.0f)
+            sample_player.updatePerfCtl(STSAMPLEPLAYER_PERFCTL_CC2_BREATHCTL, _clip.cc_bc);
+
+         if(_clip.cc_fc >= 0.0f)
+            sample_player.updatePerfCtl(STSAMPLEPLAYER_PERFCTL_CC4_FOOTCTL, _clip.cc_fc);
+
+         if(_clip.cc_ex >= 0.0f)
+            sample_player.updatePerfCtl(STSAMPLEPLAYER_PERFCTL_CC11_EXPRESSION, _clip.cc_ex);
+
+         parent_sample_timeline.processCCs(_frInput, _devIdx, _midiCh, _trackIdx, false/*bAllowReset*/);
+
+         fade_in_start_units = _clipStartUnits;
+         fade_in_end_units   =
+            mathMini(_clipEndUnits, _clipStartUnits + _clip.fade_in_beats * _numUnitsPerBeat);
+
+         fade_out_start_units =
+            mathMaxi(_clipStartUnits, _clipEndUnits - _clip.fade_out_beats * _numUnitsPerBeat);
+         fade_out_end_units   = _clipEndUnits;
+
+         calcFadingAndUpdateSP(_playPos, _masterVol * (_clip.vel_on/127.0f));  // calc fade_vol
+         if(_track.b_master_volume)
+         {
+            // trace "xxx start mastervol old="+masterVol+" new="+(masterVol * fade_vol * perf_vol * (_clip.vel_on/127.0f));
+            _masterVol *= fade_vol * perf_vol * (_clip.vel_on/127.0f);
+         }
+
+         sample_player.initStartedVoicesByKey(last_voice_key);
+      }
+      return _masterVol;
+   }
+
+   public method updateClipVolume(local SampleTimelineModelTrack _track,
+                                  local SampleTimelineModelClip  _clip,
+                                  local float                    _masterVol,
+                                  local int                      _playPos
+                                  ) : float {
+      // returns new 'masterVol'
+      calcFadingAndUpdateSP(_playPos, _masterVol * (_clip.vel_on/127.0f));  // calc fade_vol
+      // if(1 == trackIdx)
+      //    trace "xxx masterVol="+masterVol+" replayTrack.fade_vol="+replayTrack.fade_vol;
+      if(_track.b_master_volume)
+      {
+         // local float masterVolOld = masterVol;
+         _masterVol *= fade_vol * perf_vol;
+         _masterVol *= (_clip.vel_on/127.0f);
+         // trace "xxx trackIdx="+trackIdx+" update mastervol old="+masterVolOld+" new="+_masterVol;
+      }
+      return _masterVol;
+   }
+
+   public method stopClip(local SampleTimelineModelClip _clip) {
+      // trace "xxx stop clip b_release="+_clip.b_release;
+      if(_clip.b_release)
+         sample_player.noteOff(SampleTimeline.SEQ_REPLAY_NOTE, _clip.vel_off/127.0f/*velocity*/);
+      else
+         sample_player.allNotesOff();
    }
 
 }
