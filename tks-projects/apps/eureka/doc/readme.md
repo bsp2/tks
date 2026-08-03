@@ -735,6 +735,7 @@ when CLAP / VST2 editor window is focused:
    |:lctrl - v            |:paste SampleView clipboard as new sample+clip OR paste timeline clips from clipboard (depends on which clipboard is more recent)
    |:lctrl - lshift - v   |:insert space on all tracks and shift-paste timeline clips from clipboard
    |:lalt - v             |:paste timeline from clipboard
+   |:j                    |:cycle background-recording mode (clip jam)
    |:l                    |:toggle draw-clip-labels
    |:m                    |:merge selected clips (do not modify samples)
    |:n                    |:toggle normalize-waveform-display

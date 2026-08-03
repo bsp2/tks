@@ -12,7 +12,7 @@
 // ----          01May2025, 06May2025, 20May2025, 22May2025, 31May2025, 13Jun2025, 14Jun2025
 // ----          15Jun2025, 22Jun2025, 26Jun2025, 13Sep2025, 17Sep2025, 10Oct2025, 02Jan2026
 // ----          17Jan2026, 07Apr2026, 08Apr2026, 14Apr2026, 15Apr2026, 17Apr2026, 18Apr2026
-// ----          11May2026, 10Jul2026, 11Jul2026, 12Jul2026, 14Jul2026, 02Aug2026
+// ----          11May2026, 10Jul2026, 11Jul2026, 12Jul2026, 14Jul2026, 02Aug2026, 03Aug2026
 // ----
 // ----
 // ----
@@ -396,6 +396,8 @@ class TimelineClip : Layer {
    public virtual onMouseClick(MouseEvent _ev) : boolean {
       if(_ev.isLeftButton())
       {
+         Global.Debug2("TimelineClip::onMouseClick: start="+timelineClipGetStart()+" end="+timelineClipGetEnd()+" len="+timelineClipGetLen());
+
          grabKeyboardFocus();
          if(VMOD_LCTRL == UI.GetKeyMod())
          {
@@ -2467,10 +2469,11 @@ class TimelineEditorState {
    int      kbd_selection_track_end_sorted;
    boolean  b_selection_copied;
    boolean  b_sync_loop_to_selection;  // true=update replay loop when selection changes
+   int      bgrec_mode;  // used by SampleTimelineEditor (clip-jam) (note: should be moved)
 
    public method saveState(Stream ofs) {
       // ver
-      ofs.i16 = 3;
+      ofs.i16 = 4;
 
       ofs.i8  = b_initialized;
       ofs.i32 = num_visible;
@@ -2492,6 +2495,7 @@ class TimelineEditorState {
       ofs.i32 = kbd_selection_track_end_sorted;
       ofs.i8  = b_selection_copied;
       ofs.i8  = b_sync_loop_to_selection;  // v3+
+      ofs.i8  = bgrec_mode;  // v4+
 
       if(b_debug) trace "[dbg] TimelineEditorState::saveState: cursor_units="+cursor_units+" cursor_track="+cursor_track+" track_size_y="+track_size_y;
    }
@@ -2529,6 +2533,11 @@ class TimelineEditorState {
             b_sync_loop_to_selection = ifs.b8;  // v3+
          }
 
+         if(ver >= 4)
+         {
+            bgrec_mode = ifs.u8;  // v4+
+         }
+
          if(b_debug) trace "[dbg] TimelineEditorState::loadState: cursor_units="+cursor_units+" cursor_track="+cursor_track+" track_size_y="+track_size_y;
 
          return true;
@@ -2562,7 +2571,6 @@ class Timeline : Composite {
    int num_visible;      // in units
    int min_visible;      // in units
    int zoom_min_visible; // in units
-   // // int max_visible;      // in units
    int canvas_size;      // in units  (updated from edit model in timelineInitTracks())
 
    Panel *pn_left;   // left-hand side track header panels
@@ -2584,6 +2592,7 @@ class Timeline : Composite {
    boolean b_swap_wheel_zoom;  // true=swap lctrl-lshift-WHEEL / WHEEL behaviour
 
    boolean b_sync_loop_to_selection;  // true=update replay loop when selection changes  (see TimelineEditorState)
+   int     bgrec_mode;  // used by SampleTimelineEditor (clip-jam) (note: should be moved)
 
    TimelineRect rect_a;
    TimelineRect rect_b;
@@ -2724,9 +2733,6 @@ class Timeline : Composite {
          zoom_min_visible = 2;
 
       canvas_size = timelineGetDefaultCanvasSize();
-
-      // // if(0 == max_visible)
-      // //    max_visible = canvas_size;
 
       if(0 == default_track_size_y)
          default_track_size_y = (UI.font_scaling > 1.4 ? 16 : 16);
@@ -2917,14 +2923,6 @@ class Timeline : Composite {
       return zoom_min_visible;
    }
 
-   // // public method timelineSetMaxVisible(int _max) {
-   // //    max_visible = _max;
-   // // }
-
-   // // public method timelineGetMaxVisible() : int {
-   // //    return max_visible;
-   // // }
-
    public method timelineSetCanvasSize(int _sz) {
       // (note) overridden by derived classes (mirror to current edit model)
       canvas_size = _sz;
@@ -2950,8 +2948,6 @@ class Timeline : Composite {
 
    public method timelineResetView() {
       num_visible = canvas_size;
-      // // if(num_visible > max_visible)
-      // //    num_visible = max_visible;
       float trackHeaderH = Timeline.GetTrackHeaderH();
 
       // // track_size_y = default_track_size_y;
@@ -3088,11 +3084,8 @@ class Timeline : Composite {
 
    protected method timelineIncNumVisible() {
       num_visible = ((num_visible * 3.0) / 2) + 0.5;
-      // num_visible++;
       if(num_visible > canvas_size)
          num_visible = canvas_size;
-      // // if(num_visible > max_visible)
-      // //    num_visible = max_visible;
    }
 
    protected method timelineDecNumVisible() {
@@ -3140,8 +3133,6 @@ class Timeline : Composite {
       // // trace "xxx relX="+relX+" units="+units;
 
       timelineDecNumVisible();
-      // // trace "xxx num_visible="+num_visible;
-
       timelineUpdateLayout();
 
       float newMouseX = timelineUnitsToPix(units);
@@ -3170,7 +3161,6 @@ class Timeline : Composite {
       int len   = end - start;
 
       num_visible = mathClampi(len + 2, zoom_min_visible, canvas_size);
-      // // int shiftStart = ((len+min_visible/2) < min_visible) ? (min_visible - (len+min_visible/2)) : 0;
 
       if(track_size_y < zoom_track_size_y)
          track_size_y = zoom_track_size_y;
@@ -3234,11 +3224,8 @@ class Timeline : Composite {
       float viewOffX = sp_clips.getViewOffsetX();
       float relX = _mouseX - viewOffX;
       // // trace "xxx preZoom: viewOffX="+viewOffX+" mouseX="+_mouseX+" units="+units+" relX="+relX;
-      // // trace "xxx relX="+relX+" units="+units;
 
       timelineIncNumVisible();
-      // // trace "xxx num_visible="+num_visible;
-
       timelineUpdateLayout();
 
       float newMouseX = timelineUnitsToPix(units);
@@ -3996,6 +3983,7 @@ class Timeline : Composite {
       _state.kbd_selection_track_end_sorted   = kbd_selection_track_end_sorted;
       _state.b_selection_copied               = b_selection_copied;
       _state.b_sync_loop_to_selection         = b_sync_loop_to_selection;
+      _state.bgrec_mode                       = bgrec_mode;
    }
 
    public method timelineRestoreEditorState(TimelineEditorState _state) {
@@ -4024,6 +4012,7 @@ class Timeline : Composite {
       kbd_selection_track_end_sorted   = _state.kbd_selection_track_end_sorted;
       b_selection_copied               = _state.b_selection_copied;
       b_sync_loop_to_selection         = _state.b_sync_loop_to_selection;
+      bgrec_mode                       = _state.bgrec_mode;
       // // trace "xxx timelineRestoreEditorState: cursor_track="+cursor_track+" cursor_units="+cursor_units;
    }
 
