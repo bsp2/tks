@@ -15,7 +15,7 @@
 // ----          01Dec2022, 18Dec2022, 23Feb2023, 22Jul2023, 29Jul2023, 16Nov2023, 17Nov2023
 // ----          18Nov2023, 02Dec2023, 03Dec2023, 05Jul2024, 07Jul2024, 15Nov2024, 07Jan2025
 // ----          22May2025, 13Jun2025, 18Dec2025, 06Apr2026, 14Apr2026, 16Apr2026, 13Jul2026
-// ----          02Aug2026
+// ----          02Aug2026, 03Aug2026
 // ----
 // ----
 // ----
@@ -138,6 +138,8 @@ class SysEx {
    define int SYX_MSGID_SMP_DOWNLOAD_SEQ_REPLY         = 75;  // OUT
    define int SYX_MSGID_TRACK_SELECT                   = 76;  // IN     select focus track (don't change page)
    define int SYX_MSGID_TRACK_CHANGED                  = 77;  // OUT    focus track change notification
+   define int SYX_MSGID_METRONOME                      = 78;  // OUT    send enable/disable/toggle metronome to seq
+   define int SYX_MSGID_METRONOME_ACK                  = 79;  // IN     recv current metronome state
 
 
    // (note) https://www.midi.org/specifications/item/manufacturer-id-numbers
@@ -151,8 +153,6 @@ class SysEx {
 
    static MIDIInDevice *in_dev;
    static MIDIOutDevice *out_dev;
-
-   // // static Buffer rpn_buf;
 
    define int SEQ_DETECT_INTERVAL_MS = 1500;
    static boolean b_seq_connected;
@@ -282,6 +282,12 @@ class SysEx {
    static float   queued_send_track_changed_idx_rel;  // 0..1, or -1
    static boolean b_queued_send_track_changed;
 
+   static boolean b_queued_send_metronome_state;   // maybe=toggle
+   static boolean b_queued_send_metronome;
+
+   static boolean b_queued_recv_metronome_ack_state;   // true/false
+   static boolean b_queued_recv_metronome_ack;
+
 
    // <method_init.png>
    public static Init() {
@@ -326,8 +332,6 @@ class SysEx {
          {
             in_dev <= new MIDIInDevice;
             in_dev.init(deref midiin);
-
-            // // rpn_buf.size = 2048;
 
             Global.Debug("SysEx::Init: ok, opened input device \""+STConfig.sysex_in_devicename+"\"");
          }
@@ -1072,6 +1076,12 @@ class SysEx {
                queued_recv_track_select_idx_rel = raw.f32;
                b_queued_recv_track_select = true;
                break;
+
+            case SYX_MSGID_METRONOME_ACK:
+               raw.offset = 0;
+               b_queued_recv_metronome_ack_state = raw.b8;
+               b_queued_recv_metronome_ack = true;
+               break;
          }
       }
 
@@ -1422,6 +1432,20 @@ class SysEx {
    }
 
    // <method.png>
+   public =sysexqueue= static QueueSendMetronome(boolean _bEnable) {
+      b_queued_send_metronome_state = _bEnable;
+      b_queued_send_metronome = true;
+   }
+
+   // <method.png>
+   public static SendMetronome() {
+      send_raw.offset = 0;
+      send_raw.i8  = b_queued_send_metronome_state;
+      Send(SYX_MSGID_METRONOME, send_raw/*payload*/);
+      b_queued_send_metronome = false;
+   }
+
+   // <method.png>
    public static SendTrackChanged() {
       trace "[trc] SysEx::SendTrackChanged: trackIdxAbs="+queued_send_track_changed_idx_abs+" trackIdxRel="+queued_send_track_changed_idx_rel;
       send_raw.offset = 0;
@@ -1575,13 +1599,15 @@ class SysEx {
 
             if(b_queued_send_track_changed)
                SendTrackChanged();
+
+            if(b_queued_send_metronome)
+               SendMetronome();
          }
 
          // Send queued "ModAudio2RPN" events
          if(_frameRPN.numEventsRPN > 0)
          {
             MIDIPipeEvent ev;
-            // // rpn_buf.offset = 0;
             int evIdx = 0;
             loop(_frameRPN.numEventsRPN)
             {
@@ -2015,6 +2041,12 @@ class SysEx {
                                                 queued_recv_track_select_idx_rel
                                                 );
          b_queued_recv_track_select = false;
+      }
+
+      if(b_queued_recv_metronome_ack)
+      {
+         Global.Print("Metronome is "+Utils.GetEnableString(b_queued_recv_metronome_ack_state));
+         b_queued_recv_metronome_ack = false;
       }
 
    }

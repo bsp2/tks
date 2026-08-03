@@ -15,7 +15,7 @@
 // ----          23Feb2023, 22Jul2023, 29Jul2023, 17Nov2023, 18Nov2023, 02Dec2023, 03Dec2023
 // ----          07Jul2024, 15Nov2024, 14Mar2025, 22May2025, 13Jun2025, 18Dec2025, 19Dec2025
 // ----          20Dec2025, 03Jan2026, 06Apr2026, 14Apr2026, 16Apr2026, 25Apr2026, 01May2026
-// ----          11Jul2026, 13Jul2026
+// ----          11Jul2026, 13Jul2026, 03Aug2026
 // ----
 // ----
 // ----
@@ -246,6 +246,8 @@ class SysEx {
    define int SYX_MSGID_SMP_DOWNLOAD_SEQ_REPLY         = 75;  // IN
    define int SYX_MSGID_TRACK_SELECT                   = 76;  // OUT    select focus track (don't change page)
    define int SYX_MSGID_TRACK_CHANGED                  = 77;  // IN     focus track change notification
+   define int SYX_MSGID_METRONOME                      = 78;  // IN     recv enable/disable/toggle metronome from DAW
+   define int SYX_MSGID_METRONOME_ACK                  = 79;  // OUT    send current metronome state to DAW
 
 
    // (note) https://www.midi.org/specifications/item/manufacturer-id-numbers
@@ -466,6 +468,12 @@ class SysEx {
    static int     queued_recv_track_changed_idx_abs;  // 0..numtracks-1
    static float   queued_recv_track_changed_idx_rel;  // 0..1
    static boolean b_queued_recv_track_changed;
+
+   static boolean b_queued_recv_metronome_state;   // maybe=toggle
+   static boolean b_queued_recv_metronome;
+
+   static boolean b_queued_send_metronome_ack_state;   // true/false
+   static boolean b_queued_send_metronome_ack;
 
 
    // <method_init.png>
@@ -1110,6 +1118,12 @@ class SysEx {
                queued_recv_track_changed_idx_abs = raw.i8;
                queued_recv_track_changed_idx_rel = raw.f32;
                b_queued_recv_track_changed = true;
+               break;
+
+            case SYX_MSGID_METRONOME:
+               raw.offset = 0;
+               b_queued_recv_metronome_state = raw.s8;
+               b_queued_recv_metronome = true;
                break;
          }
       }
@@ -1882,6 +1896,20 @@ class SysEx {
    }
 
    // <method.png>
+   public =sysexqueue= static QueueSendMetronomeAck(boolean _bEnable) {
+      b_queued_send_metronome_ack_state = _bEnable;
+      b_queued_send_metronome_ack = true;
+   }
+
+   // <method.png>
+   public static SendMetronomeAck() {
+      send_raw.offset = 0;
+      send_raw.i8  = b_queued_send_metronome_ack_state;
+      Send(SYX_MSGID_METRONOME_ACK, send_raw/*payload*/);
+      b_queued_send_metronome_ack = false;
+   }
+
+   // <method.png>
    public static TestEncodeDecode() {
       Buffer syx;
       Buffer raw;
@@ -2160,6 +2188,9 @@ class SysEx {
             if(b_queued_send_track_select)
                SendTrackSelect();
 
+            if(b_queued_send_metronome_ack)
+               SendMetronomeAck();
+
          } // if b_audio_connected
          else if(STConfig.b_enable_localmidi)
          {
@@ -2380,6 +2411,16 @@ class SysEx {
                                           queued_recv_track_changed_idx_rel
                                           );
          b_queued_recv_track_changed = false;
+      }
+
+      if(b_queued_recv_metronome)
+      {
+         if(maybe == b_queued_recv_metronome_state)
+            root_form.toggleMetronome();
+         else
+            root_form.setEnableMetronome(b_queued_recv_metronome_state);
+         b_queued_recv_metronome = false;
+         QueueSendMetronomeAck(STConfig.b_midi_metronome);
       }
 
    }
