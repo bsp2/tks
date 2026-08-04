@@ -10,6 +10,7 @@
 // ----
 // ---- created: 07Apr2025
 // ---- changed: 09Apr2025, 01May2025, 13Jun2025, 07Apr2026, 08Apr2026, 11Jul2026, 02Aug2026
+// ----          04Aug2026
 // ----
 // ----
 // ----
@@ -29,6 +30,8 @@ class SampleTimelineReplayTrack {
 
    StSamplePlayer *sample_player;
    FloatArray mix_buffer;
+
+   int track_idx;
 
    float level;  // (todo) remove ? level scale (all lane outputs)
    float pan;    // (todo) remove ? (currently always 0.0)
@@ -56,10 +59,18 @@ class SampleTimelineReplayTrack {
    float fade_vol;  // 0..1
    float perf_vol;  // 0..1
 
+   define int BGREC_MAX_CLIP_REPEATS = 1023;
+   IntArray                 bgrec_queued_clip_start;      // unitPos, clipIdx
+   int                      bgrec_pending_stop_clip_idx;
+   int                      bgrec_last_started_clip_idx;  // used in clip-repeat mode
+   int                      bgrec_repeat_count;
+   SampleTimelineModelClip *bgrec_cur_clip;
 
 
-   public method init(SampleTimeline _parent) {
+   public method init(SampleTimeline _parent, int _trackIdx) {
       parent_sample_timeline <= _parent;
+
+      track_idx = _trackIdx;
 
       sample_player <= new StSamplePlayer;
       sample_player.allocVoices(MAX_VOICES);
@@ -123,6 +134,16 @@ class SampleTimelineReplayTrack {
       last_voice_key = -1;
 
       resetFadeInOut();
+   }
+
+   // <method.png>
+   public method resetBgRec() {
+      // =replay= is locked by caller
+      bgrec_queued_clip_start.empty();
+      bgrec_cur_clip <= null;
+      bgrec_pending_stop_clip_idx = -1;
+      bgrec_last_started_clip_idx = -1;
+      bgrec_repeat_count = 0;
    }
 
    // <replay.png>
@@ -336,6 +357,7 @@ plot (1-sin(((1-x)**1.6)*pi*0.5)) title "fade in",  cos( (1-((1-x)**1.6))*pi*0.5
       }
    }
 
+   // <replay.png>
    public method startClip(local MIDIPipeFrame _frInput,
                            local int _devIdx,
                            local int _midiCh,
@@ -349,7 +371,8 @@ plot (1-sin(((1-x)**1.6)*pi*0.5)) title "fade in",  cos( (1-((1-x)**1.6))*pi*0.5
                            local int     _playPos,
                            local boolean _bCalcStartOffset,
                            local int     _clipStartUnits,
-                           local int     _clipEndUnits
+                           local int     _clipEndUnits,
+                           local int     _extraOffsetUnits
                            ) : float {
       // returns new 'masterVol'
       local Sample sample <= current_project.getSampleByIdx(_clip.sample_idx);
@@ -390,7 +413,7 @@ plot (1-sin(((1-x)**1.6)*pi*0.5)) title "fade in",  cos( (1-((1-x)**1.6))*pi*0.5
 
          local float offsetMS = (_clip.offset / _numUnitsPerMS);
          if(_bCalcStartOffset)
-            offsetMS += (_playPos - _clipStartUnits) / _numUnitsPerMS;  // after seek
+            offsetMS += (_playPos - _clipStartUnits + _extraOffsetUnits) / _numUnitsPerMS;  // after seek
          if(_bDebug && offsetMS > 0)
             trace "[>>>] SampleTimeline:: start clip noteOn voiceKey="+last_voice_key+" offsetMs="+offsetMS;
          sample_player.setInitialSampleOffsetMsByKey(last_voice_key, offsetMS);
@@ -435,6 +458,7 @@ plot (1-sin(((1-x)**1.6)*pi*0.5)) title "fade in",  cos( (1-((1-x)**1.6))*pi*0.5
       return _masterVol;
    }
 
+   // <replay.png>
    public method updateClipVolume(local SampleTimelineModelTrack _track,
                                   local SampleTimelineModelClip  _clip,
                                   local float                    _masterVol,
@@ -443,7 +467,7 @@ plot (1-sin(((1-x)**1.6)*pi*0.5)) title "fade in",  cos( (1-((1-x)**1.6))*pi*0.5
       // returns new 'masterVol'
       calcFadingAndUpdateSP(_playPos, _masterVol * (_clip.vel_on/127.0f));  // calc fade_vol
       // if(1 == trackIdx)
-      //    trace "xxx masterVol="+masterVol+" replayTrack.fade_vol="+replayTrack.fade_vol;
+      //    trace "xxx masterVol="+masterVol+" fade_vol="+fade_vol;
       if(_track.b_master_volume)
       {
          // local float masterVolOld = masterVol;
@@ -460,6 +484,145 @@ plot (1-sin(((1-x)**1.6)*pi*0.5)) title "fade in",  cos( (1-((1-x)**1.6))*pi*0.5
          sample_player.noteOff(SampleTimeline.SEQ_REPLAY_NOTE, _clip.vel_off/127.0f/*velocity*/);
       else
          sample_player.allNotesOff();
+   }
+
+   // <replay.png>
+   public method autoStopOrRepeatBgRecClip(local int _playPos, local boolean _bRepeat) {
+      if(null != bgrec_cur_clip)
+      {
+         if(_playPos >= bgrec_cur_clip.end)
+         {
+            // Auto-stop clip
+            stopClip(bgrec_cur_clip);
+            bgrec_cur_clip <= null;
+            bgrec_pending_stop_clip_idx = -1;
+
+            if(_bRepeat && bgrec_repeat_count < BGREC_MAX_CLIP_REPEATS)
+            {
+               bgrec_repeat_count++;
+               // trace "xxx repeat #rep="+bgrec_repeat_count+" clipIdx="+bgrec_last_started_clip_idx;
+               bgRecNoteOn(_playPos, bgrec_last_started_clip_idx);
+            }
+         }
+      }
+   }
+
+   // <replay.png>
+   public method bgRecNoteOff(local SampleTimelineModelClip _clip, local int _playPos) {
+      bgrec_queued_clip_start.empty();
+      stopClip(_clip);
+      if(null != bgrec_cur_clip)
+      {
+         bgrec_cur_clip.end = _playPos;
+         bgrec_cur_clip <= null;
+         bgrec_pending_stop_clip_idx = -1;
+      }
+   }
+
+   // <replay.png>
+   public method bgRecNoteOn(local int _playPosQ, local int _clipIdx) {
+      bgrec_queued_clip_start.add2(_playPosQ, _clipIdx);
+   }
+
+   // <replay.png>
+   public method bgRecHandleQuantizedClipStart(local MIDIPipeFrame            _frInput,
+                                               local int                      _devIdx,
+                                               local int                      _midiCh,
+                                               local SampleTimelineModelTrack _track,
+                                               local float                    _masterVol,
+                                               local int                      _numUnitsPerBeat,
+                                               local float                    _numUnitsPerMS,
+                                               local boolean                  _bDebug,
+                                               local int                      _playPos,
+                                               local int                      _bgRecMode
+                                               ) : float {
+      // returns new 'masterVol'
+      if(bgrec_queued_clip_start.numElements > 0)
+      {
+         local int playPosQ = bgrec_queued_clip_start.get(0);
+         // trace "xxx playPos="+playPos+" playPosQ="+playPosQ;
+         if(_playPos >= playPosQ)
+         {
+            local int clipIdx  = bgrec_queued_clip_start.get(1);
+            local SampleTimelineModelClip clip <= _track.getClipByIndex(clipIdx);
+            if(null != clip)
+            {
+               // Clip recording
+               if(null != bgrec_cur_clip)
+               {
+                  bgrec_cur_clip.end = mathMini(playPosQ, bgrec_cur_clip.end);
+                  // trace "xxx clip start at playPos="+playPosQ+" track_idx="+track_idx+", set prev clip end to "+bgrec_cur_clip.end+" (start="+bgrec_cur_clip.start+" len="+(bgrec_cur_clip.end - bgrec_cur_clip.start)+")";
+                  bgrec_cur_clip <= null;
+                  bgrec_pending_stop_clip_idx = -1;
+               }
+
+               // trace "xxx JAM queued start clipIdx="+clipIdx+" trackIdx="+trackIdx+" playPosQ="+playPosQ+" playPos="+playPos+" bgrec_cur_clip="+#(bgrec_cur_clip);
+               allNotesOff(true/*bRelease*/);
+
+               local int extraOffsetUnits = 0;
+               local int clipLen = clip.end - clip.start;
+
+               if(SampleTimelineEditor.BGREC_NOTE_ON_SWITCH)
+               {
+                  if(0 == (clipLen % _numUnitsPerBeat))
+                  {
+                     extraOffsetUnits = playPosQ % clipLen;
+                     // if((playPosQ + (clipLen - extraOffsetUnits)) >= _playPos)
+                     //    extraOffsetUnits = 0;
+                     // trace "xxx extraOffsetUnits="+extraOffsetUnits+" playPosQ="+playPosQ+" clipLen="+clipLen;
+                  }
+               }
+
+               _masterVol = startClip(_frInput,
+                                      _devIdx,
+                                      (_midiCh < 0) ? track_idx : _midiCh,
+                                      track_idx,
+                                      _track,
+                                      clip,
+                                      _masterVol,
+                                      _numUnitsPerBeat,
+                                      _numUnitsPerMS,
+                                      _bDebug,
+                                      _playPos,
+                                      true/*bCalcStartOffset*/,
+                                      playPosQ/*clipStartUnits*/,
+                                      (playPosQ + (clipLen - extraOffsetUnits))/*clipEndUnits*/,
+                                      extraOffsetUnits
+                                      );
+               parent_sample_timeline.b_update_lane_sends = true;
+               bgrec_pending_stop_clip_idx = clipIdx;
+               bgrec_last_started_clip_idx = clipIdx;
+
+               local SampleTimelineModelClip recClip <= new SampleTimelineModelClip;
+               recClip.initClip();
+               recClip.copyFrom(clip, false/*bCopyTrackIdx*/);
+               recClip.start = playPosQ;
+               recClip.end   = (playPosQ + (clipLen - extraOffsetUnits));
+               recClip.track_idx = track_idx;
+               recClip.offset = recClip.offset + extraOffsetUnits;
+
+               local PointerArray bgRecClips <= parent_sample_timeline.bgrec_clips;
+               bgRecClips.add(#(deref recClip));
+               bgrec_cur_clip <= recClip;
+               // trace "xxx #recorded_clips="+bgrecClips.numElements+" start="+recClip.start+" def.len="+(recClip.end - recClip.start);
+            }  // if clip
+
+            bgrec_queued_clip_start.empty();
+         } // if pos reached
+      } // if #queued
+      return _masterVol;
+   }
+
+   // <replay.png>
+   public method updateBgRecClipVolume(local SampleTimelineModelTrack _track, local float _masterVol, local int _playPos) : float {
+      if(null != bgrec_cur_clip)
+      {
+         if(bgrec_cur_clip.start <= _playPos < bgrec_cur_clip.end)
+         {
+            _masterVol = updateClipVolume(_track, bgrec_cur_clip, _masterVol, _playPos);
+         }
+      }
+      return _masterVol;
    }
 
 }

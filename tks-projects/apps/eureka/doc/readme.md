@@ -1,8 +1,8 @@
 % Eureka Sampler / DAW
 % bsp
-% 03-Aug-2026
+% 04-Aug-2026
 >>>
-17Nov2019, 15May2020, 16Oct2020, 06Feb2021, 31May2021, 04Jan2023, 18Mar2023, 24Mar2023, 31Mar2023, 04Aug2023, 05Aug2023, 10Aug2023, 16Aug2023, 18Aug2023, 19Aug2023, 07Dec2023, 14Dec2023, 15Dec2023, 16Dec2023, 03Feb2024, 27Apr2024, 07Jul2024, 04Aug2024, 06Aug2024, 10Aug2024, 12Aug2024, 28Sep2024, 30Sep2024, 03Oct2024, 04Oct2024, 05Oct2024, 28Nov2024, 30Nov2024, 23Dec2024, 26Dec2024, 28Dec2024, 31Dec2024, 04Jan2025, 20Mar2025, 21Mar2025, 22May2025, 28May2025, 29May2025, 30May2025, 07Jun2025, 11Jun2025, 12Jun2025, 15Jun2025, 20Jun2025, 21Jun2025, 11Dec2025, 02Jan2026, 17Jan2026, 26Jan2026, 09Apr2026, 10Apr2026, 15Apr2026, 16Apr2026, 23Apr2026, 26Apr2026, 26May2026, 01Jun2026, 02Jun2026, 05Jul2026, 10Jul2026, 11Jul2026, 03Aug2026
+17Nov2019, 15May2020, 16Oct2020, 06Feb2021, 31May2021, 04Jan2023, 18Mar2023, 24Mar2023, 31Mar2023, 04Aug2023, 05Aug2023, 10Aug2023, 16Aug2023, 18Aug2023, 19Aug2023, 07Dec2023, 14Dec2023, 15Dec2023, 16Dec2023, 03Feb2024, 27Apr2024, 07Jul2024, 04Aug2024, 06Aug2024, 10Aug2024, 12Aug2024, 28Sep2024, 30Sep2024, 03Oct2024, 04Oct2024, 05Oct2024, 28Nov2024, 30Nov2024, 23Dec2024, 26Dec2024, 28Dec2024, 31Dec2024, 04Jan2025, 20Mar2025, 21Mar2025, 22May2025, 28May2025, 29May2025, 30May2025, 07Jun2025, 11Jun2025, 12Jun2025, 15Jun2025, 20Jun2025, 21Jun2025, 11Dec2025, 02Jan2026, 17Jan2026, 26Jan2026, 09Apr2026, 10Apr2026, 15Apr2026, 16Apr2026, 23Apr2026, 26Apr2026, 26May2026, 01Jun2026, 02Jun2026, 05Jul2026, 10Jul2026, 11Jul2026, 03Aug2026, 04Aug2026
 <<<
 $(var:header)
 
@@ -710,6 +710,10 @@ when CLAP / VST2 editor window is focused:
    |:lctrl - SPACE        |:start/stop replay (start from cursor pos, rewind to cursor position)
    |:lctrl - x SPACE      |:start replay and record to selected clip sample (input=first record-enable audio track)
    |:lctrl - x a          |:show audio-track menu (when timeline clip/track is selected)
+   |:HOME                 |:
+   |+PAGEUP               |+select next timeline
+   |:END                  |:
+   |+PAGEDOWN             |+select previous timeline
    |:LEFT                 |:move edit cursor left
    |:lctrl - LEFT         |:move edit cursor left (fast)
    |:lshift - LEFT        |:extend / start selection to previous grid unit
@@ -731,11 +735,12 @@ when CLAP / VST2 editor window is focused:
    |:lalt - c             |:copy timeline to clipboard
    |:e                    |:
    |+RETURN               |+edit first or last selected clip
-   |:lctrl-lshift-e       |:erase(clear) selection (split clip if required) (do not modify samples) OR select 'erase' mode
+   |:lctrl - lshift - e   |:erase(clear) selection (split clip if required) (do not modify samples) OR select 'erase' mode
    |:lctrl - v            |:paste SampleView clipboard as new sample+clip OR paste timeline clips from clipboard (depends on which clipboard is more recent)
    |:lctrl - lshift - v   |:insert space on all tracks and shift-paste timeline clips from clipboard
    |:lalt - v             |:paste timeline from clipboard
    |:j                    |:cycle background-recording mode (clip jam)
+   |:lshift - j           |:toggle background-recording clip-repeat mode (clip jam)
    |:l                    |:toggle draw-clip-labels
    |:m                    |:merge selected clips (do not modify samples)
    |:n                    |:toggle normalize-waveform-display
