@@ -40,6 +40,7 @@ use namespace st2;
 //     lctrl - lshift - a : select none
 //                      c : set loop to selection
 //              lctrl - c : copy selected clips
+//                      d : toggle mute track
 //                      e : edit selected clip
 //     lctrl - lshift - e : erase selection
 //                      l : toggle draw labels
@@ -47,7 +48,8 @@ use namespace st2;
 //                     (n): (in SampleTimelineEditor) toggle normalize-waveform-display
 //                      r : split clips at cursor position (clip mouseover) or kbd selection
 //             lshift - r : split clips at cursor position on all tracks
-//                      s : toggle snap
+//                      s : toggle solo track
+//              lctrl - s : toggle snap
 //             lshift - s : cycle snap table index (e.g. 16th, 8th, 4th)
 //                      t : Mute selected clips
 //              lctrl - v : paste clipboard
@@ -1387,6 +1389,14 @@ class TimelineTrack : Composite {
    Timeline *parent_timeline;
    int track_idx;
 
+   define int STATE_PLAY = 0;
+   define int STATE_MUTE = 1;
+   define int STATE_SOLO = 2;
+   // (note) see timelineTrackSetPlayState()
+   //            timelineTrackGetPlayState()
+   //            timelineTrackGetEnableForceMute()
+   //            timelineTrackSetEnableForceMute()
+
    // in ascending order (ordered by start position)
    TimelineClip *[] clips;  // display objects
 
@@ -1410,16 +1420,54 @@ class TimelineTrack : Composite {
       // implemented by derived classes
    }
 
-   // // public method timelineTrackHandleClipOrderChanged() {
-   // //    // after clip move, insert, ..
-   // // }
-
    public method timelineTrackSetEnableMasterVolume(boolean _bEnable) {
       // implemented by derived classes
    }
 
    public method timelineTrackGetEnableMasterVolume() : boolean {
       // implemented by derived classes
+   }
+
+   public method timelineTrackSetPlayState(int _playState) {
+      // implemented by derived classes
+   }
+
+   public method timelineTrackGetPlayState() : int {
+      // implemented by derived classes
+   }
+
+   public method timelineTrackSetEnableForceMute(boolean _bEnable) {
+      // implemented by derived classes
+   }
+
+   public method timelineTrackGetEnableForceMute() : boolean {
+      // implemented by derived classes
+   }
+
+   public method timelineTrackIsMuted() : boolean {
+      return timelineTrackGetEnableForceMute() || STATE_MUTE == timelineTrackGetPlayState();
+   }
+
+   public method timelineTrackIsSoloed() : boolean {
+      return STATE_SOLO == timelineTrackGetPlayState();
+   }
+
+   public method timelineTrackToggleMute() {
+      if(STATE_MUTE == timelineTrackGetPlayState())
+         timelineTrackSetPlayState(STATE_PLAY);
+      else
+         timelineTrackSetPlayState(STATE_MUTE);
+      parent_timeline.timelineUpdateForceMuteStates();
+      Global.Print((timelineTrackIsMuted()?"Mute":"Unmute")+" track \""+timelineTrackGetName()+"\"");
+   }
+
+   public method timelineTrackToggleSolo() {
+      if(STATE_SOLO == timelineTrackGetPlayState())
+         timelineTrackSetPlayState(STATE_PLAY);
+      else
+         timelineTrackSetPlayState(STATE_SOLO);
+      parent_timeline.timelineUpdateForceMuteStates();
+      Global.Print((timelineTrackIsSoloed()?"Solo":"Unsolo")+" track \""+timelineTrackGetName()+"\"");
    }
 
    public method timelineTrackLayoutClips() {
@@ -1537,8 +1585,26 @@ class TimelineTrack : Composite {
    }
 
    public virtual onDraw() {
+      sdvg_DisableBlending();
       UIRenderer.DrawFilledRectangle(0, 0, getSizeX(), getSizeY(), (track_idx&1) ? parent_timeline.c32_track_bg_odd : parent_timeline.c32_track_bg_even);
       // trace "xxx TimelineTrack::onDraw: track_idx="+track_idx+" getSizeX="+getSizeX()+" getSizeY="+getSizeY()+" getRequiredSizeY="+getRequiredSizeY();
+   }
+
+   public virtual onDrawPost() {
+      // trace "xxx TimelineTrack::onDrawPost: track_idx="+track_idx+" getSizeX="+getSizeX()+" getSizeY="+getSizeY()+" getRequiredSizeY="+getRequiredSizeY();
+      int playState = timelineTrackGetPlayState();
+      if(timelineTrackIsMuted())
+      {
+         sdvg_EnableBlending();
+         // UIRenderer.DrawRectangle(0, 0, getSizeX(), getSizeY(), 1.0f*UI.font_scaling, #aFFF0000);
+         UIRenderer.DrawFilledRectangle(0, 0, getSizeX(), getSizeY(), #1Fff0000);
+      }
+      else if(timelineTrackIsSoloed())
+      {
+         sdvg_EnableBlending();
+         // UIRenderer.DrawRectangle(0, 0, getSizeX(), getSizeY(), 1.0f*UI.font_scaling, #cFFFFF00);
+         UIRenderer.DrawFilledRectangle(0, 0, getSizeX(), getSizeY(), #0FFFFF00);
+      }
    }
 }
 
@@ -1933,6 +1999,7 @@ class TimelineData : Composite {
 
    public virtual onKey(Key _k) : boolean {
       // trace "xxx TimelineData::onKey: k.name="+_k.name;
+      TimelineTrack cursorTrack <= parent_timeline.timelineGetCursorTrack();
       switch(_k.pressed)
       {
          case VKEY_INSERT:
@@ -2024,6 +2091,30 @@ class TimelineData : Composite {
             }
             break;
 
+         case 'd':
+            if(_k.modNone())
+            {
+               if(null != cursorTrack)
+               {
+                  cursorTrack.timelineTrackToggleMute();
+                  redraw();
+               }
+               return true;
+            }
+            break;
+
+         case 's':
+            if(_k.modNone())
+            {
+               if(null != cursorTrack)
+               {
+                  cursorTrack.timelineTrackToggleSolo();
+                  redraw();
+               }
+               return true;
+            }
+            break;
+
          case 'e':
             if(_k.modCtrl() && _k.modShift())
             {
@@ -2084,7 +2175,7 @@ class TimelineData : Composite {
             break;
 
          case 's':
-            if(_k.modNone())
+            if(_k.modCtrlOnly())
             {
                parent_timeline.timelineToggleSnap();
                return true;
@@ -2653,7 +2744,7 @@ class Timeline : Composite {
    IntArray snap_tbl = [2,4,8,16];
    StringArray snap_tbl_names = ["2 units", "4 units", "8 units", "16 units"];
    int snap_tbl_idx;
-   boolean b_snap;  // snap x pos to grid ('s')
+   boolean b_snap;  // snap x pos to grid (lctrl-s)
 
    IntArray clip_selection;  // uids
 
@@ -3946,6 +4037,36 @@ class Timeline : Composite {
       redraw();
    }
 
+   public method timelineUpdateForceMuteStates() {
+      boolean bAnySolo = false;
+      TimelineTrack *track;
+      foreach track in tracks
+      {
+         if(TimelineTrack.STATE_SOLO == track.timelineTrackGetPlayState())
+         {
+            bAnySolo = true;
+            break;
+         }
+      }
+
+      boolean bAllowMute = true;
+
+      foreach track in tracks
+      {
+         if(bAnySolo)
+         {
+            if(bAllowMute/* && !track.b_solo_lock*/)  // /*exclude "master" output track*/
+               track.timelineTrackSetEnableForceMute(TimelineTrack.STATE_SOLO != track.timelineTrackGetPlayState());
+            else
+               bAllowMute = false;  // don't solo-mute any tracks after 'master' track (e.g. external master FX return)
+         }
+         else
+         {
+            track.timelineTrackSetEnableForceMute(false);
+         }
+      }
+   }
+
    public method timelineUpdate() {
       // trace "xxx Timeline::timelineUpdate()";
 
@@ -3957,6 +4078,7 @@ class Timeline : Composite {
 
       relayout();
       timelineUpdateLayout();
+      timelineUpdateForceMuteStates();
       timelineShowCursorClipDetails();
 
       // // trace "xxx timeline.sizeX="+getSizeX();

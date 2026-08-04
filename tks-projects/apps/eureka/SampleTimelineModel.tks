@@ -266,11 +266,12 @@ class SampleTimelineModelClip {
 class SampleTimelineModelTrack {
    SampleTimelineModel *model;
    SampleTimelineModelClip *[] clips;
-   int track_idx;
-   int replay_clip_idx_hint;
-   String name;
-   boolean b_mute;
-   short audio_track_unique_id;  // -1=record from currently active audio tracks. >=0: select audio track by unique_id
+   int     track_idx;
+   int     replay_clip_idx_hint;
+   String  name;
+   int     play_state;
+   boolean b_force_mute;
+   short   audio_track_unique_id;  // -1=record from currently active audio tracks. >=0: select audio track by unique_id
 
    FloatArray lane_level;  // lane send levels
    FloatArray lane_pan;    // lane panning (stereo balance)
@@ -312,6 +313,8 @@ class SampleTimelineModelTrack {
    public method initTrack(int _trackIdx) {
       track_idx = _trackIdx;
 
+      play_state = TimelineTrack.STATE_PLAY;
+
       lane_level.allocAndFill(SampleTimelineReplayTrack.NUM_LANE_SENDS, 0.0f);
       lane_pan  .allocAndFill(SampleTimelineReplayTrack.NUM_LANE_SENDS, 0.0f);
 
@@ -329,10 +332,12 @@ class SampleTimelineModelTrack {
 
    // <method.png>
    public method copyFrom(SampleTimelineModelTrack _o) {
-      // (todo) copy clips
+      // (todo) copy clips (?)
 
       name = _o.name;
-      b_mute = _o.b_mute;
+
+      play_state   = _o.play_state;
+      b_force_mute = _o.b_force_mute;
 
       lane_level = _o.lane_level;
       lane_pan   = _o.lane_pan;
@@ -496,16 +501,24 @@ class SampleTimelineModelTrack {
       audio_track_unique_id = _uniqueId;
    }
 
+   // <method_get.png>
+   public method isMuted() : boolean {
+      return b_force_mute || TimelineTrack.STATE_MUTE == play_state;
+   }
+
    // <save.png>
    public method saveState(Stream ofs) {
       // ver
-      ofs.i16 = 5;
+      ofs.i16 = 6;
 
       // name
       name.yacSerialize(ofs, false/*bRTTI*/);
 
+      // play state (v6+)
+      ofs.i8 = play_state;
+
       // mute
-      ofs.i8 = b_mute;
+      ofs.i8 = b_force_mute;
 
       // clips
       ofs.i16 = clips.numElements;
@@ -550,8 +563,14 @@ class SampleTimelineModelTrack {
          // name
          name.yacDeserialize(ifs, false/*bRTTI*/);
 
+         // play_state (v6+)
+         if(ver >= 6)
+         {
+            play_state = ifs.i8;
+         }
+
          // mute
-         b_mute = ifs.b8;
+         b_force_mute = ifs.b8;
 
          // clips
          clips.free();

@@ -733,6 +733,7 @@ when CLAP / VST2 editor window is focused:
    |:c                    |:set loop to selected clips, region, or canvas (prefer clips)
    |:lshift - c           |:set loop to selected region, clips, or canvas (prefer region)
    |:lalt - c             |:copy timeline to clipboard
+   |:d                    |:toggle mute track
    |:e                    |:
    |+RETURN               |+edit first or last selected clip
    |:lctrl - lshift - e   |:erase(clear) selection (split clip if required) (do not modify samples) OR select 'erase' mode
@@ -748,7 +749,8 @@ when CLAP / VST2 editor window is focused:
    |:lshift - r           |:expand selection to all tracks and split at cursor position
    |:lctrl - r            |:clone clip sample or allocate new, empty one
    |:lctrl - lshift - r   |:allocate new, empty clip sample (copy sample size if a sample is assigned to the clip)
-   |:s                    |:toggle snap-to-grid
+   |:s                    |:toggle solo track
+   |:lctrl - s            |:toggle snap-to-grid
    |:lshift - s           |:cycle snap-to-grid units
    |:t                    |:toggle mute selected clips or select 'mute' mode
    |:q                    |:select 'edit' mode
