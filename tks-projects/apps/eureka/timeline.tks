@@ -1447,8 +1447,10 @@ class TimelineTrack : Composite {
    define int STATE_SOLO = 2;
    // (note) see timelineTrackSetPlayState()
    //            timelineTrackGetPlayState()
-   //            timelineTrackGetEnableForceMute()
-   //            timelineTrackSetEnableForceMute()
+   //            timelineTrackSetPreSoloPlayState()
+   //            timelineTrackGetPreSoloPlayState()
+   //            timelineSetSoloTrackIdx()
+   //            timelineGetSoloTrackIdx()
 
    // in ascending order (ordered by start position)
    TimelineClip *[] clips;  // display objects
@@ -1489,20 +1491,42 @@ class TimelineTrack : Composite {
       // implemented by derived classes
    }
 
-   public method timelineTrackSetEnableForceMute(boolean _bEnable) {
+   public method timelineTrackSavePreSoloPlayState() {
       // implemented by derived classes
    }
 
-   public method timelineTrackGetEnableForceMute() : boolean {
+   public method timelineTrackRestorePreSoloPlayState() {
       // implemented by derived classes
    }
 
    public method timelineTrackIsMuted() : boolean {
-      return timelineTrackGetEnableForceMute() || STATE_MUTE == timelineTrackGetPlayState();
+      boolean bActive = false;
+      int state = timelineTrackGetPlayState();
+      if(STATE_MUTE != state)
+      {
+         if(STATE_SOLO == state)
+         {
+            if(null != parent_timeline)
+               bActive = (track_idx == parent_timeline.timelineGetSoloTrackIdx());
+         }
+         else
+         {
+            // Play
+            bActive = true;
+         }
+      }
+      return !bActive;
    }
 
    public method timelineTrackIsSoloed() : boolean {
-      return STATE_SOLO == timelineTrackGetPlayState();
+      boolean bSolo = false;
+      int state = timelineTrackGetPlayState();
+      if(STATE_SOLO == state)
+      {
+         if(null != parent_timeline)
+            bSolo = (track_idx == parent_timeline.timelineGetSoloTrackIdx());
+      }
+      return bSolo;
    }
 
    public method timelineTrackToggleMute() {
@@ -1510,16 +1534,44 @@ class TimelineTrack : Composite {
          timelineTrackSetPlayState(STATE_PLAY);
       else
          timelineTrackSetPlayState(STATE_MUTE);
-      parent_timeline.timelineUpdateForceMuteStates();
       Global.Print((timelineTrackIsMuted()?"Mute":"Unmute")+" track \""+timelineTrackGetName()+"\"");
    }
 
    public method timelineTrackToggleSolo() {
-      if(STATE_SOLO == timelineTrackGetPlayState())
-         timelineTrackSetPlayState(STATE_PLAY);
-      else
+      boolean bSolo = (STATE_SOLO != timelineTrackGetPlayState());
+      int oldState;
+      TimelineTrack *track;
+
+      int oldSoloTrackIdx = parent_timeline.timelineGetSoloTrackIdx();
+      if(-1 != oldSoloTrackIdx)
+      {
+         foreach track in parent_timeline.tracks
+         {
+            track.timelineTrackRestorePreSoloPlayState();
+         }
+         parent_timeline.timelineSetSoloTrackIdx(-1);
+      }
+
+      if(bSolo)
+      {
+         parent_timeline.timelineSetSoloTrackIdx(track_idx);
+
+         foreach track in parent_timeline.tracks
+         {
+            if(@(track) != @(this))
+            {
+               track.timelineTrackSavePreSoloPlayState();
+               track.timelineTrackSetPlayState(STATE_MUTE);
+            }
+         }
+      }
+
+      if(bSolo)
+      {
+         timelineTrackSavePreSoloPlayState();
          timelineTrackSetPlayState(STATE_SOLO);
-      parent_timeline.timelineUpdateForceMuteStates();
+      }
+
       Global.Print((timelineTrackIsSoloed()?"Solo":"Unsolo")+" track \""+timelineTrackGetName()+"\"");
    }
 
@@ -4090,34 +4142,12 @@ class Timeline : Composite {
       redraw();
    }
 
-   public method timelineUpdateForceMuteStates() {
-      boolean bAnySolo = false;
-      TimelineTrack *track;
-      foreach track in tracks
-      {
-         if(TimelineTrack.STATE_SOLO == track.timelineTrackGetPlayState())
-         {
-            bAnySolo = true;
-            break;
-         }
-      }
+   public method timelineSetSoloTrackIdx(int _trackIdx) {
+      // implemented by derived classes
+   }
 
-      boolean bAllowMute = true;
-
-      foreach track in tracks
-      {
-         if(bAnySolo)
-         {
-            if(bAllowMute/* && !track.b_solo_lock*/)  // /*exclude "master" output track*/
-               track.timelineTrackSetEnableForceMute(TimelineTrack.STATE_SOLO != track.timelineTrackGetPlayState());
-            else
-               bAllowMute = false;  // don't solo-mute any tracks after 'master' track (e.g. external master FX return)
-         }
-         else
-         {
-            track.timelineTrackSetEnableForceMute(false);
-         }
-      }
+   public method timelineGetSoloTrackIdx() : int {
+      // implemented by derived classes
    }
 
    public method timelineUpdate() {
@@ -4131,7 +4161,6 @@ class Timeline : Composite {
 
       relayout();
       timelineUpdateLayout();
-      timelineUpdateForceMuteStates();
       timelineShowCursorClipDetails();
 
       // // trace "xxx timeline.sizeX="+getSizeX();

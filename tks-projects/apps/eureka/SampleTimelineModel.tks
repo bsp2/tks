@@ -297,7 +297,7 @@ class SampleTimelineModelTrack {
    int     replay_clip_idx_hint;
    String  name;
    int     play_state;
-   boolean b_force_mute;
+   int     presolo_play_state;
    short   audio_track_unique_id;  // -1=record from currently active audio tracks. >=0: select audio track by unique_id
 
    FloatArray lane_level;  // lane send levels
@@ -341,6 +341,7 @@ class SampleTimelineModelTrack {
       track_idx = _trackIdx;
 
       play_state = TimelineTrack.STATE_PLAY;
+      presolo_play_state = TimelineTrack.STATE_PLAY;
 
       lane_level.allocAndFill(SampleTimelineReplayTrack.NUM_LANE_SENDS, 0.0f);
       lane_pan  .allocAndFill(SampleTimelineReplayTrack.NUM_LANE_SENDS, 0.0f);
@@ -363,8 +364,8 @@ class SampleTimelineModelTrack {
 
       name = _o.name;
 
-      play_state   = _o.play_state;
-      b_force_mute = _o.b_force_mute;
+      play_state         = _o.play_state;
+      presolo_play_state = _o.presolo_play_state;
 
       lane_level = _o.lane_level;
       lane_pan   = _o.lane_pan;
@@ -531,13 +532,13 @@ class SampleTimelineModelTrack {
 
    // <method_get.png>
    public method isMuted() : boolean {
-      return b_force_mute || TimelineTrack.STATE_MUTE == play_state;
+      return (TimelineTrack.STATE_MUTE == play_state);
    }
 
    // <save.png>
    public method saveState(Stream ofs) {
       // ver
-      ofs.i16 = 6;
+      ofs.i16 = 7;
 
       // name
       name.yacSerialize(ofs, false/*bRTTI*/);
@@ -545,8 +546,9 @@ class SampleTimelineModelTrack {
       // play state (v6+)
       ofs.i8 = play_state;
 
-      // mute
-      ofs.i8 = b_force_mute;
+      // presolo play state
+      //  (note) was 'b_force_mute' prior to v7
+      ofs.i8 = presolo_play_state;
 
       // clips
       ofs.i16 = clips.numElements;
@@ -597,8 +599,11 @@ class SampleTimelineModelTrack {
             play_state = ifs.i8;
          }
 
-         // mute
-         b_force_mute = ifs.b8;
+         // presolo play_state
+         if(ver >= 7)
+            presolo_play_state = ifs.i8;
+         else
+            ifs.getB8();  // dummy read (was 'b_force_mute')
 
          // clips
          clips.free();
@@ -707,6 +712,7 @@ class SampleTimelineModel {
    String name;  // "pattern" name
 
    SampleTimelineModelTrack *[] tracks;
+   int solo_track_idx;
 
    TimelineEditorState editor_state;
 
@@ -741,6 +747,8 @@ class SampleTimelineModel {
          loop(4)
             newTrack();
       }
+
+      solo_track_idx = -1;
    }
 
    // <method.png>
@@ -1039,13 +1047,16 @@ class SampleTimelineModel {
    // <save.png>
    public method saveState(Stream ofs) {
       // ver
-      ofs.i16 = 4;
+      ofs.i16 = 5;
 
       // num units per beat
       ofs.i16 = num_units_per_beat;
 
       // num beats per bar
       ofs.i8 = num_beats_per_bar;
+
+      // solo track (v5+)
+      ofs.i8 = solo_track_idx;
 
       // canvas size
       ofs.i32 = canvas_size;
@@ -1103,6 +1114,12 @@ class SampleTimelineModel {
 
          // num beats per bar
          num_beats_per_bar = ifs.u8;
+
+         if(ver >= 5)
+         {
+            // solo track (v5+)
+            solo_track_idx = ifs.s8;
+         }
 
          // canvas size
          canvas_size = ifs.i32;

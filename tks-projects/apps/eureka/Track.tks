@@ -21,7 +21,7 @@
 // ----          23Sep2024, 04Oct2024, 03Jan2025, 07Jan2025, 04Apr2025, 05Apr2025, 03May2025
 // ----          22May2025, 29May2025, 30May2025, 10Jun2025, 13Jun2025, 21Jun2025, 16Dec2025
 // ----          17Dec2025, 18Dec2025, 19Dec2025, 20Dec2025, 27Dec2025, 03Jan2026, 12Apr2026
-// ----          14Apr2026, 18Apr2026, 24Apr2026, 04Aug2026
+// ----          14Apr2026, 18Apr2026, 24Apr2026, 04Aug2026, 05Aug2026
 // ----
 // ----
 // ----
@@ -650,6 +650,7 @@ class Track {
    define int STATE_MUTE = 1;
    define int STATE_SOLO = 2;
    int play_state;
+   int presolo_play_state;
    boolean b_force_mute;  // calculated from play_state (SOLO)
 
    // (note) [21Sep2024] TPV v5: removed TRACK_MODE_CC_SWITCH=1 and TRACK_MODE_CC_FADE=2 (and shifted mode ids)
@@ -840,6 +841,7 @@ class Track {
       b_ui_browser_visible = true;
 
       play_state = STATE_PLAY;
+      presolo_play_state = STATE_PLAY;
       b_force_mute = false;
 
       cur_lane_fade_mask       = 16383;
@@ -971,13 +973,95 @@ class Track {
    // <method_set.png>
    public =replay= method setPlayState(int _state) {
       play_state = _state;
+   }
 
-      current_project.updateForceMuteStates();
+   // <method.png>
+   public method savePreSoloPlayState() {
+      presolo_play_state = play_state;
+   }
+
+   // <method.png>
+   public =replay= method restorePreSoloPlayState() {
+      play_state = presolo_play_state;
+   }
+
+   // <method.png>
+   public method toggleSoloLock() {
+      b_solo_lock = !b_solo_lock;
+      play_state = STATE_PLAY;
+   }
+
+   // <method.png>
+   public =replay= method toggleMute() {
+      setPlayState( (STATE_MUTE == play_state) ? STATE_PLAY : STATE_MUTE );
+   }
+
+   // <method.png>
+   public =replay= method toggleSolo() {
+      boolean bSolo = (STATE_SOLO != play_state);
+      int oldState;
+      Track *track;
+
+      if(bSolo && b_solo_lock)
+         return;
+
+      if(null != current_project.solo_track)
+      {
+         foreach track in current_project.tracks
+         {
+            if(!track.b_solo_lock)
+               track.restorePreSoloPlayState();
+         }
+         current_project.solo_track <= null;
+      }
+
+      if(bSolo)
+      {
+         current_project.solo_track <= this;
+
+         foreach track in current_project.tracks
+         {
+            if(@(track) != @(this))
+            {
+               track.savePreSoloPlayState();
+               if(!track.b_solo_lock)
+                  track.setPlayState(STATE_MUTE);
+            }
+         }
+      }
+
+      if(bSolo)
+      {
+         savePreSoloPlayState();
+         setPlayState(STATE_SOLO);
+      }
    }
 
    // <method_get.png>
    public method isPlaying() : boolean {
-      return !b_force_mute && (STATE_MUTE != play_state);
+      if(STATE_MUTE != play_state)
+      {
+         if(STATE_SOLO == play_state)
+         {
+            return @(current_project.solo_track) == @(this);
+         }
+         else
+         {
+            // Play
+            return true;
+         }
+      }
+      return false;
+   }
+
+   // <method_get.png>
+   public method isMuted() : boolean {
+      return (STATE_MUTE == play_state);
+   }
+
+   // <method_get.png>
+   public method isSoloed() : boolean {
+      return (STATE_SOLO == play_state);
    }
 
    // <method_get.png>
@@ -1865,10 +1949,13 @@ class Track {
    public method saveState(Stream ofs) {
 
       // Version
-      ofs.i16 = 21;
+      ofs.i16 = 22;
 
       // Play state (v8+)
       ofs.i8 = play_state;
+
+      // Pre-Solo Play state (v22+)
+      ofs.i8 = presolo_play_state;
 
       // Solo-lock (v19+)
       ofs.i8 = b_solo_lock;
@@ -2155,6 +2242,15 @@ class Track {
          {
             // Play state (v8+)
             play_state = ifs.u8;
+
+            if(STATE_SOLO == play_state)
+               current_project.solo_track <= this;
+         }
+
+         if(ver >= 22)
+         {
+            // Pre-Solo Play state (v22+)
+            presolo_play_state = ifs.u8;
          }
 
          if(ver >= 19)
