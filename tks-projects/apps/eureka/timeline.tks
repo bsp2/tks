@@ -13,7 +13,7 @@
 // ----          15Jun2025, 22Jun2025, 26Jun2025, 13Sep2025, 17Sep2025, 10Oct2025, 02Jan2026
 // ----          17Jan2026, 07Apr2026, 08Apr2026, 14Apr2026, 15Apr2026, 17Apr2026, 18Apr2026
 // ----          11May2026, 10Jul2026, 11Jul2026, 12Jul2026, 14Jul2026, 02Aug2026, 03Aug2026
-// ----          04Aug2026
+// ----          04Aug2026, 05Aug2026
 // ----
 // ----
 // ----
@@ -35,6 +35,7 @@ use namespace st2;
 //               RMB-hold : over clip: split all track clips at mouse/cursor position
 //     LMB-drag clip edge : move clip start or end
 //   LMB-drag clip center : move clip
+//  LALT +  LMB-drag clip : ripple edit (start offset)
 //
 //              lctrl - a : select all track clips, all clips, or none
 //     lctrl - lshift - a : select none
@@ -104,18 +105,20 @@ class TimelineClip : Layer {
    define int DRAG_END      = 3;
    define int DRAG_FADE_IN  = 4;
    define int DRAG_FADE_OUT = 5;
+   define int DRAG_OFFSET   = 6;
    static int drag_mode;
    define int DRAG_FADE_THRESHOLD_Y = 24;  // in pixels
    define int DRAG_EDGE_THRESHOLD = 16;  // in pixels. half is outside the visible clip widget area.
    define int DRAG_X_OFFSET = 8;  // small offset to prevent clip from moving left when mouse is dragged left just a single pixel
    static int drag_start_x;
    static int drag_start_y;
+   define float DRAG_OFFSET_SCL_X = 2.0f;
 
    boolean b_drag_fade_mouseover;
    int drag_fade_in_delta_units;  // used for rendering preview
    int drag_fade_out_delta_units;
+   int drag_offset_delta_units;
 
-   // protected Slider *sl_fade_out;
 
    public method initTimelineClip(TimelineTrack _track) {
       b_editable = true;
@@ -123,14 +126,9 @@ class TimelineClip : Layer {
       parent_timeline <= _track.parent_timeline;
       initLayer();
 
-      // sl_fade_out <= Slider.New(0, 16, 0, 0.5/*step*/);
-      // sl_fade_out.setEnableAdaptiveKnobSize(false);
-      // sl_fade_out.setKnobSize(4.0f);
-      // sl_fade_out.setCustomMinSize(64.0f, 12.0f);
-      // sl_fade_out.setRequiredSize2f(64.0f, 12.0f);
-
-      drag_fade_in_delta_units = 0;
+      drag_fade_in_delta_units  = 0;
       drag_fade_out_delta_units = 0;
+      drag_offset_delta_units   = 0;
    }
 
    public method timelineClipGetUID() : int {
@@ -179,14 +177,6 @@ class TimelineClip : Layer {
 
    public method timelineClipSetSizeX(float _w) {
       setRequiredSizeX(_w + DRAG_EDGE_THRESHOLD);
-
-      // removeChildLayer(sl_fade_out);
-      // float fadeW = sl_fade_out.getRequiredSizeX();
-      // if(_w >= (2*fadeW))
-      // {
-      //    sl_fade_out.setPositionX(_w + DRAG_EDGE_THRESHOLD/2 - fadeW);
-      //    addLayer(sl_fade_out, 0);
-      // }
    }
 
    public method timelineClipGetSizeX() : float {
@@ -264,6 +254,10 @@ class TimelineClip : Layer {
    }
 
    public method timelineClipGetOffset() : int {
+      // must be implemented by derived classes
+   }
+
+   public method timelineClipGetMaxOffset() : int {
       // must be implemented by derived classes
    }
 
@@ -412,7 +406,7 @@ class TimelineClip : Layer {
          {
             int clipStart = timelineClipGetStart();
             int clipEnd   = timelineClipGetEnd();
-            // trace "xxx sync_loop: clipStart="+clipStart+" clipEnd="+clipEnd;
+            // // trace "xxx sync_loop: clipStart="+clipStart+" clipEnd="+clipEnd;
             parent_timeline.timelineSetLoop(clipStart, clipEnd - clipStart);
             parent_timeline.timelineMarkAsModified();
          }
@@ -450,13 +444,14 @@ class TimelineClip : Layer {
       if(VMOD_LCTRL == UI.GetKeyMod())
          return false; // allow rectangular selection
 
-      // // trace "xxx TimelineClip::onMouseBeginDrag";
+      // trace "xxx TimelineClip::onMouseBeginDrag: modAlt="+UI.KeyModAlt();
       TimelineData data <= parent_timeline.data;
       data.drag_clip <= null;
       data.b_drag_clip_overlap = false;
 
-      drag_fade_in_delta_units = 0;
+      drag_fade_in_delta_units  = 0;
       drag_fade_out_delta_units = 0;
+      drag_offset_delta_units   = 0;
       parent_timeline.timelineResetSelectedClipsFadeDeltaUnits();
 
       if(_ev.isLeftButtonDown())
@@ -477,6 +472,19 @@ class TimelineClip : Layer {
 
          float w = getSizeX();
          float h = getSizeY();
+
+         if(UI.KeyModAlt())
+         {
+            if(timelineClipIsUnderCursor())
+            {
+               drag_mode = DRAG_OFFSET;
+               return true;
+            }
+            else
+            {
+               return false;
+            }
+         }
 
          if(_dragStart.mouse_rel_y < DRAG_FADE_THRESHOLD_Y)
          {
@@ -551,84 +559,98 @@ class TimelineClip : Layer {
       float numBeats;
       float numBars;
 
-      if(DRAG_MOVE == drag_mode)
+      switch(drag_mode)
       {
-         // clipLen = timelineClipGetEnd() - timelineClipGetStart();
-         if( (timelineClipGetStart() + deltaUnits) < 0 )
-         {
-            deltaUnits = -timelineClipGetStart();
-         }
-         else if( (timelineClipGetEnd() + deltaUnits) > parent_timeline.canvas_size)
-         {
-            deltaUnits = parent_timeline.canvas_size - timelineClipGetEnd();
-         }
-      }
-      else if(DRAG_START == drag_mode)
-      {
-         clipLen = timelineClipGetEnd() - timelineClipGetStart() - deltaUnits;
-         if(clipLen <= timelineClipGetMinLen())
-         {
-            clipLen = timelineClipGetMinLen();
-            deltaUnits = (timelineClipGetEnd() - timelineClipGetStart()) - clipLen;
-         }
-         else if( (timelineClipGetStart() + deltaUnits) < 0 )
-         {
-            deltaUnits = -timelineClipGetStart();
-         }
-         numBeats = int(parent_timeline.timelineUnitsToBeats(clipLen)*100)/100.0f;
-         numBars = int(parent_timeline.timelineUnitsToBars(clipLen)*100)/100.0f;
-         Global.PrintFast("New clip len is "+numBeats+" beat"+Utils.GetPluralStringFloat(numBeats)+" / "+numBars+" bar"+Utils.GetPluralStringFloat(numBars));
-      }
-      else if(DRAG_END == drag_mode)
-      {
-         clipLen = timelineClipGetEnd() - timelineClipGetStart() + deltaUnits;
+         case DRAG_MOVE:
+            // clipLen = timelineClipGetEnd() - timelineClipGetStart();
+            if( (timelineClipGetStart() + deltaUnits) < 0 )
+            {
+               deltaUnits = -timelineClipGetStart();
+            }
+            else if( (timelineClipGetEnd() + deltaUnits) > parent_timeline.canvas_size)
+            {
+               deltaUnits = parent_timeline.canvas_size - timelineClipGetEnd();
+            }
+            break;
 
-         if(clipLen <= timelineClipGetMinLen())
-         {
-            clipLen = timelineClipGetMinLen();
-            deltaUnits = (clipLen - (timelineClipGetEnd() - timelineClipGetStart()));
-         }
-         else if( (timelineClipGetEnd() + deltaUnits) > parent_timeline.canvas_size)
-         {
-            deltaUnits = parent_timeline.canvas_size - timelineClipGetEnd();
-         }
-         numBeats = int(parent_timeline.timelineUnitsToBeats(clipLen)*100)/100.0f;
-         numBars = int(parent_timeline.timelineUnitsToBars(clipLen)*100)/100.0f;
-         Global.PrintFast("New clip len is "+numBeats+" beat"+Utils.GetPluralStringFloat(numBeats)+" / "+numBars+" bar"+Utils.GetPluralStringFloat(numBars));
-      }
-      else if(DRAG_FADE_IN == drag_mode)
-      {
-         fadeUnits = timelineClipGetFadeInBeats() * unitsPerBeat;
-         clipLen = timelineClipGetEnd() - timelineClipGetStart();
-         // // trace "xxx DRAG_FADE_IN: deltaUnits="+deltaUnits+" fadeUnits="+fadeUnits+" clipLen="+clipLen;
-         if((fadeUnits + deltaUnits) > clipLen)
-         {
-            deltaUnits = clipLen - fadeUnits;
-            fadeUnits = clipLen;
-         }
-         else if((fadeUnits + deltaUnits) < 0)
-         {
-            deltaUnits = -fadeUnits;
-            fadeUnits = 0;
-         }
-         drag_fade_in_delta_units = deltaUnits;
-      }
-      else if(DRAG_FADE_OUT == drag_mode)
-      {
-         fadeUnits = timelineClipGetFadeOutBeats() * unitsPerBeat;
-         clipLen = timelineClipGetEnd() - timelineClipGetStart();
-         // // trace "xxx DRAG_FADE_OUT: deltaUnits="+deltaUnits+" fadeUnits="+fadeUnits+" clipLen="+clipLen;
-         if((fadeUnits + deltaUnits) > clipLen)
-         {
-            deltaUnits = clipLen - fadeUnits;
-            fadeUnits = clipLen;
-         }
-         else if((fadeUnits + deltaUnits) < 0)
-         {
-            deltaUnits = -fadeUnits;
-            fadeUnits = 0;
-         }
-         drag_fade_out_delta_units = deltaUnits;
+         case DRAG_START:
+            clipLen = timelineClipGetEnd() - timelineClipGetStart() - deltaUnits;
+            if(clipLen <= timelineClipGetMinLen())
+            {
+               clipLen = timelineClipGetMinLen();
+               deltaUnits = (timelineClipGetEnd() - timelineClipGetStart()) - clipLen;
+            }
+            else if( (timelineClipGetStart() + deltaUnits) < 0 )
+            {
+               deltaUnits = -timelineClipGetStart();
+            }
+            numBeats = int(parent_timeline.timelineUnitsToBeats(clipLen)*100)/100.0f;
+            numBars = int(parent_timeline.timelineUnitsToBars(clipLen)*100)/100.0f;
+            Global.PrintFast("New clip len is "+numBeats+" beat"+Utils.GetPluralStringFloat(numBeats)+" / "+numBars+" bar"+Utils.GetPluralStringFloat(numBars));
+            break;
+
+         case DRAG_END:
+            clipLen = timelineClipGetEnd() - timelineClipGetStart() + deltaUnits;
+
+            if(clipLen <= timelineClipGetMinLen())
+            {
+               clipLen = timelineClipGetMinLen();
+               deltaUnits = (clipLen - (timelineClipGetEnd() - timelineClipGetStart()));
+            }
+            else if( (timelineClipGetEnd() + deltaUnits) > parent_timeline.canvas_size)
+            {
+               deltaUnits = parent_timeline.canvas_size - timelineClipGetEnd();
+            }
+            numBeats = int(parent_timeline.timelineUnitsToBeats(clipLen)*100)/100.0f;
+            numBars = int(parent_timeline.timelineUnitsToBars(clipLen)*100)/100.0f;
+            Global.PrintFast("New clip len is "+numBeats+" beat"+Utils.GetPluralStringFloat(numBeats)+" / "+numBars+" bar"+Utils.GetPluralStringFloat(numBars));
+            break;
+
+         case DRAG_FADE_IN:
+            fadeUnits = timelineClipGetFadeInBeats() * unitsPerBeat;
+            clipLen = timelineClipGetEnd() - timelineClipGetStart();
+            // // trace "xxx DRAG_FADE_IN: deltaUnits="+deltaUnits+" fadeUnits="+fadeUnits+" clipLen="+clipLen;
+            if((fadeUnits + deltaUnits) > clipLen)
+            {
+               deltaUnits = clipLen - fadeUnits;
+               fadeUnits = clipLen;
+            }
+            else if((fadeUnits + deltaUnits) < 0)
+            {
+               deltaUnits = -fadeUnits;
+               fadeUnits = 0;
+            }
+            drag_fade_in_delta_units = deltaUnits;
+            break;
+
+         case DRAG_FADE_OUT:
+            fadeUnits = timelineClipGetFadeOutBeats() * unitsPerBeat;
+            clipLen = timelineClipGetEnd() - timelineClipGetStart();
+            // // trace "xxx DRAG_FADE_OUT: deltaUnits="+deltaUnits+" fadeUnits="+fadeUnits+" clipLen="+clipLen;
+            if((fadeUnits + deltaUnits) > clipLen)
+            {
+               deltaUnits = clipLen - fadeUnits;
+               fadeUnits = clipLen;
+            }
+            else if((fadeUnits + deltaUnits) < 0)
+            {
+               deltaUnits = -fadeUnits;
+               fadeUnits = 0;
+            }
+            drag_fade_out_delta_units = deltaUnits;
+            break;
+
+         case DRAG_OFFSET:
+            if( (timelineClipGetOffset() + deltaUnits) < 0 )
+            {
+               deltaUnits = -timelineClipGetOffset();
+            }
+            else if( (timelineClipGetOffset() + deltaUnits) > timelineClipGetMaxOffset() )
+            {
+               deltaUnits = timelineClipGetMaxOffset() - timelineClipGetOffset();
+            }
+            drag_offset_delta_units = deltaUnits;
+            break;
       }
       return deltaUnits;
    }
@@ -661,6 +683,10 @@ class TimelineClip : Layer {
             fadeUnits = timelineClipGetFadeOutBeats() * unitsPerBeat;
             timelineClipSetFadeOutBeats(float(fadeUnits + deltaUnits) / unitsPerBeat);
             break;
+
+         case DRAG_OFFSET:
+            timelineClipSetOffset(timelineClipGetOffset() + deltaUnits);
+            break;
       }
    }
 
@@ -669,6 +695,11 @@ class TimelineClip : Layer {
       int newClipEnd;
       switch(drag_mode)
       {
+         default:
+            newClipStart = timelineClipGetStart();
+            newClipEnd   = timelineClipGetEnd();
+            break;
+
          case DRAG_MOVE:
             newClipStart = timelineClipGetStart() + deltaUnits;
             newClipEnd   = timelineClipGetEnd()   + deltaUnits;
@@ -734,31 +765,39 @@ class TimelineClip : Layer {
 
       // // trace "xxx TimelineClip::onMouseDrag: currentEv.p=("+_currentEv.mouse_rel_x+";"+_currentEv.mouse_rel_y+")";
       int dx = _currentEv.mouse_rel_x - drag_start_x;
-      if(DRAG_START == drag_mode)
+      switch(drag_mode)
       {
-         dx += DRAG_EDGE_THRESHOLD/2;
-      }
-      else if(DRAG_END == drag_mode)
-      {
-         dx -= DRAG_EDGE_THRESHOLD/2;
-      }
-      else if(DRAG_MOVE == drag_mode)
-      {
-         dx += DRAG_X_OFFSET;
+         case DRAG_START:
+            dx += DRAG_EDGE_THRESHOLD/2;
+            break;
+
+         case DRAG_END:
+            dx -= DRAG_EDGE_THRESHOLD/2;
+            break;
+
+         case DRAG_MOVE:
+            dx += DRAG_X_OFFSET;
+            break;
+
+         case DRAG_OFFSET:
+            dx *= DRAG_OFFSET_SCL_X;
+            break;
       }
 
       int newX = getPositionX() + parent.getPositionX()/*track*/ + dx;
-      if(DRAG_END == drag_mode)
+      switch(drag_mode)
       {
-         newX += getSizeX();
-      }
-      else if(DRAG_FADE_IN == drag_mode)
-      {
-         newX += (pixPerBeat * timelineClipGetFadeInBeats()) + DRAG_EDGE_THRESHOLD/2;
-      }
-      else if(DRAG_FADE_OUT == drag_mode)
-      {
-         newX += sizeX - (pixPerBeat * timelineClipGetFadeOutBeats()) + DRAG_EDGE_THRESHOLD/2;
+         case DRAG_END:
+            newX += getSizeX();
+            break;
+
+         case DRAG_FADE_IN:
+            newX += (pixPerBeat * timelineClipGetFadeInBeats()) + DRAG_EDGE_THRESHOLD/2;
+            break;
+
+         case DRAG_FADE_OUT:
+            newX += sizeX - (pixPerBeat * timelineClipGetFadeOutBeats()) + DRAG_EDGE_THRESHOLD/2;
+            break;
       }
 
       int dy = _currentEv.mouse_rel_y;
@@ -792,11 +831,12 @@ class TimelineClip : Layer {
       switch(drag_mode)
       {
          case DRAG_MOVE:
+         case DRAG_START:
             deltaUnits = newUnits - timelineClipGetStart();
             break;
 
-         case DRAG_START:
-            deltaUnits = newUnits - timelineClipGetStart();
+         case DRAG_OFFSET:
+            deltaUnits = timelineClipGetStart() - newUnits;
             break;
 
          case DRAG_END:
@@ -861,9 +901,14 @@ class TimelineClip : Layer {
 
       data.drag_delta_x = parent_timeline.timelineUnitsToPix(deltaUnits);
       TimelineTrack deltaTrack <= parent_timeline.timelineGetTrackByIndex(parent_track.track_idx + deltaTrackIdx);
-      // data.drag_delta_y = deltaTrackIdx * parent_timeline.track_size_y;
       if(null != deltaTrack)
          data.drag_delta_y = deltaTrack.getPositionY() - parent_track.getPositionY();
+
+      if(DRAG_OFFSET == drag_mode)
+      {
+         parent_timeline.timelineShowClipDetails(this);
+         redraw();
+      }
 
       UI.CompositeAll();
       return true;
@@ -881,34 +926,42 @@ class TimelineClip : Layer {
       float pixPerBeat = unitsPerBeat * pixPerUnit;
 
       int dx = _ev.mouse_rel_x - drag_start_x;
-      if(DRAG_START == drag_mode)
+      switch(drag_mode)
       {
-         dx += DRAG_EDGE_THRESHOLD/2;
-      }
-      else if(DRAG_END == drag_mode)
-      {
-         dx -= DRAG_EDGE_THRESHOLD/2;
-      }
-      else if(DRAG_MOVE == drag_mode)
-      {
-         dx += DRAG_X_OFFSET;
+         case DRAG_START:
+            dx += DRAG_EDGE_THRESHOLD/2;
+            break;
+
+         case DRAG_END:
+            dx -= DRAG_EDGE_THRESHOLD/2;
+            break;
+
+         case DRAG_MOVE:
+            dx += DRAG_X_OFFSET;
+            break;
+
+         case DRAG_OFFSET:
+            dx *= DRAG_OFFSET_SCL_X;
+            break;
       }
 
       int newX = position_x + parent.position_x/*track*/ + dx;
-      if(DRAG_END == drag_mode)
+      switch(drag_mode)
       {
-         newX += getSizeX();
-      }
-      else if(DRAG_FADE_IN == drag_mode)
-      {
-         newX += (pixPerBeat * timelineClipGetFadeInBeats()) + DRAG_EDGE_THRESHOLD/2;
-      }
-      else if(DRAG_FADE_OUT == drag_mode)
-      {
-         newX += sizeX - (pixPerBeat * timelineClipGetFadeOutBeats()) + DRAG_EDGE_THRESHOLD/2;
+         case DRAG_END:
+            newX += getSizeX();
+            break;
+
+         case DRAG_FADE_IN:
+            newX += (pixPerBeat * timelineClipGetFadeInBeats()) + DRAG_EDGE_THRESHOLD/2;
+            break;
+
+         case DRAG_FADE_OUT:
+            newX += sizeX - (pixPerBeat * timelineClipGetFadeOutBeats()) + DRAG_EDGE_THRESHOLD/2;
+            break;
       }
 
-      int dy = _ev.mouse_rel_y;// - drag_start_y;
+      int dy = _ev.mouse_rel_y; // // - drag_start_y;
       if(!parent_timeline.b_allow_cross_track_clip_drag || (DRAG_MOVE != drag_mode))
          dy = 0;
       if(b_debug)
@@ -933,11 +986,12 @@ class TimelineClip : Layer {
       switch(drag_mode)
       {
          case DRAG_MOVE:
+         case DRAG_START:
             deltaUnits = newUnits - timelineClipGetStart();
             break;
 
-         case DRAG_START:
-            deltaUnits = newUnits - timelineClipGetStart();
+         case DRAG_OFFSET:
+            deltaUnits = timelineClipGetStart() - newUnits;
             break;
 
          case DRAG_END:
@@ -1092,8 +1146,9 @@ class TimelineClip : Layer {
       data.drag_clip <= null;
       data.b_drag_clip_overlap = false;
       drag_mode = DRAG_NONE;
-      drag_fade_in_delta_units = 0;
+      drag_fade_in_delta_units  = 0;
       drag_fade_out_delta_units = 0;
+      drag_offset_delta_units   = 0;
       parent_timeline.timelineResetSelectedClipsFadeDeltaUnits();
       redraw();
 
@@ -1120,8 +1175,9 @@ class TimelineClip : Layer {
       data.drag_clip <= null;
       data.b_drag_clip_overlap = false;
       drag_mode = DRAG_NONE;
-      drag_fade_in_delta_units = 0;
+      drag_fade_in_delta_units  = 0;
       drag_fade_out_delta_units = 0;
+      drag_offset_delta_units   = 0;
       parent_timeline.timelineResetSelectedClipsFadeDeltaUnits();
       UI.CompositeAll();
       UI.RevertCursor();
@@ -1222,11 +1278,8 @@ class TimelineClip : Layer {
    public virtual onDraw() {
       boolean bMouseOver = isMouseOver();
 
-      // // if(bMouseOver)
-      // //    trace "xxx clip mouseover "+#(this);
-
       // if(null != first_child)
-      //    trace "xxx drawClip: first_child="+#(first_child)+" first_child.position="+first_child.getPositionString()+" first_child.size="+first_child.getSizeString();
+      //    trace "xxx TimelineClip::onDraw: first_child="+#(first_child)+" first_child.position="+first_child.getPositionString()+" first_child.size="+first_child.getSizeString();
 
       float offX = DRAG_EDGE_THRESHOLD / 2.0;
       float offY = 0;

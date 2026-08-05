@@ -1,8 +1,8 @@
 % Eureka Sampler / DAW
 % bsp
-% 04-Aug-2026
+% 05-Aug-2026
 >>>
-17Nov2019, 15May2020, 16Oct2020, 06Feb2021, 31May2021, 04Jan2023, 18Mar2023, 24Mar2023, 31Mar2023, 04Aug2023, 05Aug2023, 10Aug2023, 16Aug2023, 18Aug2023, 19Aug2023, 07Dec2023, 14Dec2023, 15Dec2023, 16Dec2023, 03Feb2024, 27Apr2024, 07Jul2024, 04Aug2024, 06Aug2024, 10Aug2024, 12Aug2024, 28Sep2024, 30Sep2024, 03Oct2024, 04Oct2024, 05Oct2024, 28Nov2024, 30Nov2024, 23Dec2024, 26Dec2024, 28Dec2024, 31Dec2024, 04Jan2025, 20Mar2025, 21Mar2025, 22May2025, 28May2025, 29May2025, 30May2025, 07Jun2025, 11Jun2025, 12Jun2025, 15Jun2025, 20Jun2025, 21Jun2025, 11Dec2025, 02Jan2026, 17Jan2026, 26Jan2026, 09Apr2026, 10Apr2026, 15Apr2026, 16Apr2026, 23Apr2026, 26Apr2026, 26May2026, 01Jun2026, 02Jun2026, 05Jul2026, 10Jul2026, 11Jul2026, 03Aug2026, 04Aug2026
+17Nov2019, 15May2020, 16Oct2020, 06Feb2021, 31May2021, 04Jan2023, 18Mar2023, 24Mar2023, 31Mar2023, 04Aug2023, 05Aug2023, 10Aug2023, 16Aug2023, 18Aug2023, 19Aug2023, 07Dec2023, 14Dec2023, 15Dec2023, 16Dec2023, 03Feb2024, 27Apr2024, 07Jul2024, 04Aug2024, 06Aug2024, 10Aug2024, 12Aug2024, 28Sep2024, 30Sep2024, 03Oct2024, 04Oct2024, 05Oct2024, 28Nov2024, 30Nov2024, 23Dec2024, 26Dec2024, 28Dec2024, 31Dec2024, 04Jan2025, 20Mar2025, 21Mar2025, 22May2025, 28May2025, 29May2025, 30May2025, 07Jun2025, 11Jun2025, 12Jun2025, 15Jun2025, 20Jun2025, 21Jun2025, 11Dec2025, 02Jan2026, 17Jan2026, 26Jan2026, 09Apr2026, 10Apr2026, 15Apr2026, 16Apr2026, 23Apr2026, 26Apr2026, 26May2026, 01Jun2026, 02Jun2026, 05Jul2026, 10Jul2026, 11Jul2026, 03Aug2026, 04Aug2026, 05Aug2026
 <<<
 $(var:header)
 
@@ -767,6 +767,7 @@ when CLAP / VST2 editor window is focused:
    |:LMB-drag             |:select region / clips within region / move selected clips (when drag start is over clip)
    |:LMB-lctrl-drag       |:select region / clips within region (never move clips, e.g. for selecting regions in SampleView)
    |:LMB-lshift-drag      |:resize clips (same as LMB-drag on clip start/end)
+   |:LMB-lalt-drag        |:ripple edit start offset
    |:LMB-click            |:select clip
    |:LMB-holdclick        |:split clip at cursor position
    |:LMB-dblclick         |:
