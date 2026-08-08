@@ -12532,8 +12532,8 @@ Strings are just Objects, too.
       YM //void        _setStringValue    (YAC_Object *_s);
 
 /* @method typecast,int type
-
-@arg type
+   Change object type (and update value)
+   @arg type New type (%YAC_TYPE_INT = 1, %YAC_TYPE_FLOAT = 2, %YAC_TYPE_OBJECT = 3, %YAC_TYPE_STRING = 4)
 */
       YM //void        typecast           (sSI);
 
@@ -12655,6 +12655,7 @@ Assign/Dereference %Object pointer. Both values must have type %Object or %Strin
       @return true when value has type %String or has type %Object and object is a %String
     */
    YM //sBool       _isString          (void);
+
 };
 #include "ying_core_Value.cpp"
 YAC_C_CORE_POOLED(_Value, "Value", YAC_CLID_VALUE);
