@@ -1,10 +1,10 @@
 /// YAC_ValueObject.h
 ///
-/// (c) 2001-2020 Bastian Spiegel <bs@tkscript.de>
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
 ///     - distributed under the terms of the GNU general public license (GPL).
 ///
-#ifndef __YAC_VALUEOBJECT_H__
-#define __YAC_VALUEOBJECT_H__
+#ifndef YAC_VALUEOBJECT_H__
+#define YAC_VALUEOBJECT_H__
 
 
 class YAC_ValueObject : public YAC_Object, public YAC_Value  {
@@ -15,6 +15,10 @@ public:
    void         YAC_VCALL yacOperator(sSI _cmd, YAC_Object *_o, YAC_Value *_r);
    
    void         YAC_VCALL yacOperatorAssign    (YAC_Object*);
+   sBool        YAC_VCALL yacScanI             (sSI *); 
+   sBool        YAC_VCALL yacScanF32           (sF32 *); 
+   sBool        YAC_VCALL yacScanF64           (sF64 *); 
+   sBool        YAC_VCALL yacScanI64           (sS64 *); 
    void         YAC_VCALL yacValueOfI          (sSI);
    void         YAC_VCALL yacValueOfI64        (sS64);
    void         YAC_VCALL yacValueOfF32        (sF32);
@@ -48,4 +52,4 @@ public:
 };
 
 
-#endif // __YAC_VALUEOBJECT_H__
+#endif // YAC_VALUEOBJECT_H__

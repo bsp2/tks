@@ -1,6 +1,6 @@
 /// YAC_ValueObject.cpp
 ///
-/// (c) 2001-2020 Bastian Spiegel <bs@tkscript.de>
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
 ///     - distributed under the terms of the GNU general public license (GPL).
 ///
 
@@ -81,22 +81,42 @@ void YAC_VCALL YAC_ValueObject::yacOperatorAssign(YAC_Object *_o) {
    }
 }
 
+sBool YAC_VCALL YAC_ValueObject::yacScanI(sSI *_retInt) {
+   *_retInt = getIntValue();
+   return YAC_TRUE;
+}
+
+sBool YAC_VCALL YAC_ValueObject::yacScanF32(sF32 *_retFloat) {
+   *_retFloat = getFloatValue();
+   return YAC_TRUE;
+}
+
+sBool YAC_VCALL YAC_ValueObject::yacScanF64(sF64 *_retFloat64) {
+   *_retFloat64 = getFloatValue();
+   return YAC_TRUE;
+}
+
+sBool YAC_VCALL YAC_ValueObject::yacScanI64(sS64 *_retInt64) {
+   *_retInt64 = getIntValue();
+   return YAC_TRUE;
+}
+
 // the yacValueOf*() methodes are usually called in Value v = <value> assignments
-void YAC_VCALL YAC_ValueObject::yacValueOfI   (sSI _v) {
+void YAC_VCALL YAC_ValueObject::yacValueOfI(sSI _v) {
    safeInitInt(_v);
 }
 
-void YAC_VCALL YAC_ValueObject::yacValueOfI64 (sS64 _v) {
+void YAC_VCALL YAC_ValueObject::yacValueOfI64(sS64 _v) {
    YAC_Long *lo = (YAC_Long*) YAC_NEW_CORE_POOLED(YAC_CLID_LONG);
    lo->value = _v;
    safeInitObject(lo, 1);
 }
 
-void YAC_VCALL YAC_ValueObject::yacValueOfF32 (sF32 _v) {
+void YAC_VCALL YAC_ValueObject::yacValueOfF32(sF32 _v) {
    safeInitFloat(_v);
 }
 
-void YAC_VCALL YAC_ValueObject::yacValueOfF64 (sF64 _v) {
+void YAC_VCALL YAC_ValueObject::yacValueOfF64(sF64 _v) {
    YAC_Double *n = (YAC_Double*) YAC_NEW_CORE_POOLED(YAC_CLID_DOUBLE);
    n->value = _v;
    safeInitObject(n, 1);
@@ -232,13 +252,36 @@ void YAC_ValueObject::_unlinkObject(YAC_Value *_r) {
 }
 
 void YAC_ValueObject::_assign(YAC_Object *_valueObject) {
+   PTN_Env env; env.initDefault();
+   YAC_Value r;
+   YAC_Value *rhs = NULL;
+   YAC_Value t;
    if(YAC_BCHK(_valueObject, YAC_CLID_VALUE))
    {
-      PTN_Env env; env.initDefault();
-      YAC_Value r;
+      rhs = (YAC_ValueObject*)_valueObject;
+   }
+   else if(YAC_Is_Float(_valueObject))
+   {
+      t.initFloat(0.0f);
+      _valueObject->yacScanF32(&t.value.float_val);
+      rhs = &t;
+   }
+   else if(YAC_Is_Integer(_valueObject))
+   {
+      t.initInt(0);
+      _valueObject->yacScanI(&t.value.int_val);
+      rhs = &t;
+   }
+   else if(YAC_VALID(_valueObject))
+   {
+      t.initObject(_valueObject, YAC_FALSE/*del*/);
+      rhs = &t;
+   }
+   if(NULL != rhs)
+   {
       // yac_host->printf("xxx YAC_ValueObject::assign: this.type=%u vo.type=%u vo.value.object_val=%p\n", type, _valueObject->type,
       PTN_DoubleArgExpr::EvalOp(&env, this,
-                                this, (YAC_ValueObject*)_valueObject,
+                                this, rhs,
                                 YAC_OP_ASSIGN,
                                 NULL/*nodeOrNull*/
                                 );
