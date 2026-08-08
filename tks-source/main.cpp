@@ -1446,17 +1446,23 @@ int tks_main(int _argc, char **_argv) {
 #endif
 
 #ifdef TKS_LIB
-void tks_lib_init(int _argc, char **_argv) {
+extern "C" void tks_lib_init(int _argc, char **_argv) {
    NewEngine(_argc, _argv, 1/*bRunInBG*/);
 }
-int tks_lib_run(const char *_pathName) {
+extern "C" int tks_lib_run(const char *_pathName) {
    return ac_run(_pathName, YAC_TRUE/*bRunInBG*/);
 }
-void tks_lib_stop(void) {
+extern "C" void *tks_lib_find_function(const char *_funcName) {
+   return /*YAC_FunctionHandle*/tkscript->yacFindFunction((sChar*)_funcName);
+}
+extern "C" void tks_lib_eval_void_function(void *_functionHandle) {
+   (void)tkscript->yacEvalFunction(tkscript->yacContextGetDefault()/*context*/, _functionHandle, 0u/*numArgs*/, NULL/*args*/);
+}
+extern "C" void tks_lib_stop(void) {
    tkscript->stop();
    ::signal(SIGINT, SIG_DFL);
 }
-void tks_lib_exit(void) {
+extern "C" void tks_lib_exit(void) {
    DeleteEngine();
 }
 #ifdef TKS_VST
