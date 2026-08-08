@@ -2664,7 +2664,7 @@ void TKS_ScriptEngine::createArgArray(void) {
    tkscript->global_instance_namespace.createObjectEntry(&name, 1, o, 1);
 }
 
-YAC_FunctionHandle YAC_VCALL TKS_ScriptEngine::yacFindFunction(sChar *_name) {
+YAC_FunctionHandle YAC_VCALL TKS_ScriptEngine::yacFindFunction(const char *_name) {
    YAC_String s;
    s.visit(_name);
    sSI mi = s.indexOf(".", 0);
@@ -2686,7 +2686,7 @@ YAC_FunctionHandle YAC_VCALL TKS_ScriptEngine::yacFindFunction(sChar *_name) {
    return NULL;
 }
 
-YAC_ModuleHandle YAC_VCALL TKS_ScriptEngine::yacCompileModule(sChar *_source) {
+YAC_ModuleHandle YAC_VCALL TKS_ScriptEngine::yacCompileModule(const char *_source) {
    TKS_ScriptModule *sc = (TKS_ScriptModule*)YAC_NEW_CORE(TKS_CLID_SCRIPT);
    YAC_String source;
    YAC_Value r;
@@ -2701,7 +2701,7 @@ YAC_ModuleHandle YAC_VCALL TKS_ScriptEngine::yacCompileModule(sChar *_source) {
    return NULL;
 }
 
-YAC_FunctionHandle YAC_VCALL TKS_ScriptEngine::yacFindFunctionInModule(YAC_ModuleHandle _mod, sChar *_name) {
+YAC_FunctionHandle YAC_VCALL TKS_ScriptEngine::yacFindFunctionInModule(YAC_ModuleHandle _mod, const char *_name) {
    if(_mod)
    {
       TKS_ScriptModule *sc = (TKS_ScriptModule*)_mod;
@@ -2716,7 +2716,7 @@ YAC_FunctionHandle YAC_VCALL TKS_ScriptEngine::yacFindFunctionInModule(YAC_Modul
    return NULL;
 }
 
-YAC_VariableHandle YAC_VCALL TKS_ScriptEngine::yacFindVariableInModule(YAC_ModuleHandle _mod, sChar *_name) {
+YAC_VariableHandle YAC_VCALL TKS_ScriptEngine::yacFindVariableInModule(YAC_ModuleHandle _mod, const char *_name) {
    if(_mod)
    {
       TKS_ScriptModule *sc=(TKS_ScriptModule*)_mod;
@@ -2731,7 +2731,7 @@ YAC_VariableHandle YAC_VCALL TKS_ScriptEngine::yacFindVariableInModule(YAC_Modul
    return 0;
 }
 
-YAC_VariableHandle YAC_VCALL TKS_ScriptEngine::yacFindVariableInFunction(YAC_FunctionHandle _fn, sChar *_name) {
+YAC_VariableHandle YAC_VCALL TKS_ScriptEngine::yacFindVariableInFunction(YAC_FunctionHandle _fn, const char *_name) {
    if(_fn)
    {
       TKS_FunctionObject *sf = (TKS_FunctionObject *) _fn;
@@ -2961,7 +2961,7 @@ sUI YAC_VCALL TKS_ScriptEngine::yacRegisterFunction(void *_adr, const char *_nam
 
 
    // Create new function command
-   YAC_CommandY *f = new YAC_CommandY();
+   YAC_CommandY *f = new(std::nothrow) YAC_CommandY();
    f->y_adr          = _adr;
    f->y_name         = _name;
    f->y_return_type  = _returntype;
@@ -3014,7 +3014,7 @@ sUI YAC_VCALL TKS_ScriptEngine::yacRegisterFunction(void *_adr, const char *_nam
    }
 }
 
-sUI YAC_VCALL TKS_ScriptEngine::yacGetClassIDByName(sChar *_name) {
+sUI YAC_VCALL TKS_ScriptEngine::yacGetClassIDByName(const char *_name) {
    YAC_String nm; nm.visit(_name);
    TKS_ClassTemplate *clt=tkscript->findTemplate(&nm);
    if(clt)

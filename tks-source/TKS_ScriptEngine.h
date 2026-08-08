@@ -71,15 +71,15 @@ public:
    sUI                YAC_VCALL yacEvalFunction            (YAC_ContextHandle _context, YAC_FunctionHandle _yac_fun, sUI _numArgs, YAC_Value *_args);
    sUI                YAC_VCALL yacEvalFunctionReturn      (YAC_ContextHandle _context, YAC_FunctionHandle _yac_fun, sUI _numArgs, YAC_Value *_args, YAC_Value *_r);
    sSI                YAC_VCALL yacEvalMethodByName        (YAC_Object *, const char*, YAC_Value*, sUI, YAC_Value *);
-   YAC_FunctionHandle YAC_VCALL yacFindFunction            (sChar *_name);
-   YAC_ModuleHandle   YAC_VCALL yacCompileModule           (sChar *_source);
-   YAC_FunctionHandle YAC_VCALL yacFindFunctionInModule    (YAC_ModuleHandle _mod, sChar *_name);
+   YAC_FunctionHandle YAC_VCALL yacFindFunction            (const char *_name);
+   YAC_ModuleHandle   YAC_VCALL yacCompileModule           (const char *_source);
+   YAC_FunctionHandle YAC_VCALL yacFindFunctionInModule    (YAC_ModuleHandle _mod, const char *_name);
    void               YAC_VCALL yacDeleteModule            (YAC_ModuleHandle _mod);
-   YAC_VariableHandle YAC_VCALL yacFindVariableInModule    (YAC_ModuleHandle _mod, sChar *_name);
+   YAC_VariableHandle YAC_VCALL yacFindVariableInModule    (YAC_ModuleHandle _mod, const char *_name);
    void               YAC_VCALL yacSetVariable             (YAC_VariableHandle _var, YAC_Value *_v);
    void               YAC_VCALL yacGetVariable             (YAC_VariableHandle _var, YAC_Value *_r);
-   YAC_VariableHandle YAC_VCALL yacFindVariableInFunction  (YAC_FunctionHandle _fn, sChar *_name);
-   sUI                YAC_VCALL yacGetClassIDByName        (sChar *_name);
+   YAC_VariableHandle YAC_VCALL yacFindVariableInFunction  (YAC_FunctionHandle _fn, const char *_name);
+   sUI                YAC_VCALL yacGetClassIDByName        (const char *_name);
 
    sUI                YAC_VCALL yacScanFlags               (YAC_String *_s);
    sSI                YAC_VCALL yacStringReplace           (YAC_String *_d, YAC_String *_a, YAC_String *_b);

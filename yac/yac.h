@@ -20,7 +20,7 @@
 /// ----          06-Jan-2023 / 16-Jan-2023 / 26-Jan-2023 / 05-Feb-2023 / 12-Apr-2023 / 14-Apr-2023
 /// ----          17-Jul-2023 / 24-Jul-2023 / 26-Jul-2023 / 13-Jan-2024 / 07-Jun-2024 / 17-Aug-2024
 /// ----          20-Aug-2024 / 22-Aug-2024 / 10-Oct-2024 / 20-Oct-2024 / 14-Mar-2025 / 01-Oct-2025
-/// ----          03-Oct-2025 / 22-Feb-2026 / 09-Apr-2026 / 18-May-2026
+/// ----          03-Oct-2025 / 22-Feb-2026 / 09-Apr-2026 / 18-May-2026 / 08-Aug-2026
 /// ----
 /// ---- info   : YAC - Yet Another Component object model.  YAC is a self contained, binary level
 /// ----          C++ component/reflectance model and plugin SDK.
@@ -2055,7 +2055,7 @@ public:
     virtual YAC_Object  *YAC_VCALL yacNew                     (const char *_namespaceName, const char *_classname) = 0; // allocate unknown API object (e.g. Texture or a plugin class)
     virtual YAC_Object  *YAC_VCALL yacNewByID                 (sUI _class_ID) = 0;
     virtual void         YAC_VCALL yacDelete                  (YAC_Object *_apiobject) = 0; // delete previously allocated API object
-    virtual sUI          YAC_VCALL yacGetClassIDByName        (sChar *_name) = 0;
+    virtual sUI          YAC_VCALL yacGetClassIDByName        (const char *_name) = 0;
     virtual sUI          YAC_VCALL yacRegisterFunction        (void *_adr, const char *_name, sUI _returntype, const char *_return_otype, sUI _numargs, const sUI *_argtypes, const char **_argtypenames, sUI _callstyle) = 0;
     virtual sSI          YAC_VCALL yacEvalMethodByName        (YAC_Object *_apiobject, const char *_name, YAC_Value *_args, sUI _numargs, YAC_Value *_r) = 0;  // lookup method by name, typecast arguments and evaluate. return true if everything worked OK, false if method _name was not found.
     virtual YAC_Object * YAC_VCALL yacGetClassTemplateByID    (sUI _class_ID) = 0;
@@ -2112,13 +2112,13 @@ public:
 	// ----
 	// ----
     virtual sUI                YAC_VCALL yacRunning                 (void) = 0;
-    virtual YAC_FunctionHandle YAC_VCALL yacFindFunction            (sChar *_name) = 0;
+    virtual YAC_FunctionHandle YAC_VCALL yacFindFunction            (const char *_name) = 0;
     virtual sUI                YAC_VCALL yacEvalFunction            (YAC_ContextHandle _context, YAC_FunctionHandle _script_function, sUI _numargs, YAC_Value *_args) = 0; // evaluate script function, e.g. used for tks signal callbacks; see YAC_Object::yacRegisterSignal(),yacGetSignalStringList(). return true or false depending on whether the function call succeeded.
-    virtual YAC_ModuleHandle   YAC_VCALL yacCompileModule           (sChar *_source) = 0;
+    virtual YAC_ModuleHandle   YAC_VCALL yacCompileModule           (const char *_source) = 0;
     virtual void               YAC_VCALL yacDeleteModule            (YAC_ModuleHandle _mod) = 0;
-    virtual YAC_FunctionHandle YAC_VCALL yacFindFunctionInModule    (YAC_ModuleHandle _mod, sChar *_name) = 0;
-    virtual YAC_VariableHandle YAC_VCALL yacFindVariableInModule    (YAC_ModuleHandle _mod, sChar *_name) = 0;
-    virtual YAC_FunctionHandle YAC_VCALL yacFindVariableInFunction  (YAC_FunctionHandle _fn, sChar *_name) = 0;
+    virtual YAC_FunctionHandle YAC_VCALL yacFindFunctionInModule    (YAC_ModuleHandle _mod, const char *_name) = 0;
+    virtual YAC_VariableHandle YAC_VCALL yacFindVariableInModule    (YAC_ModuleHandle _mod, const char *_name) = 0;
+    virtual YAC_FunctionHandle YAC_VCALL yacFindVariableInFunction  (YAC_FunctionHandle _fn, const char *_name) = 0;
     virtual void               YAC_VCALL yacSetVariable             (YAC_VariableHandle _var, YAC_Value *_v) = 0;
     virtual void               YAC_VCALL yacGetVariable             (YAC_VariableHandle _var, YAC_Value *_r) = 0;
     virtual sUI                YAC_VCALL yacEvalFunctionReturn      (YAC_ContextHandle _context, YAC_FunctionHandle _script_function, sUI _numargs, YAC_Value *_args, YAC_Value *_r) = 0; // evaluate script function, e.g. used for tks signal callbacks; see YAC_Object::yacRegisterSignal(),yacGetSignalStringList(). return true or false depending on whether the function call succeeded.
