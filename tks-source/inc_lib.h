@@ -9,12 +9,12 @@
 extern "C" {
 #endif
 
-void  tks_lib_init (int _argc, char **_argv);
-int   tks_lib_run (const char *_pathName);
-void *tks_lib_find_function (const char *_funcName);
-void  tks_lib_eval_void_function (void *_functionHandle);
-void tks_lib_stop (void);
-void tks_lib_exit (void);
+extern void  tks_lib_init (int _argc, char **_argv);
+extern int   tks_lib_run (const char *_pathName);
+extern void *tks_lib_find_function (const char *_funcName);
+extern void  tks_lib_eval_void_function (void *_functionHandle);
+extern void  tks_lib_stop (void);
+extern void  tks_lib_exit (void);
 
 #ifdef __cplusplus
 }

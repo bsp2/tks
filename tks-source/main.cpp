@@ -72,6 +72,10 @@
 #include "PTN_DoubleArgExpr.h"
 #endif // TKS_PRINT_SIZEOFS
 
+#ifdef TKS_LIB
+#include "inc_lib.h"
+#endif // TKS_LIB
+
 
 static sBool b_interactive;
 static sBool b_continue;
