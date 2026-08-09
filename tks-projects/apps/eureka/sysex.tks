@@ -15,7 +15,7 @@
 // ----          01Dec2022, 18Dec2022, 23Feb2023, 22Jul2023, 29Jul2023, 16Nov2023, 17Nov2023
 // ----          18Nov2023, 02Dec2023, 03Dec2023, 05Jul2024, 07Jul2024, 15Nov2024, 07Jan2025
 // ----          22May2025, 13Jun2025, 18Dec2025, 06Apr2026, 14Apr2026, 16Apr2026, 13Jul2026
-// ----          02Aug2026, 03Aug2026
+// ----          02Aug2026, 03Aug2026, 09Aug2026
 // ----
 // ----
 // ----
@@ -148,7 +148,7 @@ class SysEx {
 
    define int SYX_HEADER_SIZE = 5;
 
-   define int MAX_PAYLOAD_SIZE_RAW = 65536;
+   define int MAX_PAYLOAD_SIZE_RAW = (1024*1024);
    define int MAX_PAYLOAD_SIZE_SYX = (MAX_PAYLOAD_SIZE_RAW/*lsbs*/ + ((MAX_PAYLOAD_SIZE_RAW+6)/7)/*msbs*/);
 
    static MIDIInDevice *in_dev;
@@ -398,80 +398,23 @@ class SysEx {
                         local byte   _devId,
                         local byte   _msgId
                         ) {
-      // // _syx.size = MAX_PAYLOAD_SIZE_SYX;
-
-      local int bytesLeft;
-      if(null != _raw)
-      {
-         bytesLeft = _raw.offset;
-      }
-      else
-      {
-         bytesLeft = 0;
-      }
-
       _syx.offset = 0;
 
+      // 5 header bytes
       _syx.i8 = 0; // 0 = extended manufacturer id
       _syx.i8 = EXT_MANUFACTURER_ID_1;
       _syx.i8 = EXT_MANUFACTURER_ID_2;
       _syx.i8 = _devId;
       _syx.i8 = _msgId;
 
-      if(bytesLeft > 0)
+      if(null != _raw)
       {
-         local int numPackets = (bytesLeft / 7);
-         local int off = 0;
-
-         loop(numPackets)
-         {
-            // Write msbs
-            _syx.i8 =
-               ((_raw.peekI8(off + 0) & 0x80) >> 7) |
-               ((_raw.peekI8(off + 1) & 0x80) >> 6) |
-               ((_raw.peekI8(off + 2) & 0x80) >> 5) |
-               ((_raw.peekI8(off + 3) & 0x80) >> 4) |
-               ((_raw.peekI8(off + 4) & 0x80) >> 3) |
-               ((_raw.peekI8(off + 5) & 0x80) >> 2) |
-               ((_raw.peekI8(off + 6) & 0x80) >> 1) ;
-
-            // Write lsbs
-            _syx.i8 = _raw.peekI8(off + 0) & 127;
-            _syx.i8 = _raw.peekI8(off + 1) & 127;
-            _syx.i8 = _raw.peekI8(off + 2) & 127;
-            _syx.i8 = _raw.peekI8(off + 3) & 127;
-            _syx.i8 = _raw.peekI8(off + 4) & 127;
-            _syx.i8 = _raw.peekI8(off + 5) & 127;
-            _syx.i8 = _raw.peekI8(off + 6) & 127;
-
-            off += 7;
-         }
-
-         if(off < bytesLeft)
-         {
-            // Write msbs for partial packet
-            bytesLeft = bytesLeft - off;
-
-            // Get msbs for partial packet
-            local byte msbs = 0;
-            local int byteSubIdx = 0;
-            loop(bytesLeft)
-            {
-               msbs |= ((_raw.peekI8(off + byteSubIdx) & 0x80) >> 7) << byteSubIdx;
-               byteSubIdx++;
-            }
-
-            // Write msbs and lsbs for partial packet
-            _syx.i8 = msbs;
-            byteSubIdx = 0;
-            loop(bytesLeft)
-            {
-               _syx.i8 = _raw.peekI8(off + byteSubIdx++) & 127;
-            }
-         }
-
-         // _syx.offset now equals encoded message size
+         int rawNum = _raw.offset;
+         _raw.offset = 0;
+         _syx.encode7From8(_raw, rawNum);
       }
+
+      // _syx.offset now equals encoded message size
    }
 
    // <method.png>
@@ -501,64 +444,8 @@ class SysEx {
 
                   bytesLeft -= 5;
 
-                  if(bytesLeft > 0)
-                  {
-                     local byte msbs;
-                     local int byteSubIdx = 0;
-                     local IntArray packet;
-                     local int j;
-                     local byte b;
-                     packet.alloc(7);
-                     packet.useAll();
-
-                     while(bytesLeft > 0)
-                     {
-                        if(0 == byteSubIdx)
-                        {
-                           // Read MSBs for next packet (1..7 bytes)
-                           msbs = _syx.i8;
-                           byteSubIdx++;
-                           bytesLeft--;
-                        }
-                        else
-                        {
-                           b = _syx.i8; // 7bit packet data
-                           packet[byteSubIdx-1] = b | (((msbs >> (byteSubIdx-1)) & 1) << 7); // add msb
-                           byteSubIdx++;
-                           bytesLeft--;
-
-                           if(8 == byteSubIdx)
-                           {
-                              // Copy full packet
-                              j = 0;
-                              loop(7)
-                              {
-                                 _raw.i8 = packet[j++];
-                              }
-                              byteSubIdx = 0;
-                           }
-                        }
-                     }
-
-                     if(byteSubIdx > 0)
-                     {
-                        // Copy last (partial) packet
-                        j = 0;
-                        loop(byteSubIdx-1)
-                        {
-                           _raw.i8 = packet[j++];
-                           // bytesLeft--;
-                        }
-                     }
-
-                     // _raw.offset now equals payload size
-                     r = true;
-                  }
-                  else
-                  {
-                     // No additional payload
-                     r = true;
-                  }
+                  r = true;
+                  _raw.decode8From7(_syx, bytesLeft);
                }
             }
          }
@@ -1099,13 +986,10 @@ class SysEx {
       if(null != out_dev)
       {
          Buffer syx;
-         if(null != _payloadOrNull)
+         if(0 == syx.size)
          {
-            syx.size = SYX_HEADER_SIZE + _payloadOrNull.offset + ((_payloadOrNull.offset+6)/7);
-         }
-         else
-         {
-            syx.size = SYX_HEADER_SIZE;
+            // // syx.size = SYX_HEADER_SIZE + _payloadOrNull.offset + ((_payloadOrNull.offset+6)/7);
+            syx.size = MAX_PAYLOAD_SIZE_SYX;
          }
          Encode(_payloadOrNull, syx, 0/*devId*/, _msgId);
          out_dev.sysEx(syx);
