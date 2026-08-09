@@ -10207,6 +10207,22 @@ Write b,g,r,a bytes from packed ARGB32 integer
  */
    YM //void setBgra (sUI _argb32);
 
+   /* @method encode7From8,Stream raw,int rawNum:int
+Encode 8bit raw stream bytes to packets of 8 7bit bytes (e.g. for MIDI SysEx)
+@arg raw Input stream
+@arg rawNum Number of input stream bytes to encode
+@return Number of encoded output stream bytes
+   */
+   YM //sUI encode7From8 (YAC_Object *_raw, sUI _rawNum);
+
+   /* @method decode8From7,Stream enc,int encNum:int
+Decode packets of 8 7bit bytes (e.g. MIDI SysEx) to 8bit raw stream bytes
+@arg enc Input stream
+@arg encNum Number of input stream bytes to decode
+@return Number of decoded output stream bytes
+   */
+   YM //sUI decode8From7 (YAC_Object *_enc, sUI _encNum);
+
 };
 #include "ying_core_Stream.cpp"
 YAC_C_CORE(_Stream, "Stream", YAC_CLID_STREAM);

@@ -1,6 +1,6 @@
 /// YAC_StreamBase.cpp
 ///
-/// (c) 2002-2025 Bastian Spiegel <bs@tkscript.de>
+/// (c) 2002-2026 Bastian Spiegel <bs@tkscript.de>
 ///     - distributed under terms of the GNU general public license (GPL).
 ///
 ///
@@ -1116,4 +1116,133 @@ void YAC_StreamBase::setBgra(sUI _argb32) {
    yacStreamWriteI8( (_argb32 >>  8) & 255u );  // g
    yacStreamWriteI8( (_argb32 >> 16) & 255u );  // r
    yacStreamWriteI8( (_argb32 >> 24) & 255u );  // a
+}
+
+sUI YAC_StreamBase::encode7From8(YAC_Object *_raw, sUI _rawNum) {
+   sUI retNumEnc = 0u;
+   if(YAC_VALID(_raw))
+   {
+      if(_rawNum > 0u)
+      {
+         sUI bytesLeft = _rawNum;
+         sUI numPackets = (bytesLeft / 7u);
+
+         for(sUI packetIdx = 0u; packetIdx < numPackets; packetIdx++)
+         {
+            // Read 7 packet bytes
+            const sU8 d0 = _raw->yacStreamReadI8();
+            const sU8 d1 = _raw->yacStreamReadI8();
+            const sU8 d2 = _raw->yacStreamReadI8();
+            const sU8 d3 = _raw->yacStreamReadI8();
+            const sU8 d4 = _raw->yacStreamReadI8();
+            const sU8 d5 = _raw->yacStreamReadI8();
+            const sU8 d6 = _raw->yacStreamReadI8();
+
+            // Write MSBs
+            yacStreamWriteI8(
+               ((d0 & 0x80u) >> 7) |
+               ((d1 & 0x80u) >> 6) |
+               ((d2 & 0x80u) >> 5) |
+               ((d3 & 0x80u) >> 4) |
+               ((d4 & 0x80u) >> 3) |
+               ((d5 & 0x80u) >> 2) |
+               ((d6 & 0x80u) >> 1)
+                             );
+
+            // Write LSBs
+            yacStreamWriteI8(d0 & 127u);
+            yacStreamWriteI8(d1 & 127u);
+            yacStreamWriteI8(d2 & 127u);
+            yacStreamWriteI8(d3 & 127u);
+            yacStreamWriteI8(d4 & 127u);
+            yacStreamWriteI8(d5 & 127u);
+            yacStreamWriteI8(d6 & 127u);
+         }
+
+         sUI off = (7u * numPackets);
+
+         retNumEnc += (numPackets << 3);
+
+         if(off < bytesLeft)
+         {
+            // Write MSBs for partial packet
+            bytesLeft -= off;
+
+            // Get MSBs for partial packet
+            sU8 packet[8];
+            sU8 msbs = 0u;
+            for(sUI byteSubIdx = 0u; byteSubIdx < bytesLeft; byteSubIdx++)
+            {
+               packet[byteSubIdx] = _raw->yacStreamReadI8();
+               msbs |= ((packet[byteSubIdx] & 0x80u) >> 7) << byteSubIdx;
+            }
+
+            // Write MSBs and LSBs for partial packet
+            yacStreamWriteI8(msbs);
+            for(sUI byteSubIdx = 0u; byteSubIdx < bytesLeft; byteSubIdx++)
+            {
+               yacStreamWriteI8(packet[byteSubIdx] & 127u);
+            }
+
+            retNumEnc += 1u + bytesLeft;
+         }
+      } // if num
+   }
+   return retNumEnc;
+}
+
+sUI YAC_StreamBase::decode8From7(YAC_Object *_enc, sUI _encNum) {
+   sUI retNumDec = 0u;
+   if(YAC_VALID(_enc))
+   {
+      sUI bytesLeft = _encNum;
+
+      if(bytesLeft > 0u)
+      {
+         sU8 msbs;
+         sUI byteSubIdx = 0u;
+         sU8 packet[8];
+
+         while(bytesLeft > 0u)
+         {
+            if(0u == byteSubIdx)
+            {
+               // Read MSBs for next packet (1..7 bytes)
+               msbs = _enc->yacStreamReadI8();
+               byteSubIdx++;
+               bytesLeft--;
+            }
+            else
+            {
+               const sU8 b = _enc->yacStreamReadI8(); // 7bit packet data
+               packet[byteSubIdx-1u] = b | (((msbs >> (byteSubIdx-1u)) & 1u) << 7); // restore msb
+               bytesLeft--;
+
+               if(8u == ++byteSubIdx)
+               {
+                  // Copy full packet
+                  for(sUI j = 0u; j < 7u; j++)
+                  {
+                     yacStreamWriteI8(packet[j]);
+                  }
+                  retNumDec += 7u;
+                  byteSubIdx = 0u;
+               }
+            }
+         }
+
+         if(byteSubIdx > 0u)
+         {
+            // Copy last (partial) packet
+            byteSubIdx--;
+            for(sUI j = 0u; j < byteSubIdx; j++)
+            {
+               yacStreamWriteI8(packet[j]);
+            }
+            retNumDec += byteSubIdx;
+         }
+      } // if bytesLeft
+   } // if enc
+
+   return retNumDec;
 }

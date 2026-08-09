@@ -1,6 +1,6 @@
 /// YAC_StreamBase.h
 ///
-/// (c) 2001-2025 Bastian Spiegel <bs@tkscript.de>
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
 ///     - distributed under terms of the GNU general public license (GPL).
 ///
 #ifndef TKS_STREAMBASE_H__
@@ -119,6 +119,17 @@ public:
 
    void setRgba (sUI _argb32);
    void setBgra (sUI _argb32);
+
+   // (note) encode 7-bit data (e.g. MIDI SysEx) from 8-bit raw data in packets of 8 bytes
+   //         (first packet byte stores 7 MSBs, bytes 1..8 store lower 7bits)
+   // (note) this.offset is _not_ reset to 0 (left to the application)
+   // (note) number of encoded 8bit raw buffer bytes = bufRaw.offset
+   // (note) returns number of encoded 7-bit bytes
+   sUI encode7From8 (YAC_Object *_raw, sUI _rawNum);
+
+   // (note) decode 8-bit raw data from 7-bit data (e.g. MIDI SysEx) in packets of 8 bytes
+   // (note) returns number of decoded raw bytes
+   sUI decode8From7 (YAC_Object *_enc, sUI _encNum);
 };
 
 extern void YacStreamGetErrorStringByCode(sSI _code, YAC_Value *_r);
