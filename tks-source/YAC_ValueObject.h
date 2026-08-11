@@ -12,6 +12,9 @@ public:
    YAC_ValueObject(void);
    ~YAC_ValueObject(); 
     
+   void         YAC_VCALL yacSerialize         (YAC_Object *, sUI);
+   sUI          YAC_VCALL yacDeserialize       (YAC_Object *, sUI);
+
    void         YAC_VCALL yacOperator(sSI _cmd, YAC_Object *_o, YAC_Value *_r);
    
    void         YAC_VCALL yacOperatorAssign    (YAC_Object*);

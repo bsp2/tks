@@ -33,12 +33,77 @@ void YAC_ValueObject::_unset(void) {
    if( (type>=YAC_TYPE_OBJECT) && deleteme && value.any)
    { 
       YAC_DELETE(value.object_val); 
-      deleteme=0;
+      deleteme = YAC_FALSE;
    } 
    type      = YAC_TYPE_VOID; 
    value.any = NULL;  
 } 
 
+void YAC_VCALL YAC_ValueObject::yacSerialize(YAC_Object *_ofs, sUI _rtti) {
+   YAC_BEG_SERIALIZE();
+   YAC_SERIALIZE_I8(type);
+   switch(type)
+   {
+      case YAC_TYPE_VOID:
+         break;
+
+      case YAC_TYPE_INT:
+         YAC_SERIALIZE_I32(value.int_val);
+         break;
+
+      case YAC_TYPE_FLOAT:
+         YAC_SERIALIZE_F32(value.float_val);
+         break;
+
+      case YAC_TYPE_OBJECT:
+      case YAC_TYPE_STRING:
+         if(deleteme && YAC_VALID(value.object_val))
+         {
+            YAC_SERIALIZE_I8(1); // use flag
+            value.object_val->yacSerialize(_ofs, YAC_TRUE/*bRTTI*/);
+         }
+         else
+         {
+            YAC_SERIALIZE_I8(0); // use flag
+         }
+         break;
+   }
+}
+
+sUI YAC_VCALL YAC_ValueObject::yacDeserialize(YAC_Object *_ifs, sUI _rtti) {
+   YAC_BEG_DESERIALIZE();
+   type = YAC_DESERIALIZE_I8();
+   switch(type)
+   {
+      default:
+      case YAC_TYPE_VOID:
+         break;
+
+      case YAC_TYPE_INT:
+         value.int_val = YAC_DESERIALIZE_I32();
+         break;
+
+      case YAC_TYPE_FLOAT:
+         value.float_val = YAC_DESERIALIZE_F32();
+         break;
+
+      case YAC_TYPE_OBJECT:
+      case YAC_TYPE_STRING:
+      {
+         sBool bUsed = YAC_DESERIALIZE_I8();
+         if(bUsed)
+         {
+            value.object_val = tkscript->deserializeNewObject(_ifs, NULL/*template*/);
+         }
+         else
+         {
+            value.object_val = NULL;
+         }
+         break;
+      }
+   }
+   return YAC_TRUE;
+}
  
 void YAC_VCALL YAC_ValueObject::yacOperator(sSI _cmd, YAC_Object *_o, YAC_Value *_r) { 
    switch(_cmd) 
