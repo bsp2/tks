@@ -43,6 +43,7 @@ public:
    sSI               findIntValueByName  (YAC_String *_name) const; // -1 if not found
 
    TKS_CachedObject *createVariantEntry       (YAC_String *_name, sBool _bCopyName);
+   TKS_CachedObject *createVoidEntry          (YAC_String *_name, sBool _bCopyName);
    TKS_CachedObject *createIntegerEntry       (YAC_String *_name, sBool _bCopyName); // the following 4 methods
    TKS_CachedObject *createFloatEntry         (YAC_String *_name, sBool _bCopyName); // set the type field
    TKS_CachedObject *createStringEntry        (YAC_String *_name, sBool _bCopyName, YAC_String *_allocatedobj, sBool _delpointer);

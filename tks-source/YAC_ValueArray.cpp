@@ -1,6 +1,6 @@
 /// YAC_ValueArray.cpp
 ///
-/// (c) 2001-2024 Bastian Spiegel <bs@tkscript.de>
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
 ///     - distributed under the terms of the GNU general public license (GPL).
 ///
 
@@ -110,14 +110,14 @@ void YAC_VCALL YAC_ValueArray::yacSerialize(YAC_Object *_ofs, sUI _rtti) {
          case YAC_TYPE_OBJECT:
          case YAC_TYPE_STRING:
             {
-               sBool bSerialized = 0;
+               sBool bSerialized = YAC_FALSE;
                if(YAC_VALID(elements[i].value.object_val))
                {
                   if( (!elements[i].value.object_val->yacIsComposite()) || elements[i].deleteme )
                   {
                      YAC_SERIALIZE_I8(1); // tag "in-use"
-                     elements[i].value.object_val->yacSerialize(_ofs, 1);
-                     bSerialized = 1;
+                     elements[i].value.object_val->yacSerialize(_ofs, YAC_TRUE/*bRTTI*/);
+                     bSerialized = YAC_TRUE;
                   }
                }
                if(!bSerialized)
@@ -136,28 +136,29 @@ sUI YAC_VCALL YAC_ValueArray::yacDeserialize(YAC_Object *_ifs, sUI _rtti) {
 
    YAC_ValueArray::free();
 
-   sUI ne=YAC_DESERIALIZE_I32();
-   sUI me=YAC_DESERIALIZE_I32();
+   sUI ne = YAC_DESERIALIZE_I32();
+   sUI me = YAC_DESERIALIZE_I32();
 
    if(sUI(me) >= tkscript->configuration.streamMaxArraySize)
    {
       Dprintf("[---] ValueArray::deserialize: insane array size (maxElements) (%i>%i)\n",
-         me, tkscript->configuration.streamMaxArraySize);
-      return 0u;
+              me, tkscript->configuration.streamMaxArraySize
+              );
+      return YAC_FALSE;
    }
 
    if(sUI(ne) >= tkscript->configuration.streamMaxArraySize)
    {
       Dprintf("[---] ValueArray::deserialize: insane array size (numElements) (%i>%i)\n",
          ne, tkscript->configuration.streamMaxArraySize);
-      return 0u;
+      return YAC_FALSE;
    }
 
    // ---- allocate new array ----
    if(!YAC_ValueArray::alloc(me))
    {
       Dprintf("[---] ValueArray::deserialize: failed to allocate %i elements.\n", me);
-      return 0u;
+      return YAC_FALSE;
    }
 
    /// ---- now deserialize elements / add null pointers ----
@@ -182,10 +183,10 @@ sUI YAC_VCALL YAC_ValueArray::yacDeserialize(YAC_Object *_ifs, sUI _rtti) {
          case YAC_TYPE_OBJECT:
          case YAC_TYPE_STRING:
             {
-               sU8 bused=YAC_DESERIALIZE_I8();
-               if(bused)
+               sU8 bUsed = YAC_DESERIALIZE_I8();
+               if(bUsed)
                {
-                  YAC_Object *o = tkscript->deserializeNewObject(_ifs, 0);
+                  YAC_Object *o = tkscript->deserializeNewObject(_ifs, NULL/*template*/);
                   if(o)
                   {
                      // ---- remember object ----
@@ -196,7 +197,7 @@ sUI YAC_VCALL YAC_ValueArray::yacDeserialize(YAC_Object *_ifs, sUI _rtti) {
                   {
                      // ---- failed to create new object ----
                      Dprintf("[---] ValueArray: error deserializing object, index=%i\n", i);
-                     return 0;
+                     return YAC_FALSE;
                   }
                }
                else
@@ -209,7 +210,7 @@ sUI YAC_VCALL YAC_ValueArray::yacDeserialize(YAC_Object *_ifs, sUI _rtti) {
       }
    }
    // ---- numElements should now equal ne ----
-   return 1;
+   return YAC_TRUE;
 }
 
 void YAC_VCALL YAC_ValueArray::yacArrayCopySize(YAC_Object *_array) {

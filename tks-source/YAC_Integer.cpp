@@ -40,7 +40,7 @@ void YAC_VCALL YAC_Integer::yacSerialize(YAC_Object *_ofs, sUI _rtti) {
 
 sUI YAC_VCALL YAC_Integer::yacDeserialize(YAC_Object *_ifs, sUI _rtti) {
    YAC_BEG_DESERIALIZE();
-   value=YAC_DESERIALIZE_I32();
+   value = YAC_DESERIALIZE_I32();
    return 1;
 }
 

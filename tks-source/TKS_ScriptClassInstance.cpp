@@ -303,45 +303,46 @@ void YAC_VCALL TKS_ScriptClassInstance::yacSerialize(YAC_Object *_ofs, sUI _rtti
 sUI YAC_VCALL TKS_ScriptClassInstance::yacDeserialize(YAC_Object *_ifs, sUI _rtti) {
    YAC_BEG_DESERIALIZE();
 
-   sUI te=YAC_DESERIALIZE_I32();
-   if(te>(TKS_MAX_CLASSMEMBERS*TKS_MAX_CLASSANCESTORS))
+   sUI te = YAC_DESERIALIZE_I32();
+   if(te > (TKS_MAX_CLASSMEMBERS*TKS_MAX_CLASSANCESTORS))
    {
       Dprintf("[---] CompactClass::deserialize: insane number of members (%i>%i)\n",
-              te, (TKS_MAX_CLASSMEMBERS*TKS_MAX_CLASSANCESTORS));
-      return 0u;
+              te, (TKS_MAX_CLASSMEMBERS*TKS_MAX_CLASSANCESTORS)
+              );
+      return YAC_FALSE;
    }
    if(te)
    {
       sUI i;
       YAC_String mname;
-      for(i=0; i<te; i++)
+      for(i = 0u; i < te; i++)
       {
          // ---- read member name ----
-         mname.yacDeserialize(_ifs, 0);
-         TKS_ClassDeclMember *cdm=class_decl->findMemberSuper(&mname, 0);
+         mname.yacDeserialize(_ifs, YAC_FALSE/*bRTTI*/);
+         TKS_ClassDeclMember *cdm = class_decl->findMemberSuper(&mname, 0/*bStatic*/);
          if(cdm)
          {
             /// ---- member exists, now deserialize value ----
-            sU8 rtti=YAC_DESERIALIZE_I8();
-            if(rtti!=cdm->rtti)
+            sU8 rtti = YAC_DESERIALIZE_I8();
+            if(rtti != cdm->rtti)
             {
                Dprintf("[~~~] CompactClass::deserialize: warning: member \"%s\" rtti (%i) != stream member rtti (%i). skipping..\n",
                        (char*)mname.chars, cdm->rtti, rtti
                        );
                // ---- dummy read value ----
-               if(rtti>2)
+               if(rtti >= YAC_TYPE_OBJECT)
                {
                   // ---- dummy read object value ----
-                  sU8 bused=YAC_DESERIALIZE_I8();
-                  if(bused)
+                  sU8 bUsed = YAC_DESERIALIZE_I8();
+                  if(bUsed)
                   {
                      if(member_data[cdm->offset].si) // is deletable or just reference??
                      {
-                        YAC_Object *o = tkscript->deserializeNewObject(_ifs, 0);
+                        YAC_Object *o = tkscript->deserializeNewObject(_ifs, NULL/*template*/);
                         if(!o)
                         {
                            // ---- failed to allocate object
-                           return 0u;
+                           return YAC_FALSE;
                         }
                         YAC_DELETE(o);
                      }
@@ -356,17 +357,17 @@ sUI YAC_VCALL TKS_ScriptClassInstance::yacDeserialize(YAC_Object *_ifs, sUI _rtt
             else
             {
                // ---- rtti seems ok, now deserialize value and store class member ----
-               TKS_CachedObject *cc_co=class_decl->getMember(&mname);
+               TKS_CachedObject *cc_co = class_decl->getMember(&mname);
                YAC_Value v;
 
                switch(rtti)
                {
                default:
                   {
-                     sU8 bused=YAC_DESERIALIZE_I8();
-                     if(bused)
+                     sU8 bUsed = YAC_DESERIALIZE_I8();
+                     if(bUsed)
                      {
-                        YAC_Object *o_template=0;
+                        YAC_Object *o_template = NULL;
                         if(member_data[cdm->offset].si)
                         {
                            if(member_data[cdm->offset+1].o)
@@ -376,7 +377,7 @@ sUI YAC_VCALL TKS_ScriptClassInstance::yacDeserialize(YAC_Object *_ifs, sUI _rtt
                         }
                         YAC_Object *o = tkscript->deserializeNewObject(_ifs, o_template);
                         if(!o)
-                           return 0; // ---- failed to deserialize object ----
+                           return YAC_FALSE; // ---- failed to deserialize object ----
                         v.initObject(o, 1);
                      }
                      else
@@ -405,16 +406,16 @@ sUI YAC_VCALL TKS_ScriptClassInstance::yacDeserialize(YAC_Object *_ifs, sUI _rtt
                     );
             // ---- dummy read rtti, value ----
             sU8 du8=YAC_DESERIALIZE_I8();
-            if(du8>2)
+            if(du8 >= YAC_TYPE_OBJECT)
             {
                // ---- dummy read object value ----
-               sU8 bused=YAC_DESERIALIZE_I8();
-               if(bused)
+               sU8 bUsed = YAC_DESERIALIZE_I8();
+               if(bUsed)
                {
-                  YAC_Object *o=tkscript->deserializeNewObject(_ifs, 0);
+                  YAC_Object *o  = tkscript->deserializeNewObject(_ifs, NULL/*template*/);
                   if(!o)
                   {
-                     return 0u;
+                     return YAC_FALSE;
                   }
                   YAC_DELETE(o);
                }
@@ -427,7 +428,7 @@ sUI YAC_VCALL TKS_ScriptClassInstance::yacDeserialize(YAC_Object *_ifs, sUI _rtt
          }
       }
    }
-   return 1u;
+   return YAC_TRUE;
 }
 
 void YAC_VCALL TKS_ScriptClassInstance::yacSerializeClassName(YAC_Object *_ofs) {
@@ -440,7 +441,7 @@ void YAC_VCALL TKS_ScriptClassInstance::yacSerializeClassName(YAC_Object *_ofs) 
       tcln.append(":");
    }
    tcln.append(&class_decl->name);
-   tcln.yacSerialize(_ofs, 0); // e.g. @MyClass
+   tcln.yacSerialize(_ofs, YAC_FALSE/*bRTTI*/); // e.g. @MyClass
 }
 
 sChar *YAC_VCALL TKS_ScriptClassInstance::yacMetaClassName(void) {

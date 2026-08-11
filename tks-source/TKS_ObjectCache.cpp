@@ -206,6 +206,13 @@ TKS_CachedObject *TKS_ObjectCache::createVariantEntry(YAC_String *_name, sBool _
    return ret;
 }
 
+TKS_CachedObject *TKS_ObjectCache::createVoidEntry(YAC_String *_name, sBool _bCopyName) {
+   TKS_CachedObject *ret = createEntry(_name, _bCopyName);
+   if(NULL != ret)
+      ret->type = YAC_TYPE_VOID;
+   return ret;
+}
+
 TKS_CachedObject *TKS_ObjectCache::createIntegerEntry(YAC_String *_name, sBool _bCopyName) {
    TKS_CachedObject *ret = createEntry(_name, _bCopyName);
    if(NULL != ret)

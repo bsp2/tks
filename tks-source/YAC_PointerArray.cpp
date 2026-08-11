@@ -1,6 +1,6 @@
 /// YAC_PointerArray.cpp
 ///
-/// (c) 2001-2024 Bastian Spiegel <bs@tkscript.de>
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
 ///     - distributed under the terms of the GNU general public license (GPL).
 ///
 
@@ -111,7 +111,7 @@ void YAC_VCALL YAC_PointerArray::yacSerialize(YAC_Object *_ofs, sUI _rtti) {
             {
                // ---- tag used ----
                YAC_SERIALIZE_I8(1);
-               elements[i].value.object_val->yacSerialize(_ofs, 1);
+               elements[i].value.object_val->yacSerialize(_ofs, YAC_TRUE/*bRTTI*/);
                bSerialized = YAC_TRUE;
             }
          }
@@ -136,14 +136,16 @@ sUI YAC_VCALL YAC_PointerArray::yacDeserialize(YAC_Object *_ifs, sUI _rtti) {
    if(me >= tkscript->configuration.streamMaxArraySize)
    {
       Dprintf("[---] PointerArray::deserialize: insane array size (maxElements) (%i>%i)\n",
-         me, tkscript->configuration.streamMaxArraySize);
+              me, tkscript->configuration.streamMaxArraySize
+              );
       return 0u;
    }
 
    if(ne >= tkscript->configuration.streamMaxArraySize)
    {
       Dprintf("[---] PointerArray::deserialize: insane array size (numElements) (%i>%i)\n",
-         ne, tkscript->configuration.streamMaxArraySize);
+              ne, tkscript->configuration.streamMaxArraySize
+              );
       return YAC_FALSE;
    }
 
@@ -164,7 +166,7 @@ sUI YAC_VCALL YAC_PointerArray::yacDeserialize(YAC_Object *_ifs, sUI _rtti) {
          if(bUsed)
          {
             /// ---- deserialize new object ----
-            YAC_Object *o = tkscript->deserializeNewObject(_ifs, 0);
+            YAC_Object *o = tkscript->deserializeNewObject(_ifs, NULL/*template*/);
             if(o)
             {
                // ---- remember object ----
@@ -175,7 +177,7 @@ sUI YAC_VCALL YAC_PointerArray::yacDeserialize(YAC_Object *_ifs, sUI _rtti) {
             else
             {
                // ---- failed to create new object ----
-               return 0;
+               return YAC_FALSE;
             }
          }
          else
@@ -188,7 +190,7 @@ sUI YAC_VCALL YAC_PointerArray::yacDeserialize(YAC_Object *_ifs, sUI _rtti) {
       }
    }
    // ---- numElements should now equal ne ----
-   return 1u;
+   return YAC_TRUE;
 }
 
 void YAC_VCALL YAC_PointerArray::yacArrayCopySize(YAC_Object *_array) {
