@@ -1531,6 +1531,7 @@ void _HAL::callOnMouse(sSI _mx, sSI _my, sSI _cstate, sSI _nstate) {
       else if(mouse.b_grab_changed)
       {
          mouse.b_grab_changed = 0;
+         showCursor(YAC_FALSE);
          // yac_host->printf("xxx mouse.b_grab_changed=1, m=(%d; %d) grab_start=(%d; %d)\n", _mx, _my, tks_HAL->mouse.grab_start_x, tks_HAL->mouse.grab_start_y);
          // // // mouse.dx = _mx - tks_HAL->mouse.grab_start_x;
          // // // mouse.dy = _my - tks_HAL->mouse.grab_start_y;
@@ -1586,6 +1587,7 @@ void _HAL::callOnMouse(sSI _mx, sSI _my, sSI _cstate, sSI _nstate) {
          mouse.b_grab_changed = 0;
          mouse.dx = _mx - mouse.grab_start_x;
          mouse.dy = _my - mouse.grab_start_y;
+         showCursor(YAC_TRUE);
       }
       else
       {

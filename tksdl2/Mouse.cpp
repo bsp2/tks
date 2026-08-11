@@ -36,6 +36,8 @@ void _Mouse::_grab(void) {
    tks_HAL->mouse.show    = TKS_MOUSE_SHOW_DISABLE;
 
    tks_HAL->mouse.b_grab_changed = YAC_TRUE;
+
+   tks_HAL->showCursor(YAC_FALSE);  // workaround for pointer-momentarily-shown-at-center issue
 }
 
 void _Mouse::_ungrab(void) {
