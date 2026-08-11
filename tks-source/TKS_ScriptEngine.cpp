@@ -1590,8 +1590,10 @@ YAC_Object *TKS_ScriptEngine::findTemplateObjectByUniqueClassName(YAC_String *_s
 YAC_Object *TKS_ScriptEngine::deserializeNewObject(YAC_Object *_ifs, YAC_Object *_template) {
    YAC_String cln;
    _ifs->yacStreamReadString(&cln, TKS_MAX_CLASSNAMELENGTH);
-   YAC_Object *r=0;
-   YAC_Object *o_template=0;
+   YAC_Object *r = NULL;
+   YAC_Object *o_template = NULL;
+
+   // Dprintf("xxx deserializeNewObject: cln=\"%s\"\n", (const char*)cln.chars);
 
    if(cln.compare("Class"))
    {
@@ -1601,10 +1603,10 @@ YAC_Object *TKS_ScriptEngine::deserializeNewObject(YAC_Object *_ifs, YAC_Object 
    /// ---- try to find c++ class ----
    if(!o_template)
    {
-      TKS_ClassTemplate *clt=findTemplate(&cln);
+      TKS_ClassTemplate *clt = findTemplate(&cln);
       if(clt)
       {
-         o_template=clt->template_object;
+         o_template = clt->template_object;
       }
    }
 
@@ -1612,17 +1614,17 @@ YAC_Object *TKS_ScriptEngine::deserializeNewObject(YAC_Object *_ifs, YAC_Object 
    if(!o_template)
    {
       // xxx DEAD CODE ???
-      TKS_ClassDecl *cd=((TKS_Compiler*)compiler)->findClassDeclNamespace(&cln, NULL);
+      TKS_ClassDecl *cd = ((TKS_Compiler*)compiler)->findClassDeclNamespace(&cln, NULL);
       if(cd)
       {
-         o_template=cd->class_template;
+         o_template = cd->class_template;
       }
    }
 
    if(!o_template)
    {
       // ---- unknown stream object, try suggested _template.
-      o_template=_template;
+      o_template = _template;
    }
 
    if(o_template)
@@ -1630,7 +1632,7 @@ YAC_Object *TKS_ScriptEngine::deserializeNewObject(YAC_Object *_ifs, YAC_Object 
       r = YAC_CLONE_POOLED(NULL, o_template);
       if(r)
       {
-         r->yacDeserialize(_ifs, 0); // skip classname check
+         r->yacDeserialize(_ifs, YAC_FALSE/*bRTTI*/); // skip classname check
       }
    }
    return r;
