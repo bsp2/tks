@@ -287,9 +287,11 @@ sUI YAC_VCALL YAC_HashTable::yacDeserialize(YAC_Object *_ifs, sUI _rtti) {
    YAC_String coname;
    TKS_CachedObject *co;
    YAC_Object *o;
+   sUI j = 0u;
    for(i = 0u; i < ne; i++)
    {
       sU8 userRTTI = YAC_DESERIALIZE_I8();
+      // Dprintf("xxx HashTable::deserialize: i=%u ne=%i userRTTI=%u\n", i, ne, userRTTI);
       switch(userRTTI)
       {
       default:
@@ -298,10 +300,12 @@ sUI YAC_VCALL YAC_HashTable::yacDeserialize(YAC_Object *_ifs, sUI _rtti) {
 
       case YAC_TYPE_VOID:
          coname.yacDeserialize(_ifs, YAC_FALSE/*bRTTI*/);
-         if(ac)
+         // Dprintf("xxx HashTable::deserialize: VOID i=%u ne=%i coname.chars=\"%s\"\n", i, ne, coname.chars);
+         if(ac && (NULL != coname.chars))
          {
             co = varcache.createVoidEntry(&coname, YAC_TRUE/*bCopyName*/);
             co->value.int_val = 0;  // (note) never read, could be skipped
+            j++;
          }
          break;
 
@@ -316,6 +320,7 @@ sUI YAC_VCALL YAC_HashTable::yacDeserialize(YAC_Object *_ifs, sUI _rtti) {
          {
             YAC_DESERIALIZE_I32(); // dummy read
          }
+         j++;
          break;
 
       case YAC_TYPE_FLOAT:
@@ -329,6 +334,7 @@ sUI YAC_VCALL YAC_HashTable::yacDeserialize(YAC_Object *_ifs, sUI _rtti) {
          {
             YAC_DESERIALIZE_F32(); // dummy read
          }
+         j++;
          break;
 
       case YAC_TYPE_OBJECT:
@@ -352,6 +358,7 @@ sUI YAC_VCALL YAC_HashTable::yacDeserialize(YAC_Object *_ifs, sUI _rtti) {
          {
             varcache.createObjectEntry(&coname, YAC_TRUE/*bCopyName*/, NULL, YAC_FALSE/*bDelPointer*/);
          }
+         j++;
          break;
 
       case YAC_TYPE_STRING:
@@ -375,11 +382,12 @@ sUI YAC_VCALL YAC_HashTable::yacDeserialize(YAC_Object *_ifs, sUI _rtti) {
                varcache.createObjectEntry(&coname, YAC_TRUE/*bCopyName*/, NULL, YAC_FALSE/*bDelPointer*/);
             }
          }
+         j++;
          break;
       }
    }
 
-   varcache.num_entries = ne;
+   varcache.num_entries = j;
    return 1u;
 }
 
