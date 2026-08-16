@@ -17,8 +17,8 @@ class TKS_PluginCallback;
 extern TKS_ScriptEngine *tkscript;
 
 // Version information
-#define TKS_VERSION_STR_BASE "0.9.92.18"
-#define TKS_VERSION 0x00095C12
+#define TKS_VERSION_STR_BASE "0.9.92.20"
+#define TKS_VERSION 0x00095C14
 #ifdef DX_X64
 #define TKS_VERSION_STR TKS_VERSION_STR_BASE " (x64)"
 #elif defined(DX_X86)
@@ -471,6 +471,13 @@ extern TKS_PerfCount pc_scan;
 //
 #include <new>
 #define Diteratorinit(t) t*it=(t*)_it; ::new (it) t(this)
+
+
+//
+// Float16<>32 conversion helpers
+//
+sS16 tks_f16_from_f32 (sF32 _v);
+sF32 tks_f32_from_f16 (sS16 _v);
 
 
 extern sBool tks_debug_called;

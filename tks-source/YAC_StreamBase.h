@@ -68,6 +68,7 @@ public:
    void setI8                         (sSI);
    void setI16                        (sSI);
    void setI32                        (sSI);
+   void setF16                        (sF32);
    void setF32                        (sF32);
    void setF64                        (sF32);
    sSI  getI8                         (void); // same as S8 (was unsigned before v0.9.14.30)
@@ -78,6 +79,7 @@ public:
    sSI  getU16                        (void);
    sSI  getS16                        (void) { return getI16(); }
    sSI  getI32                        (void);
+   sF32 getF16                        (void);
    sF32 getF32                        (void);
    sF32 getF64                        (void);
    sUI  getOffset                     (void);

@@ -9979,6 +9979,12 @@ Read signed short from stream (extend to int).
 */
       YM //sSI  getI32                        (void);
 
+/* @method getF16:float
+
+@return
+*/
+      YM //sF32 getF16                        (void);
+
 /* @method getF32:float
 
 @return
@@ -10103,6 +10109,12 @@ Read signed short from stream (extend to int).
 @arg v
 */
       YM //void setI32                        (sSI);
+
+/* @method setF16,float v
+
+@arg v
+*/
+      YM //void setF16                        (sF32);
 
 /* @method setF32,float v
 
@@ -13809,6 +13821,64 @@ static void YAC_CALL APIC__DebugOC(void) {
 
 
 
+sS16 tks_f16_from_f32(sF32 _v) {
+   static const sF32 FLOAT16_MAX =  65472.0f;
+   static const sF32 FLOAT16_MIN =  -FLOAT16_MAX;
+
+   if(sABS(_v) < 0.000061035f)
+      _v = 0.0f;
+   else
+      _v = sMIN(sMAX(_v, FLOAT16_MIN), FLOAT16_MAX);
+
+   yacmem32 m; m.f32 = _v;
+
+   // Convert exponent from 8 bits (bias = 127) to 5 bits (bias = 15)
+   sS16 r = (0u != m.u32) ? (sS16( ( (sS8(m.u32 >> 23) & 255) -  127) + 15 ) << 10) : 0;
+
+   // Convert mantissa bits from 23 bits to 10 bits
+   r |= (m.u32 & 8388607u) >> (23 - 10);
+
+   // Add sign bit
+   r |= (m.u32 >> 31) << 15;
+
+   return r;
+}
+
+sF32 tks_f32_from_f16(sS16 _v) {
+   yacmem32 r; r.u32 = 0u;
+
+   // Convert exponent from 5 bits (bias = 15) to 8 bits (bias = 127)
+   r.u32 = (0 != _v) ? (sUI( ( (sS8(_v >> 10) & 31) -  15) + 127 ) << 23) : 0;
+
+   // Convert mantissa bits from 10 bits to 23 bits
+   r.u32 |= (_v & 1023u) << (23 - 10);
+
+   // Add sign bit
+   r.u32 |= (_v >> 15) << 31;
+
+   return r.f32;
+}
+
+static sSI YAC_CALL APIC_mathF16FromF32(sF32 _x) {
+   return tks_f16_from_f32(_x);
+}
+
+#ifndef TKS_ALLOWINTFLOATMIXUP
+static sSI YAC_CALL _APIC_mathF16FromF32(yacmemptr _args) { return APIC_mathF16FromF32(_args.mem[0].f32); }
+#endif // TKS_ALLOWINTFLOATMIXUP
+
+
+
+static sF32 YAC_CALL APIC_mathF32FromF16(sSI _x) {
+   return tks_f32_from_f16(sS16(_x));
+}
+
+#ifndef TKS_ALLOWINTFLOATMIXUP
+static sF32 YAC_CALL _APIC_mathF32FromF16(yacmemptr _args) { return APIC_mathF32FromF16((sS16)_args.mem[0].s32); }
+#endif // TKS_ALLOWINTFLOATMIXUP
+
+
+
 
 /* @function mathPowerf,float x,float y:float
 Return x raised to the power of y.
@@ -14540,6 +14610,30 @@ static sF32 YAC_CALL _APIC_mathLogLinExpf(yacmemptr _args) { return APIC_mathLog
 #endif // TKS_ALLOWINTFLOATMIXUP
 
 
+static sF32 YAC_CALL APIC_mathBipolarToScalef(sF32 _t, sF32 _div, sF32 _mul) {
+   // t (-1..1) => /_div .. *_mul
+   sF32 s;
+
+   if(_t < 0.0f)
+   {
+      s = (1.0f / _div);
+      s = 1.0f + (s - 1.0f) * -_t;
+      if(s < 0.0f)
+         s = 0.0f;
+   }
+   else
+   {
+      s = _mul;
+      s = 1.0f + (s - 1.0f) * _t;
+   }
+
+   return s;
+}
+#ifndef TKS_ALLOWINTFLOATMIXUP
+static sF32 YAC_CALL _APIC_mathBipolarToScalef(yacmemptr _args) { return APIC_mathBipolarToScalef(_args.mem[0].f32, _args.mem[1].f32, _args.mem[2].f32); }
+#endif // TKS_ALLOWINTFLOATMIXUP
+
+
 static sF32 YAC_CALL APIC_mathAtan2f(sF32 _x, sF32 _y) {
    return atan2f(_x, _y);
 }
@@ -15097,103 +15191,109 @@ sBool TKS_ScriptEngine::registerBuiltinClasses(void) {
    // Pass int/float/Object arguments directly. Assumes that all args are passed on the stack (cdecl)
    //  (note) see autogen_PTN_FunctionECallY_switch.cpp
    //  (**DEPRECATED**)
-   yacRegisterFunction((void*)APIC__Debug,            "_Debug",          0,0,   0,0,       argt,  8);
-   yacRegisterFunction((void*)APIC__DebugLoop,        "_DebugLoop",      0,0,   0,0,       argt,  8);
-   yacRegisterFunction((void*)APIC__DebugOC,          "_DebugOC",        0,0,   0,0,       argt,  8);
-   yacRegisterFunction((void*)APIC_exit,              "exit",            0,0,   1,arg_i,   argt, 12);
-   yacRegisterFunction((void*)APIC_getenv,            "getenv",          3,0,   1,arg_o,   argt, 19);
-   yacRegisterFunction((void*)APIC_lcchar,            "lcchar",          1,0,   1,arg_i,   argt, 13);
-   yacRegisterFunction((void*)APIC_mathPowerf,        "mathPowerf",      2,0,   2,arg_ff,  argt, 22);
-   yacRegisterFunction((void*)APIC_pow,               "pow",             2,0,   2,arg_ff,  argt, 22);
-   yacRegisterFunction((void*)APIC_mathPoweri,        "mathPoweri",      1,0,   2,arg_ii,  argt, 21);
-   yacRegisterFunction((void*)APIC_mathMaxf,          "mathMaxf",        2,0,   2,arg_ff,  argt, 22);
-   yacRegisterFunction((void*)APIC_mathMaxi,          "mathMaxi",        1,0,   2,arg_ii,  argt, 21);
-   yacRegisterFunction((void*)APIC_mathMinf,          "mathMinf",        2,0,   2,arg_ff,  argt, 22);
-   yacRegisterFunction((void*)APIC_mathMini,          "mathMini",        1,0,   2,arg_ii,  argt, 21);
-   yacRegisterFunction((void*)APIC_mathAbsMaxf,       "mathAbsMaxf",     2,0,   2,arg_ff,  argt, 22);
-   yacRegisterFunction((void*)APIC_mathAbsMaxi,       "mathAbsMaxi",     1,0,   2,arg_ii,  argt, 21);
-   yacRegisterFunction((void*)APIC_mathAbsMinf,       "mathAbsMinf",     2,0,   2,arg_ff,  argt, 22);
-   yacRegisterFunction((void*)APIC_mathAbsMini,       "mathAbsMini",     1,0,   2,arg_ii,  argt, 21);
-   yacRegisterFunction((void*)APIC_mathLerpf,         "mathLerpf",       2,0,   3,arg_fff, argt, 58);
-   yacRegisterFunction((void*)APIC_mathSerpf,         "mathSerpf",       2,0,   3,arg_fff, argt, 58);
-   yacRegisterFunction((void*)APIC_mathCerpf,         "mathCerpf",       2,0,   3,arg_fff, argt, 58);
-   yacRegisterFunction((void*)APIC_mathLerpCyclicf,   "mathLerpCyclicf", 2,0,   4,arg_4f,  argt, 70);
-   yacRegisterFunction((void*)APIC_mathNextCyclicf,   "mathNextCyclicf", 2,0,   3,arg_fff, argt, 58);
-   yacRegisterFunction((void*)APIC_mathSmoothStepf,   "mathSmoothStepf", 2,0,   3,arg_fff, argt, 58);
-   yacRegisterFunction((void*)APIC_mathSmoothStepNf,  "mathSmoothStepNf",2,0,   4,arg_fffi,argt, 70);
-   yacRegisterFunction((void*)APIC_mathGCD,           "mathGCD",         1,0,   2,arg_ii,  argt, 21);
-   yacRegisterFunction((void*)APIC_mathLogLinExpf,    "mathLogLinExpf",  2,0,   2,arg_ff,  argt, 22);
-   yacRegisterFunction((void*)APIC_mathAtan2f,        "mathAtan2f",      2,0,   2,arg_ff,  argt, 22);
-   yacRegisterFunction((void*)APIC_mathLogf,          "mathLogf",        2,0,   1,arg_f,   argt, 14);
-   yacRegisterFunction((void*)APIC_mathSigmoidf,      "mathSigmoidf",    2,0,   1,arg_f,   argt, 14);
-   yacRegisterFunction((void*)APIC_floor,             "floor",           2,0,   1,arg_f,   argt, 14);
-   yacRegisterFunction((void*)APIC_ceil,              "ceil",            2,0,   1,arg_f,   argt, 14);
-   yacRegisterFunction((void*)APIC_milliSeconds,      "milliSeconds",    1,0,   0,0,       argt, 9);
-   yacRegisterFunction((void*)APIC_psystem,           "psystem",         1,0,   3,arg_oio, argt, 57);
-   yacRegisterFunction((void*)APIC_putenv,            "putenv",          1,0,   1,arg_o,   argt, 17);
-   yacRegisterFunction((void*)APIC_srand,             "srand",           0,0,   1,arg_i,   argt, 12);
-   yacRegisterFunction((void*)APIC_system,            "system",          1,0,   1,arg_o,   argt, 17);
-   yacRegisterFunction((void*)APIC_ucchar,            "ucchar",          1,0,   1,arg_i,   argt, 13);
-   yacRegisterFunction((void*)APIC_GetCurrentThread,  "GetCurrentThread", 3,0,   0,0,       argt, 11);
+   yacRegisterFunction((void*)APIC__Debug,              "_Debug",               0,0,   0,0,       argt,  8);
+   yacRegisterFunction((void*)APIC__DebugLoop,          "_DebugLoop",           0,0,   0,0,       argt,  8);
+   yacRegisterFunction((void*)APIC__DebugOC,            "_DebugOC",             0,0,   0,0,       argt,  8);
+   yacRegisterFunction((void*)APIC_exit,                "exit",                 0,0,   1,arg_i,   argt, 12);
+   yacRegisterFunction((void*)APIC_getenv,              "getenv",               3,0,   1,arg_o,   argt, 19);
+   yacRegisterFunction((void*)APIC_lcchar,              "lcchar",               1,0,   1,arg_i,   argt, 13);
+   yacRegisterFunction((void*)APIC_mathPowerf,          "mathPowerf",           2,0,   2,arg_ff,  argt, 22);
+   yacRegisterFunction((void*)APIC_pow,                 "pow",                  2,0,   2,arg_ff,  argt, 22);
+   yacRegisterFunction((void*)APIC_mathPoweri,          "mathPoweri",           1,0,   2,arg_ii,  argt, 21);
+   yacRegisterFunction((void*)APIC_mathMaxf,            "mathMaxf",             2,0,   2,arg_ff,  argt, 22);
+   yacRegisterFunction((void*)APIC_mathMaxi,            "mathMaxi",             1,0,   2,arg_ii,  argt, 21);
+   yacRegisterFunction((void*)APIC_mathMinf,            "mathMinf",             2,0,   2,arg_ff,  argt, 22);
+   yacRegisterFunction((void*)APIC_mathMini,            "mathMini",             1,0,   2,arg_ii,  argt, 21);
+   yacRegisterFunction((void*)APIC_mathAbsMaxf,         "mathAbsMaxf",          2,0,   2,arg_ff,  argt, 22);
+   yacRegisterFunction((void*)APIC_mathAbsMaxi,         "mathAbsMaxi",          1,0,   2,arg_ii,  argt, 21);
+   yacRegisterFunction((void*)APIC_mathAbsMinf,         "mathAbsMinf",          2,0,   2,arg_ff,  argt, 22);
+   yacRegisterFunction((void*)APIC_mathAbsMini,         "mathAbsMini",          1,0,   2,arg_ii,  argt, 21);
+   yacRegisterFunction((void*)APIC_mathLerpf,           "mathLerpf",            2,0,   3,arg_fff, argt, 58);
+   yacRegisterFunction((void*)APIC_mathSerpf,           "mathSerpf",            2,0,   3,arg_fff, argt, 58);
+   yacRegisterFunction((void*)APIC_mathCerpf,           "mathCerpf",            2,0,   3,arg_fff, argt, 58);
+   yacRegisterFunction((void*)APIC_mathLerpCyclicf,     "mathLerpCyclicf",      2,0,   4,arg_4f,  argt, 70);
+   yacRegisterFunction((void*)APIC_mathNextCyclicf,     "mathNextCyclicf",      2,0,   3,arg_fff, argt, 58);
+   yacRegisterFunction((void*)APIC_mathSmoothStepf,     "mathSmoothStepf",      2,0,   3,arg_fff, argt, 58);
+   yacRegisterFunction((void*)APIC_mathSmoothStepNf,    "mathSmoothStepNf",     2,0,   4,arg_fffi,argt, 70);
+   yacRegisterFunction((void*)APIC_mathGCD,             "mathGCD",              1,0,   2,arg_ii,  argt, 21);
+   yacRegisterFunction((void*)APIC_mathF16FromF32,      "mathF16FromF32",       1,0,   1,arg_f,   argt, 13);
+   yacRegisterFunction((void*)APIC_mathF32FromF16,      "mathF32FromF16",       2,0,   1,arg_i,   argt, 14);
+   yacRegisterFunction((void*)APIC_mathLogLinExpf,      "mathLogLinExpf",       2,0,   2,arg_ff,  argt, 22);
+   yacRegisterFunction((void*)APIC_mathBipolarToScalef, "mathBipolarToScalef",  2,0,   3,arg_fff, argt, 58);
+   yacRegisterFunction((void*)APIC_mathAtan2f,          "mathAtan2f",           2,0,   2,arg_ff,  argt, 22);
+   yacRegisterFunction((void*)APIC_mathLogf,            "mathLogf",             2,0,   1,arg_f,   argt, 14);
+   yacRegisterFunction((void*)APIC_mathSigmoidf,        "mathSigmoidf",         2,0,   1,arg_f,   argt, 14);
+   yacRegisterFunction((void*)APIC_floor,               "floor",                2,0,   1,arg_f,   argt, 14);
+   yacRegisterFunction((void*)APIC_ceil,                "ceil",                 2,0,   1,arg_f,   argt, 14);
+   yacRegisterFunction((void*)APIC_milliSeconds,        "milliSeconds",         1,0,   0,0,       argt, 9);
+   yacRegisterFunction((void*)APIC_psystem,             "psystem",              1,0,   3,arg_oio, argt, 57);
+   yacRegisterFunction((void*)APIC_putenv,              "putenv",               1,0,   1,arg_o,   argt, 17);
+   yacRegisterFunction((void*)APIC_srand,               "srand",                0,0,   1,arg_i,   argt, 12);
+   yacRegisterFunction((void*)APIC_system,              "system",               1,0,   1,arg_o,   argt, 17);
+   yacRegisterFunction((void*)APIC_ucchar,              "ucchar",               1,0,   1,arg_i,   argt, 13);
+   yacRegisterFunction((void*)APIC_GetCurrentThread,    "GetCurrentThread",     3,0,   0,0,       argt, 11);
 
 #else
    // Wrapped arglists, suitable for e.g. the fastcall/x86-64 calling convention
    //                         entrypoint             name            returntype args       argobjtypes/calltype (see PTN_FunctionECallY.cpp)
-   yacRegisterFunction((void*)_APIC_exit,               "exit",              0,0, 1,arg_i,   argt, 0);
-   yacRegisterFunction((void*)_APIC_getenv,             "getenv",            3,0, 1,arg_o,   argt, 3);
-   yacRegisterFunction((void*)_APIC_putenv,             "putenv",            1,0, 1,arg_o,   argt, 1);
-   yacRegisterFunction((void*) APIC__Debug,             "_Debug",            0,0, 0,0,       argt, 8);
-   yacRegisterFunction((void*) APIC__DebugLoop,         "_DebugLoop",        0,0, 0,0,       argt, 8);
-   yacRegisterFunction((void*) APIC__DebugOC,           "_DebugOC",          0,0, 0,0,       argt, 8);
-   yacRegisterFunction((void*)_APIC_mathPowerf,         "mathPowerf",        2,0, 2,arg_ff,  argt, 2);
-   yacRegisterFunction((void*)_APIC_pow,                "pow",               2,0, 2,arg_ff,  argt, 2);
-   yacRegisterFunction((void*)_APIC_mathMaxf,           "mathMaxf",          2,0, 2,arg_ff,  argt, 2);
-   yacRegisterFunction((void*)_APIC_mathMinf,           "mathMinf",          2,0, 2,arg_ff,  argt, 2);
-   yacRegisterFunction((void*)_APIC_mathAbsMaxf,        "mathAbsMaxf",       2,0, 2,arg_ff,  argt, 2);
-   yacRegisterFunction((void*)_APIC_mathAbsMinf,        "mathAbsMinf",       2,0, 2,arg_ff,  argt, 2);
-   yacRegisterFunction((void*)_APIC_mathPoweri,         "mathPoweri",        1,0, 2,arg_ii,  argt, 1);
-   yacRegisterFunction((void*)_APIC_mathMaxi,           "mathMaxi",          1,0, 2,arg_ii,  argt, 1);
-   yacRegisterFunction((void*)_APIC_mathMini,           "mathMini",          1,0, 2,arg_ii,  argt, 1);
-   yacRegisterFunction((void*)_APIC_mathAbsMaxi,        "mathAbsMaxi",       1,0, 2,arg_ii,  argt, 1);
-   yacRegisterFunction((void*)_APIC_mathAbsMini,        "mathAbsMini",       1,0, 2,arg_ii,  argt, 1);
-   yacRegisterFunction((void*)_APIC_mathClampf,         "mathClampf",        2,0, 3,arg_fff, argt, 2);
-   yacRegisterFunction((void*)_APIC_mathClampi,         "mathClampi",        1,0, 3,arg_iii, argt, 1);
-   yacRegisterFunction((void*)_APIC_mathWrapf,          "mathWrapf",         2,0, 3,arg_fff, argt, 2);
-   yacRegisterFunction((void*)_APIC_mathWrapi,          "mathWrapi",         1,0, 3,arg_iii, argt, 1);
-   yacRegisterFunction((void*)_APIC_mathFoldf,          "mathFoldf",         2,0, 3,arg_fff, argt, 2);
-   yacRegisterFunction((void*)_APIC_mathFoldi,          "mathFoldi",         1,0, 3,arg_iii, argt, 1);
-   yacRegisterFunction((void*)_APIC_mathLerpf,          "mathLerpf",         2,0, 3,arg_fff, argt, 2);
-   yacRegisterFunction((void*)_APIC_mathSerpf,          "mathSerpf",         2,0, 3,arg_fff, argt, 2);
-   yacRegisterFunction((void*)_APIC_mathCerpf,          "mathCerpf",         2,0, 3,arg_fff, argt, 2);
-   yacRegisterFunction((void*)_APIC_mathLerpCyclicf,    "mathLerpCyclicf",   2,0, 4,arg_4f,  argt, 2);
-   yacRegisterFunction((void*)_APIC_mathNextCyclicf,    "mathNextCyclicf",   2,0, 3,arg_fff, argt, 2);
-   yacRegisterFunction((void*)_APIC_mathSmoothStepf,    "mathSmoothStepf",   2,0, 3,arg_fff, argt, 2);
-   yacRegisterFunction((void*)_APIC_mathSmoothStepNf,   "mathSmoothStepNf",  2,0, 4,arg_fffi,argt, 2);
+   yacRegisterFunction((void*)_APIC_exit,                "exit",                0,0, 1,arg_i,   argt, 0);
+   yacRegisterFunction((void*)_APIC_getenv,              "getenv",              3,0, 1,arg_o,   argt, 3);
+   yacRegisterFunction((void*)_APIC_putenv,              "putenv",              1,0, 1,arg_o,   argt, 1);
+   yacRegisterFunction((void*) APIC__Debug,              "_Debug",              0,0, 0,0,       argt, 8);
+   yacRegisterFunction((void*) APIC__DebugLoop,          "_DebugLoop",          0,0, 0,0,       argt, 8);
+   yacRegisterFunction((void*) APIC__DebugOC,            "_DebugOC",            0,0, 0,0,       argt, 8);
+   yacRegisterFunction((void*)_APIC_mathPowerf,          "mathPowerf",          2,0, 2,arg_ff,  argt, 2);
+   yacRegisterFunction((void*)_APIC_pow,                 "pow",                 2,0, 2,arg_ff,  argt, 2);
+   yacRegisterFunction((void*)_APIC_mathMaxf,            "mathMaxf",            2,0, 2,arg_ff,  argt, 2);
+   yacRegisterFunction((void*)_APIC_mathMinf,            "mathMinf",            2,0, 2,arg_ff,  argt, 2);
+   yacRegisterFunction((void*)_APIC_mathAbsMaxf,         "mathAbsMaxf",         2,0, 2,arg_ff,  argt, 2);
+   yacRegisterFunction((void*)_APIC_mathAbsMinf,         "mathAbsMinf",         2,0, 2,arg_ff,  argt, 2);
+   yacRegisterFunction((void*)_APIC_mathPoweri,          "mathPoweri",          1,0, 2,arg_ii,  argt, 1);
+   yacRegisterFunction((void*)_APIC_mathMaxi,            "mathMaxi",            1,0, 2,arg_ii,  argt, 1);
+   yacRegisterFunction((void*)_APIC_mathMini,            "mathMini",            1,0, 2,arg_ii,  argt, 1);
+   yacRegisterFunction((void*)_APIC_mathAbsMaxi,         "mathAbsMaxi",         1,0, 2,arg_ii,  argt, 1);
+   yacRegisterFunction((void*)_APIC_mathAbsMini,         "mathAbsMini",         1,0, 2,arg_ii,  argt, 1);
+   yacRegisterFunction((void*)_APIC_mathClampf,          "mathClampf",          2,0, 3,arg_fff, argt, 2);
+   yacRegisterFunction((void*)_APIC_mathClampi,          "mathClampi",          1,0, 3,arg_iii, argt, 1);
+   yacRegisterFunction((void*)_APIC_mathWrapf,           "mathWrapf",           2,0, 3,arg_fff, argt, 2);
+   yacRegisterFunction((void*)_APIC_mathWrapi,           "mathWrapi",           1,0, 3,arg_iii, argt, 1);
+   yacRegisterFunction((void*)_APIC_mathFoldf,           "mathFoldf",           2,0, 3,arg_fff, argt, 2);
+   yacRegisterFunction((void*)_APIC_mathFoldi,           "mathFoldi",           1,0, 3,arg_iii, argt, 1);
+   yacRegisterFunction((void*)_APIC_mathLerpf,           "mathLerpf",           2,0, 3,arg_fff, argt, 2);
+   yacRegisterFunction((void*)_APIC_mathSerpf,           "mathSerpf",           2,0, 3,arg_fff, argt, 2);
+   yacRegisterFunction((void*)_APIC_mathCerpf,           "mathCerpf",           2,0, 3,arg_fff, argt, 2);
+   yacRegisterFunction((void*)_APIC_mathLerpCyclicf,     "mathLerpCyclicf",     2,0, 4,arg_4f,  argt, 2);
+   yacRegisterFunction((void*)_APIC_mathNextCyclicf,     "mathNextCyclicf",     2,0, 3,arg_fff, argt, 2);
+   yacRegisterFunction((void*)_APIC_mathSmoothStepf,     "mathSmoothStepf",     2,0, 3,arg_fff, argt, 2);
+   yacRegisterFunction((void*)_APIC_mathSmoothStepNf,    "mathSmoothStepNf",    2,0, 4,arg_fffi,argt, 2);
    yacRegisterFunction((void*)_APIC_mathDistancePointPlane2d,
-                                                        "mathDistancePointPlane2d",
-                                                                             2,0, 6,arg_6f,  argt, 2);
-   yacRegisterFunction((void*)_APIC_mathGCD,            "mathGCD",           1,0, 2,arg_ii,  argt, 1);
-   yacRegisterFunction((void*)_APIC_mathLogLinExpf,     "mathLogLinExpf",    2,0, 2,arg_ff,  argt, 2);
-   yacRegisterFunction((void*)_APIC_mathAtan2f,         "mathAtan2f",        2,0, 2,arg_ff,  argt, 2);
-   yacRegisterFunction((void*)_APIC_mathLogf,           "mathLogf",          2,0, 1,arg_f,   argt, 2);
-   yacRegisterFunction((void*)_APIC_mathSigmoidf,       "mathSigmoidf",      2,0, 1,arg_f,   argt, 2);
-   yacRegisterFunction((void*)_APIC_floor,              "floor",             2,0, 1,arg_f,   argt, 2);
-   yacRegisterFunction((void*)_APIC_ceil,               "ceil",              2,0, 1,arg_f,   argt, 2);
-   yacRegisterFunction((void*)_APIC_system,             "system",            1,0, 1,arg_o,   argt, 1);
-   yacRegisterFunction((void*)_APIC_psystem,            "psystem",           1,0, 3,arg_oio, argt, 1);
-   yacRegisterFunction((void*)_APIC_lcchar,             "lcchar",            1,0, 1,arg_i,   argt, 1);
-   yacRegisterFunction((void*)_APIC_ucchar,             "ucchar",            1,0, 1,arg_i,   argt, 1);
-   yacRegisterFunction((void*)_APIC_srand,              "srand",             0,0, 1,arg_i,   argt, 0);
-   yacRegisterFunction((void*) APIC_milliSeconds,       "milliSeconds",      1,0, 0,0,       argt, 9);
-   yacRegisterFunction((void*) APIC_milliSecondsDouble, "milliSecondsDouble",0,0, 1,arg_o,   argt, 0);
-   yacRegisterFunction((void*) APIC_GetCurrentThread,   "GetCurrentThread",  3,0, 0,0,       argt, 11);
+                                                         "mathDistancePointPlane2d",
+                                                                                2,0, 6,arg_6f,  argt, 2);
+   yacRegisterFunction((void*)_APIC_mathGCD,             "mathGCD",             1,0, 2,arg_ii,  argt, 1);
+   yacRegisterFunction((void*)_APIC_mathF16FromF32,      "mathF16FromF32",      1,0, 1,arg_f,   argt, 1);
+   yacRegisterFunction((void*)_APIC_mathF32FromF16,      "mathF32FromF16",      2,0, 1,arg_i,   argt, 2);
+   yacRegisterFunction((void*)_APIC_mathLogLinExpf,      "mathLogLinExpf",      2,0, 2,arg_ff,  argt, 2);
+   yacRegisterFunction((void*)_APIC_mathBipolarToScalef, "mathBipolarToScalef", 2,0, 3,arg_fff, argt, 2);
+   yacRegisterFunction((void*)_APIC_mathAtan2f,          "mathAtan2f",          2,0, 2,arg_ff,  argt, 2);
+   yacRegisterFunction((void*)_APIC_mathLogf,            "mathLogf",            2,0, 1,arg_f,   argt, 2);
+   yacRegisterFunction((void*)_APIC_mathSigmoidf,        "mathSigmoidf",        2,0, 1,arg_f,   argt, 2);
+   yacRegisterFunction((void*)_APIC_floor,               "floor",               2,0, 1,arg_f,   argt, 2);
+   yacRegisterFunction((void*)_APIC_ceil,                "ceil",                2,0, 1,arg_f,   argt, 2);
+   yacRegisterFunction((void*)_APIC_system,              "system",              1,0, 1,arg_o,   argt, 1);
+   yacRegisterFunction((void*)_APIC_psystem,             "psystem",             1,0, 3,arg_oio, argt, 1);
+   yacRegisterFunction((void*)_APIC_lcchar,              "lcchar",              1,0, 1,arg_i,   argt, 1);
+   yacRegisterFunction((void*)_APIC_ucchar,              "ucchar",              1,0, 1,arg_i,   argt, 1);
+   yacRegisterFunction((void*)_APIC_srand,               "srand",               0,0, 1,arg_i,   argt, 0);
+   yacRegisterFunction((void*) APIC_milliSeconds,        "milliSeconds",        1,0, 0,0,       argt, 9);
+   yacRegisterFunction((void*) APIC_milliSecondsDouble,  "milliSecondsDouble",  0,0, 1,arg_o,   argt, 0);
+   yacRegisterFunction((void*) APIC_GetCurrentThread,    "GetCurrentThread",    3,0, 0,0,       argt, 11);
 #endif //TKS_ALLOWINTFLOATMIXUP
 
    next_plugin_clid = TKS_CLID_NUMINTERNALS;
 
-   ObjectPool::b_initialized = 1;
+   ObjectPool::b_initialized = YAC_TRUE;
 
-   return 1;
+   return YAC_TRUE;
 }
 
 

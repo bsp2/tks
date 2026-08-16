@@ -41,10 +41,10 @@ sSI YAC_VCALL YAC_StreamBase::yacStreamRead(sU8 *_d, sUI _num/*num*/) {
    return _num;
 }
 
-sU8 YAC_VCALL YAC_StreamBase::yacStreamReadI8(void) { 
-   tkscript->printf("[---] YAC_StreamBase::yacStreamReadI8 default impl.\n"); 
-   return 0; 
-} 
+sU8 YAC_VCALL YAC_StreamBase::yacStreamReadI8(void) {
+   tkscript->printf("[---] YAC_StreamBase::yacStreamReadI8 default impl.\n");
+   return 0;
+}
 
 sU16 YAC_VCALL YAC_StreamBase::yacStreamReadI16(void) {
    // ---- read next word from stream ----
@@ -124,54 +124,54 @@ sU32 YAC_VCALL YAC_StreamBase::yacStreamReadI32(void) {
    return ur.r_d;
 }
 
-sU64 YAC_VCALL YAC_StreamBase::yacStreamReadI64(void) { 
-   // ---- read next doubleword from stream ---- 
+sU64 YAC_VCALL YAC_StreamBase::yacStreamReadI64(void) {
+   // ---- read next doubleword from stream ----
    union {
-      sU8  r_b[8]; 
+      sU8  r_b[8];
       sU64 r_q;
    } ur;
 
-#ifdef YAC_LITTLE_ENDIAN 
-   if(byteOrder) 
-   { 
-      // ---- big->little ---- 
-      yacStreamRead(&ur.r_b[7], 1); 
-      yacStreamRead(&ur.r_b[6], 1); 
-      yacStreamRead(&ur.r_b[5], 1); 
-      yacStreamRead(&ur.r_b[4], 1); 
-      yacStreamRead(&ur.r_b[3], 1); 
-      yacStreamRead(&ur.r_b[2], 1); 
-      yacStreamRead(&ur.r_b[1], 1); 
-      yacStreamRead(&ur.r_b[0], 1); 
-   } 
-   else 
-   { 
-      // ---- little->little ---- 
-      yacStreamRead(ur.r_b, 8); 
-   } 
-#else 
-   if(byteOrder) 
-   { 
-      // ---- big->big ---- 
-      yacStreamRead(ur.r_b, 8); 
-   } 
-   else 
-   { 
-      // ---- little->big ---- 
-      yacStreamRead(&ur.r_b[7], 1); 
-      yacStreamRead(&ur.r_b[6], 1); 
-      yacStreamRead(&ur.r_b[5], 1); 
-      yacStreamRead(&ur.r_b[4], 1); 
-      yacStreamRead(&ur.r_b[3], 1); 
-      yacStreamRead(&ur.r_b[2], 1); 
-      yacStreamRead(&ur.r_b[1], 1); 
-      yacStreamRead(&ur.r_b[0], 1); 
-   } 
-#endif 
+#ifdef YAC_LITTLE_ENDIAN
+   if(byteOrder)
+   {
+      // ---- big->little ----
+      yacStreamRead(&ur.r_b[7], 1);
+      yacStreamRead(&ur.r_b[6], 1);
+      yacStreamRead(&ur.r_b[5], 1);
+      yacStreamRead(&ur.r_b[4], 1);
+      yacStreamRead(&ur.r_b[3], 1);
+      yacStreamRead(&ur.r_b[2], 1);
+      yacStreamRead(&ur.r_b[1], 1);
+      yacStreamRead(&ur.r_b[0], 1);
+   }
+   else
+   {
+      // ---- little->little ----
+      yacStreamRead(ur.r_b, 8);
+   }
+#else
+   if(byteOrder)
+   {
+      // ---- big->big ----
+      yacStreamRead(ur.r_b, 8);
+   }
+   else
+   {
+      // ---- little->big ----
+      yacStreamRead(&ur.r_b[7], 1);
+      yacStreamRead(&ur.r_b[6], 1);
+      yacStreamRead(&ur.r_b[5], 1);
+      yacStreamRead(&ur.r_b[4], 1);
+      yacStreamRead(&ur.r_b[3], 1);
+      yacStreamRead(&ur.r_b[2], 1);
+      yacStreamRead(&ur.r_b[1], 1);
+      yacStreamRead(&ur.r_b[0], 1);
+   }
+#endif
 
-   // // return ((sU64)(*(sU64*)r)); 
+   // // return ((sU64)(*(sU64*)r));
    return ur.r_q;
-} 
+}
 
 sF32 YAC_VCALL YAC_StreamBase::yacStreamReadF32(void) {
    // ---- read next IEEE 32bit float from stream ----
@@ -179,7 +179,7 @@ sF32 YAC_VCALL YAC_StreamBase::yacStreamReadF32(void) {
    yac_ieee_float_t r;
    yacStreamRead(raw.u8, 4);
 
-#ifdef YAC_LITTLE_ENDIAN 
+#ifdef YAC_LITTLE_ENDIAN
    if(byteOrder)
    {
       // big -> little
@@ -231,13 +231,13 @@ sF32 YAC_VCALL YAC_StreamBase::yacStreamReadF32(void) {
    return r.f32;
 }
 
-sF64 YAC_VCALL YAC_StreamBase::yacStreamReadF64(void) { 
-   // ---- read next IEEE 64bit double from stream ---- 
+sF64 YAC_VCALL YAC_StreamBase::yacStreamReadF64(void) {
+   // ---- read next IEEE 64bit double from stream ----
    yac_ieee_double_t raw;
    yac_ieee_double_t r;
    yacStreamRead(raw.u8, 8);
 
-#ifdef YAC_LITTLE_ENDIAN 
+#ifdef YAC_LITTLE_ENDIAN
    if(byteOrder)
    {
       // big -> little
@@ -288,10 +288,10 @@ sF64 YAC_VCALL YAC_StreamBase::yacStreamReadF64(void) {
 #endif // YAC_LITTLE_ENDIAN
 
    return r.f64;
-} 
+}
 
 void YAC_VCALL YAC_StreamBase::yacStreamWriteI8(sU8 _i) {
-   tkscript->printf("[---] YAC_StreamBase::yacStreamWriteI8(%i 0x%02x) default impl.\n", _i, _i); 
+   tkscript->printf("[---] YAC_StreamBase::yacStreamWriteI8(%i 0x%02x) default impl.\n", _i, _i);
 }
 
 void YAC_StreamBase::setI8(sSI _i) {
@@ -306,13 +306,17 @@ void YAC_StreamBase::setI32(sSI _i) {
    yacStreamWriteI32(_i);
 }
 
+void YAC_StreamBase::setF16(sF32 _f) {
+   yacStreamWriteI16(sU16(tks_f16_from_f32(_f)));
+}
+
 void YAC_StreamBase::setF32(sF32 _f) {
    yacStreamWriteF32(_f);
 }
 
-void YAC_StreamBase::setF64(sF32 _f) { 
-   yacStreamWriteF64((sF64)_f); 
-} 
+void YAC_StreamBase::setF64(sF32 _f) {
+   yacStreamWriteF64((sF64)_f);
+}
 
 void YAC_VCALL YAC_StreamBase::yacStreamWriteI16(sU16 _value) {
    // ---- write next word to stream ----
@@ -392,58 +396,58 @@ void YAC_VCALL YAC_StreamBase::yacStreamWriteI32(sS32 _value) {
 #endif
 }
 
-void YAC_VCALL YAC_StreamBase::yacStreamWriteI64(sS64 _value) { 
-   // ---- write next doubleword to stream ---- 
+void YAC_VCALL YAC_StreamBase::yacStreamWriteI64(sS64 _value) {
+   // ---- write next doubleword to stream ----
    union {
       sU8  r_b[8];
       sU64 r_q;
    } ur;
 
-   // // *(sU64*)r=(sU64)_value; 
+   // // *(sU64*)r=(sU64)_value;
    ur.r_q = (sU64)_value;
 
-#ifdef YAC_LITTLE_ENDIAN 
-   if(byteOrder) 
-   { 
-      // little->big 
-      yacStreamWrite(&ur.r_b[7], 1);  
-      yacStreamWrite(&ur.r_b[6], 1); 
-      yacStreamWrite(&ur.r_b[5], 1); 
-      yacStreamWrite(&ur.r_b[4], 1); 
-      yacStreamWrite(&ur.r_b[3], 1); 
-      yacStreamWrite(&ur.r_b[2], 1); 
-      yacStreamWrite(&ur.r_b[1], 1); 
-      yacStreamWrite(&ur.r_b[0], 1); 
-   } 
-   else 
-   { 
-      // ---- little->little ---- 
-      yacStreamWrite(ur.r_b, 8); 
-   } 
-#else 
-   if(byteOrder) 
-   { 
-      // ---- big->big ---- 
-      yacStreamWrite(ur.r_b, 8); 
-   } 
-   else 
-   { 
-      // ---- big->little ---- 
-      yacStreamWrite(&ur.r_b[7], 1); 
-      yacStreamWrite(&ur.r_b[6], 1); 
-      yacStreamWrite(&ur.r_b[5], 1); 
-      yacStreamWrite(&ur.r_b[4], 1); 
-      yacStreamWrite(&ur.r_b[3], 1); 
-      yacStreamWrite(&ur.r_b[2], 1); 
-      yacStreamWrite(&ur.r_b[1], 1); 
-      yacStreamWrite(&ur.r_b[0], 1); 
-   } 
-#endif 
-} 
+#ifdef YAC_LITTLE_ENDIAN
+   if(byteOrder)
+   {
+      // little->big
+      yacStreamWrite(&ur.r_b[7], 1);
+      yacStreamWrite(&ur.r_b[6], 1);
+      yacStreamWrite(&ur.r_b[5], 1);
+      yacStreamWrite(&ur.r_b[4], 1);
+      yacStreamWrite(&ur.r_b[3], 1);
+      yacStreamWrite(&ur.r_b[2], 1);
+      yacStreamWrite(&ur.r_b[1], 1);
+      yacStreamWrite(&ur.r_b[0], 1);
+   }
+   else
+   {
+      // ---- little->little ----
+      yacStreamWrite(ur.r_b, 8);
+   }
+#else
+   if(byteOrder)
+   {
+      // ---- big->big ----
+      yacStreamWrite(ur.r_b, 8);
+   }
+   else
+   {
+      // ---- big->little ----
+      yacStreamWrite(&ur.r_b[7], 1);
+      yacStreamWrite(&ur.r_b[6], 1);
+      yacStreamWrite(&ur.r_b[5], 1);
+      yacStreamWrite(&ur.r_b[4], 1);
+      yacStreamWrite(&ur.r_b[3], 1);
+      yacStreamWrite(&ur.r_b[2], 1);
+      yacStreamWrite(&ur.r_b[1], 1);
+      yacStreamWrite(&ur.r_b[0], 1);
+   }
+#endif
+}
 
 void YAC_VCALL YAC_StreamBase::yacStreamWriteF32(sF32 _value) {
    // ---- store next IEEE 32bit float to stream ----
-#ifdef YAC_LITTLE_ENDIAN 
+#ifdef YAC_LITTLE_ENDIAN
    if(byteOrder)
    {
       yac_ieee_float_t f; f.f32 = _value;
@@ -489,9 +493,9 @@ void YAC_VCALL YAC_StreamBase::yacStreamWriteF32(sF32 _value) {
 
 }
 
-void YAC_VCALL YAC_StreamBase::yacStreamWriteF64(sF64 _value) { 
-   // ---- store next IEEE 64bit double to stream ---- 
-#ifdef YAC_LITTLE_ENDIAN 
+void YAC_VCALL YAC_StreamBase::yacStreamWriteF64(sF64 _value) {
+   // ---- store next IEEE 64bit double to stream ----
+#ifdef YAC_LITTLE_ENDIAN
    if(byteOrder)
    {
       yac_ieee_double_t f; f.f64 = _value;
@@ -544,53 +548,53 @@ void YAC_VCALL YAC_StreamBase::yacStreamWriteF64(sF64 _value) {
       yacStreamWrite((sU8*)&_value, 8);
    }
 #endif // YAC_LITTLE_ENDIAN
-} 
+}
 
 sSI YAC_VCALL YAC_StreamBase::yacStreamReadLine(YAC_String *s, sUI _num) {
-   if(s && s->alloc(_num + 1u)) 
-   { 
+   if(s && s->alloc(_num + 1u))
+   {
       s->length = 1u;
       s->chars[0] = 0u;
       s->key = YAC_LOSTKEY;
-      sUI i = 0u; 
-      sUI k = 0u; 
-      while(i < _num) 
-      { 
+      sUI i = 0u;
+      sUI k = 0u;
+      while(i < _num)
+      {
          sU8 c = yacStreamReadI8();  // returns 0 on EOF
          // // yac_host->printf("xxx yacStreamReadLine: c=%u eof=%d\n", c, yacStreamEOF());
          if(('\n' == c) || ('\r' == c) || (4u/*EOT*/ == c) || (0u == c))
-         { 
-            s->chars[i++] = 0; 
-            s->length = i; 
-            return k; 
-         } 
-         else 
          {
-            s->chars[i++] = c; 
+            s->chars[i++] = 0;
+            s->length = i;
+            return k;
+         }
+         else
+         {
+            s->chars[i++] = c;
             k++;
          }
-      } 
+      }
       s->chars[i++] = 0u;
       s->length = i;
-      return k; 
-   } 
+      return k;
+   }
    return 0u;
-} 
+}
 
 sSI YAC_VCALL YAC_StreamBase::yacStreamReadString(YAC_String *s, sUI _num) {
    s->free();
    if(!_num) return 0;
-   sChar *nc = new(std::nothrow)sChar[_num+1]; 
+   sChar *nc = new(std::nothrow)sChar[_num+1];
    if(NULL != nc)
    {
-      sUI i = 0; 
+      sUI i = 0;
       sUI k = 0;
       do
       {
          nc[i] = yacStreamReadI8();
-         i++; 
+         i++;
          k++;
-         
+
       } while(i < _num && nc[i-1]);
       if(0 != nc[i-1])
       {
@@ -605,7 +609,7 @@ sSI YAC_VCALL YAC_StreamBase::yacStreamReadString(YAC_String *s, sUI _num) {
          }
       }
       delete [] nc;
-      s->key = YAC_LOSTKEY; 
+      s->key = YAC_LOSTKEY;
       return k;
    }
    return 0;
@@ -633,15 +637,15 @@ sSI YAC_VCALL YAC_StreamBase::yacStreamWriteString(YAC_String *s, sUI _off, sUI 
 
 sSI YAC_VCALL YAC_StreamBase::yacStreamReadBuffer(YAC_Buffer *_buf, sUI _off, sUI _num, sBool _resize) {
 /*if(_num<=(_buf->size-_off))
-return yacStreamRead(_buf->buffer+_off, _num); 
-else 
-   return 0; // buffer too small*/ 
-   if(_buf->size < (_num+_off)) 
+return yacStreamRead(_buf->buffer+_off, _num);
+else
+   return 0; // buffer too small*/
+   if(_buf->size < (_num+_off))
    {
       if(_resize)
       {
          YAC_Value r;
-         //_buf->tksinter_resize((_off+_num), &r); 
+         //_buf->tksinter_resize((_off+_num), &r);
          if(!_buf->yacArrayRealloc((_off + _num), 0, 0, 0))
          {
             // buffer re-allocation failed
@@ -653,7 +657,7 @@ else
          // buffer too small
          return 0;
       }
-   } 
+   }
    // buffer size is ok now read bytes
    return yacStreamRead(_buf->buffer+_off, _num);
 }
@@ -675,12 +679,12 @@ sSI YAC_VCALL YAC_StreamBase::yacStreamWriteBuffer(YAC_Buffer *_b, sUI _off, sUI
 }
 
 sSI YAC_StreamBase::readString(YAC_String *_s, sSI _num) {
-   // ---- try to read exactly _num chars from stream --- 
+   // ---- try to read exactly _num chars from stream ---
    return yacStreamReadString((YAC_String*)_s, _num);
 }
 
 sSI YAC_StreamBase::readLine(YAC_String *_s, sSI _num) {
-   // ---- try to read max. _num chars from stream --- 
+   // ---- try to read max. _num chars from stream ---
    return yacStreamReadLine((YAC_String*)_s, _num);
 }
 
@@ -727,13 +731,17 @@ sSI YAC_StreamBase::getI32(void) {
    return yacStreamReadI32();
 }
 
+sF32 YAC_StreamBase::getF16(void) {
+   return tks_f32_from_f16(yacStreamReadI16());
+}
+
 sF32 YAC_StreamBase::getF32(void) {
    return yacStreamReadF32();
 }
 
-sF32 YAC_StreamBase::getF64(void) { 
-   return (sF32)yacStreamReadF64(); 
-} 
+sF32 YAC_StreamBase::getF64(void) {
+   return (sF32)yacStreamReadF64();
+}
 
 void YAC_VCALL YAC_StreamBase::yacStreamWriteObject(YAC_Object *_obj) {
    if(_obj)
@@ -877,18 +885,18 @@ void YAC_StreamBase::_seek(sSI _off, sSI _mode) {
    yacStreamSeek(_off, _mode);
 }
 
-void YAC_StreamBase::_close(void) { 
-   yacStreamClose(); 
-} 
+void YAC_StreamBase::_close(void) {
+   yacStreamClose();
+}
 
-void YacStreamGetErrorStringByCode(sSI _code, YAC_Value *_r) { 
+void YacStreamGetErrorStringByCode(sSI _code, YAC_Value *_r) {
    YAC_String *s = (YAC_String*) YAC_NEW_CORE_POOLED(YAC_CLID_STRING);
-   if(s) 
-   { 
-      s->visit((sChar*)strerror(_code)); 
-      _r->initString(s,1); 
-   } 
-} 
+   if(s)
+   {
+      s->visit((sChar*)strerror(_code));
+      _r->initString(s,1);
+   }
+}
 
 void YAC_StreamBase::setI8a(YAC_Object *_a) {
    if(YAC_VALID(_a))
