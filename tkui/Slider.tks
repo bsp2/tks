@@ -13,7 +13,7 @@
 // ----          11Feb2018, 20May2018, 13Nov2018, 29Nov2018, 10Sep2019, 22Sep2019, 03Nov2019
 // ----          18Aug2020, 03Apr2021, 03Oct2023, 04Oct2023, 21Oct2023, 04Nov2023, 09Nov2023
 // ----          11Nov2023, 21Mar2024, 22Mar2024, 09Oct2024, 10Oct2024, 29Dec2024, 10Sep2025
-// ----          11Sep2025, 10Oct2025, 08Apr2026
+// ----          11Sep2025, 10Oct2025, 08Apr2026, 15Aug2026, 16Aug2026
 // ----
 // ----
 // ----
@@ -26,6 +26,8 @@ class Slider extends Control {
 
    define String ACTION_VALUECHANGING = "onValueChanging";
    define String ACTION_VALUECHANGED  = "onValueChanged";
+   define String ACTION_MOUSE_ENTER   = "onMouseEnter";
+   define String ACTION_MOUSE_LEAVE   = "onMouseLeave";
 
    define String DELEGATE_GETSTEPCOARSE/* = "delGetStepCoarse"*/; // For dynamic step sizes (e.g. TableView)
 
@@ -78,6 +80,8 @@ class Slider extends Control {
    protected float custom_min_size_x;
    protected float custom_min_size_y;
 
+   protected boolean b_provide_mouse_enter_leave;
+
 
    public function New(float _min, _max, _value, _step) : Slider {
       local Slider sl;
@@ -123,10 +127,18 @@ class Slider extends Control {
       ta_repeat.setActionConsumer(this);
    }
 
+   public virtual getProvidedActionNames() : StringArray {
+      return [ACTION_VALUECHANGING, ACTION_VALUECHANGED, ACTION_MOUSE_ENTER, ACTION_MOUSE_LEAVE];
+   }
+
    public virtual setLayerStyle(int _style) {
       Control::setLayerStyle(_style);
       if(LookAndFeel.STYLE_FLAT == layer_style)
          border_size = 0;
+   }
+
+   public method setEnableProvideMouseEnterLeave(boolean _bEnable) {
+      b_provide_mouse_enter_leave = _bEnable;
    }
 
    public method setEnableDetailEdit(boolean _bEnable) {
@@ -298,10 +310,6 @@ class Slider extends Control {
       return Control::onKey(_k);
    }
 
-   public virtual getProvidedActionNames() : StringArray {
-      return [ACTION_VALUECHANGING, ACTION_VALUECHANGED];
-   }
-
    protected method handleValueChanging() {
       provideAction(FloatAction.New(getProvidedActionAlias(ACTION_VALUECHANGING), this, cur_value));
    }
@@ -359,6 +367,8 @@ class Slider extends Control {
       b_grabbed = false;
       grab_start_ms = 0;
       redraw();
+      if(b_provide_mouse_enter_leave)
+         provideAction(Action.New(getProvidedActionAlias(ACTION_MOUSE_ENTER), this));
       return Control::onMouseEnter(_ev);
    }
 
@@ -396,6 +406,8 @@ class Slider extends Control {
       grab_start_ms = 0;
       cancelSliderTimer();
       redraw();
+      if(b_provide_mouse_enter_leave)
+         provideAction(Action.New(getProvidedActionAlias(ACTION_MOUSE_LEAVE), this));
       return Control::onMouseLeave(_ev);
    }
 
@@ -422,33 +434,40 @@ class Slider extends Control {
 
    public method incFine() : boolean {
       // (todo)
-      return incCoarse();
+      if(isEditable())
+         return incCoarse();
+      return false;
    }
 
    public method decCoarse() : boolean {
       explain "Subtract step_coarse from current slider value";
 
-      if(cur_value > min_value)
+      if(isEditable())
       {
-         float f = cur_value - getStepCoarse();
-         if(UI.KeyModCtrl())
-            f = quantizeValue(f);
-         setValue(f);
-         handleValueChanged();
-         redraw();
-         return true;
+         if(cur_value > min_value)
+         {
+            float f = cur_value - getStepCoarse();
+            if(UI.KeyModCtrl())
+               f = quantizeValue(f);
+            setValue(f);
+            handleValueChanged();
+            redraw();
+            return true;
+         }
       }
       return false;
    }
 
    public method decFine() : boolean {
       // (todo)
-      return decCoarse();
+      if(isEditable())
+         return decCoarse();
+      return false;
    }
 
    protected method handleResetValue() : boolean {
       // // trace "xxx Slider::handleResetValue: reset_value="+reset_value+" b_editable="+b_editable;
-      if(b_editable)
+      if(isEditable())
       {
          if(b_grabbed)
          {
@@ -491,11 +510,13 @@ class Slider extends Control {
 
          return true;
 
-      } // if b_editable
+      } // if isEditable()
       return false;
    }
 
    private method handleMouseClickOrPress() {
+      if(!isEditable())
+         return;
 
       float ps = b_vertical ? getSizeY() : getSizeX();
       float frange;
@@ -634,44 +655,50 @@ class Slider extends Control {
       {
          if(_ev.current_state & MOUSE_LBUTTON)
          {
-            grabKeyboardFocus();
-
-            // trace "xxx LMB down b_pressed="+b_pressed;
-
-            if(!b_pressed)
+            if(isEditable())
             {
-               // // if(!b_ignore_next_click)
-               // // {
+               grabKeyboardFocus();
+
+               // trace "xxx LMB down b_pressed="+b_pressed;
+
+               if(!b_pressed)
+               {
+                  // // if(!b_ignore_next_click)
+                  // // {
                   b_pressed = true;
                   handleMouseClickOrPress();
-               // // }
-               // // else
-               // // {
-               // //    b_ignore_next_click = false;  // after dblclick
-               // // }
+                  // // }
+                  // // else
+                  // // {
+                  // //    b_ignore_next_click = false;  // after dblclick
+                  // // }
+               }
             }
          }
          else
          {
-            // LMB release
-            b_pressed = false;
-
-            // trace "xxx LMB release, msDelta="+(milliSeconds() - grab_start_ms);
-
-            if(UI.KeyModCtrl() &&
-               (!b_grabbed || (milliSeconds() - grab_start_ms) < UIConstants.MOUSE_CLICK_TIMEOUT)
-               )
+            if(isEditable())
             {
-               // trace "xxx lctrl-LMB-click";
-               handleResetValue();  // lazy-ends mouse grab
-            }
-            else if(b_grabbed)
-            {
-               // ---- end grab
-               ungrabMouse();
-               b_grabbed = false;
-               grab_start_ms = 0;
-               handleValueChanged();
+               // LMB release
+               b_pressed = false;
+
+               // trace "xxx LMB release, msDelta="+(milliSeconds() - grab_start_ms);
+
+               if(UI.KeyModCtrl() &&
+                  (!b_grabbed || (milliSeconds() - grab_start_ms) < UIConstants.MOUSE_CLICK_TIMEOUT)
+                  )
+               {
+                  // trace "xxx lctrl-LMB-click";
+                  handleResetValue();  // lazy-ends mouse grab
+               }
+               else if(b_grabbed)
+               {
+                  // ---- end grab
+                  ungrabMouse();
+                  b_grabbed = false;
+                  grab_start_ms = 0;
+                  handleValueChanged();
+               }
             }
 
             cancelSliderTimer();
@@ -699,7 +726,7 @@ class Slider extends Control {
       else if(_ev.rightButtonUp())
       {
          // Consume to prevent fallback to parent widget context menu
-         if(!b_grabbed && b_detail_edit)
+         if(!b_grabbed && b_detail_edit && isEditable())
          {
             showDetailEdit();
             return true;
@@ -707,7 +734,7 @@ class Slider extends Control {
          r = true;
       }
 
-      if(b_grabbed)
+      if(b_grabbed && isEditable())
       {
          // mouse-drag knob
          // trace "...........................";
@@ -995,6 +1022,8 @@ class Slider extends Control {
 
    public virtual onDraw() {
 
+      boolean bEditable = isEditable();
+
       float sx = getSizeX(), sy = getSizeY();
       float s  = b_vertical ? sy : sx;
       float ps = b_vertical ? sy : sx, ks = getKnobSize();
@@ -1025,11 +1054,15 @@ class Slider extends Control {
       if(kp > availSize)
          kp = availSize;
 
+      int bg32Tint = bg32_tint;
+      if(!isEditable())
+         bg32Tint = UI.TintColor32(bg32Tint, lnf_colors.get(LookAndFeel.COLOR_SLIDER_NONEDITABLE_BG_TINT));
+
       // // trace "xxx layer_style="+layer_style+" lnf="+lnf.getName();
       if(LookAndFeel.STYLE_BEVEL == layer_style)
       {
          // ---- Draw background
-         UIRenderer.DrawFilledRectangle(0, 0, sx, sy, lnf.getTintedColor(LookAndFeel.COLOR_BORDER_MEDIUM, bg32_tint));
+         UIRenderer.DrawFilledRectangle(0, 0, sx, sy, lnf.getTintedColor(LookAndFeel.COLOR_BORDER_MEDIUM, bg32Tint));
 
          if(border_size > 0)
          {
@@ -1039,20 +1072,20 @@ class Slider extends Control {
                {
                   UIRenderer.DrawGradientFilledRectangle(border_size, border_size,
                                                          sx-border_size*2, kp-border_size,
-                                                         lnf.getTintedColor(LookAndFeel.COLOR_BORDER_DIM,      bg32_tint),
-                                                         lnf.getTintedColor(LookAndFeel.COLOR_BORDER_DIM,      bg32_tint),
-                                                         lnf.getTintedColor(LookAndFeel.COLOR_BORDER_MEDIUM,   bg32_tint),
-                                                         lnf.getTintedColor(LookAndFeel.COLOR_BORDER_DIMLIGHT, bg32_tint)
+                                                         lnf.getTintedColor(LookAndFeel.COLOR_BORDER_DIM,      bg32Tint),
+                                                         lnf.getTintedColor(LookAndFeel.COLOR_BORDER_DIM,      bg32Tint),
+                                                         lnf.getTintedColor(LookAndFeel.COLOR_BORDER_MEDIUM,   bg32Tint),
+                                                         lnf.getTintedColor(LookAndFeel.COLOR_BORDER_DIMLIGHT, bg32Tint)
                                                          );
                }
                else
                {
                   UIRenderer.DrawGradientFilledRectangle(border_size, border_size,
                                                          kp-border_size, sy-border_size*2,
-                                                         lnf.getTintedColor(LookAndFeel.COLOR_BORDER_DIM,      bg32_tint),
-                                                         lnf.getTintedColor(LookAndFeel.COLOR_BORDER_DIM,      bg32_tint),
-                                                         lnf.getTintedColor(LookAndFeel.COLOR_BORDER_MEDIUM,   bg32_tint),
-                                                         lnf.getTintedColor(LookAndFeel.COLOR_BORDER_DIMLIGHT, bg32_tint)
+                                                         lnf.getTintedColor(LookAndFeel.COLOR_BORDER_DIM,      bg32Tint),
+                                                         lnf.getTintedColor(LookAndFeel.COLOR_BORDER_DIM,      bg32Tint),
+                                                         lnf.getTintedColor(LookAndFeel.COLOR_BORDER_MEDIUM,   bg32Tint),
+                                                         lnf.getTintedColor(LookAndFeel.COLOR_BORDER_DIMLIGHT, bg32Tint)
                                                          );
                }
             }
@@ -1062,10 +1095,10 @@ class Slider extends Control {
                {
                   UIRenderer.DrawGradientFilledRectangle(border_size, kp+ks,
                                                          sx-border_size*2, sy-(kp+ks+border_size),
-                                                         lnf.getTintedColor(LookAndFeel.COLOR_BORDER_DIM,      bg32_tint),
-                                                         lnf.getTintedColor(LookAndFeel.COLOR_BORDER_DIM,      bg32_tint),
-                                                         lnf.getTintedColor(LookAndFeel.COLOR_BORDER_MEDIUM,   bg32_tint),
-                                                         lnf.getTintedColor(LookAndFeel.COLOR_BORDER_DIMLIGHT, bg32_tint)
+                                                         lnf.getTintedColor(LookAndFeel.COLOR_BORDER_DIM,      bg32Tint),
+                                                         lnf.getTintedColor(LookAndFeel.COLOR_BORDER_DIM,      bg32Tint),
+                                                         lnf.getTintedColor(LookAndFeel.COLOR_BORDER_MEDIUM,   bg32Tint),
+                                                         lnf.getTintedColor(LookAndFeel.COLOR_BORDER_DIMLIGHT, bg32Tint)
                                                          );
                }
             }
@@ -1075,49 +1108,49 @@ class Slider extends Control {
                {
                   UIRenderer.DrawGradientFilledRectangle(kp+ks, border_size,
                                                          sx-(kp+ks+border_size), sy-border_size*2,
-                                                         lnf.getTintedColor(LookAndFeel.COLOR_BORDER_DIM,      bg32_tint),
-                                                         lnf.getTintedColor(LookAndFeel.COLOR_BORDER_DIM,      bg32_tint),
-                                                         lnf.getTintedColor(LookAndFeel.COLOR_BORDER_MEDIUM,   bg32_tint),
-                                                         lnf.getTintedColor(LookAndFeel.COLOR_BORDER_DIMLIGHT, bg32_tint)
+                                                         lnf.getTintedColor(LookAndFeel.COLOR_BORDER_DIM,      bg32Tint),
+                                                         lnf.getTintedColor(LookAndFeel.COLOR_BORDER_DIM,      bg32Tint),
+                                                         lnf.getTintedColor(LookAndFeel.COLOR_BORDER_MEDIUM,   bg32Tint),
+                                                         lnf.getTintedColor(LookAndFeel.COLOR_BORDER_DIMLIGHT, bg32Tint)
                                                          );
                }
             }
 
-            UIRenderer.DrawSoftShadowSunkenBorderTint(0, 0, sx, sy, bg32_tint);
+            UIRenderer.DrawSoftShadowSunkenBorderTint(0, 0, sx, sy, bg32Tint);
 
             if(isMouseOver())
             {
                if(b_pressed)
                {
                   if(b_vertical)
-                     UIRenderer.DrawDefaultActiveBackgroundTint(border_size*2, kp,  sx-border_size*4, ks, bg32_tint);
+                     UIRenderer.DrawDefaultActiveBackgroundTint(border_size*2, kp,  sx-border_size*4, ks, bg32Tint);
                   else
-                     UIRenderer.DrawDefaultActiveBackgroundTint(kp, border_size*2,  ks, sy-border_size*4, bg32_tint);
+                     UIRenderer.DrawDefaultActiveBackgroundTint(kp, border_size*2,  ks, sy-border_size*4, bg32Tint);
                }
                else
                {
                   if(b_vertical)
-                     UIRenderer.DrawDefaultInactiveBackgroundTint(border_size*2, kp,  sx-border_size*4, ks, bg32_tint);
+                     UIRenderer.DrawDefaultInactiveBackgroundTint(border_size*2, kp,  sx-border_size*4, ks, bg32Tint);
                   else
-                     UIRenderer.DrawDefaultInactiveBackgroundTint(kp, border_size*2,  ks, sy-border_size*4, bg32_tint);
+                     UIRenderer.DrawDefaultInactiveBackgroundTint(kp, border_size*2,  ks, sy-border_size*4, bg32Tint);
                }
 
                if(b_vertical)
-                  UIRenderer.DrawDefaultRaisedBorderTint(border_size*2, kp,  sx-border_size*4, ks, bg32_tint);
+                  UIRenderer.DrawDefaultRaisedBorderTint(border_size*2, kp,  sx-border_size*4, ks, bg32Tint);
                else
-                  UIRenderer.DrawDefaultRaisedBorderTint(kp, border_size*2,  ks, sy-border_size*4, bg32_tint);
+                  UIRenderer.DrawDefaultRaisedBorderTint(kp, border_size*2,  ks, sy-border_size*4, bg32Tint);
             }
             else
             {
                if(b_vertical)
                {
-                  UIRenderer.DrawDefaultControlBackgroundTint(border_size*2, kp,  sx-border_size*4, ks, bg32_tint);
-                  UIRenderer.DrawDefaultRaisedBorderTint(border_size*2, kp,  sx-border_size*4, ks, bg32_tint);
+                  UIRenderer.DrawDefaultControlBackgroundTint(border_size*2, kp,  sx-border_size*4, ks, bg32Tint);
+                  UIRenderer.DrawDefaultRaisedBorderTint(border_size*2, kp,  sx-border_size*4, ks, bg32Tint);
                }
                else
                {
-                  UIRenderer.DrawDefaultControlBackgroundTint(kp, border_size*2,  ks, sy-border_size*4, bg32_tint);
-                  UIRenderer.DrawDefaultRaisedBorderTint(kp, border_size*2,  ks, sy-border_size*4, bg32_tint);
+                  UIRenderer.DrawDefaultControlBackgroundTint(kp, border_size*2,  ks, sy-border_size*4, bg32Tint);
+                  UIRenderer.DrawDefaultRaisedBorderTint(kp, border_size*2,  ks, sy-border_size*4, bg32Tint);
                }
             }
 
@@ -1136,41 +1169,41 @@ class Slider extends Control {
          {
             // ---- no border (Scroller)
             // (note) 13Nov2018 never reached ? border_size=1 for scrollers
-            UIRenderer.DrawFilledRectangle(0, 0, sx, sy, lnf.getTintedColor(LookAndFeel.COLOR_SCROLLER_BG, bg32_tint));
+            UIRenderer.DrawFilledRectangle(0, 0, sx, sy, lnf.getTintedColor(LookAndFeel.COLOR_SCROLLER_BG, bg32Tint));
 
             if(isMouseOver())
             {
                if(b_pressed)
                {
                   if(b_vertical)
-                     UIRenderer.DrawDefaultActiveBackgroundTint(0, kp,  sx, ks, bg32_tint);
+                     UIRenderer.DrawDefaultActiveBackgroundTint(0, kp,  sx, ks, bg32Tint);
                   else
-                     UIRenderer.DrawDefaultActiveBackgroundTint(kp, 0,  ks, sy, bg32_tint);
+                     UIRenderer.DrawDefaultActiveBackgroundTint(kp, 0,  ks, sy, bg32Tint);
                }
                else
                {
                   if(b_vertical)
-                     UIRenderer.DrawDefaultInactiveBackgroundTint(0, kp,  sx, ks, bg32_tint);
+                     UIRenderer.DrawDefaultInactiveBackgroundTint(0, kp,  sx, ks, bg32Tint);
                   else
-                     UIRenderer.DrawDefaultInactiveBackgroundTint(kp, 0,  ks, sy, bg32_tint);
+                     UIRenderer.DrawDefaultInactiveBackgroundTint(kp, 0,  ks, sy, bg32Tint);
                }
 
                if(b_vertical)
-                  UIRenderer.DrawSoftShadowRaisedBorderTint(0, kp, sx, ks, bg32_tint);
+                  UIRenderer.DrawSoftShadowRaisedBorderTint(0, kp, sx, ks, bg32Tint);
                else
-                  UIRenderer.DrawSoftShadowRaisedBorderTint(kp, 0, ks, sy, bg32_tint);
+                  UIRenderer.DrawSoftShadowRaisedBorderTint(kp, 0, ks, sy, bg32Tint);
             }
             else
             {
                if(b_vertical)
                {
-                  UIRenderer.DrawDefaultControlBackgroundTint(0, kp,  sx, ks, bg32_tint);
-                  UIRenderer.DrawSoftShadowRaisedBorderTint(0, kp, sx, ks, bg32_tint);
+                  UIRenderer.DrawDefaultControlBackgroundTint(0, kp,  sx, ks, bg32Tint);
+                  UIRenderer.DrawSoftShadowRaisedBorderTint(0, kp, sx, ks, bg32Tint);
                }
                else
                {
-                  UIRenderer.DrawDefaultControlBackgroundTint(kp, border_size*2,  ks, sy-border_size*4, bg32_tint);
-                  UIRenderer.DrawSoftShadowRaisedBorderTint(kp, 0, ks, sy, bg32_tint);
+                  UIRenderer.DrawDefaultControlBackgroundTint(kp, border_size*2,  ks, sy-border_size*4, bg32Tint);
+                  UIRenderer.DrawSoftShadowRaisedBorderTint(kp, 0, ks, sy, bg32Tint);
                }
             }
          } // else border_size > 0
@@ -1181,9 +1214,9 @@ class Slider extends Control {
 
          // Draw background
          if(b_flat_high_contrast)
-            c32 = lnf.getTintedColor(LookAndFeel.COLOR_SLIDER_FLAT_HIGHCONTRAST_BG, bg32_tint);
+            c32 = lnf.getTintedColor(LookAndFeel.COLOR_SLIDER_FLAT_HIGHCONTRAST_BG, bg32Tint);
          else
-            c32 = lnf.getTintedColor(LookAndFeel.COLOR_SLIDER_FLAT_BG, bg32_tint);  // ScrollPane, TableView, ..
+            c32 = lnf.getTintedColor(LookAndFeel.COLOR_SLIDER_FLAT_BG, bg32Tint);  // ScrollPane, TableView, ..
 
          UIRenderer.DrawFilledRectangle(0, 0, sx, sy, c32);
 
@@ -1198,8 +1231,8 @@ class Slider extends Control {
          if(b_flat_high_contrast)
             c32 = sdvg_TintARGB(c32, lnf_colors.get(LookAndFeel.COLOR_SLIDER_FLAT_HANDLE_HIGHCONTRAST_TINT));
 
-         if(bg32_tint)
-            c32 = sdvg_TintARGB(c32, bg32_tint);
+         if(bg32Tint)
+            c32 = sdvg_TintARGB(c32, bg32Tint);
 
          int c32Fg = sdvg_TintARGB(c32, fg32_tint);
 
@@ -1218,9 +1251,9 @@ class Slider extends Control {
 
          sdvg_SetStrokeWidth(UI.font_scaling);
          if(b_vertical)
-            UIRenderer.DrawLine(2, origPos, sx-2, origPos, lnf.getTintedColor(LookAndFeel.COLOR_SLIDER_ORIGVAL, bg32_tint));
+            UIRenderer.DrawLine(2, origPos, sx-2, origPos, lnf.getTintedColor(LookAndFeel.COLOR_SLIDER_ORIGVAL, bg32Tint));
          else
-            UIRenderer.DrawLine(origPos, 2, origPos, sy-2, lnf.getTintedColor(LookAndFeel.COLOR_SLIDER_ORIGVAL, bg32_tint));
+            UIRenderer.DrawLine(origPos, 2, origPos, sy-2, lnf.getTintedColor(LookAndFeel.COLOR_SLIDER_ORIGVAL, bg32Tint));
          sdvg_SetStrokeWidth(1.0f);
       }
 
@@ -1304,6 +1337,10 @@ class Slider extends Control {
 
                case "detailedit":
                   b_detail_edit = (0 != int(atval));
+                  break;
+
+               case "providemouseenterleave":
+                  setEnableProvideMouseEnterLeave(int(atval));
                   break;
             }
          }
