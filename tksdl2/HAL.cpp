@@ -2900,9 +2900,22 @@ sBool _HAL::openView(sU16 _sx, sU16 _sy, sU8 _z,
 
    flags |= SDL_WINDOW_SHOWN;
 
+   sSI vx = SDL_WINDOWPOS_UNDEFINED;
+   sSI vy = SDL_WINDOWPOS_UNDEFINED;
+
+   if(!_bFullscreen)
+   {
+      const char *viewPos = ::getenv("TKSDL_VIEWPOS");
+      if(NULL != viewPos)
+      {
+         ::sscanf(viewPos, "%d;%d", &vx, &vy);
+         if(yac_host->yacGetDebugLevel() >= 1)
+            yac_host->printf("[...] tksdl::HAL::openView: override view pos=(%d; %d)\n", vx, vy);
+      }
+   }
+
    sdl_window = ::SDL_CreateWindow("tksdl",
-                                   SDL_WINDOWPOS_UNDEFINED,
-                                   SDL_WINDOWPOS_UNDEFINED,
+                                   vx, vy,
                                    view_sx, view_sy,
                                    flags | vpFlags
                                    );
