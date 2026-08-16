@@ -13,7 +13,7 @@
 // ----          19Oct2023, 02Nov2023, 10Feb2024, 22Mar2024, 25Apr2024, 26Apr2024, 28Apr2024
 // ----          23Jul2024, 13Aug2024, 03Oct2024, 06Dec2024, 28Dec2024, 30May2025, 20Jun2025
 // ----          21Jun2025, 10Sep2025, 11Sep2025, 12Sep2025, 13Sep2025, 14Sep2025, 17Sep2025
-// ----          10Oct2025, 11Dec2025, 22Apr2026
+// ----          10Oct2025, 11Dec2025, 22Apr2026, 12Aug2026, 13Aug2026, 15Aug2026, 16Aug2026
 // ----
 // ----
 // ----
@@ -50,8 +50,38 @@ class BezierEditState {
    tag int        scale_tbl_off_x;
    tag int        scale_tbl_off_y;
 
+   float ui_last_t;  // fallback when StEnvelope is not used (e.g. "Remote Control" app)
+
+   FloatArray *ui_markers;  // similar to ui_last_t (used e.g. by Remote Control ParamsForm)
+
    public method getNumSegments() : int {
       return segments.numElements / 6;
+   }
+
+   public method isEqual(BezierEditState _o) : boolean {
+      if(segments.isEqual(_o.segments))
+      {
+         if(recursion_limit     == _o.recursion_limit     &&
+            bendiness_threshold == _o.bendiness_threshold &&
+            distance_threshold  == _o.distance_threshold  &&
+            out_exponent        == _o.out_exponent
+            )
+         {
+            // (note) do NOT compare UI settings (off_x/y, selection_*, scale_tbl_*)
+            return true;
+         }
+      }
+      return false;
+   }
+
+   public method uiClearMarkers() {
+      ui_markers <= null;
+   }
+
+   public method uiAddMarker(float _f) {
+      if(null == ui_markers)
+         ui_markers <= new FloatArray;
+      ui_markers.add(_f);
    }
 }
 
@@ -197,6 +227,7 @@ class BezierEdit : Control {
 
    protected boolean b_snap_to_grid;
    protected boolean b_allow_wasd_keys;
+   protected boolean b_no_space_key;
 
    protected boolean b_smooth_ctl;  // true=move next ctlpoint halfway to ctlpoint after next and enable symmetry
    protected boolean b_smooth_ctl_xdist_only;
@@ -224,6 +255,10 @@ class BezierEdit : Control {
    define float POINT_SCL = 1.0;
 
    protected Object/*StEnvelope*/ *st_env_or_null;  // last played position
+
+   protected boolean b_mouse_enter_keyboard_focus;
+
+   static protected BezierEditState *bezier_clipboard_state;
 
 
    public method initBezierEdit() {
@@ -389,6 +424,14 @@ class BezierEdit : Control {
 
    public virtual calcMinimumSizeY() {
       minimum_size_y = min_size_y * UI.font_scaling;
+   }
+
+   public method setEnableSpaceKey(boolean _bEnable) {
+      b_no_space_key = !_bEnable;
+   }
+
+   public method setEnableMouseEnterKeyboardFocus(boolean _bEnable) {
+      b_mouse_enter_keyboard_focus = _bEnable;
    }
 
    public method setEnableAllowWASDKeys(boolean _bEnable) {
@@ -1410,19 +1453,43 @@ class BezierEdit : Control {
          sdvg_PushModelMatrix();
          sdvg_ModelInitIdentity();
 
+         // Draw last played position marker
+         float lastT = -1;
+
          if(null != st_env_or_null)
          {
             Value retT;
             // (note) StEnvelope class may not be available
             TKS.evalMethodByName(st_env_or_null, "getLastPlayedPosition", {}, retT);
-            float lastT = retT.value;
-            if(0.001f < lastT < 0.999f)
+            lastT = retT.value;
+         }
+         else
+         {
+            // Fallback
+            if(null != current_state)
+               lastT = current_state.ui_last_t;
+         }
+
+         if(0.001f <= lastT < 0.999f)
+         {
+            sdvg_EnableBlending();
+            sdvg_SetStrokeWidth(2.0);
+            drawLineAA(lastT, -100.0f,
+                       lastT,  100.0f,
+                       #29ffff10
+                       );
+         }
+
+         if(null != current_state && null != current_state.ui_markers)
+         {
+            float fMarker;
+            sdvg_EnableBlending();
+            foreach fMarker in current_state.ui_markers
             {
-               sdvg_EnableBlending();
                sdvg_SetStrokeWidth(2.0);
-               drawLineAA(lastT, -100.0f,
-                          lastT,  100.0f,
-                          #29ffff10
+               drawLineAA(fMarker, -100.0f,
+                          fMarker,  100.0f,
+                          #0Cffffff
                           );
             }
          }
@@ -3714,6 +3781,13 @@ class BezierEdit : Control {
    }
 
    // <ui_mouse.png>
+   public virtual onMouseEnter(MouseEvent _ev) : boolean {
+      if(b_mouse_enter_keyboard_focus)
+         grabKeyboardFocus();
+      return Control::onMouseEnter(_ev);
+   }
+
+   // <ui_mouse.png>
    public virtual onMouseLeave(MouseEvent _ev) {
       setEnableLockSelection(false);
       return Control::onMouseLeave(_ev);
@@ -4816,6 +4890,18 @@ class BezierEdit : Control {
       }
    }
 
+   // <method_get.png>
+   static GetOrCreateBezierEditClipboard() : BezierEditState {
+      if(null == bezier_clipboard_state)
+         bezier_clipboard_state <= new BezierEditState;
+      return bezier_clipboard_state;
+   }
+
+   // <method_get.png>
+   static GetBezierEditClipboard() : BezierEditState {
+      return bezier_clipboard_state;
+   }
+
    // <ui_kbd.png>
    public virtual onKey(Key _k) : boolean {
       //trace "xxx BezierEdit::onKey: k.pressed="+_k.pressed;
@@ -4854,14 +4940,17 @@ class BezierEdit : Control {
             return false;
 
          case VKEY_SPACE:
-            if(_k.modCtrl())
+            if(!b_no_space_key)
             {
-               if(_k.modShift())
-                  b_draw_env = !b_draw_env;
-               else
-                  resetZoom();
-               redraw();
-               return true;
+               if(_k.modCtrl())
+               {
+                  if(_k.modShift())
+                     b_draw_env = !b_draw_env;
+                  else
+                     resetZoom();
+                  redraw();
+                  return true;
+               }
             }
             return false;
 
@@ -5355,6 +5444,14 @@ class BezierEdit : Control {
 
                case "scaletbloffy":
                   setScaleTblOffY(int(atval));
+                  break;
+
+               case "mouseenterkbdfocus":
+                  setEnableMouseEnterKeyboardFocus(int(atval));
+                  break;
+
+               case "spacekey":
+                  b_no_space_key = (0 == int(atval));
                   break;
             }
          }
