@@ -1,6 +1,6 @@
 /// commonmath.cpp
 ///
-/// (c) 2008-2024 by Carsten Busse <carsten.busse@googlemail.com>
+/// (c) 2008-2026 by Carsten Busse <carsten.busse@googlemail.com>
 ///                  Bastian Spiegel <bs@tkscript.de> (additional coding)
 ///     - Distributed under terms of the Lesser GNU General Public License (LGPL).
 ///       See COPYING and <http://www.gnu.org/licenses/licenses.html#LGPL> for further information.
@@ -53,7 +53,7 @@
    YAC_Double *d = (YAC_Double*) YAC_NEW_CORE_POOLED(YAC_CLID_DOUBLE);\
    d->value = v;\
   _r->initObject(d, 1)
-  
+
 //the variables epsilon_flt* and epsilon_dbl* are in yac_host
 void _Math::_setFltEpsilonUnits(sSI units) {
    if (units != 0)
@@ -592,10 +592,13 @@ sSI YAC_CALL _yac_f16_from_f32(sF32 _v) {
    static const sF32 FLOAT16_MAX =  65472.0f;
    static const sF32 FLOAT16_MIN =  -FLOAT16_MAX;
 
-   _v = sMIN(sMAX(_v, FLOAT16_MIN), FLOAT16_MAX);
+   if(sABS(_v) < 0.000061035f)
+      _v = 0.0f;
+   else
+      _v = sMIN(sMAX(_v, FLOAT16_MIN), FLOAT16_MAX);
 
    yacmem32 m; m.f32 = _v;
-   
+
    // Convert exponent from 8 bits (bias = 127) to 5 bits (bias = 15)
    sS16 r = (0 != m.u32) ? (sS16( ( (sS8(m.u32 >> 23) & 255) -  127) + 15 ) << 10) : 0;
 
