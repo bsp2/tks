@@ -1,11 +1,11 @@
 /// TKS_CachedObject.h
 ///
-/// (c) 1999-2023 Bastian Spiegel <bs@tkscript.de>
+/// (c) 1999-2026 Bastian Spiegel <bs@tkscript.de>
 ///    - distributed under terms of the GNU general public license (GPL).
 ///
 
-#ifndef __TKS_CACHEDOBJECT_H__
-#define __TKS_CACHEDOBJECT_H__
+#ifndef TKS_CACHEDOBJECT_H__
+#define TKS_CACHEDOBJECT_H__
 
 class TKS_ObjectCache;
 
@@ -17,8 +17,8 @@ class TKS_CachedObject : public YAC_Value {
    //
    // a named value
    //
-   //  also see TKS_ObjectCache class 
-   //  
+   //  also see TKS_ObjectCache class
+   //
    //
 public:
 #ifdef TKS_CO_OBJECTCOUNTER
@@ -43,7 +43,7 @@ public:
    YAC_String name;
    sBool      b_own_name; // xxx should be a flag but the flags are currently sometimes set absolutely..(which would cause memleaks)
    sUI        flags;
-   sUI        local_index; // ISLOCAL flag => stackframe index 
+   sUI        local_index; // ISLOCAL flag => stackframe index
 
 public:
    TKS_CachedObject(void);
@@ -68,4 +68,4 @@ public:
 #endif // TKS_USE_NODEALLOCATOR
 
 
-#endif // __TKS_CACHEDOBJECT_H__
+#endif // TKS_CACHEDOBJECT_H__

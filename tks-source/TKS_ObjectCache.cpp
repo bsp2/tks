@@ -73,17 +73,20 @@ sBool TKS_ObjectCache::allocCache2(sUI _cache_size) {
    if(NULL != objects)
       freeCache();
 
-   objects = new(std::nothrow) TKS_CachedObject*[_cache_size];
-
-   if(NULL != objects)
+   if(_cache_size > 0u)
    {
-      max_entries = _cache_size;
+      objects = new(std::nothrow) TKS_CachedObject*[_cache_size];
 
-      // (todo) use memset
-      for(sUI i = 0u; i < max_entries; i++)
-         objects[i] = NULL;
+      if(NULL != objects)
+      {
+         max_entries = _cache_size;
 
-      return YAC_TRUE;
+         // (todo) use memset
+         for(sUI i = 0u; i < max_entries; i++)
+            objects[i] = NULL;
+
+         return YAC_TRUE;
+      }
    }
    return YAC_FALSE;
 }
@@ -92,11 +95,12 @@ TKS_CachedObject *TKS_ObjectCache::findEntry(YAC_String *_name) const {
    if(_name && objects)
    {
       sUI hk = _name->getKey();
-      sUI index = hk % TKS_ObjectCache::max_entries;
+      sUI index = hk % max_entries;
       TKS_CachedObject *c = objects[index];
       while(c)
       {
-         if(c->name.key == hk) // c->name.key has been set when the entry was put in the cache
+         // Dyac_host_printf("xxx findEntry: name=\"%s\" c=%p index=%u max_entries=%u\n", _name->chars, c, index, max_entries);
+         if(c->name.key == hk) // c->name.key was set when the entry was put in the cache
          {
             if(c->name.compare(_name))
             {
@@ -104,7 +108,7 @@ TKS_CachedObject *TKS_ObjectCache::findEntry(YAC_String *_name) const {
                return c;
             }
          }
-         index = (index + 1u) % TKS_ObjectCache::max_entries;
+         index = (index + 1u) % max_entries;
          c = objects[index];
       }
    }
@@ -112,15 +116,17 @@ TKS_CachedObject *TKS_ObjectCache::findEntry(YAC_String *_name) const {
 }
 
 TKS_CachedObject *TKS_ObjectCache::createEntry(YAC_String *_name, sBool _bCopyName) {
-   if(!objects)
+   // Dyac_host_printf("xxx createEntry: name=\"%s\" objects=%p max_entries=%u\n", _name->chars, objects, max_entries);
+   if(NULL == objects)
    {
       // Allocate cache if this has not been done yet
       allocCache(DEFAULT_OBJECTCACHE_SIZE);
    }
+
    if(_name)
    {
       sUI hk = _name->getKey();
-      sUI index = hk % TKS_ObjectCache::max_entries;
+      sUI index = hk % max_entries;
       TKS_CachedObject *c = objects[index];
       while(NULL != c)
       {
@@ -133,15 +139,17 @@ TKS_CachedObject *TKS_ObjectCache::createEntry(YAC_String *_name, sBool _bCopyNa
                return c;
             }
          }
-         index = (index + 1u) % TKS_ObjectCache::max_entries;
+         index = (index + 1u) % max_entries;
          c = objects[index];
       }
+
       if(num_entries == (max_entries - 1u))
       {
          // Could not find existing entry to overwrite and there is no free entry left
          Dprintf("[---] TKS_ObjectCache::createEntry: hash table is full (%d entries)\n", num_entries);
          return NULL;
       }
+
       // Allocate new entry
       c = new(std::nothrow) TKS_CachedObject();
       if(NULL != c)
@@ -159,7 +167,7 @@ sSI TKS_ObjectCache::findIntValueByName(YAC_String *_name) const {
    if(_name && objects)
    {
       sUI hk = _name->getKey();
-      sUI index = hk % TKS_ObjectCache::max_entries;
+      sUI index = hk % max_entries;
       TKS_CachedObject *c = objects[index];
       while(c)
       {
@@ -171,7 +179,7 @@ sSI TKS_ObjectCache::findIntValueByName(YAC_String *_name) const {
                return c->value.int_val;
             }
          }
-         index = (index + 1u) % TKS_ObjectCache::max_entries;
+         index = (index + 1u) % max_entries;
          c = objects[index];
       }
    }
@@ -192,9 +200,6 @@ sSI TKS_ObjectCache::findIntValueByIndex(sUI _index) const {
    }
    return -1;
 }
-
-// from old "varcache":
-
 
 TKS_CachedObject *TKS_ObjectCache::createVariantEntry(YAC_String *_name, sBool _bCopyName) {
    TKS_CachedObject *ret = createEntry(_name, _bCopyName);
@@ -260,7 +265,7 @@ TKS_CachedObject *TKS_ObjectCache::createStringInstance(YAC_String *_name, sBool
    if(_name)
    {
       sUI hk = _name->getKey();
-      sUI index = hk % TKS_ObjectCache::max_entries;
+      sUI index = hk % max_entries;
       TKS_CachedObject *c = objects[index];
 
       while(NULL != c)
@@ -284,13 +289,13 @@ TKS_CachedObject *TKS_ObjectCache::createStringInstance(YAC_String *_name, sBool
                return c;
             }
          }
-         index = (index + 1) % TKS_ObjectCache::max_entries;
+         index = (index + 1u) % max_entries;
          c = objects[index];
       }
 
-      if(num_entries == (max_entries-1))
+      if(num_entries == (max_entries - 1u))
       {
-         // Could not find existing entry to overwrite and there is no free entry left
+         // No free entry left
          return NULL;
       }
 
