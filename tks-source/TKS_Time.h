@@ -1,11 +1,11 @@
 /// TKS_Time.h
 //
-/// (c) 2001-2020 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 
-#ifndef __TKS_TIME_H__
-#define __TKS_TIME_H__
+#ifndef TKS_TIME_H__
+#define TKS_TIME_H__
 
 #include <time.h>
 
@@ -25,7 +25,7 @@ public:
 public:
     TKS_Time(void);
     ~TKS_Time();
- 
+
    sBool         YAC_VCALL yacToString                (YAC_String *_s) const;
    void          YAC_VCALL yacOperator                (sSI, YAC_Object*, YAC_Value*);
 
@@ -33,28 +33,28 @@ public:
 	sUI  YAC_VCALL yacDeserialize (YAC_Object *, sUI);
 
 public:
-   void calc           (void); 
-	sSI  getHour        (void); 
-	sSI  getMin         (void); 
-	sSI  getMonth       (void); 
+   void calc           (void);
+	sSI  getHour        (void);
+	sSI  getMin         (void);
+	sSI  getMonth       (void);
 	sSI  getMonthday    (void);
    sSI  getNanoSec     (void);
-	sSI  getSec         (void); 
+	sSI  getSec         (void);
    sUI  getUtime       (void);
-	sSI  getWeekday     (void); 
-	sSI  getYear        (void); 
-	sSI  getYearday     (void); 
-   void _gmtime        (void); 
-   void initTime       (void*); 
+	sSI  getWeekday     (void);
+	sSI  getYear        (void);
+	sSI  getYearday     (void);
+   void _gmtime        (void);
+   void initTime       (void*);
 	void setMonthday    (sSI);
-   void _localtime     (void); 
-	void now            (void); 
-	void setHour        (sSI); 
-	void setMin         (sSI); 
-	void setMonth       (sSI); 
-	void setSec         (sSI); 
+   void _localtime     (void);
+	void now            (void);
+	void setHour        (sSI);
+	void setMin         (sSI);
+	void setMonth       (sSI);
+	void setSec         (sSI);
    void setUtime       (sUI);
-	void setYear        (sSI); 
+	void setYear        (sSI);
    void setNanoSec     (sSI);
    void _getString     (YAC_Value *_r);
    sBool _liesBetween  (YAC_Object *_tStart, YAC_Object *_tEnd);
@@ -64,4 +64,4 @@ public:
 extern void tks_init_time(void);
 
 
-#endif
+#endif // TKS_TIME_H__

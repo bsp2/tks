@@ -1,10 +1,11 @@
 /// PTN_ClassMemberPointerAssign.h
 ///
-/// (c) 2001-2009 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
-#ifndef __PTN_CLASSMEMBERPOINTERASSIGN_H__
-#define __PTN_CLASSMEMBERPOINTERASSIGN_H__
+
+#ifndef PTN_CLASSMEMBERPOINTERASSIGN_H__
+#define PTN_CLASSMEMBERPOINTERASSIGN_H__
 
 
 class PTN_ClassMemberPointerAssign : public PTN_Statement {
@@ -15,12 +16,12 @@ public:
     PTN_Expr         *expr;
     Feval             expr_opt;
     sBool             b_indirect;
-    
+
 public:
     PTN_ClassMemberPointerAssign(TKS_CachedObject *_co, TKS_CachedObject *_cc_co, PTN_Expr *_expr);
     ~PTN_ClassMemberPointerAssign();
 
-    void initIndirect(void) { b_indirect = 1; }
+    void initIndirect(void) { b_indirect = YAC_TRUE; }
 
     sBool   semanticCheck (void);
     void    optimize      (void);
@@ -30,4 +31,4 @@ public:
 };
 
 
-#endif // __PTN_CLASSMEMBERPOINTERASSIGN_H__
+#endif // PTN_CLASSMEMBERPOINTERASSIGN_H__

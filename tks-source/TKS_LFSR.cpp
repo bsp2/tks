@@ -1,7 +1,7 @@
 // TKS_LFSR.cpp
 ///
-/// (c) 2020-2023 by Bastian Spiegel <bs@tkscript.de>
-///     - distributed under terms of the GNU general public license (GPL).
+/// (c) 2020-2026 by Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 
 #include "tks.h"

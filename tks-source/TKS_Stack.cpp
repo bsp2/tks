@@ -1,7 +1,7 @@
 /// TKS_Stack.cpp
 ///
-/// (c) 2001-2008 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 
 #include "tks.h"
@@ -20,7 +20,7 @@ TKS_Stack::~TKS_Stack() {
    if(stack_array)
    {
       int i;
-      for(i=0; i<stack_size; i++)
+      for(i = 0; i < stack_size; i++)
       {
          if(stack_array[i])
          {
@@ -75,34 +75,34 @@ YAC_Object *TKS_Stack::push(void) {
 }
 
 YAC_Object *TKS_Stack::pop(void) {
-   if(stack_index!=stack_size)
+   if(stack_index != stack_size)
    {
       stack_index++;
-      if(stack_index!=stack_size)
+      if(stack_index != stack_size)
          return stack_array[stack_index];
    }
    else
    {
       Dprintf("[---] Stack::pop overflow.\n");
    }
-   return 0;
+   return NULL;
 }
 
 sSI TKS_Stack::setSize(sSI _i) {
    if(!stack_size)
    {
-      if(_i>0)
+      if(_i > 0)
       {
-         stack_array=new YAC_Object*[_i];
+         stack_array = new(std::nothrow) YAC_Object*[_i];
          if(stack_array)
          {
-            stack_size=_i;
+            stack_size = _i;
             int i;
-            for(i=0; i<stack_size; i++)
+            for(i = 0; i < stack_size; i++)
             {
-               stack_array[i]=0;
+               stack_array[i] = NULL;
             }
-            stack_index=stack_size;
+            stack_index = stack_size;
             return 1;
          }
          else
@@ -123,7 +123,8 @@ sSI TKS_Stack::getSize(void) {
 }
 
 void TKS_Stack::setIndex(sSI _i) {
-   if(_i>=0 && _i<=stack_size) stack_index=_i;
+   if(_i >= 0 && _i <= stack_size)
+      stack_index = _i;
 }
 
 sSI TKS_Stack::getIndex(void) {

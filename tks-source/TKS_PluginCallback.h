@@ -1,18 +1,17 @@
 /// TKS_PluginCallback.h
 ///
-/// (c) 2006-2009 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2006-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
-#ifndef __TKS_PLUGINCALLBACK_H__
-#define __TKS_PLUGINCALLBACK_H__
+
+#ifndef TKS_PLUGINCALLBACK_H__
+#define TKS_PLUGINCALLBACK_H__
 
 
 class TKS_PluginCallback {
    //
    // This is used for "anonymous" callbacks between different C++/YAC plugins.
    //   (making the loading order irrelevant)
-   // 
-   // This feature is (still) EXPERIMENTAL.
    //
 public:
    TKS_PluginCallback *next;
@@ -22,4 +21,4 @@ public:
 };
 
 
-#endif // __TKS_PLUGINCALLBACK_H__
+#endif // TKS_PLUGINCALLBACK_H__

@@ -1,7 +1,7 @@
 /// PTN_ThisExpr.cpp
 ///
-/// (c) 2001-2009 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 
 #include "tks.h"
@@ -11,7 +11,7 @@
 #include "PTN_ThisExpr.h"
 
 
-static void PTN_ThisExpr__eval(PTN_Env *_env, YAC_Value *_r, const PTN_Expr *_st) { 
+static void PTN_ThisExpr__eval(PTN_Env *_env, YAC_Value *_r, const PTN_Expr *_st) {
 
    (void)_st;
 

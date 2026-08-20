@@ -1,8 +1,9 @@
 /// YAC_StreamBase.h
 ///
 /// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under terms of the GNU general public license (GPL).
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
+
 #ifndef TKS_STREAMBASE_H__
 #define TKS_STREAMBASE_H__
 
@@ -135,5 +136,6 @@ public:
 };
 
 extern void YacStreamGetErrorStringByCode(sSI _code, YAC_Value *_r);
+
 
 #endif  // TKS_STREAMBASE_H__

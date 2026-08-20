@@ -1,7 +1,7 @@
 /// tks-yac.h
 ///
-/// (c) 2001-2025 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 //
 
 #define YAC_NO_EXPORTS defined
@@ -144,9 +144,7 @@ static inline void        yacDelete__inline        (YAC_Object *_o);
 #define Dyac_throw_def(a, b) tkscript->yacExceptionRaise(yac_host->yacContextGetDefault(), TKS_EXCEPTION_##a, b, __FILE__, __LINE__)
 
 
-
 #include "tks-config.h"
-
 
 
 extern YAC_Host *yac_host;

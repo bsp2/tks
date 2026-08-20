@@ -1,10 +1,10 @@
 /// PTN_ConditionalExpr.cpp
 ///
-/// (c) 2001-2014 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 
-#include "tks.h" 
+#include "tks.h"
 #include "PTN_Node.h"
 #include "PTN_Expr.h"
 #include "PTN_Statement.h"
@@ -13,17 +13,17 @@
 #include "PTN_ConditionalExpr.h"
 
 
-PTN_ConditionalExpr::PTN_ConditionalExpr(PTN_Expr *_c,  
-                                         PTN_Expr *_a,  
-                                         PTN_Expr *_b 
-                                         )  
+PTN_ConditionalExpr::PTN_ConditionalExpr(PTN_Expr *_c,
+                                         PTN_Expr *_a,
+                                         PTN_Expr *_b
+                                         )
 {
    cond_expr = _c;
    vala_expr = _a;
-   valb_expr = _b;  
-   
-   cond_expr_opt = cond_expr->getEval(); 
-   vala_expr_opt = vala_expr->getEval(); 
+   valb_expr = _b;
+
+   cond_expr_opt = cond_expr->getEval();
+   vala_expr_opt = vala_expr->getEval();
    valb_expr_opt = valb_expr->getEval();
 }
 
@@ -45,9 +45,9 @@ sBool PTN_ConditionalExpr::resolveXRef(void) {
    {
       if(vala_expr->resolveXRef())
       {
-         if(valb_expr->resolveXRef())  
-         { 
-            return 1; 
+         if(valb_expr->resolveXRef())
+         {
+            return YAC_TRUE;
          }
          else
          {
@@ -63,41 +63,41 @@ sBool PTN_ConditionalExpr::resolveXRef(void) {
    {
       Dprintf("[---] ConditionalExpr::resolveXRef: (cond_expr)\n");
    }
-   return 0;
+   return YAC_FALSE;
 }
 
 sBool PTN_ConditionalExpr::isConst(void) {
-   return  
-      cond_expr->isConst() && 
-      vala_expr->isConst() && 
+   return
+      cond_expr->isConst() &&
+      vala_expr->isConst() &&
       valb_expr->isConst() ;
 }
 
-void PTN_ConditionalExpr::optimize(void) { 
+void PTN_ConditionalExpr::optimize(void) {
    tks_optimize_expr(&cond_expr, 1);
-   tks_optimize_expr(&vala_expr, 0); 
-   tks_optimize_expr(&valb_expr, 0);  
-   
-   cond_expr_opt=cond_expr->getEval(); 
-   vala_expr_opt=vala_expr->getEval(); 
+   tks_optimize_expr(&vala_expr, 0);
+   tks_optimize_expr(&valb_expr, 0);
+
+   cond_expr_opt=cond_expr->getEval();
+   vala_expr_opt=vala_expr->getEval();
    valb_expr_opt=valb_expr->getEval();
 }
 
-static void PTN_ConditionalExpr__eval(PTN_Env *_env, YAC_Value *_r, const PTN_Expr *_st) { 
+static void PTN_ConditionalExpr__eval(PTN_Env *_env, YAC_Value *_r, const PTN_Expr *_st) {
    Dtracest;
-   const PTN_ConditionalExpr *st = (const PTN_ConditionalExpr*)_st; 
-   
-   st->cond_expr_opt(_env, _r, st->cond_expr); 
+   const PTN_ConditionalExpr *st = (const PTN_ConditionalExpr*)_st;
+
+   st->cond_expr_opt(_env, _r, st->cond_expr);
    if(Dhaveexception)
    {
       _r->unset();
       Dhandleexception(st->cond_expr);
       return;
    }
-   
+
    if(_r->value.int_val)
    {
-      _r->unset(); 
+      _r->unset();
       st->vala_expr_opt(_env, _r, st->vala_expr);
       if(Dhaveexception)
       {
@@ -119,10 +119,10 @@ static void PTN_ConditionalExpr__eval(PTN_Env *_env, YAC_Value *_r, const PTN_Ex
    }
 }
 
-Feval PTN_ConditionalExpr::getEval(void) const { 
-   return PTN_ConditionalExpr__eval; 
-} 
+Feval PTN_ConditionalExpr::getEval(void) const {
+   return PTN_ConditionalExpr__eval;
+}
 
-void PTN_ConditionalExpr::eval(PTN_Env *_env, YAC_Value *_r) const { 
-   PTN_ConditionalExpr__eval(_env, _r, this); 
-} 
+void PTN_ConditionalExpr::eval(PTN_Env *_env, YAC_Value *_r) const {
+   PTN_ConditionalExpr__eval(_env, _r, this);
+}

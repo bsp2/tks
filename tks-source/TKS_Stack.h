@@ -1,10 +1,11 @@
 /// TKS_Stack.h
 ///
-/// (c) 2001-2009 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
-#ifndef __TKS_STACK_H__
-#define __TKS_STACK_H__
+
+#ifndef TKS_STACK_H__
+#define TKS_STACK_H__
 
 
 class TKS_Stack : public YAC_Object {
@@ -33,4 +34,4 @@ public:
 
 };
 
-#endif // __TKS_STACK_H__
+#endif // TKS_STACK_H__

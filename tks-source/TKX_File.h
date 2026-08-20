@@ -1,16 +1,17 @@
 /// TKX_File.h
 ///
-/// (c) 2001-2023 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
-#ifndef __TKX_FILE_H__
-#define __TKX_FILE_H__
+
+#ifndef TKX_FILE_H__
+#define TKX_FILE_H__
 
 
 class TKX_File {
 public:
    enum __fileentrytypes {
-      CFE_TYPE_UNKNOWN = 0, 
+      CFE_TYPE_UNKNOWN = 0,
       CFE_TYPE_FILE,   // regular file
       CFE_TYPE_HTTP,   // n/a yet
       CFE_TYPE_HTTPS,  // n/a yet
@@ -32,7 +33,7 @@ public:
     YAC_String  source_name;
     sU8         type;        // this field is not stored in pakfiles
     yacmemptr   tokenized_source; // see TKS_TokenizedScript::readTokens/writeTokens
-    sBool       b_done;      // true 
+    sBool       b_done;      // true
 
 public:
     TKX_File(void);
@@ -44,4 +45,4 @@ public:
 };
 
 
-#endif // __TKX_FILE_H__
+#endif // TKX_FILE_H__

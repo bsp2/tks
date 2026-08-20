@@ -1,10 +1,9 @@
 /// PTN_DerefExpr.cpp
 ///
-/// (c) 2001-2014 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 ///
-
 
 #include "tks.h"
 #include "PTN_Node.h"
@@ -12,7 +11,7 @@
 #include "PTN_Statement.h"
 #include "vmopenum.h"
 #include "VMCore.h"
- 
+
 #include "PTN_DerefExpr.h"
 
 
@@ -21,33 +20,33 @@ PTN_DerefExpr::PTN_DerefExpr(TKS_CachedObject *_var) {
 }
 
 PTN_DerefExpr::~PTN_DerefExpr() {
-   var = 0;
+   var = NULL;
 }
 
 sBool PTN_DerefExpr::semanticCheck(void) {
-   return (var != 0);
+   return (NULL != var);
 }
 
-static void PTN_DerefExpr__eval(PTN_Env *_env, YAC_Value *_r, const PTN_Expr *_st) { 
+static void PTN_DerefExpr__eval(PTN_Env *_env, YAC_Value *_r, const PTN_Expr *_st) {
    Dtracest;
-   const PTN_DerefExpr*st = (const PTN_DerefExpr*)_st; 
+   const PTN_DerefExpr*st = (const PTN_DerefExpr*)_st;
 
-   YAC_Value *co = Dgetvar(st->var); 
-   
+   YAC_Value *co = Dgetvar(st->var);
+
    //::printf("DEREF co type=%i value=%i deleteme=%i\n", co->type, co->value.int_val, co->deleteme);
-   
+
    if(co->type >= YAC_TYPE_OBJECT)
-   { 
+   {
       if(YAC_VALID(co->value.object_val))
-      { 
-         _r->value.object_val = co->value.object_val; 
-         _r->type             = YAC_TYPE_OBJECT + (_r->value.object_val->class_ID==YAC_CLID_STRING); 
-         _r->deleteme         = co->deleteme; 
-         co->deleteme         = 0; 
-      } 
-      else  
       {
-         _r->initNull(); 
+         _r->value.object_val = co->value.object_val;
+         _r->type             = YAC_TYPE_OBJECT + (_r->value.object_val->class_ID==YAC_CLID_STRING);
+         _r->deleteme         = co->deleteme;
+         co->deleteme         = YAC_FALSE;
+      }
+      else
+      {
+         _r->initNull();
       }
    }
    else
@@ -59,10 +58,10 @@ static void PTN_DerefExpr__eval(PTN_Env *_env, YAC_Value *_r, const PTN_Expr *_s
    }
 }
 
-void PTN_DerefExpr::eval(PTN_Env *_env, YAC_Value *_r) const { 
-   PTN_DerefExpr__eval(_env, _r, this); 
-} 
+void PTN_DerefExpr::eval(PTN_Env *_env, YAC_Value *_r) const {
+   PTN_DerefExpr__eval(_env, _r, this);
+}
 
 Feval PTN_DerefExpr::getEval(void) const {
-   return PTN_DerefExpr__eval; 
+   return PTN_DerefExpr__eval;
 }

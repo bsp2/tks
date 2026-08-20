@@ -1,7 +1,7 @@
 /// TKS_DummyStream.cpp
 ///
-/// (c) 2015 Bastian Spiegel <bs@tkscript.de> 
-///     - distributed under terms of the GNU general public license (GPL).
+/// (c) 2015-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 ///
 
@@ -11,21 +11,21 @@
 #include "TKS_DummyStream.h"
 
 
-TKS_DummyStream::TKS_DummyStream(void) { 
-   class_ID  = TKS_CLID_DUMMYSTREAM; 
-   size      = 0; 
-   io_offset = 0; 
-} 
- 
-TKS_DummyStream::~TKS_DummyStream(void) { 
-} 
- 
+TKS_DummyStream::TKS_DummyStream(void) {
+   class_ID  = TKS_CLID_DUMMYSTREAM;
+   size      = 0;
+   io_offset = 0;
+}
+
+TKS_DummyStream::~TKS_DummyStream(void) {
+}
+
 void YAC_VCALL TKS_DummyStream::yacOperator(sSI _cmd, YAC_Object *_o, YAC_Value *_r) {
    if(_o)
    {
-      if(_o!=((YAC_Object*)this))
+      if(_o != ((YAC_Object*)this))
       {
-         if(_cmd==YAC_OP_SHL)
+         if(YAC_OP_SHL == _cmd)
          {
             _o->yacSerialize(this, 1);
             return;
@@ -50,7 +50,7 @@ void YAC_VCALL TKS_DummyStream::yacSerialize(YAC_Object *_ofs, sUI _rtti) {
    if(size)
    {
       sUI i;
-      for(i=0; i<size; i++)
+      for(i = 0u; i < size; i++)
       {
          YAC_SERIALIZE_I8(0);
       }
@@ -62,14 +62,14 @@ sUI YAC_VCALL TKS_DummyStream::yacDeserialize(YAC_Object *_ifs, sUI _rtti) {
    if(!_rtti)
       return 0;
    YAC_BEG_DESERIALIZE();
-   sUI nsize=YAC_DESERIALIZE_I32();
+   sUI nsize = YAC_DESERIALIZE_I32();
    if(nsize)
    {
       // ---- allocate new buffer ----
       if(setSize(nsize))
       {
          sUI i;
-         for(i=0; i<nsize; i++)
+         for(i = 0u; i < nsize; i++)
          {
             // ---- deserialize a byte ;) ----
             (void)YAC_DESERIALIZE_I8();
@@ -83,7 +83,7 @@ sUI YAC_VCALL TKS_DummyStream::yacDeserialize(YAC_Object *_ifs, sUI _rtti) {
    }
    return 1;
 }
- 
+
 sSI TKS_DummyStream::setSize(sSI _num) {
 
    io_offset = 0;

@@ -1,7 +1,7 @@
 /// PTN_NewExpr.cpp
 ///
-/// (c) 2001-2014 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 
 #include "tks.h"
@@ -24,26 +24,26 @@ PTN_NewExpr::~PTN_NewExpr() {
 void PTN_NewExpr::eval(PTN_Env *_env, YAC_Value *_r) const {
 #ifdef DX_SAFEMODE
    if(template_object)
-   { 
-#endif 
+   {
+#endif
       _r->initObject(YAC_CLONE_POOLED(_env->context, template_object), 1);
-      if(_r->value.object_val->class_ID==YAC_CLID_STRING) 
-      { 
-         _r->type = YAC_TYPE_STRING; // fix string type  
+      if(_r->value.object_val->class_ID==YAC_CLID_STRING)
+      {
+         _r->type = YAC_TYPE_STRING; // fix string type
       }
 #ifdef DX_SAFEMODE
-   } 
+   }
 #endif
-} 
+}
 
-static void PTN_NewExpr__eval(PTN_Env *_env, YAC_Value *_r, const PTN_Expr *_st) { 
+static void PTN_NewExpr__eval(PTN_Env *_env, YAC_Value *_r, const PTN_Expr *_st) {
    Dtracest;
-   const PTN_NewExpr*st = (const PTN_NewExpr*)_st; 
-   
-   _r->initObject(YAC_CLONE_POOLED(_env->context, st->template_object), 1); 
-   if(_r->value.object_val->class_ID==YAC_CLID_STRING)	  
+   const PTN_NewExpr*st = (const PTN_NewExpr*)_st;
+
+   _r->initObject(YAC_CLONE_POOLED(_env->context, st->template_object), 1);
+   if(_r->value.object_val->class_ID==YAC_CLID_STRING)
    {
-      _r->type = YAC_TYPE_STRING; // fix string type  
+      _r->type = YAC_TYPE_STRING; // fix string type
    }
 }
 

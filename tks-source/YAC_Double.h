@@ -1,14 +1,15 @@
 /// YAC_Double.h
 ///
-/// (c) 2001-2009 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
-#ifndef __YAC_DOUBLE_H__
-#define __YAC_DOUBLE_H__
+
+#ifndef YAC_DOUBLE_H__
+#define YAC_DOUBLE_H__
 
 
-class YAC_Double : public YAC_Object { 
-public: 
+class YAC_Double : public YAC_Object {
+public:
     sF64 value;
 public:
          YAC_Double         (void);
@@ -25,26 +26,26 @@ public:
 	 void  myOperator          (sSI, sF64, YAC_Value *_ret);
 	 void  setValue            (sF32);
 	 sF32  getValue            (void);
-    void  _printf_YAC_RVAL    (YAC_Object*, YAC_Value *_r); 
-    void  _printf_YAC_RARG    (YAC_Object*, YAC_Object *_r); 
-  
+    void  _printf_YAC_RVAL    (YAC_Object*, YAC_Value *_r);
+    void  _printf_YAC_RARG    (YAC_Object*, YAC_Object *_r);
+
     sBool YAC_VCALL yacEquals           (YAC_Object *);
-	 sBool YAC_VCALL yacScanI            (sSI *); 
-	 sBool YAC_VCALL yacScanF32          (sF32 *); 
-	 sBool YAC_VCALL yacScanF64          (sF64 *); 
-	 sBool YAC_VCALL yacScanI64          (sS64 *); 
-    sBool YAC_VCALL yacToString         (YAC_String *_s) const; 
- 
-	 void  YAC_VCALL yacValueOfI         (sSI); 
-	 void  YAC_VCALL yacValueOfF32       (sF32); 
-	 void  YAC_VCALL yacValueOfF64       (sF64);  
+	 sBool YAC_VCALL yacScanI            (sSI *);
+	 sBool YAC_VCALL yacScanF32          (sF32 *);
+	 sBool YAC_VCALL yacScanF64          (sF64 *);
+	 sBool YAC_VCALL yacScanI64          (sS64 *);
+    sBool YAC_VCALL yacToString         (YAC_String *_s) const;
+
+	 void  YAC_VCALL yacValueOfI         (sSI);
+	 void  YAC_VCALL yacValueOfF32       (sF32);
+	 void  YAC_VCALL yacValueOfF64       (sF64);
     void  YAC_VCALL yacValueOfI64       (sS64);
 
 	 void  _getString          (YAC_Value *_r) const;
-    void  _Newf               (sF32 _v, YAC_Value *_r); 
-    void  _Newi               (sSI _v, YAC_Value *_r); 
-    void  _News               (YAC_Object *_s, YAC_Value *_r); 
+    void  _Newf               (sF32 _v, YAC_Value *_r);
+    void  _Newi               (sSI _v, YAC_Value *_r);
+    void  _News               (YAC_Object *_s, YAC_Value *_r);
 };
 
 
-#endif // __YAC_DOUBLE_H__
+#endif // YAC_DOUBLE_H__

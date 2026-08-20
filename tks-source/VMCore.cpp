@@ -1,7 +1,7 @@
 /// VMCore.cpp
 ///
-/// (c) 2002-2014 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under terms of the GNU general public license (GPL).
+/// (c) 2002-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 
 //#define SAVE_CPUTABLE defined
@@ -45,7 +45,7 @@
 #define TKSVM_LVAR_CONTEXT 0
 #define TKSVM_LVAR_ENV 1
 
-#ifndef SAVE_CPUTABLE 
+#ifndef SAVE_CPUTABLE
 #ifdef DX_X86
 #include "tkscputbl_x86.cpp"
 #endif
@@ -80,17 +80,17 @@ extern sSI __divsi3(sSI, sSI);
 //#define Dioff 0x18e0
 //#define Dvaroff 0x15e0
 //#define Diaoff 0x1160
-//#define Dfaoff 0x1320 
+//#define Dfaoff 0x1320
 #ifdef YAC_LITTLE_ENDIAN
 #define Dopsep 0xFFFF05C7
-#define Dopsep2 0xCCCCFFFF 
-#else 
-#define Dopsep 0xC705FFFF 
-#define Dopsep2 0xFFFFCCCC 
+#define Dopsep2 0xCCCCFFFF
+#else
+#define Dopsep 0xC705FFFF
+#define Dopsep2 0xFFFFCCCC
 #endif
 // sizeof opcode seperator
 #ifdef DX_X86
-#define Dsizepad 10 
+#define Dsizepad 10
 #endif
 
 #ifdef DX_68K
@@ -108,7 +108,7 @@ extern sSI __divsi3(sSI, sSI);
 #endif // YAC_64
 
 // size of temporary variable space relative to ebp
-#define Dltmpsize 0x20 
+#define Dltmpsize 0x20
 
 // position of array boundary limits -0x1c=low, -0x18=hi
 #define Dlboundoff 0x1c
@@ -131,13 +131,13 @@ static sF32 vm_farr_dummy=0.0f;
 
 sU8 *off_opcodes[65536];  // maps opcode# to generated code address
 sU16 woff_opcodes[65536]; // maps vm_pc to opcode#
- 
-//[">",">=","<","<=","!=","=="]   => ["<=","<",">=",">","==","!="]; 
-static const sUI op_invert_tbl[6]={3, 2, 1, 0, 5, 4}; 
+
+//[">",">=","<","<=","!=","=="]   => ["<=","<",">=",">","==","!="];
+static const sUI op_invert_tbl[6]={3, 2, 1, 0, 5, 4};
 
 
-////TKS_Context *VMCore::context = NULL; 
-////PTN_Env *VMCore::vm_env = NULL; 
+////TKS_Context *VMCore::context = NULL;
+////PTN_Env *VMCore::vm_env = NULL;
 
 #ifdef TKS_MT
 ////TKS_Mutex *VMCore::mutex = NULL; // TKS_MT: JIT prologue is protected by mutex
@@ -169,7 +169,7 @@ static void loc_arm_cache_flush(void *_startAddr, void *_endAddr) {
 			 : "=r" (result)
 			 : "r" (_startAddr), "r" (_endAddr)
 			 : "r0","r1","r2");
-   
+
 #else
 #warning __ARM_NR_cacheflush is not available !
 #endif // __ARM_NR_cacheflush
@@ -217,20 +217,20 @@ VMCore::VMCore(void) {
 		vm_varnames[i]="var";
 	}
 
-	for(i=0; i<TKS_VMCORE_NUMLVARS; i++) 
-	{ 
-		vm_localvarnames[i]=0; //"lvar"; 
-	} 
+	for(i=0; i<TKS_VMCORE_NUMLVARS; i++)
+	{
+		vm_localvarnames[i]=0; //"lvar";
+	}
 
 
 	vm_code                 = NULL;
 	parser_tree             = NULL;
 	jit.sz_code             = 0;
    jit.sz_aligned          = 0;
-	jit.code                = NULL; 
+	jit.code                = NULL;
    jit.nonaligned_code     = NULL;
-	jit.b_allowArrayCache   = YAC_TRUE; 
-	////tksvm_env.continue_flag = 1; 
+	jit.b_allowArrayCache   = YAC_TRUE;
+	////tksvm_env.continue_flag = 1;
 
 #ifdef TKS_MT
    ////if(vmcore__objectcounter++ == 0)
@@ -251,41 +251,41 @@ VMCore::~VMCore() {
    ////}
 #endif // TKS_MT
 }
- 
-void VMCore::cleanJIT(void) { 
-	if(NULL != vm_code) 
-   { 
+
+void VMCore::cleanJIT(void) {
+	if(NULL != vm_code)
+   {
       delete [] vm_code;
-      vm_code = NULL; 
+      vm_code = NULL;
    }
 
-	if(NULL != jit.nonaligned_code) 
-	{ 
+	if(NULL != jit.nonaligned_code)
+	{
 #ifdef YAC_LINUX
       if(NULL != jit.code)
       {
          ::mprotect((void*)jit.code, (size_t)jit.sz_aligned, PROT_READ | PROT_WRITE | PROT_EXEC);
       }
 #endif // YAC_LINUX
-		delete [] jit.nonaligned_code; 
-      jit.nonaligned_code = NULL; 
-		jit.code = NULL; 
-		jit.sz_code=0; 
-	} 
-} 
+		delete [] jit.nonaligned_code;
+      jit.nonaligned_code = NULL;
+		jit.code = NULL;
+		jit.sz_code=0;
+	}
+}
 
 void VMCore::clean(void) {
-   cleanJIT(); 
+   cleanJIT();
 
    if(parser_tree)
    {
       delete parser_tree;
       parser_tree = NULL;
-   } 
+   }
 }
 
 void VMCore::InitTables(void) {
-	static int init_done=0; if(init_done) return; init_done=1; 
+	static int init_done=0; if(init_done) return; init_done=1;
 	VMCore::ScanCPUTable();
 }
 
@@ -344,7 +344,7 @@ void VMCore::prepareCompile(void) {
    ////addAPICall1( (sUI) tksvm_unlock_mutex );
    ////addOpcode(VMOP_INCSTP); // cleanup mutex pointer
 #endif
-   
+
 }
 
 void VMCore::finishCompile(void) {
@@ -579,9 +579,9 @@ void VMCore::typecastStack(sU8 _from, sU8 _to) {
 		case 2:
 			pushcf(0.0f);
 			break;
-		case 3: 
-			/// xxx push 0 object 
-			Dprintf("[---] VMCore: warning: cannot typecast %i to %i\n", _from, _to); 
+		case 3:
+			/// xxx push 0 object
+			Dprintf("[---] VMCore: warning: cannot typecast %i to %i\n", _from, _to);
 			break;
 		}
 		break;
@@ -598,7 +598,7 @@ void VMCore::typecastStack(sU8 _from, sU8 _to) {
 			break;
 		case 3:
 			/////addOpcodeIDX(VMOPCL_STCIO);
-			Dprintf("[---] VMCore: warning: cannot typecast %i to %i\n", _from, _to); 
+			Dprintf("[---] VMCore: warning: cannot typecast %i to %i\n", _from, _to);
 			break;
 		}
 		break;
@@ -615,8 +615,8 @@ void VMCore::typecastStack(sU8 _from, sU8 _to) {
 		case 2:
 			break;
 		case 3:
-			//addOpcodeIDX(VMOPCL_STCFO); 
-			Dprintf("[---] VMCore: warning: cannot typecast %i to %i\n", _from, _to); 
+			//addOpcodeIDX(VMOPCL_STCFO);
+			Dprintf("[---] VMCore: warning: cannot typecast %i to %i\n", _from, _to);
 			break;
 		}
 		break;
@@ -626,22 +626,22 @@ void VMCore::typecastStack(sU8 _from, sU8 _to) {
 		{
 		case 0:
 			/// XXX pop object
-			Dprintf("[---] VMCore: warning: cannot typecast %i to %i\n", _from, _to); 
+			Dprintf("[---] VMCore: warning: cannot typecast %i to %i\n", _from, _to);
 			break;
 		case 1:
 			////addOpcodeIDX(VMOPCL_STCOI);
-         //addOpcodeIDX(VMOPCL_SITESTBZ); 
-//#ifdef TKS_DCON 
-//			tkscript->printf("[---] VMCore: warning: cannot typecast %i to %i\n", _from, _to); 
-//#endif 
+         //addOpcodeIDX(VMOPCL_SITESTBZ);
+//#ifdef TKS_DCON
+//			tkscript->printf("[---] VMCore: warning: cannot typecast %i to %i\n", _from, _to);
+//#endif
 			break;
 		case 2:
 			//addOpcodeIDX(VMOPCL_STCOF);
-         addOpcode(VMOP_SITESTBZ); 
-         addOpcode(VMOP_STCIF); 
-//#ifdef TKS_DCON 
-//			tkscript->printf("[---] VMCore: warning: cannot typecast %i to %i\n", _from, _to); 
-//#endif 
+         addOpcode(VMOP_SITESTBZ);
+         addOpcode(VMOP_STCIF);
+//#ifdef TKS_DCON
+//			tkscript->printf("[---] VMCore: warning: cannot typecast %i to %i\n", _from, _to);
+//#endif
 			break;
 		case 3:
 			break;
@@ -650,7 +650,7 @@ void VMCore::typecastStack(sU8 _from, sU8 _to) {
 	}
 }
 
-void VMCore::disassemble(YAC_String *_s, sU16 _pc, sU16 _epc) { 
+void VMCore::disassemble(YAC_String *_s, sU16 _pc, sU16 _epc) {
 #ifdef DX_VMDASM
 #define Ddasm1(a,s)     if(oc<((a)+(1))) { _s->append((s)); _pc++; oc=0xffff; }
 #define Ddasm1lv(a,s)   if(oc<((a)+(1))) { t.printf((s), vm_localvarnames[vm_code[_pc+1]]); _s->append(&t); _pc+=2; oc=0xffff; }
@@ -658,12 +658,12 @@ void VMCore::disassemble(YAC_String *_s, sU16 _pc, sU16 _epc) {
 #define Ddasm1v(a,s)    if(oc<((a)+(1))) { t.printf((s), vm_varnames[vm_code[_pc+1]]); _s->append(&t); _pc+=2; oc=0xffff; }
 #define Ddasm1lvlv(a,s) if(oc<((a)+(1))) { t.printf((s), vm_localvarnames[vm_code[_pc+1]], vm_localvarnames[vm_code[_pc+2]]); _s->append(&t); _pc+=3; oc=0xffff; }
 #define Ddasm1lvci(a,s) if(oc<((a)+(1))) { t.printf((s), vm_localvarnames[vm_code[_pc+1]], vm_const[vm_code[_pc+2]].s32); _s->append(&t); _pc+=3; oc=0xffff; }
-#define Ddasm1lvcf(a,s) if(oc<((a)+(1))) { t.printf((s), vm_localvarnames[vm_code[_pc+1]], vm_const[vm_code[_pc+2]].f32); _s->append(&t); _pc+=3; oc=0xffff; } 
-#define Ddasm1vv(a,s)   if(oc<((a)+1))   { t.printf((s), vm_varnames[vm_code[_pc+1]], vm_varnames[vm_code[_pc+2]]); _s->append(&t); _pc+=3; oc=0xffff; } 
-#define Ddasm1vci(a,s)  if(oc<((a)+1))   { t.printf((s), vm_varnames[vm_code[_pc+1]], vm_const[vm_code[_pc+2]].s32); _s->append(&t); _pc+=3; oc=0xffff; } 
-#define Ddasm1vcf(a,s)  if(oc<((a)+1))   { t.printf((s), vm_varnames[vm_code[_pc+1]], vm_const[vm_code[_pc+2]].f32); _s->append(&t); _pc+=3; oc=0xffff; } 
+#define Ddasm1lvcf(a,s) if(oc<((a)+(1))) { t.printf((s), vm_localvarnames[vm_code[_pc+1]], vm_const[vm_code[_pc+2]].f32); _s->append(&t); _pc+=3; oc=0xffff; }
+#define Ddasm1vv(a,s)   if(oc<((a)+1))   { t.printf((s), vm_varnames[vm_code[_pc+1]], vm_varnames[vm_code[_pc+2]]); _s->append(&t); _pc+=3; oc=0xffff; }
+#define Ddasm1vci(a,s)  if(oc<((a)+1))   { t.printf((s), vm_varnames[vm_code[_pc+1]], vm_const[vm_code[_pc+2]].s32); _s->append(&t); _pc+=3; oc=0xffff; }
+#define Ddasm1vcf(a,s)  if(oc<((a)+1))   { t.printf((s), vm_varnames[vm_code[_pc+1]], vm_const[vm_code[_pc+2]].f32); _s->append(&t); _pc+=3; oc=0xffff; }
 
-	
+
 	YAC_String t;
 	t.alloc(1024);
 	static const char*opnames[6]={">",">=","<","<=","!=","=="};
@@ -742,8 +742,8 @@ void VMCore::disassemble(YAC_String *_s, sU16 _pc, sU16 _epc) {
 		Ddasm1v(VMOP_PUSHIVDEC, "pushivdec %s;\n");
 		Ddasm1v(VMOP_PUSHDECIV, "pushdeciv %s;\n");
 		Ddasm1v(VMOP_POPV, "popv %s;\n");
-		Ddasm1c(VMOP_PUSHC, "pushc %i (%ff);\n"); 
-		Ddasm1c(VMOP_LOADFXC, "loadfxc %i (%ff);\n"); 
+		Ddasm1c(VMOP_PUSHC, "pushc %i (%ff);\n");
+		Ddasm1c(VMOP_LOADFXC, "loadfxc %i (%ff);\n");
 		Ddasm1lvlv(VMOP_MOVLV, "movlv %s %s;\n");
 		if(oc<(VMOP_MOVLVC+1))
 		{
@@ -751,7 +751,7 @@ void VMCore::disassemble(YAC_String *_s, sU16 _pc, sU16 _epc) {
 			_s->append(&t);
 			_pc+=3;
 			oc=0xFFFF;
-		} 
+		}
 		Ddasm1vv(VMOP_MOVV, "movv %s %s;\n");
 		if(oc<(VMOP_MOVVC+1))
 		{
@@ -763,8 +763,8 @@ void VMCore::disassemble(YAC_String *_s, sU16 _pc, sU16 _epc) {
 		Ddasm1lv(VMOP_INCLIV, "incliv %s;\n");
 		Ddasm1lv(VMOP_DECLIV, "decliv %s;\n");
 		Ddasm1v(VMOP_INCIV, "inciv %s;\n");
-		Ddasm1v(VMOP_DECIV, "deciv %s;\n"); 
- 
+		Ddasm1v(VMOP_DECIV, "deciv %s;\n");
+
 		Ddasm1lvlv(VMOP_LIVANDLIV, "livandliv %s %s;\n");
 		Ddasm1lvlv(VMOP_LIVORLIV, "livorliv %s %s;\n");
 		Ddasm1lvlv(VMOP_LIVEORLIV, "liveorliv %s %s;\n");
@@ -784,7 +784,7 @@ void VMCore::disassemble(YAC_String *_s, sU16 _pc, sU16 _epc) {
 		Ddasm1lvlv(VMOP_PUSHLIVMULLIV, "pushlivmulliv %s %s;\n");
 		Ddasm1lvlv(VMOP_PUSHLIVDIVLIV, "pushlivdivliv %s %s;\n");
 		Ddasm1lvlv(VMOP_PUSHLIVASLLIV, "pushlivaslliv %s %s;\n");
-		Ddasm1lvlv(VMOP_PUSHLIVASRLIV, "pushlivasrliv %s %s;\n"); 
+		Ddasm1lvlv(VMOP_PUSHLIVASRLIV, "pushlivasrliv %s %s;\n");
 
 		////Ddasm1lvci(VMOPCL_LIVANDC, "livandc %s %i;\n");
 		////Ddasm1lvci(VMOPCL_LIVORC,  "livorc %s %i;\n");
@@ -805,7 +805,7 @@ void VMCore::disassemble(YAC_String *_s, sU16 _pc, sU16 _epc) {
 		Ddasm1lvci(VMOP_PUSHLIVMULC, "pushlivmulc %s %i;\n");
 		Ddasm1lvci(VMOP_PUSHLIVDIVC, "pushlivdivc %s %i;\n");
 		Ddasm1lvci(VMOP_PUSHLIVASLC, "pushlivaslc %s %i;\n");
-		Ddasm1lvci(VMOP_PUSHLIVASRC, "pushlivasrc %s %i;\n"); 
+		Ddasm1lvci(VMOP_PUSHLIVASRC, "pushlivasrc %s %i;\n");
 
 		Ddasm1lvlv(VMOP_LFVADDLFV, "lfvaddlfv %s %s;\n");
 		Ddasm1lvlv(VMOP_LFVSUBLFV, "lfvsublfv %s %s;\n");
@@ -814,7 +814,7 @@ void VMCore::disassemble(YAC_String *_s, sU16 _pc, sU16 _epc) {
 		Ddasm1lvlv(VMOP_PUSHLFVADDLFV, "pushlfvaddlfv %s %s;\n");
 		Ddasm1lvlv(VMOP_PUSHLFVSUBLFV, "pushlfvsublfv %s %s;\n");
 		Ddasm1lvlv(VMOP_PUSHLFVMULLFV, "pushlfvmullfv %s %s;\n");
-		Ddasm1lvlv(VMOP_PUSHLFVDIVLFV, "pushlfvdivlfv %s %s;\n"); 
+		Ddasm1lvlv(VMOP_PUSHLFVDIVLFV, "pushlfvdivlfv %s %s;\n");
 
 		////Ddasm1lvcf(VMOPCL_LFVADDC, "lfvaddc %s %f;\n");
 		////Ddasm1lvcf(VMOPCL_LFVSUBC, "lfvsubc %s %f;\n");
@@ -823,7 +823,7 @@ void VMCore::disassemble(YAC_String *_s, sU16 _pc, sU16 _epc) {
 		Ddasm1lvcf(VMOP_PUSHLFVADDC, "pushlfvaddc %s %f;\n");
 		Ddasm1lvcf(VMOP_PUSHLFVSUBC, "pushlfvsubc %s %f;\n");
 		Ddasm1lvcf(VMOP_PUSHLFVMULC, "pushlfvmulc %s %f;\n");
-		Ddasm1lvcf(VMOP_PUSHLFVDIVC, "pushlfvdivc %s %f;\n"); 
+		Ddasm1lvcf(VMOP_PUSHLFVDIVC, "pushlfvdivc %s %f;\n");
 
 		Ddasm1(VMOP_SINOT, "sinot;\n");
 		Ddasm1(VMOP_SIINV, "siinv;\n");
@@ -907,7 +907,7 @@ void VMCore::disassemble(YAC_String *_s, sU16 _pc, sU16 _epc) {
 			_s->append(&t);
 			_pc+=2;
 			oc=0xFFFF;
-		} 
+		}
 		Ddasm1(VMOP_SIAPUSHL, "siapushl;\n");
 		Ddasm1(VMOP_SIAPUSHLBC, "siapushlbc;\n");
 		Ddasm1(VMOP_SIAPOPL, "siapopl;\n");
@@ -917,27 +917,27 @@ void VMCore::disassemble(YAC_String *_s, sU16 _pc, sU16 _epc) {
 		Ddasm1(VMOP_SIPOP, "sipop;\n");
 		////Ddasm1(VMOPCL_STCOI, "stcoi;\n");
 		////Ddasm1(VMOPCL_STCOF, "stcof;\n");
-		Ddasm1(VMOP_BEGAPICALL0, "begapicall0;\n"); 
-		Ddasm1(VMOP_BEGAPICALL1, "begapicall1;\n"); 
-		Ddasm1(VMOP_BEGAPICALL2, "begapicall2;\n"); 
-		Ddasm1(VMOP_BEGAPICALL3, "begapicall3;\n"); 
-		Ddasm1(VMOP_BEGAPICALL4, "begapicall4;\n"); 
-		Ddasm1(VMOP_BEGAPICALL5, "begapicall5;\n"); 
-		Ddasm1(VMOP_BEGAPICALL6, "begapicall6;\n"); 
-		Ddasm1(VMOP_BEGAPICALL7, "begapicall7;\n"); 
-		Ddasm1(VMOP_BEGAPICALL8, "begapicall8;\n"); 
-		Ddasm1(VMOP_APICALL,  "apicall;\n"); 
-		Ddasm1(VMOP_ENDAPICALL0, "endapicall0;\n"); 
-		Ddasm1(VMOP_ENDAPICALL1, "endapicall1;\n"); 
-		Ddasm1(VMOP_ENDAPICALL2, "endapicall2;\n"); 
-		Ddasm1(VMOP_ENDAPICALL3, "endapicall3;\n"); 
-		Ddasm1(VMOP_ENDAPICALL4, "endapicall4;\n"); 
-		Ddasm1(VMOP_ENDAPICALL5, "endapicall5;\n"); 
-		Ddasm1(VMOP_ENDAPICALL6, "endapicall6;\n"); 
-		Ddasm1(VMOP_ENDAPICALL7, "endapicall7;\n"); 
-		Ddasm1(VMOP_ENDAPICALL8, "endapicall8;\n"); 
-		Ddasm1(VMOP_INCSTP, "incstp;\n"); 
-		Ddasm1(VMOP_DECSTP, "decstp;\n"); 
+		Ddasm1(VMOP_BEGAPICALL0, "begapicall0;\n");
+		Ddasm1(VMOP_BEGAPICALL1, "begapicall1;\n");
+		Ddasm1(VMOP_BEGAPICALL2, "begapicall2;\n");
+		Ddasm1(VMOP_BEGAPICALL3, "begapicall3;\n");
+		Ddasm1(VMOP_BEGAPICALL4, "begapicall4;\n");
+		Ddasm1(VMOP_BEGAPICALL5, "begapicall5;\n");
+		Ddasm1(VMOP_BEGAPICALL6, "begapicall6;\n");
+		Ddasm1(VMOP_BEGAPICALL7, "begapicall7;\n");
+		Ddasm1(VMOP_BEGAPICALL8, "begapicall8;\n");
+		Ddasm1(VMOP_APICALL,  "apicall;\n");
+		Ddasm1(VMOP_ENDAPICALL0, "endapicall0;\n");
+		Ddasm1(VMOP_ENDAPICALL1, "endapicall1;\n");
+		Ddasm1(VMOP_ENDAPICALL2, "endapicall2;\n");
+		Ddasm1(VMOP_ENDAPICALL3, "endapicall3;\n");
+		Ddasm1(VMOP_ENDAPICALL4, "endapicall4;\n");
+		Ddasm1(VMOP_ENDAPICALL5, "endapicall5;\n");
+		Ddasm1(VMOP_ENDAPICALL6, "endapicall6;\n");
+		Ddasm1(VMOP_ENDAPICALL7, "endapicall7;\n");
+		Ddasm1(VMOP_ENDAPICALL8, "endapicall8;\n");
+		Ddasm1(VMOP_INCSTP, "incstp;\n");
+		Ddasm1(VMOP_DECSTP, "decstp;\n");
 		////Ddasm1(VMOPCL_SFSIN01, "sfsin01;\n");
 		////Ddasm1(VMOPCL_SFCOS01, "sfcos01;\n");
 		////Ddasm1(VMOPCL_SISWAPW, "siswapw;\n");
@@ -948,87 +948,87 @@ void VMCore::disassemble(YAC_String *_s, sU16 _pc, sU16 _epc) {
 		////Ddasm1(VMOPCL_SIMIX22, "simix22;\n");
 		////Ddasm1(VMOPCL_SIMK16, "simk16;\n");
 		////Ddasm1(VMOPCL_SISQRT, "sisqrt;\n");
-		Ddasm1(VMOP_SRETI, "sreti;\n"); 
-		Ddasm1(VMOP_SRETF, "sretf;\n"); 
-		Ddasm1(VMOP_PUSHS, "pushs;\n"); 
- 
-		Ddasm1vv(VMOP_IVANDIV, "ivandiv %s %s;\n"); 
-		Ddasm1vv(VMOP_IVORIV,  "ivorlv %s %s;\n"); 
-		Ddasm1vv(VMOP_IVEORIV, "iveoriv %s %s;\n"); 
-		Ddasm1vv(VMOP_IVMODIV, "ivmodiv %s %s;\n"); 
-		Ddasm1vv(VMOP_IVADDIV, "ivaddiv %s %s;\n"); 
-		Ddasm1vv(VMOP_IVSUBIV, "ivsubiv %s %s;\n"); 
-		Ddasm1vv(VMOP_IVMULIV, "ivmuliv %s %s;\n"); 
-		Ddasm1vv(VMOP_IVDIVIV, "ivdiviv %s %s;\n"); 
-		Ddasm1vv(VMOP_IVASLIV, "ivasliv %s %s;\n"); 
-		Ddasm1vv(VMOP_IVASRIV, "ivasriv %s %s;\n"); 
-		Ddasm1vv(VMOP_PUSHIVANDIV, "pushivandiv %s %s;\n"); 
-		Ddasm1vv(VMOP_PUSHIVORIV,  "pushivoriv %s %s;\n"); 
-		Ddasm1vv(VMOP_PUSHIVEORIV, "pushiveoriv %s %s;\n"); 
-		Ddasm1vv(VMOP_PUSHIVMODIV, "pushivmodiv %s %s;\n"); 
-		Ddasm1vv(VMOP_PUSHIVADDIV, "pushivaddiv %s %s;\n"); 
-		Ddasm1vv(VMOP_PUSHIVSUBIV, "pushivsubiv %s %s;\n"); 
-		Ddasm1vv(VMOP_PUSHIVMULIV, "pushivmuliv %s %s;\n"); 
-		Ddasm1vv(VMOP_PUSHIVDIVIV, "pushivdiviv %s %s;\n"); 
-		Ddasm1vv(VMOP_PUSHIVASLIV, "pushivasliv %s %s;\n"); 
-		Ddasm1vv(VMOP_PUSHIVASRIV, "pushivasriv %s %s;\n"); 
- 
-		////Ddasm1vci(VMOPCL_IVANDC, "ivandc %s %i;\n"); 
-		////Ddasm1vci(VMOPCL_IVORC,  "ivorc %s %i;\n"); 
-		////Ddasm1vci(VMOPCL_IVEORC, "iveorc %s %i;\n"); 
-		////Ddasm1vci(VMOPCL_IVMODC, "ivmodc %s %i;\n"); 
-		////Ddasm1vci(VMOPCL_IVADDC, "ivaddc %s %i;\n"); 
-		////Ddasm1vci(VMOPCL_IVSUBC, "ivsubc %s %i;\n"); 
-		////Ddasm1vci(VMOPCL_IVMULC, "ivmulc %s %i;\n"); 
-		////Ddasm1vci(VMOPCL_IVDIVC, "ivdivc %s %i;\n"); 
-		////Ddasm1vci(VMOPCL_IVASLC, "ivaslc %s %i;\n"); 
-		////Ddasm1vci(VMOPCL_IVASRC, "ivasrc %s %i;\n"); 
-		Ddasm1vci(VMOP_PUSHIVANDC, "pushivandc %s %i;\n"); 
-		Ddasm1vci(VMOP_PUSHIVORC,  "pushivorc %s %i;\n"); 
-		Ddasm1vci(VMOP_PUSHIVEORC, "pushiveorc %s %i;\n"); 
-		Ddasm1vci(VMOP_PUSHIVMODC, "pushivmodc %s %i;\n"); 
-		Ddasm1vci(VMOP_PUSHIVADDC, "pushivaddc %s %i;\n"); 
-		Ddasm1vci(VMOP_PUSHIVSUBC, "pushivsubc %s %i;\n"); 
-		Ddasm1vci(VMOP_PUSHIVMULC, "pushivmulc %s %i;\n"); 
-		Ddasm1vci(VMOP_PUSHIVDIVC, "pushivdivc %s %i;\n"); 
-		Ddasm1vci(VMOP_PUSHIVASLC, "pushivaslc %s %i;\n"); 
-		Ddasm1vci(VMOP_PUSHIVASRC, "pushivasrc %s %i;\n"); 
- 
-		Ddasm1vv(VMOP_FVADDFV, "fvaddfv %s %s;\n"); 
-		Ddasm1vv(VMOP_FVSUBFV, "fvsubfv %s %s;\n"); 
-		Ddasm1vv(VMOP_FVMULFV, "fvmulfv %s %s;\n"); 
-		Ddasm1vv(VMOP_FVDIVFV, "fvdivfv %s %s;\n"); 
-		Ddasm1vv(VMOP_PUSHFVADDFV, "pushfvaddfv %s %s;\n"); 
-		Ddasm1vv(VMOP_PUSHFVSUBFV, "pushfvsubfv %s %s;\n"); 
-		Ddasm1vv(VMOP_PUSHFVMULFV, "pushfvmulfv %s %s;\n"); 
-		Ddasm1vv(VMOP_PUSHFVDIVFV, "pushfvdivfv %s %s;\n"); 
- 
-		////Ddasm1vcf(VMOPCL_FVADDC, "fvaddc %s %f;\n"); 
-		////Ddasm1vcf(VMOPCL_FVSUBC, "fvsubc %s %f;\n"); 
-		////Ddasm1vcf(VMOPCL_FVMULC, "fvmulc %s %f;\n"); 
-		////Ddasm1vcf(VMOPCL_FVDIVC, "fvdivc %s %f;\n"); 
-		Ddasm1vcf(VMOP_PUSHFVADDC, "pushfvaddc %s %f;\n"); 
-		Ddasm1vcf(VMOP_PUSHFVSUBC, "pushfvsubc %s %f;\n"); 
-		Ddasm1vcf(VMOP_PUSHFVMULC, "pushfvmulc %s %f;\n"); 
-		Ddasm1vcf(VMOP_PUSHFVDIVC, "pushfvdivc %s %f;\n"); 
- 
-		if(oc<(VMOP_JGTIVIV+6)) 
-		{ 
-			off = oc - VMOP_JGTIVIV; 
-			t.printf("jiviv %s %s %s %04x;\n", vm_varnames[vm_code[_pc+1]], opnames[off], vm_varnames[vm_code[_pc+2]], vm_code[_pc+3]); 
-			_s->append(&t); 
-			_pc+=4; 
-			oc=0xFFFF; 
-		} 
- 
-		if(oc<(VMOP_JGTIVIC+6)) 
-		{ 
-			off = oc - VMOP_JGTIVIC; 
-			t.printf("jivic %s %s %i %04x;\n", vm_varnames[vm_code[_pc+1]], opnames[off], vm_const[vm_code[_pc+2]].si, vm_code[_pc+3]); 
-			_s->append(&t); 
-			_pc+=4; 
-			oc=0xFFFF; 
-		} 
+		Ddasm1(VMOP_SRETI, "sreti;\n");
+		Ddasm1(VMOP_SRETF, "sretf;\n");
+		Ddasm1(VMOP_PUSHS, "pushs;\n");
+
+		Ddasm1vv(VMOP_IVANDIV, "ivandiv %s %s;\n");
+		Ddasm1vv(VMOP_IVORIV,  "ivorlv %s %s;\n");
+		Ddasm1vv(VMOP_IVEORIV, "iveoriv %s %s;\n");
+		Ddasm1vv(VMOP_IVMODIV, "ivmodiv %s %s;\n");
+		Ddasm1vv(VMOP_IVADDIV, "ivaddiv %s %s;\n");
+		Ddasm1vv(VMOP_IVSUBIV, "ivsubiv %s %s;\n");
+		Ddasm1vv(VMOP_IVMULIV, "ivmuliv %s %s;\n");
+		Ddasm1vv(VMOP_IVDIVIV, "ivdiviv %s %s;\n");
+		Ddasm1vv(VMOP_IVASLIV, "ivasliv %s %s;\n");
+		Ddasm1vv(VMOP_IVASRIV, "ivasriv %s %s;\n");
+		Ddasm1vv(VMOP_PUSHIVANDIV, "pushivandiv %s %s;\n");
+		Ddasm1vv(VMOP_PUSHIVORIV,  "pushivoriv %s %s;\n");
+		Ddasm1vv(VMOP_PUSHIVEORIV, "pushiveoriv %s %s;\n");
+		Ddasm1vv(VMOP_PUSHIVMODIV, "pushivmodiv %s %s;\n");
+		Ddasm1vv(VMOP_PUSHIVADDIV, "pushivaddiv %s %s;\n");
+		Ddasm1vv(VMOP_PUSHIVSUBIV, "pushivsubiv %s %s;\n");
+		Ddasm1vv(VMOP_PUSHIVMULIV, "pushivmuliv %s %s;\n");
+		Ddasm1vv(VMOP_PUSHIVDIVIV, "pushivdiviv %s %s;\n");
+		Ddasm1vv(VMOP_PUSHIVASLIV, "pushivasliv %s %s;\n");
+		Ddasm1vv(VMOP_PUSHIVASRIV, "pushivasriv %s %s;\n");
+
+		////Ddasm1vci(VMOPCL_IVANDC, "ivandc %s %i;\n");
+		////Ddasm1vci(VMOPCL_IVORC,  "ivorc %s %i;\n");
+		////Ddasm1vci(VMOPCL_IVEORC, "iveorc %s %i;\n");
+		////Ddasm1vci(VMOPCL_IVMODC, "ivmodc %s %i;\n");
+		////Ddasm1vci(VMOPCL_IVADDC, "ivaddc %s %i;\n");
+		////Ddasm1vci(VMOPCL_IVSUBC, "ivsubc %s %i;\n");
+		////Ddasm1vci(VMOPCL_IVMULC, "ivmulc %s %i;\n");
+		////Ddasm1vci(VMOPCL_IVDIVC, "ivdivc %s %i;\n");
+		////Ddasm1vci(VMOPCL_IVASLC, "ivaslc %s %i;\n");
+		////Ddasm1vci(VMOPCL_IVASRC, "ivasrc %s %i;\n");
+		Ddasm1vci(VMOP_PUSHIVANDC, "pushivandc %s %i;\n");
+		Ddasm1vci(VMOP_PUSHIVORC,  "pushivorc %s %i;\n");
+		Ddasm1vci(VMOP_PUSHIVEORC, "pushiveorc %s %i;\n");
+		Ddasm1vci(VMOP_PUSHIVMODC, "pushivmodc %s %i;\n");
+		Ddasm1vci(VMOP_PUSHIVADDC, "pushivaddc %s %i;\n");
+		Ddasm1vci(VMOP_PUSHIVSUBC, "pushivsubc %s %i;\n");
+		Ddasm1vci(VMOP_PUSHIVMULC, "pushivmulc %s %i;\n");
+		Ddasm1vci(VMOP_PUSHIVDIVC, "pushivdivc %s %i;\n");
+		Ddasm1vci(VMOP_PUSHIVASLC, "pushivaslc %s %i;\n");
+		Ddasm1vci(VMOP_PUSHIVASRC, "pushivasrc %s %i;\n");
+
+		Ddasm1vv(VMOP_FVADDFV, "fvaddfv %s %s;\n");
+		Ddasm1vv(VMOP_FVSUBFV, "fvsubfv %s %s;\n");
+		Ddasm1vv(VMOP_FVMULFV, "fvmulfv %s %s;\n");
+		Ddasm1vv(VMOP_FVDIVFV, "fvdivfv %s %s;\n");
+		Ddasm1vv(VMOP_PUSHFVADDFV, "pushfvaddfv %s %s;\n");
+		Ddasm1vv(VMOP_PUSHFVSUBFV, "pushfvsubfv %s %s;\n");
+		Ddasm1vv(VMOP_PUSHFVMULFV, "pushfvmulfv %s %s;\n");
+		Ddasm1vv(VMOP_PUSHFVDIVFV, "pushfvdivfv %s %s;\n");
+
+		////Ddasm1vcf(VMOPCL_FVADDC, "fvaddc %s %f;\n");
+		////Ddasm1vcf(VMOPCL_FVSUBC, "fvsubc %s %f;\n");
+		////Ddasm1vcf(VMOPCL_FVMULC, "fvmulc %s %f;\n");
+		////Ddasm1vcf(VMOPCL_FVDIVC, "fvdivc %s %f;\n");
+		Ddasm1vcf(VMOP_PUSHFVADDC, "pushfvaddc %s %f;\n");
+		Ddasm1vcf(VMOP_PUSHFVSUBC, "pushfvsubc %s %f;\n");
+		Ddasm1vcf(VMOP_PUSHFVMULC, "pushfvmulc %s %f;\n");
+		Ddasm1vcf(VMOP_PUSHFVDIVC, "pushfvdivc %s %f;\n");
+
+		if(oc<(VMOP_JGTIVIV+6))
+		{
+			off = oc - VMOP_JGTIVIV;
+			t.printf("jiviv %s %s %s %04x;\n", vm_varnames[vm_code[_pc+1]], opnames[off], vm_varnames[vm_code[_pc+2]], vm_code[_pc+3]);
+			_s->append(&t);
+			_pc+=4;
+			oc=0xFFFF;
+		}
+
+		if(oc<(VMOP_JGTIVIC+6))
+		{
+			off = oc - VMOP_JGTIVIC;
+			t.printf("jivic %s %s %i %04x;\n", vm_varnames[vm_code[_pc+1]], opnames[off], vm_const[vm_code[_pc+2]].si, vm_code[_pc+3]);
+			_s->append(&t);
+			_pc+=4;
+			oc=0xFFFF;
+		}
 
 		if(oc!=0xFFFF)
 		{
@@ -1036,13 +1036,13 @@ void VMCore::disassemble(YAC_String *_s, sU16 _pc, sU16 _epc) {
 			_pc=_epc;
 		}
 	}
-#else 
-	tkscript->printf("[---] VMCore: disassembler support not compiled in.\n"); 
+#else
+	tkscript->printf("[---] VMCore: disassembler support not compiled in.\n");
 #endif
 }
 
 
-#ifdef JIT_DEBUG 
+#ifdef JIT_DEBUG
 static sU8 *xxx_jit = NULL;
 #ifdef DX_ARM
 void jit_exec(sU8 *_code, TKS_Context *_context, PTN_Env *_env, void *_vmvars, void *_vmconst) {
@@ -1058,11 +1058,11 @@ void jit_exec(sU8 *_code, TKS_Context *_context, PTN_Env *_env) {
 #endif // JIT_DEBUG
 
 
-static void VMCore__eval(PTN_Env *_env, const PTN_Statement *_st) { 
+static void VMCore__eval(PTN_Env *_env, const PTN_Statement *_st) {
    Dtracest;
 	VMCore *st = (VMCore *)_st; // xxx discard const qualifier because of array tables (iadr -> adr.si
-	YAC_FloatArray *fa; 
-	YAC_Object *ia; 
+	YAC_FloatArray *fa;
+	YAC_Object *ia;
 
 	if(tkscript->configuration.b_forceint || (NULL == st->jit.code))
 	{
@@ -1099,31 +1099,31 @@ static void VMCore__eval(PTN_Env *_env, const PTN_Statement *_st) {
 			}
 			else
 				if(st->vm_iarr[i].ia)
-				{ 
-					ia=st->vm_iarr[i].ia->value.object_val; 
-					if(ia&&(ia->yacArrayGetElementByteSize()==sizeof(sSI))) 
-					{ 
-						sUI mask=ia->yacArrayGetHeight()*ia->yacArrayGetStride(); 
-						st->vm_iarr[i].adr.s32 = (sSI*)ia->yacArrayGetPointer();//ia->elements; 
-						if(!(st->vm_iarr[i].adr.u32 && mask) ) 
+				{
+					ia=st->vm_iarr[i].ia->value.object_val;
+					if(ia&&(ia->yacArrayGetElementByteSize()==sizeof(sSI)))
+					{
+						sUI mask=ia->yacArrayGetHeight()*ia->yacArrayGetStride();
+						st->vm_iarr[i].adr.s32 = (sSI*)ia->yacArrayGetPointer();//ia->elements;
+						if(!(st->vm_iarr[i].adr.u32 && mask) )
 							goto vmcore__eval_bail_out;
 						st->vm_iarr[i].maskb=mask   ; // xxx
-					} 
-					else {  
-  
-vmcore__eval_bail_out: 
+					}
+					else {
+
+vmcore__eval_bail_out:
 #ifdef TKS_MT
                   ////st->mutex->unlock();
 #endif
-						st->parser_tree->evalFirst(_env);  
-						return;  
-					} // fallback to interpreter 
+						st->parser_tree->evalFirst(_env);
+						return;
+					} // fallback to interpreter
 				}
 				else
 					break;
 		}
 
-		
+
 		for(i=0; i<TKS_VMCORE_NUMARRAYS; i++)
 		{
 			// -------- float arrays --------
@@ -1136,14 +1136,14 @@ vmcore__eval_bail_out:
 				if(st->vm_farr[i].fa)
 				{
 					fa=(YAC_FloatArray*)st->vm_farr[i].fa->value.object_val;
-					if(fa&&(fa->yacArrayGetElementByteSize()==sizeof(sF32))) 
-					{ 
-						st->vm_farr[i].adr.f32=(sF32*)fa->yacArrayGetPointer(); 
+					if(fa&&(fa->yacArrayGetElementByteSize()==sizeof(sF32)))
+					{
+						st->vm_farr[i].adr.f32=(sF32*)fa->yacArrayGetPointer();
 						st->vm_farr[i].mask=(fa->yacArrayGetHeight()*fa->yacArrayGetMaxElements())<<2;
-						if(!(st->vm_farr[i].adr.f32 && st->vm_farr[i].mask) ) 
-							goto vmcore__eval_bail_out; 
+						if(!(st->vm_farr[i].adr.f32 && st->vm_farr[i].mask) )
+							goto vmcore__eval_bail_out;
 					}
-					else goto vmcore__eval_bail_out; // fallback to interpreter 
+					else goto vmcore__eval_bail_out; // fallback to interpreter
 				}
 				else
 					break;
@@ -1177,16 +1177,16 @@ vmcore__eval_bail_out:
 
    ////// The VMCore::mutex has been unlocked in the JIT prologue!
 }
- 
+
 Fevalst VMCore::getEvalSt(void) const {
-   return VMCore__eval;  
-} 
- 
-void VMCore::eval(PTN_Env *_env) const {  
-   VMCore__eval(_env, this);  
-} 
- 
-void VMCore::ScanCPUTable(void) { 
+   return VMCore__eval;
+}
+
+void VMCore::eval(PTN_Env *_env) const {
+   VMCore__eval(_env, this);
+}
+
+void VMCore::ScanCPUTable(void) {
 #ifdef SAVE_CPUTABLE
 	// ---- generate new CPU table and save to "tkscpu.tbl" ----
 	sU16 i;
@@ -1206,10 +1206,10 @@ void VMCore::ScanCPUTable(void) {
 	sU8 *c=i86;
 	vm_i86=c;
 
-	// find first delimiter 
+	// find first delimiter
 	for(i=0; i<200; i++)
-	{ 
-#ifdef DX_ODDADDR 
+	{
+#ifdef DX_ODDADDR
 		sU32 *c32=(sU32*)(c+i);
 		if(*c32==Dopsep)
 		{
@@ -1218,58 +1218,58 @@ void VMCore::ScanCPUTable(void) {
 				c=(c+i);
 				break;
 			}
-		} 
-#else 
-		// big endian, written for 68K 
-		if(c[i]==0xC7) 
-			if(c[i+1]==0x05) 
-				if(c[i+2]==0xFF) 
-					if(c[i+3]==0xFF) 
-						if(c[i+4]==0xFF) 
-							if(c[i+5]==0xFF) 
-								if(c[i+6]==xCC) 
-									if(c[i+7]==0xCC) 
-									{ 
-										c=c+i; 
-										break; 
-									} 
+		}
+#else
+		// big endian, written for 68K
+		if(c[i]==0xC7)
+			if(c[i+1]==0x05)
+				if(c[i+2]==0xFF)
+					if(c[i+3]==0xFF)
+						if(c[i+4]==0xFF)
+							if(c[i+5]==0xFF)
+								if(c[i+6]==xCC)
+									if(c[i+7]==0xCC)
+									{
+										c=c+i;
+										break;
+									}
 #endif // DX_ODDADDR
 	}
 
 	// codeoffset (fun init code size ) = c-i86
 	vm_sz_startup = (sU16) (c - i86);
-	c += Dsizepad; 
+	c += Dsizepad;
 	vm_i86first = c;
 	sU8 *cfirst = c;
 
 	// first opcode i86 code = c
 	for(i=0; i<VM_NUMOPCODES; i++)
-	{ 
+	{
 		vm86_off[i]=(sUI)(c-cfirst);
 		sU8 *cstart=c;
 		sBool bnf=1;
 		while(bnf)
 		{
-			// search end of current opcode 
+			// search end of current opcode
 #ifdef DX_ODDADDR
-			while(*((sU32*)c)!=Dopsep) c++; 
-			if( ((sU32*)c)[1]==Dopsep2) 
-#else 
-			sBool bf=1; 
-			do { 
-				bf=(c[0]!=0xC7)||(c[1]!=0x05)||(c[2]!=0xFF)|| 
-				   (c[3]==0xFF); 
-				if(bf) 
-					c++; 
-			} while(bf); 
-			if(c[4]==0xFF) 
-				if(c[5]==0xFF) 
-					if(c[6]==xCC) 
-						if(c[7]==0xCC) 
+			while(*((sU32*)c)!=Dopsep) c++;
+			if( ((sU32*)c)[1]==Dopsep2)
+#else
+			sBool bf=1;
+			do {
+				bf=(c[0]!=0xC7)||(c[1]!=0x05)||(c[2]!=0xFF)||
+				   (c[3]==0xFF);
+				if(bf)
+					c++;
+			} while(bf);
+			if(c[4]==0xFF)
+				if(c[5]==0xFF)
+					if(c[6]==xCC)
+						if(c[7]==0xCC)
 #endif // DX_ODDADDR
 			{
 				vm86_sz[i]=(c-cstart);
-				c+=Dsizepad; 
+				c+=Dsizepad;
 				bnf=0;
 			}
 			else c++;
@@ -1291,8 +1291,8 @@ void VMCore::ScanCPUTable(void) {
 
 #ifdef DX_68K
 	vm_sz_cleanup=6; // xxx hardcoded MC680x0
-	// 4CDF7CFC		movem.l (sp)+,d2-d7/a2-a6 
-	// 4E75			rts 
+	// 4CDF7CFC		movem.l (sp)+,d2-d7/a2-a6
+	// 4E75			rts
 #endif
 
 #ifdef DX_ARM
@@ -1323,7 +1323,7 @@ void VMCore::ScanCPUTable(void) {
 
 
 	// ---- use "portable" assembled CPU table (converted to "C" array) ----
-	sU16 i; 
+	sU16 i;
 
 
 #ifdef DX_X86
@@ -1338,46 +1338,46 @@ void VMCore::ScanCPUTable(void) {
 	sU8 *i86 = ((sU8*)tks_cpu_tbl_arm) + 4; // skip size
 #endif
 
-	vm_i86=i86; //((sU8*)tks_cpu_tbl)+4; 
+	vm_i86=i86; //((sU8*)tks_cpu_tbl)+4;
 	sU8 *c=i86;
- 
+
 	// find first delimiter
 	for(i=0; i<200; i++)
 	{
-#ifdef DX_ODDADDR 
-		sU32 *c32=(sU32*)(c+i); 
-		if(*c32==Dopsep) 
-		{ 
-			if(c32[1]==Dopsep2) 
-			{ 
-				c=(c+i); 
-				break; 
-			} 
-		} 
-#else 
-		// big endian, written for 68K 
-		if(c[i]==0xC7) 
-			if(c[i+1]==0x05) 
-				if(c[i+2]==0xFF) 
-					if(c[i+3]==0xFF) 
-						if(c[i+4]==0xFF) 
-							if(c[i+5]==0xFF) 
-								if(c[i+6]==0xCC) 
-									if(c[i+7]==0xCC) 
-									{ 
-										c=c+i; 
-										break; 
-									} 
+#ifdef DX_ODDADDR
+		sU32 *c32=(sU32*)(c+i);
+		if(*c32==Dopsep)
+		{
+			if(c32[1]==Dopsep2)
+			{
+				c=(c+i);
+				break;
+			}
+		}
+#else
+		// big endian, written for 68K
+		if(c[i]==0xC7)
+			if(c[i+1]==0x05)
+				if(c[i+2]==0xFF)
+					if(c[i+3]==0xFF)
+						if(c[i+4]==0xFF)
+							if(c[i+5]==0xFF)
+								if(c[i+6]==0xCC)
+									if(c[i+7]==0xCC)
+									{
+										c=c+i;
+										break;
+									}
 #endif // DX_ODDADDR
-	} 
+	}
 
 	// codeoffset (fun init code size ) = c-i86
 	vm_sz_startup = (sU16)(c - i86);
-	c += Dsizepad; 
+	c += Dsizepad;
 	vm_i86first = c;
 	sU8 *cfirst = c;
 	// first opcode i86 code = c
-	
+
 	for(i=0; i<VM_NUMOPCODES; i++)
 	{
       ////::printf("search opcode %i\n", i);
@@ -1394,7 +1394,7 @@ void VMCore::ScanCPUTable(void) {
 #else
 			sBool bf=1;
 			c--;
-			do { 
+			do {
 			  c++;
 			  bf=(c[0]!=0xC7)||(c[1]!=0x05)||(c[2]!=0xFF)||(c[3]!=0xFF);
 			} while(bf);
@@ -1423,19 +1423,19 @@ void VMCore::ScanCPUTable(void) {
 
 #ifdef DX_X86
 	vm_sz_cleanup=7; // xxx hardcoded x86
-	// pop edi 
-	// pop esi 
-	// pop ebx 
-	// mov esp, ebp 
-	// pop ebp 
-	// ret 
-	// 5F,5E,5B,8B,E5,5D,C3 
-#endif 
+	// pop edi
+	// pop esi
+	// pop ebx
+	// mov esp, ebp
+	// pop ebp
+	// ret
+	// 5F,5E,5B,8B,E5,5D,C3
+#endif
 
-#ifdef DX_68K 
+#ifdef DX_68K
 	vm_sz_cleanup=6; // xxx hardcoded MC680x0
-	// 4CDF7CFC		movem.l (sp)+,d2-d7/a2-a6 
-	// 4E75			rts 
+	// 4CDF7CFC		movem.l (sp)+,d2-d7/a2-a6
+	// 4E75			rts
 #endif
 
 #ifdef DX_ARM
@@ -1446,7 +1446,7 @@ void VMCore::ScanCPUTable(void) {
 
 
 #endif // SAVE_CPUTABLE
-	
+
 }
 
 sUI VMCore::estimateJITSize(void) {
@@ -1476,17 +1476,17 @@ sBool VMCore::resolveXRef(void) {
 }
 
 void VMCore::optimize(void) {
-   if(NULL != parser_tree)  
-   {  
+   if(NULL != parser_tree)
+   {
       parser_tree->optimizeAll();
 
-      if(!compileThis()) 
-      { 
-         Dprintf("[---] VMCore::compile() failed.\n"); 
-         cleanJIT(); 
+      if(!compileThis())
+      {
+         Dprintf("[---] VMCore::compile() failed.\n");
+         cleanJIT();
          return;
-      } 
-   }  
+      }
+   }
 }
 
 void VMCore::subGenCallList(void) {
@@ -1499,10 +1499,10 @@ void VMCore::subGenCallList(void) {
 sBool VMCore::compileThis(void) {
 	if(NULL != parser_tree)
 	{
-		// ---- set if this is a compiled tks node ---- 
+		// ---- set if this is a compiled tks node ----
 		c_array = NULL;
 
-		if(255 == parser_tree->compileHybridStatement(this)) 
+		if(255 == parser_tree->compileHybridStatement(this))
       {
          return YAC_FALSE;
       }
@@ -1519,928 +1519,928 @@ sBool VMCore::createJITCode(void) {
 	sUI i;
 	sU16 *c;
 	sU16 *ce;
- 
-	if(tkscript->configuration.b_jitopt) 
+
+	if(tkscript->configuration.b_jitopt)
 	{
 	// -------- post compile code analysis and optimization --------
 	sU16 *reloctbl=new sU16[(vm_pc+1)*2];
 	for(i=0; i<((vm_pc+1)*2); i++) reloctbl[i]=0xFFFF;
 	sU16 reloci=0;
 	c=vm_code;
-	i=0; 
+	i=0;
 	while(i<vm_pc)
 	{
-		sU16 top; 
+		sU16 top;
 		// ---- 2004/02
-		if( 
-			// ---- check for pushv/popv seq ---- 
-			(c[i]==VMOP_PUSHV)&& 
-			(c[i+2]==VMOP_POPV) 
-			) 
-		{ 
-			c[i]=VMOP_MOVV; 
-			top=c[i+1]; 
-			c[i+1]=c[i+3]; 
-			c[i+2]=top; 
-			c[i+3]=0xFFFF; // virtual nop 
-			i+=4; 
-			reloctbl[reloci++]=i; 
-			reloctbl[reloci++]=1; 
-		} 
-		else 
-		if( 
-			// ---- check for pushc/popv seq ---- 
-			(c[i]==VMOP_PUSHC)&& 
-			(c[i+2]==VMOP_POPV) 
-			) 
-		{ 
-			c[i]=VMOP_MOVVC; 
-			top=c[i+1]; 
-			c[i+1]=c[i+3]; 
-			c[i+2]=top; 
-			c[i+3]=0xFFFF; // virtual nop 
-			i+=4; 
-			reloctbl[reloci++]=i; 
-			reloctbl[reloci++]=1; 
-		} 
-		else 
-		if( 
-			// ---- check for pushv/pushv/siand/popv seq---- 
-			(c[i]==VMOP_PUSHV)&& 
-			(c[i+2]==VMOP_PUSHV)&& 
-			(c[i+4]==VMOP_SIAND)&& 
-			(c[i+5]==VMOP_POPV)&& 
-			( (c[i+6]==c[i+1])||(c[i+6]==c[i+3]) ) // pop var that got pushed? 
-			) 
-		{ 
-			c[i]=VMOP_IVANDIV; 
-			sU16 dst=c[i+6]; 
-			sU16 src=(c[i+1]==dst)?c[i+3]:c[i+1]; // a+b == b+a, check order 
-			c[i+1]=dst; 
-			c[i+2]=src; 
-			c[i+3]=0xFFFF; // virtual nop 
-			c[i+4]=0xFFFF; // virtual nop 
-			c[i+5]=0xFFFF; // virtual nop 
-			c[i+6]=0xFFFF; // virtual nop 
-			i+=7; 
-			reloctbl[reloci++]=i; 
-			reloctbl[reloci++]=4; 
-		} 
-		else 
-		if( 
-			// ---- check for pushv/pushv/sior/popv seq---- 
-			(c[i]==VMOP_PUSHV)&& 
-			(c[i+2]==VMOP_PUSHV)&& 
-			(c[i+4]==VMOP_SIOR)&& 
-			(c[i+5]==VMOP_POPV)&& 
-			( (c[i+6]==c[i+1])||(c[i+6]==c[i+3]) ) // pop var that got pushed? 
-			) 
-		{ 
-			c[i]=VMOP_IVORIV; 
-			sU16 dst=c[i+6]; 
-			sU16 src=(c[i+1]==dst)?c[i+3]:c[i+1]; // a+b == b+a, check order 
-			c[i+1]=dst; 
-			c[i+2]=src; 
-			c[i+3]=0xFFFF; // virtual nop 
-			c[i+4]=0xFFFF; // virtual nop 
-			c[i+5]=0xFFFF; // virtual nop 
-			c[i+6]=0xFFFF; // virtual nop 
-			i+=7; 
-			reloctbl[reloci++]=i; 
-			reloctbl[reloci++]=4; 
-		} 
-		else 
-		if( 
-			// ---- check for pushv/pushv/sieor/popv seq---- 
-			(c[i]==VMOP_PUSHV)&& 
-			(c[i+2]==VMOP_PUSHV)&& 
-			(c[i+4]==VMOP_SIEOR)&& 
-			(c[i+5]==VMOP_POPV)&& 
-			( (c[i+6]==c[i+1])||(c[i+6]==c[i+3]) ) // pop var that got pushed? 
-			) 
-		{ 
-			c[i]=VMOP_IVEORIV; 
-			sU16 dst=c[i+6]; 
-			sU16 src=(c[i+1]==dst)?c[i+3]:c[i+1]; // a+b == b+a, check order 
-			c[i+1]=dst; 
-			c[i+2]=src; 
-			c[i+3]=0xFFFF; // virtual nop 
-			c[i+4]=0xFFFF; // virtual nop 
-			c[i+5]=0xFFFF; // virtual nop 
-			c[i+6]=0xFFFF; // virtual nop 
-			i+=7; 
-			reloctbl[reloci++]=i; 
-			reloctbl[reloci++]=4; 
-		} 
-		else 
-		if( 
-			// ---- check for pushv/pushv/simod/popv seq---- 
-			(c[i]==VMOP_PUSHV)&& 
-			(c[i+2]==VMOP_PUSHV)&& 
-			(c[i+4]==VMOP_SIMOD)&& 
-			(c[i+5]==VMOP_POPV)&& 
-			(c[i+6]==c[i+1]) // pop var that got pushed? 
-			) 
-		{ 
-			c[i]=VMOP_IVMODIV; 
-			c[i+2]=c[i+3]; 
-			c[i+3]=0xFFFF; // virtual nop 
-			c[i+4]=0xFFFF; // virtual nop 
-			c[i+5]=0xFFFF; // virtual nop 
-			c[i+6]=0xFFFF; // virtual nop 
-			i+=7; 
-			reloctbl[reloci++]=i; 
-			reloctbl[reloci++]=4; 
-		} 
-		else 
-		if( 
-			// ---- check for pushv/pushv/siadd/popv seq---- 
-			(c[i]==VMOP_PUSHV)&& 
-			(c[i+2]==VMOP_PUSHV)&& 
-			(c[i+4]==VMOP_SIADD)&& 
-			(c[i+5]==VMOP_POPV)&& 
-			( (c[i+6]==c[i+1])||(c[i+6]==c[i+3]) ) // pop var that got pushed? 
-			) 
-		{ 
-			c[i]=VMOP_IVADDIV; 
-			sU16 dst=c[i+6]; 
-			sU16 src=(c[i+1]==dst)?c[i+3]:c[i+1]; // a+b == b+a, check order 
-			c[i+1]=dst; 
-			c[i+2]=src; 
-			c[i+3]=0xFFFF; // virtual nop 
-			c[i+4]=0xFFFF; // virtual nop 
-			c[i+5]=0xFFFF; // virtual nop 
-			c[i+6]=0xFFFF; // virtual nop 
-			i+=7; 
-			reloctbl[reloci++]=i; 
-			reloctbl[reloci++]=4; 
-		} 
-		else 
-		if( 
-			// ---- check for pushv/pushv/sisub/popv seq---- 
-			(c[i]==VMOP_PUSHV)&& 
-			(c[i+2]==VMOP_PUSHV)&& 
-			(c[i+4]==VMOP_SISUB)&& 
-			(c[i+5]==VMOP_POPV)&& 
-			(c[i+6]==c[i+1]) // pop var that got pushed? 
-			) 
-		{ 
-			c[i]=VMOP_IVSUBIV; 
-			c[i+2]=c[i+3]; 
-			c[i+3]=0xFFFF; // virtual nop 
-			c[i+4]=0xFFFF; // virtual nop 
-			c[i+5]=0xFFFF; // virtual nop 
-			c[i+6]=0xFFFF; // virtual nop 
-			i+=7; 
-			reloctbl[reloci++]=i; 
-			reloctbl[reloci++]=4; 
-		} 
-		else 
-		if( 
-			// ---- check for pushv/pushv/simul/popv seq---- 
-			(c[i]==VMOP_PUSHV)&& 
-			(c[i+2]==VMOP_PUSHV)&& 
-			(c[i+4]==VMOP_SIMUL)&& 
-			(c[i+5]==VMOP_POPV)&& 
-			( (c[i+6]==c[i+1])||(c[i+6]==c[i+3]) ) // pop var that got pushed? 
-			) 
-		{ 
-			c[i]=VMOP_IVMULIV; 
-			sU16 dst=c[i+6]; 
-			sU16 src=(c[i+1]==dst)?c[i+3]:c[i+1]; // a+b == b+a, check order 
-			c[i+1]=dst; 
-			c[i+2]=src; 
-			c[i+3]=0xFFFF; // virtual nop 
-			c[i+4]=0xFFFF; // virtual nop 
-			c[i+5]=0xFFFF; // virtual nop 
-			c[i+6]=0xFFFF; // virtual nop 
-			i+=7; 
-			reloctbl[reloci++]=i; 
-			reloctbl[reloci++]=4; 
-		} 
-		else 
-		if( 
-			// ---- check for pushv/pushv/sidiv/popv seq---- 
-			(c[i]==VMOP_PUSHV)&& 
-			(c[i+2]==VMOP_PUSHV)&& 
-			(c[i+4]==VMOP_SIDIV)&& 
-			(c[i+5]==VMOP_POPV)&& 
-			(c[i+6]==c[i+1]) // pop var that got pushed? 
-			) 
-		{ 
-			c[i]=VMOP_IVDIVIV; 
-			c[i+2]=c[i+3]; 
-			c[i+3]=0xFFFF; // virtual nop 
-			c[i+4]=0xFFFF; // virtual nop 
-			c[i+5]=0xFFFF; // virtual nop 
-			c[i+6]=0xFFFF; // virtual nop 
-			i+=7; 
-			reloctbl[reloci++]=i; 
-			reloctbl[reloci++]=4; 
-		} 
-		else 
-		if( 
-			// ---- check for pushv/pushv/siasl/popv seq---- 
-			(c[i]==VMOP_PUSHV)&& 
-			(c[i+2]==VMOP_PUSHV)&& 
-			(c[i+4]==VMOP_SIASL)&& 
-			(c[i+5]==VMOP_POPV)&& 
-			(c[i+6]==c[i+1]) // pop var that got pushed? 
-			) 
-		{ 
-			c[i]=VMOP_IVASLIV; 
-			c[i+2]=c[i+3]; 
-			c[i+3]=0xFFFF; // virtual nop 
-			c[i+4]=0xFFFF; // virtual nop 
-			c[i+5]=0xFFFF; // virtual nop 
-			c[i+6]=0xFFFF; // virtual nop 
-			i+=7; 
-			reloctbl[reloci++]=i; 
-			reloctbl[reloci++]=4; 
-		} 
-		else 
-		if( 
-			// ---- check for pushv/pushv/siasr/popv seq---- 
-			(c[i]==VMOP_PUSHV)&& 
-			(c[i+2]==VMOP_PUSHV)&& 
-			(c[i+4]==VMOP_SIASR)&& 
-			(c[i+5]==VMOP_POPV)&& 
-			(c[i+6]==c[i+1]) // pop var that got pushed? 
-			) 
-		{ 
-			c[i]=VMOP_IVASRIV; 
-			c[i+2]=c[i+3]; 
-			c[i+3]=0xFFFF; // virtual nop 
-			c[i+4]=0xFFFF; // virtual nop 
-			c[i+5]=0xFFFF; // virtual nop 
-			c[i+6]=0xFFFF; // virtual nop 
-			i+=7; 
-			reloctbl[reloci++]=i; 
-			reloctbl[reloci++]=4; 
-		} 
-		else 
-		if( 
-			// ---- check for pushv/pushv/sfadd/popv seq---- 
-			(c[i]==VMOP_PUSHV)&& 
-			(c[i+2]==VMOP_PUSHV)&& 
-			(c[i+4]==VMOP_SFADD)&& 
-			(c[i+5]==VMOP_POPV)&& 
-			( (c[i+6]==c[i+1])||(c[i+6]==c[i+3]) ) // pop var that got pushed? 
-			) 
-		{ 
-			c[i]=VMOP_FVADDFV; 
-			sU16 dst=c[i+6]; 
-			sU16 src=(c[i+1]==dst)?c[i+3]:c[i+1]; // a+b == b+a, check order 
-			c[i+1]=dst; 
-			c[i+2]=src; 
-			c[i+3]=0xFFFF; // virtual nop 
-			c[i+4]=0xFFFF; // virtual nop 
-			c[i+5]=0xFFFF; // virtual nop 
-			c[i+6]=0xFFFF; // virtual nop 
-			i+=7; 
-			reloctbl[reloci++]=i; 
-			reloctbl[reloci++]=4; 
-		} 
-		else 
-		if( 
-			// ---- check for pushv/pushv/sfsub/popv seq---- 
-			(c[i]==VMOP_PUSHV)&& 
-			(c[i+2]==VMOP_PUSHV)&& 
-			(c[i+4]==VMOP_SFSUB)&& 
-			(c[i+5]==VMOP_POPV)&& 
-			(c[i+6]==c[i+1]) // pop var that got pushed? 
-			) 
-		{ 
-			c[i]=VMOP_FVSUBFV; 
-			c[i+2]=c[i+3]; 
-			c[i+3]=0xFFFF; // virtual nop 
-			c[i+4]=0xFFFF; // virtual nop 
-			c[i+5]=0xFFFF; // virtual nop 
-			c[i+6]=0xFFFF; // virtual nop 
-			i+=7; 
-			reloctbl[reloci++]=i; 
-			reloctbl[reloci++]=4; 
-		} 
-		else 
-		if( 
-			// ---- check for pushv/pushv/sfmul/popv seq---- 
-			(c[i]==VMOP_PUSHV)&& 
-			(c[i+2]==VMOP_PUSHV)&& 
-			(c[i+4]==VMOP_SFMUL)&& 
-			(c[i+5]==VMOP_POPV)&& 
-			( (c[i+6]==c[i+1])||(c[i+6]==c[i+3]) ) // pop var that got pushed? 
-			) 
-		{ 
-			c[i]=VMOP_FVMULFV; 
-			sU16 dst=c[i+6]; 
-			sU16 src=(c[i+1]==dst)?c[i+3]:c[i+1]; // a+b == b+a, check order 
-			c[i+1]=dst; 
-			c[i+2]=src; 
-			c[i+3]=0xFFFF; // virtual nop 
-			c[i+4]=0xFFFF; // virtual nop 
-			c[i+5]=0xFFFF; // virtual nop 
-			c[i+6]=0xFFFF; // virtual nop 
-			i+=7; 
-			reloctbl[reloci++]=i; 
-			reloctbl[reloci++]=4; 
-		} 
-		else 
-		if( 
-			// ---- check for pushv/pushv/sfdiv/popv seq---- 
-			(c[i]==VMOP_PUSHV)&& 
-			(c[i+2]==VMOP_PUSHV)&& 
-			(c[i+4]==VMOP_SFDIV)&& 
-			(c[i+5]==VMOP_POPV)&& 
-			(c[i+6]==c[i+1]) // pop var that got pushed? 
-			) 
-		{ 
-			c[i]=VMOP_FVDIVFV; 
-			c[i+2]=c[i+3]; 
-			c[i+3]=0xFFFF; // virtual nop 
-			c[i+4]=0xFFFF; // virtual nop 
-			c[i+5]=0xFFFF; // virtual nop 
-			c[i+6]=0xFFFF; // virtual nop 
-			i+=7; 
-			reloctbl[reloci++]=i; 
-			reloctbl[reloci++]=4; 
-		} 
-		else 
-		if( 
-			// ---- check for pushv/pushc/siand seq ---- 
-			(c[i]==VMOP_PUSHV)&& 
-			(c[i+2]==VMOP_PUSHC)&& 
-			(c[i+4]==VMOP_SIAND) 
-			) 
-		{ 
-			c[i]=VMOP_PUSHIVANDC; 
-			c[i+2]=c[i+3]; 
-			c[i+3]=0xFFFF; // virtual nop 
-			c[i+4]=0xFFFF; // virtual nop 
-			i+=5; 
-			reloctbl[reloci++]=i; 
-			reloctbl[reloci++]=2; 
-		} 
-		else 
-		if( 
-			// ---- check for pushc/pushv/siand seq ---- 
-			(c[i]==VMOP_PUSHC)&& 
-			(c[i+2]==VMOP_PUSHV)&& 
-			(c[i+4]==VMOP_SIAND) 
-			) 
-		{ 
-			c[i]=VMOP_PUSHIVANDC; 
-			sU16 t=c[i+1]; 
-			c[i+1]=c[i+3]; 
-			c[i+2]=t; 
-			c[i+3]=0xFFFF; // virtual nop 
-			c[i+4]=0xFFFF; // virtual nop 
-			i+=5; 
-			reloctbl[reloci++]=i; 
-			reloctbl[reloci++]=2; 
-		} 
-		else 
-		if( 
-			// ---- check for pushv/pushc/sior seq ---- 
-			(c[i]==VMOP_PUSHV)&& 
-			(c[i+2]==VMOP_PUSHC)&& 
-			(c[i+4]==VMOP_SIOR) 
-			) 
-		{ 
-			c[i]=VMOP_PUSHIVORC; 
-			c[i+2]=c[i+3]; 
-			c[i+3]=0xFFFF; // virtual nop 
-			c[i+4]=0xFFFF; // virtual nop 
-			i+=5; 
-			reloctbl[reloci++]=i; 
-			reloctbl[reloci++]=2; 
-		} 
-		else 
-		if( 
-			// ---- check for pushc/pushv/sior seq ---- 
-			(c[i]==VMOP_PUSHC)&& 
-			(c[i+2]==VMOP_PUSHV)&& 
-			(c[i+4]==VMOP_SIOR) 
-			) 
-		{ 
-			c[i]=VMOP_PUSHIVORC; 
-			sU16 t=c[i+1]; 
-			c[i+1]=c[i+3]; 
-			c[i+2]=t; 
-			c[i+3]=0xFFFF; // virtual nop 
-			c[i+4]=0xFFFF; // virtual nop 
-			i+=5; 
-			reloctbl[reloci++]=i; 
-			reloctbl[reloci++]=2; 
-		} 
-		else 
-		if( 
-			// ---- check for pushv/pushc/sieor seq ---- 
-			(c[i]==VMOP_PUSHV)&& 
-			(c[i+2]==VMOP_PUSHC)&& 
-			(c[i+4]==VMOP_SIEOR) 
-			) 
-		{ 
-			c[i]=VMOP_PUSHIVEORC; 
-			c[i+2]=c[i+3]; 
-			c[i+3]=0xFFFF; // virtual nop 
-			c[i+4]=0xFFFF; // virtual nop 
-			i+=5; 
-			reloctbl[reloci++]=i; 
-			reloctbl[reloci++]=2; 
-		} 
-		else 
-		if( 
-			// ---- check for pushc/pushv/sieor seq ---- 
-			(c[i]==VMOP_PUSHC)&& 
-			(c[i+2]==VMOP_PUSHV)&& 
-			(c[i+4]==VMOP_SIEOR) 
-			) 
-		{ 
-			c[i]=VMOP_PUSHIVEORC; 
-			sU16 t=c[i+1]; 
-			c[i+1]=c[i+3]; 
-			c[i+2]=t; 
-			c[i+3]=0xFFFF; // virtual nop 
-			c[i+4]=0xFFFF; // virtual nop 
-			i+=5; 
-			reloctbl[reloci++]=i; 
-			reloctbl[reloci++]=2; 
-		} 
-		else 
-		if( 
-			// ---- check for pushv/pushc/simod seq ---- 
-			(c[i]==VMOP_PUSHV)&& 
-			(c[i+2]==VMOP_PUSHC)&& 
-			(c[i+4]==VMOP_SIMOD) 
-			) 
-		{ 
-			c[i]=VMOP_PUSHIVMODC; 
-			c[i+2]=c[i+3]; 
-			c[i+3]=0xFFFF; // virtual nop 
-			c[i+4]=0xFFFF; // virtual nop 
-			i+=5; 
-			reloctbl[reloci++]=i; 
-			reloctbl[reloci++]=2; 
-		} 
-		else 
-		if( 
-			// ---- check for pushv/pushc/siadd seq ---- 
-			(c[i]==VMOP_PUSHV)&& 
-			(c[i+2]==VMOP_PUSHC)&& 
-			(c[i+4]==VMOP_SIADD) 
-			) 
-		{ 
-			c[i]=VMOP_PUSHIVADDC; 
-			c[i+2]=c[i+3]; 
-			c[i+3]=0xFFFF; // virtual nop 
-			c[i+4]=0xFFFF; // virtual nop 
-			i+=5; 
-			reloctbl[reloci++]=i; 
-			reloctbl[reloci++]=2; 
-		} 
-		else 
-		if( 
-			// ---- check for pushc/pushv/siadd seq ---- 
-			(c[i]==VMOP_PUSHC)&& 
-			(c[i+2]==VMOP_PUSHV)&& 
-			(c[i+4]==VMOP_SIADD) 
-			) 
-		{ 
-			c[i]=VMOP_PUSHIVADDC; 
-			sU16 t=c[i+1]; 
-			c[i+1]=c[i+3]; 
-			c[i+2]=t; 
-			c[i+3]=0xFFFF; // virtual nop 
-			c[i+4]=0xFFFF; // virtual nop 
-			i+=5; 
-			reloctbl[reloci++]=i; 
-			reloctbl[reloci++]=2; 
-		} 
-		else 
-		if( 
-			// ---- check for pushv/pushc/sisub seq ---- 
-			(c[i]==VMOP_PUSHV)&& 
-			(c[i+2]==VMOP_PUSHC)&& 
-			(c[i+4]==VMOP_SISUB) 
-			) 
-		{ 
-			c[i]=VMOP_PUSHIVSUBC; 
-			c[i+2]=c[i+3]; 
-			c[i+3]=0xFFFF; // virtual nop 
-			c[i+4]=0xFFFF; // virtual nop 
-			i+=5; 
-			reloctbl[reloci++]=i; 
-			reloctbl[reloci++]=2; 
-		} 
-		else 
-		if( 
-			// ---- check for pushv/pushc/simul seq ---- 
-			(c[i]==VMOP_PUSHV)&& 
-			(c[i+2]==VMOP_PUSHC)&& 
-			(c[i+4]==VMOP_SIMUL) 
-			) 
-		{ 
-			c[i]=VMOP_PUSHIVMULC; 
-			c[i+2]=c[i+3]; 
-			c[i+3]=0xFFFF; // virtual nop 
-			c[i+4]=0xFFFF; // virtual nop 
-			i+=5; 
-			reloctbl[reloci++]=i; 
-			reloctbl[reloci++]=2; 
-		} 
-		else 
-		if( 
-			// ---- check for pushc/pushv/simul seq ---- 
-			(c[i]==VMOP_PUSHC)&& 
-			(c[i+2]==VMOP_PUSHV)&& 
-			(c[i+4]==VMOP_SIMUL) 
-			) 
-		{ 
-			c[i]=VMOP_PUSHIVMULC; 
-			sU16 t=c[i+1]; 
-			c[i+1]=c[i+3]; 
-			c[i+2]=t; 
-			c[i+3]=0xFFFF; // virtual nop 
-			c[i+4]=0xFFFF; // virtual nop 
-			i+=5; 
-			reloctbl[reloci++]=i; 
-			reloctbl[reloci++]=2; 
-		} 
-		else 
-		if( 
-			// ---- check for pushv/pushc/sidiv seq ---- 
-			(c[i]==VMOP_PUSHV)&& 
-			(c[i+2]==VMOP_PUSHC)&& 
-			(c[i+4]==VMOP_SIDIV) 
-			) 
-		{ 
-			c[i]=VMOP_PUSHIVDIVC; 
-			c[i+2]=c[i+3]; 
-			c[i+3]=0xFFFF; // virtual nop 
-			c[i+4]=0xFFFF; // virtual nop 
-			i+=5; 
-			reloctbl[reloci++]=i; 
-			reloctbl[reloci++]=2; 
-		} 
-		else 
-		if( 
-			// ---- check for pushv/pushc/siasl seq ---- 
-			(c[i]==VMOP_PUSHV)&& 
-			(c[i+2]==VMOP_PUSHC)&& 
-			(c[i+4]==VMOP_SIASL) 
-			) 
-		{ 
-			c[i]=VMOP_PUSHIVASLC; 
-			c[i+2]=c[i+3]; 
-			c[i+3]=0xFFFF; // virtual nop 
-			c[i+4]=0xFFFF; // virtual nop 
-			i+=5; 
-			reloctbl[reloci++]=i; 
-			reloctbl[reloci++]=2; 
-		} 
-		else 
-		if( 
-			// ---- check for pushv/pushc/siasr seq ---- 
-			(c[i]==VMOP_PUSHV)&& 
-			(c[i+2]==VMOP_PUSHC)&& 
-			(c[i+4]==VMOP_SIASR) 
-			) 
-		{ 
-			c[i]=VMOP_PUSHIVASRC; 
-			c[i+2]=c[i+3]; 
-			c[i+3]=0xFFFF; // virtual nop 
-			c[i+4]=0xFFFF; // virtual nop 
-			i+=5; 
-			reloctbl[reloci++]=i; 
-			reloctbl[reloci++]=2; 
-		} 
-		else 
-		if( 
-			// ---- check for pushv/pushc/sfadd seq ---- 
-			(c[i]==VMOP_PUSHV)&& 
-			(c[i+2]==VMOP_PUSHC)&& 
-			(c[i+4]==VMOP_SFADD) 
-			) 
-		{ 
-			c[i]=VMOP_PUSHFVADDC; 
-			c[i+2]=c[i+3]; 
-			c[i+3]=0xFFFF; // virtual nop 
-			c[i+4]=0xFFFF; // virtual nop 
-			i+=5; 
-			reloctbl[reloci++]=i; 
-			reloctbl[reloci++]=2; 
-		} 
-		else 
-		if( 
-			// ---- check for pushc/pushv/sfadd seq ---- 
-			(c[i]==VMOP_PUSHC)&& 
-			(c[i+2]==VMOP_PUSHV)&& 
-			(c[i+4]==VMOP_SFADD) 
-			) 
-		{ 
-			c[i]=VMOP_PUSHFVADDC; 
-			sU16 t=c[i+1]; 
-			c[i+1]=c[i+3]; 
-			c[i+2]=t; 
-			c[i+3]=0xFFFF; // virtual nop 
-			c[i+4]=0xFFFF; // virtual nop 
-			i+=5; 
-			reloctbl[reloci++]=i; 
-			reloctbl[reloci++]=2; 
-		} 
-		else 
-		if( 
-			// ---- check for pushv/pushc/sfsub seq ---- 
-			(c[i]==VMOP_PUSHV)&& 
-			(c[i+2]==VMOP_PUSHC)&& 
-			(c[i+4]==VMOP_SFSUB) 
-			) 
-		{ 
-			c[i]=VMOP_PUSHFVSUBC; 
-			c[i+2]=c[i+3]; 
-			c[i+3]=0xFFFF; // virtual nop 
-			c[i+4]=0xFFFF; // virtual nop 
-			i+=5; 
-			reloctbl[reloci++]=i; 
-			reloctbl[reloci++]=2; 
-		} 
-		else 
-		if( 
-			// ---- check for pushlv/pushc/sfmul seq ---- 
-			(c[i]==VMOP_PUSHV)&& 
-			(c[i+2]==VMOP_PUSHC)&& 
-			(c[i+4]==VMOP_SFMUL) 
-			) 
-		{ 
-			c[i]=VMOP_PUSHFVMULC; 
-			c[i+2]=c[i+3]; 
-			c[i+3]=0xFFFF; // virtual nop 
-			c[i+4]=0xFFFF; // virtual nop 
-			i+=5; 
-			reloctbl[reloci++]=i; 
-			reloctbl[reloci++]=2; 
-		} 
-		else 
-		if( 
-			// ---- check for pushc/pushv/sfmul seq ---- 
-			(c[i]==VMOP_PUSHC)&& 
-			(c[i+2]==VMOP_PUSHV)&& 
-			(c[i+4]==VMOP_SFMUL) 
-			) 
-		{ 
-			c[i]=VMOP_PUSHFVMULC; 
-			sU16 t=c[i+1]; 
-			c[i+1]=c[i+3]; 
-			c[i+2]=t; 
-			c[i+3]=0xFFFF; // virtual nop 
-			c[i+4]=0xFFFF; // virtual nop 
-			i+=5; 
-			reloctbl[reloci++]=i; 
-			reloctbl[reloci++]=2; 
-		} 
-		else 
-		if( 
-			// ---- check for pushv/pushc/sfdiv seq ---- 
-			(c[i]==VMOP_PUSHV)&& 
-			(c[i+2]==VMOP_PUSHC)&& 
-			(c[i+4]==VMOP_SFDIV) 
-			) 
-		{ 
-			c[i]=VMOP_PUSHFVDIVC; 
-			c[i+2]=c[i+3]; 
-			c[i+3]=0xFFFF; // virtual nop 
-			c[i+4]=0xFFFF; // virtual nop 
-			i+=5; 
-			reloctbl[reloci++]=i; 
-			reloctbl[reloci++]=2; 
-		} 
-		else 
-		if( 
-			// ---- check for pushv/pushv/siand seq---- 
-			(c[i]==VMOP_PUSHV)&& 
-			(c[i+2]==VMOP_PUSHV)&& 
-			(c[i+4]==VMOP_SIAND) 
-			) 
-		{ 
-			c[i]=VMOP_PUSHIVANDIV; 
-			c[i+2]=c[i+3]; 
-			c[i+3]=0xFFFF; // virtual nop 
-			c[i+4]=0xFFFF; // virtual nop 
-			i+=5; 
-			reloctbl[reloci++]=i; 
-			reloctbl[reloci++]=2; 
-		} 
-		else 
-		if( 
-			// ---- check for pushv/pushv/sior seq---- 
-			(c[i]==VMOP_PUSHV)&& 
-			(c[i+2]==VMOP_PUSHV)&& 
-			(c[i+4]==VMOP_SIOR) 
-			) 
-		{ 
-			c[i]=VMOP_PUSHIVORIV; 
-			c[i+2]=c[i+3]; 
-			c[i+3]=0xFFFF; // virtual nop 
-			c[i+4]=0xFFFF; // virtual nop 
-			i+=5; 
-			reloctbl[reloci++]=i; 
-			reloctbl[reloci++]=2; 
-		} 
-		else 
-		if( 
-			// ---- check for pushv/pushv/sieor seq---- 
-			(c[i]==VMOP_PUSHV)&& 
-			(c[i+2]==VMOP_PUSHV)&& 
-			(c[i+4]==VMOP_SIEOR) 
-			) 
-		{ 
-			c[i]=VMOP_PUSHIVEORIV; 
-			c[i+2]=c[i+3]; 
-			c[i+3]=0xFFFF; // virtual nop 
-			c[i+4]=0xFFFF; // virtual nop 
-			i+=5; 
-			reloctbl[reloci++]=i; 
-			reloctbl[reloci++]=2; 
-		} 
-		else 
-		if( 
-			// ---- check for pushv/pushv/simod seq---- 
-			(c[i]==VMOP_PUSHV)&& 
-			(c[i+2]==VMOP_PUSHV)&& 
-			(c[i+4]==VMOP_SIMOD) 
-			) 
-		{ 
-			c[i]=VMOP_PUSHIVMODIV; 
-			c[i+2]=c[i+3]; 
-			c[i+3]=0xFFFF; // virtual nop 
-			c[i+4]=0xFFFF; // virtual nop 
-			i+=5; 
-			reloctbl[reloci++]=i; 
-			reloctbl[reloci++]=2; 
-		} 
-		else 
-		if( 
-			// ---- check for pushv/pushv/siadd seq---- 
-			(c[i]==VMOP_PUSHV)&& 
-			(c[i+2]==VMOP_PUSHV)&& 
-			(c[i+4]==VMOP_SIADD) 
-			) 
-		{ 
-			c[i]=VMOP_PUSHIVADDIV; 
-			c[i+2]=c[i+3]; 
-			c[i+3]=0xFFFF; // virtual nop 
-			c[i+4]=0xFFFF; // virtual nop 
-			i+=5; 
-			reloctbl[reloci++]=i; 
-			reloctbl[reloci++]=2; 
-		} 
-		else 
-		if( 
-			// ---- check for pushv/pushv/sisub seq---- 
-			(c[i]==VMOP_PUSHV)&& 
-			(c[i+2]==VMOP_PUSHV)&& 
-			(c[i+4]==VMOP_SISUB) 
-			) 
-		{ 
-			c[i]=VMOP_PUSHIVSUBIV; 
-			c[i+2]=c[i+3]; 
-			c[i+3]=0xFFFF; // virtual nop 
-			c[i+4]=0xFFFF; // virtual nop 
-			i+=5; 
-			reloctbl[reloci++]=i; 
-			reloctbl[reloci++]=2; 
-		} 
-		else 
-		if( 
-			// ---- check for pushv/pushv/simul seq---- 
-			(c[i]==VMOP_PUSHV)&& 
-			(c[i+2]==VMOP_PUSHV)&& 
-			(c[i+4]==VMOP_SIMUL) 
-			) 
-		{ 
-			c[i]=VMOP_PUSHIVMULIV; 
-			c[i+2]=c[i+3]; 
-			c[i+3]=0xFFFF; // virtual nop 
-			c[i+4]=0xFFFF; // virtual nop 
-			i+=5; 
-			reloctbl[reloci++]=i; 
-			reloctbl[reloci++]=2; 
-		} 
-		else 
-		if( 
-			// ---- check for pushv/pushv/sidiv seq---- 
-			(c[i]==VMOP_PUSHV)&& 
-			(c[i+2]==VMOP_PUSHV)&& 
-			(c[i+4]==VMOP_SIDIV) 
-			) 
-		{ 
-			c[i]=VMOP_PUSHIVDIVIV; 
-			c[i+2]=c[i+3]; 
-			c[i+3]=0xFFFF; // virtual nop 
-			c[i+4]=0xFFFF; // virtual nop 
-			i+=5; 
-			reloctbl[reloci++]=i; 
-			reloctbl[reloci++]=2; 
-		} 
-		else 
-		if( 
-			// ---- check for pushv/pushv/siasl seq---- 
-			(c[i]==VMOP_PUSHV)&& 
-			(c[i+2]==VMOP_PUSHV)&& 
-			(c[i+4]==VMOP_SIASL) 
-			) 
-		{ 
-			c[i]=VMOP_PUSHIVASLIV; 
-			c[i+2]=c[i+3]; 
-			c[i+3]=0xFFFF; // virtual nop 
-			c[i+4]=0xFFFF; // virtual nop 
-			i+=5; 
-			reloctbl[reloci++]=i; 
-			reloctbl[reloci++]=2; 
-		} 
-		else 
-		if( 
-			// ---- check for pushv/pushv/siasr seq---- 
-			(c[i]==VMOP_PUSHV)&& 
-			(c[i+2]==VMOP_PUSHV)&& 
-			(c[i+4]==VMOP_SIASR) 
-			) 
-		{ 
-			c[i]=VMOP_PUSHIVASRIV; 
-			c[i+2]=c[i+3]; 
-			c[i+3]=0xFFFF; // virtual nop 
-			c[i+4]=0xFFFF; // virtual nop 
-			i+=5; 
-			reloctbl[reloci++]=i; 
-			reloctbl[reloci++]=2; 
-		} 
-		else 
-		if( 
-			// ---- check for pushv/pushv/sfadd seq---- 
-			(c[i]==VMOP_PUSHV)&& 
-			(c[i+2]==VMOP_PUSHV)&& 
-			(c[i+4]==VMOP_SFADD) 
-			) 
-		{ 
-			c[i]=VMOP_PUSHFVADDFV; 
-			c[i+2]=c[i+3]; 
-			c[i+3]=0xFFFF; // virtual nop 
-			c[i+4]=0xFFFF; // virtual nop 
-			i+=5; 
-			reloctbl[reloci++]=i; 
-			reloctbl[reloci++]=2; 
-		} 
-		else 
-		if( 
-			// ---- check for pushv/pushv/sfsub seq---- 
-			(c[i]==VMOP_PUSHV)&& 
-			(c[i+2]==VMOP_PUSHV)&& 
-			(c[i+4]==VMOP_SFSUB) 
-			) 
-		{ 
-			c[i]=VMOP_PUSHFVSUBFV; 
-			c[i+2]=c[i+3]; 
-			c[i+3]=0xFFFF; // virtual nop 
-			c[i+4]=0xFFFF; // virtual nop 
-			i+=5; 
-			reloctbl[reloci++]=i; 
-			reloctbl[reloci++]=2; 
-		} 
-		else 
-		if( 
-			// ---- check for pushv/pushv/sfmul seq---- 
-			(c[i]==VMOP_PUSHV)&& 
-			(c[i+2]==VMOP_PUSHV)&& 
-			(c[i+4]==VMOP_SFMUL) 
-			) 
-		{ 
-			c[i]=VMOP_PUSHFVMULFV; 
-			c[i+2]=c[i+3]; 
-			c[i+3]=0xFFFF; // virtual nop 
-			c[i+4]=0xFFFF; // virtual nop 
-			i+=5; 
-			reloctbl[reloci++]=i; 
-			reloctbl[reloci++]=2; 
-		} 
-		else 
-		if( 
-			// ---- check for pushlv/pushlv/sfdiv seq---- 
-			(c[i]==VMOP_PUSHV)&& 
-			(c[i+2]==VMOP_PUSHV)&& 
-			(c[i+4]==VMOP_SFDIV) 
-			) 
-		{ 
-			c[i]=VMOP_PUSHFVDIVFV; 
-			c[i+2]=c[i+3]; 
-			c[i+3]=0xFFFF; // virtual nop 
-			c[i+4]=0xFFFF; // virtual nop 
-			i+=5; 
-			reloctbl[reloci++]=i; 
-			reloctbl[reloci++]=2; 
-		} 
- 
-        // ---- 2002/05 
-		else 
+		if(
+			// ---- check for pushv/popv seq ----
+			(c[i]==VMOP_PUSHV)&&
+			(c[i+2]==VMOP_POPV)
+			)
+		{
+			c[i]=VMOP_MOVV;
+			top=c[i+1];
+			c[i+1]=c[i+3];
+			c[i+2]=top;
+			c[i+3]=0xFFFF; // virtual nop
+			i+=4;
+			reloctbl[reloci++]=i;
+			reloctbl[reloci++]=1;
+		}
+		else
+		if(
+			// ---- check for pushc/popv seq ----
+			(c[i]==VMOP_PUSHC)&&
+			(c[i+2]==VMOP_POPV)
+			)
+		{
+			c[i]=VMOP_MOVVC;
+			top=c[i+1];
+			c[i+1]=c[i+3];
+			c[i+2]=top;
+			c[i+3]=0xFFFF; // virtual nop
+			i+=4;
+			reloctbl[reloci++]=i;
+			reloctbl[reloci++]=1;
+		}
+		else
+		if(
+			// ---- check for pushv/pushv/siand/popv seq----
+			(c[i]==VMOP_PUSHV)&&
+			(c[i+2]==VMOP_PUSHV)&&
+			(c[i+4]==VMOP_SIAND)&&
+			(c[i+5]==VMOP_POPV)&&
+			( (c[i+6]==c[i+1])||(c[i+6]==c[i+3]) ) // pop var that got pushed?
+			)
+		{
+			c[i]=VMOP_IVANDIV;
+			sU16 dst=c[i+6];
+			sU16 src=(c[i+1]==dst)?c[i+3]:c[i+1]; // a+b == b+a, check order
+			c[i+1]=dst;
+			c[i+2]=src;
+			c[i+3]=0xFFFF; // virtual nop
+			c[i+4]=0xFFFF; // virtual nop
+			c[i+5]=0xFFFF; // virtual nop
+			c[i+6]=0xFFFF; // virtual nop
+			i+=7;
+			reloctbl[reloci++]=i;
+			reloctbl[reloci++]=4;
+		}
+		else
+		if(
+			// ---- check for pushv/pushv/sior/popv seq----
+			(c[i]==VMOP_PUSHV)&&
+			(c[i+2]==VMOP_PUSHV)&&
+			(c[i+4]==VMOP_SIOR)&&
+			(c[i+5]==VMOP_POPV)&&
+			( (c[i+6]==c[i+1])||(c[i+6]==c[i+3]) ) // pop var that got pushed?
+			)
+		{
+			c[i]=VMOP_IVORIV;
+			sU16 dst=c[i+6];
+			sU16 src=(c[i+1]==dst)?c[i+3]:c[i+1]; // a+b == b+a, check order
+			c[i+1]=dst;
+			c[i+2]=src;
+			c[i+3]=0xFFFF; // virtual nop
+			c[i+4]=0xFFFF; // virtual nop
+			c[i+5]=0xFFFF; // virtual nop
+			c[i+6]=0xFFFF; // virtual nop
+			i+=7;
+			reloctbl[reloci++]=i;
+			reloctbl[reloci++]=4;
+		}
+		else
+		if(
+			// ---- check for pushv/pushv/sieor/popv seq----
+			(c[i]==VMOP_PUSHV)&&
+			(c[i+2]==VMOP_PUSHV)&&
+			(c[i+4]==VMOP_SIEOR)&&
+			(c[i+5]==VMOP_POPV)&&
+			( (c[i+6]==c[i+1])||(c[i+6]==c[i+3]) ) // pop var that got pushed?
+			)
+		{
+			c[i]=VMOP_IVEORIV;
+			sU16 dst=c[i+6];
+			sU16 src=(c[i+1]==dst)?c[i+3]:c[i+1]; // a+b == b+a, check order
+			c[i+1]=dst;
+			c[i+2]=src;
+			c[i+3]=0xFFFF; // virtual nop
+			c[i+4]=0xFFFF; // virtual nop
+			c[i+5]=0xFFFF; // virtual nop
+			c[i+6]=0xFFFF; // virtual nop
+			i+=7;
+			reloctbl[reloci++]=i;
+			reloctbl[reloci++]=4;
+		}
+		else
+		if(
+			// ---- check for pushv/pushv/simod/popv seq----
+			(c[i]==VMOP_PUSHV)&&
+			(c[i+2]==VMOP_PUSHV)&&
+			(c[i+4]==VMOP_SIMOD)&&
+			(c[i+5]==VMOP_POPV)&&
+			(c[i+6]==c[i+1]) // pop var that got pushed?
+			)
+		{
+			c[i]=VMOP_IVMODIV;
+			c[i+2]=c[i+3];
+			c[i+3]=0xFFFF; // virtual nop
+			c[i+4]=0xFFFF; // virtual nop
+			c[i+5]=0xFFFF; // virtual nop
+			c[i+6]=0xFFFF; // virtual nop
+			i+=7;
+			reloctbl[reloci++]=i;
+			reloctbl[reloci++]=4;
+		}
+		else
+		if(
+			// ---- check for pushv/pushv/siadd/popv seq----
+			(c[i]==VMOP_PUSHV)&&
+			(c[i+2]==VMOP_PUSHV)&&
+			(c[i+4]==VMOP_SIADD)&&
+			(c[i+5]==VMOP_POPV)&&
+			( (c[i+6]==c[i+1])||(c[i+6]==c[i+3]) ) // pop var that got pushed?
+			)
+		{
+			c[i]=VMOP_IVADDIV;
+			sU16 dst=c[i+6];
+			sU16 src=(c[i+1]==dst)?c[i+3]:c[i+1]; // a+b == b+a, check order
+			c[i+1]=dst;
+			c[i+2]=src;
+			c[i+3]=0xFFFF; // virtual nop
+			c[i+4]=0xFFFF; // virtual nop
+			c[i+5]=0xFFFF; // virtual nop
+			c[i+6]=0xFFFF; // virtual nop
+			i+=7;
+			reloctbl[reloci++]=i;
+			reloctbl[reloci++]=4;
+		}
+		else
+		if(
+			// ---- check for pushv/pushv/sisub/popv seq----
+			(c[i]==VMOP_PUSHV)&&
+			(c[i+2]==VMOP_PUSHV)&&
+			(c[i+4]==VMOP_SISUB)&&
+			(c[i+5]==VMOP_POPV)&&
+			(c[i+6]==c[i+1]) // pop var that got pushed?
+			)
+		{
+			c[i]=VMOP_IVSUBIV;
+			c[i+2]=c[i+3];
+			c[i+3]=0xFFFF; // virtual nop
+			c[i+4]=0xFFFF; // virtual nop
+			c[i+5]=0xFFFF; // virtual nop
+			c[i+6]=0xFFFF; // virtual nop
+			i+=7;
+			reloctbl[reloci++]=i;
+			reloctbl[reloci++]=4;
+		}
+		else
+		if(
+			// ---- check for pushv/pushv/simul/popv seq----
+			(c[i]==VMOP_PUSHV)&&
+			(c[i+2]==VMOP_PUSHV)&&
+			(c[i+4]==VMOP_SIMUL)&&
+			(c[i+5]==VMOP_POPV)&&
+			( (c[i+6]==c[i+1])||(c[i+6]==c[i+3]) ) // pop var that got pushed?
+			)
+		{
+			c[i]=VMOP_IVMULIV;
+			sU16 dst=c[i+6];
+			sU16 src=(c[i+1]==dst)?c[i+3]:c[i+1]; // a+b == b+a, check order
+			c[i+1]=dst;
+			c[i+2]=src;
+			c[i+3]=0xFFFF; // virtual nop
+			c[i+4]=0xFFFF; // virtual nop
+			c[i+5]=0xFFFF; // virtual nop
+			c[i+6]=0xFFFF; // virtual nop
+			i+=7;
+			reloctbl[reloci++]=i;
+			reloctbl[reloci++]=4;
+		}
+		else
+		if(
+			// ---- check for pushv/pushv/sidiv/popv seq----
+			(c[i]==VMOP_PUSHV)&&
+			(c[i+2]==VMOP_PUSHV)&&
+			(c[i+4]==VMOP_SIDIV)&&
+			(c[i+5]==VMOP_POPV)&&
+			(c[i+6]==c[i+1]) // pop var that got pushed?
+			)
+		{
+			c[i]=VMOP_IVDIVIV;
+			c[i+2]=c[i+3];
+			c[i+3]=0xFFFF; // virtual nop
+			c[i+4]=0xFFFF; // virtual nop
+			c[i+5]=0xFFFF; // virtual nop
+			c[i+6]=0xFFFF; // virtual nop
+			i+=7;
+			reloctbl[reloci++]=i;
+			reloctbl[reloci++]=4;
+		}
+		else
+		if(
+			// ---- check for pushv/pushv/siasl/popv seq----
+			(c[i]==VMOP_PUSHV)&&
+			(c[i+2]==VMOP_PUSHV)&&
+			(c[i+4]==VMOP_SIASL)&&
+			(c[i+5]==VMOP_POPV)&&
+			(c[i+6]==c[i+1]) // pop var that got pushed?
+			)
+		{
+			c[i]=VMOP_IVASLIV;
+			c[i+2]=c[i+3];
+			c[i+3]=0xFFFF; // virtual nop
+			c[i+4]=0xFFFF; // virtual nop
+			c[i+5]=0xFFFF; // virtual nop
+			c[i+6]=0xFFFF; // virtual nop
+			i+=7;
+			reloctbl[reloci++]=i;
+			reloctbl[reloci++]=4;
+		}
+		else
+		if(
+			// ---- check for pushv/pushv/siasr/popv seq----
+			(c[i]==VMOP_PUSHV)&&
+			(c[i+2]==VMOP_PUSHV)&&
+			(c[i+4]==VMOP_SIASR)&&
+			(c[i+5]==VMOP_POPV)&&
+			(c[i+6]==c[i+1]) // pop var that got pushed?
+			)
+		{
+			c[i]=VMOP_IVASRIV;
+			c[i+2]=c[i+3];
+			c[i+3]=0xFFFF; // virtual nop
+			c[i+4]=0xFFFF; // virtual nop
+			c[i+5]=0xFFFF; // virtual nop
+			c[i+6]=0xFFFF; // virtual nop
+			i+=7;
+			reloctbl[reloci++]=i;
+			reloctbl[reloci++]=4;
+		}
+		else
+		if(
+			// ---- check for pushv/pushv/sfadd/popv seq----
+			(c[i]==VMOP_PUSHV)&&
+			(c[i+2]==VMOP_PUSHV)&&
+			(c[i+4]==VMOP_SFADD)&&
+			(c[i+5]==VMOP_POPV)&&
+			( (c[i+6]==c[i+1])||(c[i+6]==c[i+3]) ) // pop var that got pushed?
+			)
+		{
+			c[i]=VMOP_FVADDFV;
+			sU16 dst=c[i+6];
+			sU16 src=(c[i+1]==dst)?c[i+3]:c[i+1]; // a+b == b+a, check order
+			c[i+1]=dst;
+			c[i+2]=src;
+			c[i+3]=0xFFFF; // virtual nop
+			c[i+4]=0xFFFF; // virtual nop
+			c[i+5]=0xFFFF; // virtual nop
+			c[i+6]=0xFFFF; // virtual nop
+			i+=7;
+			reloctbl[reloci++]=i;
+			reloctbl[reloci++]=4;
+		}
+		else
+		if(
+			// ---- check for pushv/pushv/sfsub/popv seq----
+			(c[i]==VMOP_PUSHV)&&
+			(c[i+2]==VMOP_PUSHV)&&
+			(c[i+4]==VMOP_SFSUB)&&
+			(c[i+5]==VMOP_POPV)&&
+			(c[i+6]==c[i+1]) // pop var that got pushed?
+			)
+		{
+			c[i]=VMOP_FVSUBFV;
+			c[i+2]=c[i+3];
+			c[i+3]=0xFFFF; // virtual nop
+			c[i+4]=0xFFFF; // virtual nop
+			c[i+5]=0xFFFF; // virtual nop
+			c[i+6]=0xFFFF; // virtual nop
+			i+=7;
+			reloctbl[reloci++]=i;
+			reloctbl[reloci++]=4;
+		}
+		else
+		if(
+			// ---- check for pushv/pushv/sfmul/popv seq----
+			(c[i]==VMOP_PUSHV)&&
+			(c[i+2]==VMOP_PUSHV)&&
+			(c[i+4]==VMOP_SFMUL)&&
+			(c[i+5]==VMOP_POPV)&&
+			( (c[i+6]==c[i+1])||(c[i+6]==c[i+3]) ) // pop var that got pushed?
+			)
+		{
+			c[i]=VMOP_FVMULFV;
+			sU16 dst=c[i+6];
+			sU16 src=(c[i+1]==dst)?c[i+3]:c[i+1]; // a+b == b+a, check order
+			c[i+1]=dst;
+			c[i+2]=src;
+			c[i+3]=0xFFFF; // virtual nop
+			c[i+4]=0xFFFF; // virtual nop
+			c[i+5]=0xFFFF; // virtual nop
+			c[i+6]=0xFFFF; // virtual nop
+			i+=7;
+			reloctbl[reloci++]=i;
+			reloctbl[reloci++]=4;
+		}
+		else
+		if(
+			// ---- check for pushv/pushv/sfdiv/popv seq----
+			(c[i]==VMOP_PUSHV)&&
+			(c[i+2]==VMOP_PUSHV)&&
+			(c[i+4]==VMOP_SFDIV)&&
+			(c[i+5]==VMOP_POPV)&&
+			(c[i+6]==c[i+1]) // pop var that got pushed?
+			)
+		{
+			c[i]=VMOP_FVDIVFV;
+			c[i+2]=c[i+3];
+			c[i+3]=0xFFFF; // virtual nop
+			c[i+4]=0xFFFF; // virtual nop
+			c[i+5]=0xFFFF; // virtual nop
+			c[i+6]=0xFFFF; // virtual nop
+			i+=7;
+			reloctbl[reloci++]=i;
+			reloctbl[reloci++]=4;
+		}
+		else
+		if(
+			// ---- check for pushv/pushc/siand seq ----
+			(c[i]==VMOP_PUSHV)&&
+			(c[i+2]==VMOP_PUSHC)&&
+			(c[i+4]==VMOP_SIAND)
+			)
+		{
+			c[i]=VMOP_PUSHIVANDC;
+			c[i+2]=c[i+3];
+			c[i+3]=0xFFFF; // virtual nop
+			c[i+4]=0xFFFF; // virtual nop
+			i+=5;
+			reloctbl[reloci++]=i;
+			reloctbl[reloci++]=2;
+		}
+		else
+		if(
+			// ---- check for pushc/pushv/siand seq ----
+			(c[i]==VMOP_PUSHC)&&
+			(c[i+2]==VMOP_PUSHV)&&
+			(c[i+4]==VMOP_SIAND)
+			)
+		{
+			c[i]=VMOP_PUSHIVANDC;
+			sU16 t=c[i+1];
+			c[i+1]=c[i+3];
+			c[i+2]=t;
+			c[i+3]=0xFFFF; // virtual nop
+			c[i+4]=0xFFFF; // virtual nop
+			i+=5;
+			reloctbl[reloci++]=i;
+			reloctbl[reloci++]=2;
+		}
+		else
+		if(
+			// ---- check for pushv/pushc/sior seq ----
+			(c[i]==VMOP_PUSHV)&&
+			(c[i+2]==VMOP_PUSHC)&&
+			(c[i+4]==VMOP_SIOR)
+			)
+		{
+			c[i]=VMOP_PUSHIVORC;
+			c[i+2]=c[i+3];
+			c[i+3]=0xFFFF; // virtual nop
+			c[i+4]=0xFFFF; // virtual nop
+			i+=5;
+			reloctbl[reloci++]=i;
+			reloctbl[reloci++]=2;
+		}
+		else
+		if(
+			// ---- check for pushc/pushv/sior seq ----
+			(c[i]==VMOP_PUSHC)&&
+			(c[i+2]==VMOP_PUSHV)&&
+			(c[i+4]==VMOP_SIOR)
+			)
+		{
+			c[i]=VMOP_PUSHIVORC;
+			sU16 t=c[i+1];
+			c[i+1]=c[i+3];
+			c[i+2]=t;
+			c[i+3]=0xFFFF; // virtual nop
+			c[i+4]=0xFFFF; // virtual nop
+			i+=5;
+			reloctbl[reloci++]=i;
+			reloctbl[reloci++]=2;
+		}
+		else
+		if(
+			// ---- check for pushv/pushc/sieor seq ----
+			(c[i]==VMOP_PUSHV)&&
+			(c[i+2]==VMOP_PUSHC)&&
+			(c[i+4]==VMOP_SIEOR)
+			)
+		{
+			c[i]=VMOP_PUSHIVEORC;
+			c[i+2]=c[i+3];
+			c[i+3]=0xFFFF; // virtual nop
+			c[i+4]=0xFFFF; // virtual nop
+			i+=5;
+			reloctbl[reloci++]=i;
+			reloctbl[reloci++]=2;
+		}
+		else
+		if(
+			// ---- check for pushc/pushv/sieor seq ----
+			(c[i]==VMOP_PUSHC)&&
+			(c[i+2]==VMOP_PUSHV)&&
+			(c[i+4]==VMOP_SIEOR)
+			)
+		{
+			c[i]=VMOP_PUSHIVEORC;
+			sU16 t=c[i+1];
+			c[i+1]=c[i+3];
+			c[i+2]=t;
+			c[i+3]=0xFFFF; // virtual nop
+			c[i+4]=0xFFFF; // virtual nop
+			i+=5;
+			reloctbl[reloci++]=i;
+			reloctbl[reloci++]=2;
+		}
+		else
+		if(
+			// ---- check for pushv/pushc/simod seq ----
+			(c[i]==VMOP_PUSHV)&&
+			(c[i+2]==VMOP_PUSHC)&&
+			(c[i+4]==VMOP_SIMOD)
+			)
+		{
+			c[i]=VMOP_PUSHIVMODC;
+			c[i+2]=c[i+3];
+			c[i+3]=0xFFFF; // virtual nop
+			c[i+4]=0xFFFF; // virtual nop
+			i+=5;
+			reloctbl[reloci++]=i;
+			reloctbl[reloci++]=2;
+		}
+		else
+		if(
+			// ---- check for pushv/pushc/siadd seq ----
+			(c[i]==VMOP_PUSHV)&&
+			(c[i+2]==VMOP_PUSHC)&&
+			(c[i+4]==VMOP_SIADD)
+			)
+		{
+			c[i]=VMOP_PUSHIVADDC;
+			c[i+2]=c[i+3];
+			c[i+3]=0xFFFF; // virtual nop
+			c[i+4]=0xFFFF; // virtual nop
+			i+=5;
+			reloctbl[reloci++]=i;
+			reloctbl[reloci++]=2;
+		}
+		else
+		if(
+			// ---- check for pushc/pushv/siadd seq ----
+			(c[i]==VMOP_PUSHC)&&
+			(c[i+2]==VMOP_PUSHV)&&
+			(c[i+4]==VMOP_SIADD)
+			)
+		{
+			c[i]=VMOP_PUSHIVADDC;
+			sU16 t=c[i+1];
+			c[i+1]=c[i+3];
+			c[i+2]=t;
+			c[i+3]=0xFFFF; // virtual nop
+			c[i+4]=0xFFFF; // virtual nop
+			i+=5;
+			reloctbl[reloci++]=i;
+			reloctbl[reloci++]=2;
+		}
+		else
+		if(
+			// ---- check for pushv/pushc/sisub seq ----
+			(c[i]==VMOP_PUSHV)&&
+			(c[i+2]==VMOP_PUSHC)&&
+			(c[i+4]==VMOP_SISUB)
+			)
+		{
+			c[i]=VMOP_PUSHIVSUBC;
+			c[i+2]=c[i+3];
+			c[i+3]=0xFFFF; // virtual nop
+			c[i+4]=0xFFFF; // virtual nop
+			i+=5;
+			reloctbl[reloci++]=i;
+			reloctbl[reloci++]=2;
+		}
+		else
+		if(
+			// ---- check for pushv/pushc/simul seq ----
+			(c[i]==VMOP_PUSHV)&&
+			(c[i+2]==VMOP_PUSHC)&&
+			(c[i+4]==VMOP_SIMUL)
+			)
+		{
+			c[i]=VMOP_PUSHIVMULC;
+			c[i+2]=c[i+3];
+			c[i+3]=0xFFFF; // virtual nop
+			c[i+4]=0xFFFF; // virtual nop
+			i+=5;
+			reloctbl[reloci++]=i;
+			reloctbl[reloci++]=2;
+		}
+		else
+		if(
+			// ---- check for pushc/pushv/simul seq ----
+			(c[i]==VMOP_PUSHC)&&
+			(c[i+2]==VMOP_PUSHV)&&
+			(c[i+4]==VMOP_SIMUL)
+			)
+		{
+			c[i]=VMOP_PUSHIVMULC;
+			sU16 t=c[i+1];
+			c[i+1]=c[i+3];
+			c[i+2]=t;
+			c[i+3]=0xFFFF; // virtual nop
+			c[i+4]=0xFFFF; // virtual nop
+			i+=5;
+			reloctbl[reloci++]=i;
+			reloctbl[reloci++]=2;
+		}
+		else
+		if(
+			// ---- check for pushv/pushc/sidiv seq ----
+			(c[i]==VMOP_PUSHV)&&
+			(c[i+2]==VMOP_PUSHC)&&
+			(c[i+4]==VMOP_SIDIV)
+			)
+		{
+			c[i]=VMOP_PUSHIVDIVC;
+			c[i+2]=c[i+3];
+			c[i+3]=0xFFFF; // virtual nop
+			c[i+4]=0xFFFF; // virtual nop
+			i+=5;
+			reloctbl[reloci++]=i;
+			reloctbl[reloci++]=2;
+		}
+		else
+		if(
+			// ---- check for pushv/pushc/siasl seq ----
+			(c[i]==VMOP_PUSHV)&&
+			(c[i+2]==VMOP_PUSHC)&&
+			(c[i+4]==VMOP_SIASL)
+			)
+		{
+			c[i]=VMOP_PUSHIVASLC;
+			c[i+2]=c[i+3];
+			c[i+3]=0xFFFF; // virtual nop
+			c[i+4]=0xFFFF; // virtual nop
+			i+=5;
+			reloctbl[reloci++]=i;
+			reloctbl[reloci++]=2;
+		}
+		else
+		if(
+			// ---- check for pushv/pushc/siasr seq ----
+			(c[i]==VMOP_PUSHV)&&
+			(c[i+2]==VMOP_PUSHC)&&
+			(c[i+4]==VMOP_SIASR)
+			)
+		{
+			c[i]=VMOP_PUSHIVASRC;
+			c[i+2]=c[i+3];
+			c[i+3]=0xFFFF; // virtual nop
+			c[i+4]=0xFFFF; // virtual nop
+			i+=5;
+			reloctbl[reloci++]=i;
+			reloctbl[reloci++]=2;
+		}
+		else
+		if(
+			// ---- check for pushv/pushc/sfadd seq ----
+			(c[i]==VMOP_PUSHV)&&
+			(c[i+2]==VMOP_PUSHC)&&
+			(c[i+4]==VMOP_SFADD)
+			)
+		{
+			c[i]=VMOP_PUSHFVADDC;
+			c[i+2]=c[i+3];
+			c[i+3]=0xFFFF; // virtual nop
+			c[i+4]=0xFFFF; // virtual nop
+			i+=5;
+			reloctbl[reloci++]=i;
+			reloctbl[reloci++]=2;
+		}
+		else
+		if(
+			// ---- check for pushc/pushv/sfadd seq ----
+			(c[i]==VMOP_PUSHC)&&
+			(c[i+2]==VMOP_PUSHV)&&
+			(c[i+4]==VMOP_SFADD)
+			)
+		{
+			c[i]=VMOP_PUSHFVADDC;
+			sU16 t=c[i+1];
+			c[i+1]=c[i+3];
+			c[i+2]=t;
+			c[i+3]=0xFFFF; // virtual nop
+			c[i+4]=0xFFFF; // virtual nop
+			i+=5;
+			reloctbl[reloci++]=i;
+			reloctbl[reloci++]=2;
+		}
+		else
+		if(
+			// ---- check for pushv/pushc/sfsub seq ----
+			(c[i]==VMOP_PUSHV)&&
+			(c[i+2]==VMOP_PUSHC)&&
+			(c[i+4]==VMOP_SFSUB)
+			)
+		{
+			c[i]=VMOP_PUSHFVSUBC;
+			c[i+2]=c[i+3];
+			c[i+3]=0xFFFF; // virtual nop
+			c[i+4]=0xFFFF; // virtual nop
+			i+=5;
+			reloctbl[reloci++]=i;
+			reloctbl[reloci++]=2;
+		}
+		else
+		if(
+			// ---- check for pushlv/pushc/sfmul seq ----
+			(c[i]==VMOP_PUSHV)&&
+			(c[i+2]==VMOP_PUSHC)&&
+			(c[i+4]==VMOP_SFMUL)
+			)
+		{
+			c[i]=VMOP_PUSHFVMULC;
+			c[i+2]=c[i+3];
+			c[i+3]=0xFFFF; // virtual nop
+			c[i+4]=0xFFFF; // virtual nop
+			i+=5;
+			reloctbl[reloci++]=i;
+			reloctbl[reloci++]=2;
+		}
+		else
+		if(
+			// ---- check for pushc/pushv/sfmul seq ----
+			(c[i]==VMOP_PUSHC)&&
+			(c[i+2]==VMOP_PUSHV)&&
+			(c[i+4]==VMOP_SFMUL)
+			)
+		{
+			c[i]=VMOP_PUSHFVMULC;
+			sU16 t=c[i+1];
+			c[i+1]=c[i+3];
+			c[i+2]=t;
+			c[i+3]=0xFFFF; // virtual nop
+			c[i+4]=0xFFFF; // virtual nop
+			i+=5;
+			reloctbl[reloci++]=i;
+			reloctbl[reloci++]=2;
+		}
+		else
+		if(
+			// ---- check for pushv/pushc/sfdiv seq ----
+			(c[i]==VMOP_PUSHV)&&
+			(c[i+2]==VMOP_PUSHC)&&
+			(c[i+4]==VMOP_SFDIV)
+			)
+		{
+			c[i]=VMOP_PUSHFVDIVC;
+			c[i+2]=c[i+3];
+			c[i+3]=0xFFFF; // virtual nop
+			c[i+4]=0xFFFF; // virtual nop
+			i+=5;
+			reloctbl[reloci++]=i;
+			reloctbl[reloci++]=2;
+		}
+		else
+		if(
+			// ---- check for pushv/pushv/siand seq----
+			(c[i]==VMOP_PUSHV)&&
+			(c[i+2]==VMOP_PUSHV)&&
+			(c[i+4]==VMOP_SIAND)
+			)
+		{
+			c[i]=VMOP_PUSHIVANDIV;
+			c[i+2]=c[i+3];
+			c[i+3]=0xFFFF; // virtual nop
+			c[i+4]=0xFFFF; // virtual nop
+			i+=5;
+			reloctbl[reloci++]=i;
+			reloctbl[reloci++]=2;
+		}
+		else
+		if(
+			// ---- check for pushv/pushv/sior seq----
+			(c[i]==VMOP_PUSHV)&&
+			(c[i+2]==VMOP_PUSHV)&&
+			(c[i+4]==VMOP_SIOR)
+			)
+		{
+			c[i]=VMOP_PUSHIVORIV;
+			c[i+2]=c[i+3];
+			c[i+3]=0xFFFF; // virtual nop
+			c[i+4]=0xFFFF; // virtual nop
+			i+=5;
+			reloctbl[reloci++]=i;
+			reloctbl[reloci++]=2;
+		}
+		else
+		if(
+			// ---- check for pushv/pushv/sieor seq----
+			(c[i]==VMOP_PUSHV)&&
+			(c[i+2]==VMOP_PUSHV)&&
+			(c[i+4]==VMOP_SIEOR)
+			)
+		{
+			c[i]=VMOP_PUSHIVEORIV;
+			c[i+2]=c[i+3];
+			c[i+3]=0xFFFF; // virtual nop
+			c[i+4]=0xFFFF; // virtual nop
+			i+=5;
+			reloctbl[reloci++]=i;
+			reloctbl[reloci++]=2;
+		}
+		else
+		if(
+			// ---- check for pushv/pushv/simod seq----
+			(c[i]==VMOP_PUSHV)&&
+			(c[i+2]==VMOP_PUSHV)&&
+			(c[i+4]==VMOP_SIMOD)
+			)
+		{
+			c[i]=VMOP_PUSHIVMODIV;
+			c[i+2]=c[i+3];
+			c[i+3]=0xFFFF; // virtual nop
+			c[i+4]=0xFFFF; // virtual nop
+			i+=5;
+			reloctbl[reloci++]=i;
+			reloctbl[reloci++]=2;
+		}
+		else
+		if(
+			// ---- check for pushv/pushv/siadd seq----
+			(c[i]==VMOP_PUSHV)&&
+			(c[i+2]==VMOP_PUSHV)&&
+			(c[i+4]==VMOP_SIADD)
+			)
+		{
+			c[i]=VMOP_PUSHIVADDIV;
+			c[i+2]=c[i+3];
+			c[i+3]=0xFFFF; // virtual nop
+			c[i+4]=0xFFFF; // virtual nop
+			i+=5;
+			reloctbl[reloci++]=i;
+			reloctbl[reloci++]=2;
+		}
+		else
+		if(
+			// ---- check for pushv/pushv/sisub seq----
+			(c[i]==VMOP_PUSHV)&&
+			(c[i+2]==VMOP_PUSHV)&&
+			(c[i+4]==VMOP_SISUB)
+			)
+		{
+			c[i]=VMOP_PUSHIVSUBIV;
+			c[i+2]=c[i+3];
+			c[i+3]=0xFFFF; // virtual nop
+			c[i+4]=0xFFFF; // virtual nop
+			i+=5;
+			reloctbl[reloci++]=i;
+			reloctbl[reloci++]=2;
+		}
+		else
+		if(
+			// ---- check for pushv/pushv/simul seq----
+			(c[i]==VMOP_PUSHV)&&
+			(c[i+2]==VMOP_PUSHV)&&
+			(c[i+4]==VMOP_SIMUL)
+			)
+		{
+			c[i]=VMOP_PUSHIVMULIV;
+			c[i+2]=c[i+3];
+			c[i+3]=0xFFFF; // virtual nop
+			c[i+4]=0xFFFF; // virtual nop
+			i+=5;
+			reloctbl[reloci++]=i;
+			reloctbl[reloci++]=2;
+		}
+		else
+		if(
+			// ---- check for pushv/pushv/sidiv seq----
+			(c[i]==VMOP_PUSHV)&&
+			(c[i+2]==VMOP_PUSHV)&&
+			(c[i+4]==VMOP_SIDIV)
+			)
+		{
+			c[i]=VMOP_PUSHIVDIVIV;
+			c[i+2]=c[i+3];
+			c[i+3]=0xFFFF; // virtual nop
+			c[i+4]=0xFFFF; // virtual nop
+			i+=5;
+			reloctbl[reloci++]=i;
+			reloctbl[reloci++]=2;
+		}
+		else
+		if(
+			// ---- check for pushv/pushv/siasl seq----
+			(c[i]==VMOP_PUSHV)&&
+			(c[i+2]==VMOP_PUSHV)&&
+			(c[i+4]==VMOP_SIASL)
+			)
+		{
+			c[i]=VMOP_PUSHIVASLIV;
+			c[i+2]=c[i+3];
+			c[i+3]=0xFFFF; // virtual nop
+			c[i+4]=0xFFFF; // virtual nop
+			i+=5;
+			reloctbl[reloci++]=i;
+			reloctbl[reloci++]=2;
+		}
+		else
+		if(
+			// ---- check for pushv/pushv/siasr seq----
+			(c[i]==VMOP_PUSHV)&&
+			(c[i+2]==VMOP_PUSHV)&&
+			(c[i+4]==VMOP_SIASR)
+			)
+		{
+			c[i]=VMOP_PUSHIVASRIV;
+			c[i+2]=c[i+3];
+			c[i+3]=0xFFFF; // virtual nop
+			c[i+4]=0xFFFF; // virtual nop
+			i+=5;
+			reloctbl[reloci++]=i;
+			reloctbl[reloci++]=2;
+		}
+		else
+		if(
+			// ---- check for pushv/pushv/sfadd seq----
+			(c[i]==VMOP_PUSHV)&&
+			(c[i+2]==VMOP_PUSHV)&&
+			(c[i+4]==VMOP_SFADD)
+			)
+		{
+			c[i]=VMOP_PUSHFVADDFV;
+			c[i+2]=c[i+3];
+			c[i+3]=0xFFFF; // virtual nop
+			c[i+4]=0xFFFF; // virtual nop
+			i+=5;
+			reloctbl[reloci++]=i;
+			reloctbl[reloci++]=2;
+		}
+		else
+		if(
+			// ---- check for pushv/pushv/sfsub seq----
+			(c[i]==VMOP_PUSHV)&&
+			(c[i+2]==VMOP_PUSHV)&&
+			(c[i+4]==VMOP_SFSUB)
+			)
+		{
+			c[i]=VMOP_PUSHFVSUBFV;
+			c[i+2]=c[i+3];
+			c[i+3]=0xFFFF; // virtual nop
+			c[i+4]=0xFFFF; // virtual nop
+			i+=5;
+			reloctbl[reloci++]=i;
+			reloctbl[reloci++]=2;
+		}
+		else
+		if(
+			// ---- check for pushv/pushv/sfmul seq----
+			(c[i]==VMOP_PUSHV)&&
+			(c[i+2]==VMOP_PUSHV)&&
+			(c[i+4]==VMOP_SFMUL)
+			)
+		{
+			c[i]=VMOP_PUSHFVMULFV;
+			c[i+2]=c[i+3];
+			c[i+3]=0xFFFF; // virtual nop
+			c[i+4]=0xFFFF; // virtual nop
+			i+=5;
+			reloctbl[reloci++]=i;
+			reloctbl[reloci++]=2;
+		}
+		else
+		if(
+			// ---- check for pushlv/pushlv/sfdiv seq----
+			(c[i]==VMOP_PUSHV)&&
+			(c[i+2]==VMOP_PUSHV)&&
+			(c[i+4]==VMOP_SFDIV)
+			)
+		{
+			c[i]=VMOP_PUSHFVDIVFV;
+			c[i+2]=c[i+3];
+			c[i+3]=0xFFFF; // virtual nop
+			c[i+4]=0xFFFF; // virtual nop
+			i+=5;
+			reloctbl[reloci++]=i;
+			reloctbl[reloci++]=2;
+		}
+
+        // ---- 2002/05
+		else
 		if(
 			// ---- check for pushlv/poplv seq ----
 			(c[i]==VMOP_PUSHLV)&&
@@ -3347,42 +3347,42 @@ sBool VMCore::createJITCode(void) {
 			reloctbl[reloci++]=i;
 			reloctbl[reloci++]=2;
 		}
-		else 
-		if( 
-			// ---- check for pushv/pushv/sicmp/sitestz sequence ---- 
-			(c[i]==VMOP_PUSHV)&& 
-			(c[i+2]==VMOP_PUSHV)&& 
-			( (c[i+4]>=VMOP_SICMPBGT)&&(c[i+4]<(VMOP_SICMPBGT+6)) )&& 
-			(c[i+5]==VMOP_SITESTZ) 
-			) 
-		{ 
-			c[i]=VMOP_JGTIVIV+ op_invert_tbl[(c[i+4]-VMOP_SICMPBGT)]; 
-			//c[i+1]=c[i+1]; //var1 
-			c[i+2]=c[i+3]; //var2 
-			c[i+3]=c[i+6]; //label 
-			c[i+4]=c[i+5]=c[i+6]=0xFFFF; 
-			i+=7; 
-			reloctbl[reloci++]=i; 
-			reloctbl[reloci++]=3; 
-		} 
-		else 
-		if( 
-			// ---- check for pushv/pushc/sicmp/sitestz sequence ---- 
-			(c[i]==VMOP_PUSHV)&& 
-			(c[i+2]==VMOP_PUSHC)&& 
-			((c[i+4]>=VMOP_SICMPBGT)&&(c[i+4]<(VMOP_SICMPBGT+6)) )&& 
-			(c[i+5]==VMOP_SITESTZ) 
-			) 
-		{ 
-			c[i]=VMOP_JGTIVIC+ op_invert_tbl[(c[i+4]-VMOP_SICMPBGT)]; 
-			//c[i+1]=c[i+1]; //var1 
-			c[i+2]=c[i+3]; //const 
-			c[i+3]=c[i+6]; //label 
-			c[i+4]=c[i+5]=c[i+6]=0xFFFF; 
-			i+=7; 
-			reloctbl[reloci++]=i; 
-			reloctbl[reloci++]=3; 
-		} 
+		else
+		if(
+			// ---- check for pushv/pushv/sicmp/sitestz sequence ----
+			(c[i]==VMOP_PUSHV)&&
+			(c[i+2]==VMOP_PUSHV)&&
+			( (c[i+4]>=VMOP_SICMPBGT)&&(c[i+4]<(VMOP_SICMPBGT+6)) )&&
+			(c[i+5]==VMOP_SITESTZ)
+			)
+		{
+			c[i]=VMOP_JGTIVIV+ op_invert_tbl[(c[i+4]-VMOP_SICMPBGT)];
+			//c[i+1]=c[i+1]; //var1
+			c[i+2]=c[i+3]; //var2
+			c[i+3]=c[i+6]; //label
+			c[i+4]=c[i+5]=c[i+6]=0xFFFF;
+			i+=7;
+			reloctbl[reloci++]=i;
+			reloctbl[reloci++]=3;
+		}
+		else
+		if(
+			// ---- check for pushv/pushc/sicmp/sitestz sequence ----
+			(c[i]==VMOP_PUSHV)&&
+			(c[i+2]==VMOP_PUSHC)&&
+			((c[i+4]>=VMOP_SICMPBGT)&&(c[i+4]<(VMOP_SICMPBGT+6)) )&&
+			(c[i+5]==VMOP_SITESTZ)
+			)
+		{
+			c[i]=VMOP_JGTIVIC+ op_invert_tbl[(c[i+4]-VMOP_SICMPBGT)];
+			//c[i+1]=c[i+1]; //var1
+			c[i+2]=c[i+3]; //const
+			c[i+3]=c[i+6]; //label
+			c[i+4]=c[i+5]=c[i+6]=0xFFFF;
+			i+=7;
+			reloctbl[reloci++]=i;
+			reloctbl[reloci++]=3;
+		}
 		else
 		{
 			i+=vm_opcodesz[c[i]];
@@ -3419,34 +3419,34 @@ sBool VMCore::createJITCode(void) {
 			////((op>=vmopcl[VMOPCL_SICMP])&&(op<(vmopcl[VMOPCL_SICMP]+6))) ||
 			(op==VMOP_SITESTZ)||
 		 	(op==VMOP_SITESTZP)||
-			(op==VMOP_SILOOP) 
+			(op==VMOP_SILOOP)
 			)
 		{
 			sU16 bt=c[i+1]; // get branch target
 			sU16 j=0;
 			sU16 rel=0;
-			while(reloctbl[j++]<=bt) 
+			while(reloctbl[j++]<=bt)
 				rel+=reloctbl[j++];
 			c[i+1]-=rel; // reloc branch
-		} 
-		else if(  ((op>=VMOP_JGTIVIV)&&(op<=VMOP_JEQIVIV))|| 
-			((op>=VMOP_JGTIVIC)&&(op<=VMOP_JEQIVIC)) 
-			) 
-		{ 
-			sU16 bt=c[i+3]; // get branch target 
-			sU16 j=0; 
-			sU16 rel=0; 
-			while(reloctbl[j++]<=bt)  
-				rel+=reloctbl[j++]; 
-			c[i+3]-=rel; // reloc branch 
-		} 
+		}
+		else if(  ((op>=VMOP_JGTIVIV)&&(op<=VMOP_JEQIVIV))||
+			((op>=VMOP_JGTIVIC)&&(op<=VMOP_JEQIVIC))
+			)
+		{
+			sU16 bt=c[i+3]; // get branch target
+			sU16 j=0;
+			sU16 rel=0;
+			while(reloctbl[j++]<=bt)
+				rel+=reloctbl[j++];
+			c[i+3]-=rel; // reloc branch
+		}
 		i+=vm_opcodesz[op];
 	}
 	delete [] reloctbl;
- 
+
 	} // if b_jitopt
 
-	// -------- print disassembly to console -------- 
+	// -------- print disassembly to console --------
 	if(tkscript->configuration.b_showasm)
 	{
 		YAC_String s;
@@ -3468,7 +3468,7 @@ sBool VMCore::createJITCode(void) {
 		while(i<vm_pc)
 		{
 			sU16 op=c[i];
-			if( 
+			if(
 				(op==VMOP_IASEL)||
 				(op==VMOP_IASEL)||
 				(op==VMOP_FASEL)||
@@ -3530,23 +3530,23 @@ sBool VMCore::createJITCode(void) {
 
 
 #ifdef DX_X86
-	////sUI r=estimateJITSize()+5+vm_sz_startup+vm_sz_cleanup; 
-   sUI r = estimateJITSize() + vm_sz_startup + vm_sz_cleanup; 
-#endif 
+	////sUI r=estimateJITSize()+5+vm_sz_startup+vm_sz_cleanup;
+   sUI r = estimateJITSize() + vm_sz_startup + vm_sz_cleanup;
+#endif
 
 #if defined(DX_68K) || defined(DX_ARM)
-	sUI r = estimateJITSize() + vm_sz_startup + vm_sz_cleanup; 
+	sUI r = estimateJITSize() + vm_sz_startup + vm_sz_cleanup;
 #endif
 
 //  	::printf("estimated jit size=%i\n", r);
 	if(r > 0)
 	{
       sUI alignedSz = ((r + TKSVM_PAGE_SIZE-1)/TKSVM_PAGE_SIZE) * TKSVM_PAGE_SIZE;
-      jit.nonaligned_code = new sU8[alignedSz + TKSVM_PAGE_SIZE]; 
+      jit.nonaligned_code = new sU8[alignedSz + TKSVM_PAGE_SIZE];
 
       if(tkscript->configuration.debug_level > 20)
-			tkscript->printf("[...] JIT program size: %i bytes. VM program size: %i bytes\n", r, vm_pc*2); 
-      
+			tkscript->printf("[...] JIT program size: %i bytes. VM program size: %i bytes\n", r, vm_pc*2);
+
 		if(NULL != jit.nonaligned_code)
 		{
          // Align JIT code to page boundary
@@ -3562,23 +3562,23 @@ sBool VMCore::createJITCode(void) {
 #ifdef YAC_LINUX
 			::mprotect((void*)jit.code, (size_t)alignedSz, PROT_READ|PROT_WRITE|PROT_EXEC);
 #endif
-			// Amiga w/ MMU does not need this 
- 
+			// Amiga w/ MMU does not need this
+
 
 			//-------- actually create new codepage --------
 			c  = vm_code;
 			ce = vm_code + vm_pc;
 
 			//-------- write startup --------
-			sU8 *d = jit.code; 
+			sU8 *d = jit.code;
 
 #ifdef DX_X86
 			////*d++=0xE9; // jmp
 			////*(sU32*)d=0; // jump to next statement ..
-			////d+=4; 
+			////d+=4;
 #endif
 
-			sU8 *s = vm_i86; 
+			sU8 *s = vm_i86;
 
          // Write prologue
 
@@ -3587,18 +3587,18 @@ sBool VMCore::createJITCode(void) {
          {
 				*d++ = *s++;
          }
-#endif 
+#endif
 
-#ifdef DX_68K 
-			*d++=0x48;	// 68k startup:			 
-			*d++=0xe7;  // 48E7FFFE		movem.l d2-d6/a2-a6, -(sp) 
+#ifdef DX_68K
+			*d++=0x48;	// 68k startup:
+			*d++=0xe7;  // 48E7FFFE		movem.l d2-d6/a2-a6, -(sp)
 			*d++=0x3f;
 			*d++=0x3e;
-#endif 
+#endif
 
-			// 68k cleanup: 
-			// 4CDF7FFF		movem.l (sp)+,d0-d7/a0-a6 
-			// 4E75			rts 
+			// 68k cleanup:
+			// 4CDF7FFF		movem.l (sp)+,d0-d7/a0-a6
+			// 4E75			rts
 
 			//-------- write program opcodes --------
 			for(i=0; i<65536; i++)
@@ -3610,7 +3610,7 @@ sBool VMCore::createJITCode(void) {
 
 			// E8 call
 			// D9 01 fld [ecx]
-			// C7 05 FFFFFFFF CCCCCCCC 
+			// C7 05 FFFFFFFF CCCCCCCC
 			// 6A push
 			// 8B mov ecx,
 			// FF 24 jmp [eax*4+...]
@@ -3653,9 +3653,9 @@ sBool VMCore::createJITCode(void) {
 			while(s < d)
 			{
 				if(s >= (off_opcodes[i] + vm86_sz[*c]))
-				{ 
+				{
 //  				  ::printf("next opcode\n");
-					c += vm_opcodesz[*c]; 
+					c += vm_opcodesz[*c];
 					i++;
 				}
 
@@ -3673,24 +3673,24 @@ sBool VMCore::createJITCode(void) {
 
 			} // while (s < d)
 
-			//-------- write cleanup / epilogue -------- 
-#ifdef DX_X86 
+			//-------- write cleanup / epilogue --------
+#ifdef DX_X86
 			*d++ = 0x5F;
 			*d++ = 0x5E;
 			*d++ = 0x5B;
 			*d++ = 0x8B;
 			*d++ = 0xE5;
 			*d++ = 0x5D;
-			*d++ = 0xC3; 
+			*d++ = 0xC3;
 #endif // DX_X86
 
-#ifdef DX_68K 
-			*d++ = 0x4c;	// 4CDF7cFc		movem.l (sp)+,d0-d7/a0-a6 
-			*d++ = 0xdf; 
-			*d++ = 0x7c; 
-			*d++ = 0xFc; 
-			*d++ = 0x4e;	// 4E75			rts 
-			*d++ = 0x75; 
+#ifdef DX_68K
+			*d++ = 0x4c;	// 4CDF7cFc		movem.l (sp)+,d0-d7/a0-a6
+			*d++ = 0xdf;
+			*d++ = 0x7c;
+			*d++ = 0xFc;
+			*d++ = 0x4e;	// 4E75			rts
+			*d++ = 0x75;
 #endif // DX_68K
 
 #ifdef DX_ARM
@@ -3735,12 +3735,12 @@ sU8 *VMCore::fixInstructionX86(sU16 *c, sU8 *s, sU8 *d) {
    ////	s+=4;
    ////	*(sU32*)s=(sU32)(off_opcodes[woff_opcodes[c[4]]]);
    ////	s+=4;
-   ////} 
+   ////}
    if(*s++==0xb8) // MOV EAX
    {
       ////if( (*(sU32*)(s)) == 0xC0DE1234 )
       ////{
-      ////   s[-1]=0xE9; // jump to vm_end 
+      ////   s[-1]=0xE9; // jump to vm_end
       ////   *(sU32*)s=(sU32)(d-s-4);
       ////   s+=4;
       ////}
@@ -3760,15 +3760,15 @@ sU8 *VMCore::fixInstructionX86(sU16 *c, sU8 *s, sU8 *d) {
                s[-1]=0xE9; // JMP
                *(sU32*)s=(sU32)(off_opcodes[woff_opcodes[c[2]]]-s-4);
                s+=4;
-            } 
+            }
             else
-               if( (*(sU32*)(s)) ==0xC0DEC0D3) 
-               { 
-                  // branch 
-                  s[-1]=0xE9; // JMP 
-                  *(sU32*)s=(sU32)(off_opcodes[woff_opcodes[c[3]]]-s-4); 
-                  s+=4; 
-               } 
+               if( (*(sU32*)(s)) ==0xC0DEC0D3)
+               {
+                  // branch
+                  s[-1]=0xE9; // JMP
+                  *(sU32*)s=(sU32)(off_opcodes[woff_opcodes[c[3]]]-s-4);
+                  s+=4;
+               }
                else
 						if( (*(sU32*)s) == 0xC0FFC4C4 )
 						{
@@ -3777,14 +3777,14 @@ sU8 *VMCore::fixInstructionX86(sU16 *c, sU8 *s, sU8 *d) {
 							s+=4;
 						}
       }
-   } 
+   }
    else
    {
       if( (*(sU32*)(s-1)) == 0xC0FFC0FF )
       {
-         // const 
+         // const
          *(sU32*)(s-1) = (sU32) vm_const[c[1]].ui;
-         //s+=4; 
+         //s+=4;
          s+=3;
       }
       else
@@ -3792,7 +3792,7 @@ sU8 *VMCore::fixInstructionX86(sU16 *c, sU8 *s, sU8 *d) {
          {
             // const, 2nd arg
             *(sU32*)(s-1) = (sU32) vm_const[c[2]].ui;
-            //s+=4; 
+            //s+=4;
             s+=3;
          }
          else
@@ -3804,12 +3804,12 @@ sU8 *VMCore::fixInstructionX86(sU16 *c, sU8 *s, sU8 *d) {
                s+=5; // xXXX
             }
             else
-               //if( (*(sU32*)s) == 0xC0FFC4C4 ) 
+               //if( (*(sU32*)s) == 0xC0FFC4C4 )
                if( (*(sU32*)(s-1)) == 0xC0FFC4C4 )
                {
                   // variable dest
                   *(sU32*)(s-1)=(sU32) vm_vars[c[1]].ui; // push adr of var
-                  //s+=4; 
+                  //s+=4;
                   s+=3;
                }
                else
@@ -3817,7 +3817,7 @@ sU8 *VMCore::fixInstructionX86(sU16 *c, sU8 *s, sU8 *d) {
 						{
 							// variable dest
 							*(sU32*)(s-1)=(sU32) vm_vars[c[2]].ui; // push adr of var, 2nd arg
-							//s+=4; 
+							//s+=4;
 							s+=3;
 						}
 						else
@@ -3880,15 +3880,15 @@ sU8 *VMCore::fixInstruction68K(sU16 *c, sU8 *s, sU8 *e) {
       default:
          s++;
          break;
-      case 0xC0: 
+      case 0xC0:
          switch(s[1])
-         { 
+         {
             default:
                s++;
                break;
             case 0xDE:
                switch(s[2])
-               { 
+               {
 						default:
                      s++;
                      break;
@@ -3937,7 +3937,7 @@ sU8 *VMCore::fixInstruction68K(sU16 *c, sU8 *s, sU8 *e) {
                            s++;
                            break;
                         case 0xFF:
-                           // const 
+                           // const
                            *(sU32*)(s) = (sU32) vm_const[c[1]].ui;
                            s+=4;
                            break;
@@ -3955,7 +3955,7 @@ sU8 *VMCore::fixInstruction68K(sU16 *c, sU8 *s, sU8 *e) {
                            s++;
                            break;
                         case 0xC4:
-                           // variable 
+                           // variable
                            *(sU32*)s=(sU32) vm_vars[c[1]].ui; // push adr of var
                            s+=4;
                            break;
@@ -4028,9 +4028,9 @@ sU8 *VMCore::fixInstructionARM(sU16 *c, sU32 *s, sU8 *e, sUI i) {
 
    sU16 vmop = c[0];
 
-#define Dfixbranch2(soff, vmdstpc) s[soff] = (s[soff] & 0xFF000000u) | ( (( ((sS32)off_opcodes[woff_opcodes[vmdstpc]]) - ((sS32)(s+soff+2)) ) >> 2) & 0x00FFFFFFu ) 
+#define Dfixbranch2(soff, vmdstpc) s[soff] = (s[soff] & 0xFF000000u) | ( (( ((sS32)off_opcodes[woff_opcodes[vmdstpc]]) - ((sS32)(s+soff+2)) ) >> 2) & 0x00FFFFFFu )
 
-#ifdef JIT_DEBUG 
+#ifdef JIT_DEBUG
 #define Dfixbranch(soff, vmdstpc) Dfixbranch2(soff, vmdstpc); printf("xxx Dfixbranch: cs=%p dst=%p (vmpc=%u) op=0x%08x\n", (s+soff+2), off_opcodes[woff_opcodes[vmdstpc]], vmdstpc, s[soff])
 #else
 #define Dfixbranch Dfixbranch2
@@ -4353,19 +4353,19 @@ sU8 VMCoreInline::compile(VMCore *_vm) {
 			////((op>=vmopcl[VMOPCL_SICMP])&&(op<(vmopcl[VMOPCL_SICMP]+6))) ||
 			(op==VMOP_SITESTZ)||
 			(op==VMOP_SITESTZP)||
-			(op==VMOP_SILOOP) 
+			(op==VMOP_SILOOP)
 			)
 		{
 			// fix branch, labels are already resolved
 			c[i+1]+=_vm->vm_pc;
-		} 
-		else 
-		if( ((op>=VMOP_JGTIVIV)&&(op<=VMOP_JEQIVIV))|| 
-			((op>=VMOP_JGTIVIC)&&(op<=VMOP_JEQIVIC)) 
-			) 
-		{ 
-			c[i+3]+=_vm->vm_pc; 
-		} 
+		}
+		else
+		if( ((op>=VMOP_JGTIVIV)&&(op<=VMOP_JEQIVIV))||
+			((op>=VMOP_JGTIVIC)&&(op<=VMOP_JEQIVIC))
+			)
+		{
+			c[i+3]+=_vm->vm_pc;
+		}
 		else
 		if(
 			(op==VMOP_PUSHC)
@@ -4414,34 +4414,34 @@ sU8 VMCoreInline::compile(VMCore *_vm) {
 		else
 		if(
 			(op==VMOP_MOVVC)||
-			////(op==vmopcl[VMOPCL_IVANDC])|| 
-			////(op==vmopcl[VMOPCL_IVORC])|| 
-			////(op==vmopcl[VMOPCL_IVEORC])|| 
-			////(op==vmopcl[VMOPCL_IVMODC])|| 
-			////(op==vmopcl[VMOPCL_IVADDC])|| 
-			////(op==vmopcl[VMOPCL_IVSUBC])|| 
-			////(op==vmopcl[VMOPCL_IVMULC])|| 
-			////(op==vmopcl[VMOPCL_IVDIVC])|| 
-			////(op==vmopcl[VMOPCL_IVASLC])|| 
-			////(op==vmopcl[VMOPCL_IVASRC])|| 
-			(op==VMOP_PUSHIVANDC)|| 
-			(op==VMOP_PUSHIVORC)|| 
-			(op==VMOP_PUSHIVEORC)|| 
-			(op==VMOP_PUSHIVMODC)|| 
-			(op==VMOP_PUSHIVADDC)|| 
-			(op==VMOP_PUSHIVSUBC)|| 
-			(op==VMOP_PUSHIVMULC)|| 
-			(op==VMOP_PUSHIVDIVC)|| 
-			(op==VMOP_PUSHIVASLC)|| 
-			(op==VMOP_PUSHIVASRC)|| 
-			////(op==vmopcl[VMOPCL_FVADDC])|| 
-			////(op==vmopcl[VMOPCL_FVSUBC])|| 
-			////(op==vmopcl[VMOPCL_FVMULC])|| 
-			////(op==vmopcl[VMOPCL_FVDIVC])|| 
-			(op==VMOP_PUSHFVADDC)|| 
-			(op==VMOP_PUSHFVSUBC)|| 
-			(op==VMOP_PUSHFVMULC)|| 
-			(op==VMOP_PUSHFVDIVC) 
+			////(op==vmopcl[VMOPCL_IVANDC])||
+			////(op==vmopcl[VMOPCL_IVORC])||
+			////(op==vmopcl[VMOPCL_IVEORC])||
+			////(op==vmopcl[VMOPCL_IVMODC])||
+			////(op==vmopcl[VMOPCL_IVADDC])||
+			////(op==vmopcl[VMOPCL_IVSUBC])||
+			////(op==vmopcl[VMOPCL_IVMULC])||
+			////(op==vmopcl[VMOPCL_IVDIVC])||
+			////(op==vmopcl[VMOPCL_IVASLC])||
+			////(op==vmopcl[VMOPCL_IVASRC])||
+			(op==VMOP_PUSHIVANDC)||
+			(op==VMOP_PUSHIVORC)||
+			(op==VMOP_PUSHIVEORC)||
+			(op==VMOP_PUSHIVMODC)||
+			(op==VMOP_PUSHIVADDC)||
+			(op==VMOP_PUSHIVSUBC)||
+			(op==VMOP_PUSHIVMULC)||
+			(op==VMOP_PUSHIVDIVC)||
+			(op==VMOP_PUSHIVASLC)||
+			(op==VMOP_PUSHIVASRC)||
+			////(op==vmopcl[VMOPCL_FVADDC])||
+			////(op==vmopcl[VMOPCL_FVSUBC])||
+			////(op==vmopcl[VMOPCL_FVMULC])||
+			////(op==vmopcl[VMOPCL_FVDIVC])||
+			(op==VMOP_PUSHFVADDC)||
+			(op==VMOP_PUSHFVSUBC)||
+			(op==VMOP_PUSHFVMULC)||
+			(op==VMOP_PUSHFVDIVC)
 			)
 		{
 			// fix globalvar and constant
@@ -4585,36 +4585,36 @@ sU8 VMCoreInline::compile(VMCore *_vm) {
 			c[i+2]=_vm->addLocalVarRef(vm_localvarnames[c[i+2]]);
 		}
 		else
-		if( 
+		if(
 			(op==VMOP_MOVV)||
-			(op==VMOP_IVANDIV)|| 
-			(op==VMOP_IVORIV)|| 
-			(op==VMOP_IVEORIV)|| 
-			(op==VMOP_IVMODIV)|| 
-			(op==VMOP_IVADDIV)|| 
-			(op==VMOP_IVSUBIV)|| 
-			(op==VMOP_IVMULIV)|| 
-			(op==VMOP_IVDIVIV)|| 
-			(op==VMOP_IVASLIV)|| 
-			(op==VMOP_IVASRIV)|| 
-			(op==VMOP_FVADDFV)|| 
-			(op==VMOP_FVSUBFV)|| 
-			(op==VMOP_FVMULFV)|| 
-			(op==VMOP_FVDIVFV)|| 
-			(op==VMOP_PUSHIVANDIV)|| 
-			(op==VMOP_PUSHIVORIV)|| 
-			(op==VMOP_PUSHIVEORIV)|| 
-			(op==VMOP_PUSHIVMODIV)|| 
-			(op==VMOP_PUSHIVADDIV)|| 
-			(op==VMOP_PUSHIVSUBIV)|| 
-			(op==VMOP_PUSHIVMULIV)|| 
-			(op==VMOP_PUSHIVDIVIV)|| 
-			(op==VMOP_PUSHIVASLIV)|| 
-			(op==VMOP_PUSHIVASRIV)|| 
-			(op==VMOP_PUSHFVADDFV)|| 
-			(op==VMOP_PUSHFVSUBFV)|| 
-			(op==VMOP_PUSHFVMULFV)|| 
-			(op==VMOP_PUSHFVDIVFV) 
+			(op==VMOP_IVANDIV)||
+			(op==VMOP_IVORIV)||
+			(op==VMOP_IVEORIV)||
+			(op==VMOP_IVMODIV)||
+			(op==VMOP_IVADDIV)||
+			(op==VMOP_IVSUBIV)||
+			(op==VMOP_IVMULIV)||
+			(op==VMOP_IVDIVIV)||
+			(op==VMOP_IVASLIV)||
+			(op==VMOP_IVASRIV)||
+			(op==VMOP_FVADDFV)||
+			(op==VMOP_FVSUBFV)||
+			(op==VMOP_FVMULFV)||
+			(op==VMOP_FVDIVFV)||
+			(op==VMOP_PUSHIVANDIV)||
+			(op==VMOP_PUSHIVORIV)||
+			(op==VMOP_PUSHIVEORIV)||
+			(op==VMOP_PUSHIVMODIV)||
+			(op==VMOP_PUSHIVADDIV)||
+			(op==VMOP_PUSHIVSUBIV)||
+			(op==VMOP_PUSHIVMULIV)||
+			(op==VMOP_PUSHIVDIVIV)||
+			(op==VMOP_PUSHIVASLIV)||
+			(op==VMOP_PUSHIVASRIV)||
+			(op==VMOP_PUSHFVADDFV)||
+			(op==VMOP_PUSHFVSUBFV)||
+			(op==VMOP_PUSHFVMULFV)||
+			(op==VMOP_PUSHFVDIVFV)
 			)
 		{
 			c[i+1]=_vm->addVarRef(vm_vars[c[i+1]], vm_varnames[c[i+1]]);
@@ -4671,14 +4671,14 @@ sU8 VMCoreInline::compile(VMCore *_vm) {
 	return next?next->compileHybridStatement(_vm):0;
 }
 #endif // 0
- 
-void VMCore::addHybridStatement(PTN_Statement *_st) { 
-	pushci((sSI)_st); 
+
+void VMCore::addHybridStatement(PTN_Statement *_st) {
+	pushci((sSI)_st);
    pushEnv();
-	addAPICall2((sUI)tksvm_hybridstat); 
+	addAPICall2((sUI)tksvm_hybridstat);
 	addOpcode(VMOP_INCSTP); // cleanup env
    addOpcode(VMOP_INCSTP); // cleanup st
-} 
+}
 
 void VMCore::execAPICall(void) {
 #ifdef DX_ARM
@@ -4701,9 +4701,9 @@ void VMCore::execAPICall(void) {
    }
 #endif // DX_ARM
 }
- 
-void VMCore::addAPICall1(sUI _name/**void(_name)(...)**/) { 
-	loadfxc((sSI)_name); 
+
+void VMCore::addAPICall1(sUI _name/**void(_name)(...)**/) {
+	loadfxc((sSI)_name);
 #ifndef DX_X86
 	addOpcode(VMOP_BEGAPICALL1);
 #endif
@@ -4711,10 +4711,10 @@ void VMCore::addAPICall1(sUI _name/**void(_name)(...)**/) {
 #ifndef DX_X86
 	addOpcode(VMOP_ENDAPICALL1);
 #endif
-} 
+}
 
-void VMCore::addAPICall2(sUI _name/**void(_name)(...)**/) { 
-	loadfxc((sSI)_name); 
+void VMCore::addAPICall2(sUI _name/**void(_name)(...)**/) {
+	loadfxc((sSI)_name);
 #ifndef DX_X86
 	addOpcode(VMOP_BEGAPICALL2);
 #endif
@@ -4722,10 +4722,10 @@ void VMCore::addAPICall2(sUI _name/**void(_name)(...)**/) {
 #ifndef DX_X86
 	addOpcode(VMOP_ENDAPICALL2);
 #endif
-} 
+}
 
-void VMCore::addAPICall3(sUI _name/**void(_name)(...)**/) { 
-	loadfxc((sSI)_name); 
+void VMCore::addAPICall3(sUI _name/**void(_name)(...)**/) {
+	loadfxc((sSI)_name);
 #ifndef DX_X86
 	addOpcode(VMOP_BEGAPICALL3);
 #endif
@@ -4733,134 +4733,134 @@ void VMCore::addAPICall3(sUI _name/**void(_name)(...)**/) {
 #ifndef DX_X86
 	addOpcode(VMOP_ENDAPICALL3);
 #endif
-} 
+}
 
-void VMCore::loadfxc(sSI _i) { 
-	addOpcode(VMOP_LOADFXC); 
-	vm_code[vm_pc++] = addConstInt(_i); 
-} 
- 
-void VMCore::pushci(sSI _i) { 
-	addOpcode(VMOP_PUSHC); 
-	vm_code[vm_pc++] = addConstInt(_i); 
-} 
- 
-void VMCore::pushcf(sF32 _f) { 
-	addOpcode(VMOP_PUSHC); 
-	addConstFloat(_f); // also adds vm_code[vm_pc++]... 
-} 
- 
-void VMCore::pushv(TKS_CachedObject *var) { 
-	yacmemptr varptr; 
-	varptr.si=&var->value.int_val; 
-	addOpcode(VMOP_PUSHV); 
+void VMCore::loadfxc(sSI _i) {
+	addOpcode(VMOP_LOADFXC);
+	vm_code[vm_pc++] = addConstInt(_i);
+}
+
+void VMCore::pushci(sSI _i) {
+	addOpcode(VMOP_PUSHC);
+	vm_code[vm_pc++] = addConstInt(_i);
+}
+
+void VMCore::pushcf(sF32 _f) {
+	addOpcode(VMOP_PUSHC);
+	addConstFloat(_f); // also adds vm_code[vm_pc++]...
+}
+
+void VMCore::pushv(TKS_CachedObject *var) {
+	yacmemptr varptr;
+	varptr.si=&var->value.int_val;
+	addOpcode(VMOP_PUSHV);
    //vm_code[vm_pc++]=addVarRef(varptr, var->name ? (char*)var->name->chars : NULL);
    vm_code[vm_pc++]=addVarRef(varptr, (char*)var->name.chars);
-} 
- 
-void VMCore::objassign(sU16 _left_clid, sU16 _right_clid) { 
-	switch(_left_clid) 
-	{ 
-	case YAC_CLID_STRING: 
-	default: 
+}
+
+void VMCore::objassign(sU16 _left_clid, sU16 _right_clid) {
+	switch(_left_clid)
+	{
+	case YAC_CLID_STRING:
+	default:
 		loadfxc((sSI)&tksvm_opassign);
 #ifndef DX_X86
-		addOpcode(VMOP_BEGAPICALL2); 
+		addOpcode(VMOP_BEGAPICALL2);
 #endif
       execAPICall();
 #ifndef DX_X86
       addOpcode(VMOP_ENDAPICALL2);
 #endif
-		break; 
-	} 
-} 
- 
-sU8 VMCore::apush(TKS_CachedObject *cached_object) { 
-	YAC_Object *o=cached_object->value.object_val; 
-	if(!o) return 0xFF; 
- 
-	switch(o->class_ID) 
-	{ 
-	default: 
-		{ 
-			switch(o->yacArrayGetElementType()) 
-			{ 
-			case 1: 
-				selectIntArray(cached_object); 
-				addOpcode(VMOP_SIAPUSHL); 
-				return 1; 
-			case 2: 
-				selectFloatArray(cached_object); 
-				addOpcode(VMOP_SIAPUSHL); 
-				return 2; 
-			case 3: 
-			default: 
-				Dprintf("[---] internal error: no JIT code path for array object (clid=%i).\n", 
-					o->class_ID); 
-				Dcterror(PTNERR_CANTCOMPILE); 
-				return 0xFF; 
-			} 
-		} 
-		case YAC_CLID_INTARRAY: 
-			selectIntArray(cached_object); 
-			addOpcode(VMOP_SIAPUSHL); 
-			return 1; 
- 
-		case YAC_CLID_FLOATARRAY:  
-      case TKS_CLID_ENVELOPE: 
-         selectFloatArray(cached_object); 
-         addOpcode(VMOP_SIAPUSHL); 
-         return 2; 
+		break;
+	}
+}
 
-		case YAC_CLID_OBJECTARRAY: 
-			pushci((sSI)cached_object); 
-			// stack: 
-			//         +0 object 
-			//         +1 array index 
-			addAPICall2((sUI)&tksvm_objectarrayindexexpr); 
-			addOpcode(VMOP_INCSTP); // cleanup object 
+sU8 VMCore::apush(TKS_CachedObject *cached_object) {
+	YAC_Object *o=cached_object->value.object_val;
+	if(!o) return 0xFF;
+
+	switch(o->class_ID)
+	{
+	default:
+		{
+			switch(o->yacArrayGetElementType())
+			{
+			case 1:
+				selectIntArray(cached_object);
+				addOpcode(VMOP_SIAPUSHL);
+				return 1;
+			case 2:
+				selectFloatArray(cached_object);
+				addOpcode(VMOP_SIAPUSHL);
+				return 2;
+			case 3:
+			default:
+				Dprintf("[---] internal error: no JIT code path for array object (clid=%i).\n",
+					o->class_ID);
+				Dcterror(PTNERR_CANTCOMPILE);
+				return 0xFF;
+			}
+		}
+		case YAC_CLID_INTARRAY:
+			selectIntArray(cached_object);
+			addOpcode(VMOP_SIAPUSHL);
+			return 1;
+
+		case YAC_CLID_FLOATARRAY:
+      case TKS_CLID_ENVELOPE:
+         selectFloatArray(cached_object);
+         addOpcode(VMOP_SIAPUSHL);
+         return 2;
+
+		case YAC_CLID_OBJECTARRAY:
+			pushci((sSI)cached_object);
+			// stack:
+			//         +0 object
+			//         +1 array index
+			addAPICall2((sUI)&tksvm_objectarrayindexexpr);
+			addOpcode(VMOP_INCSTP); // cleanup object
          addOpcode(VMOP_SRETI);  // overwrite arrayidx with return value
-			return 3; 
- 
-		case YAC_CLID_POINTERARRAY: 
-			pushci((sSI)cached_object); 
-			// stack: 
-			//         +0 object 
-			//         +1 array index 
-			addAPICall2((sUI)&tksvm_pointerarrayindexexpr); 
-			addOpcode(VMOP_INCSTP); // cleanup object 
+			return 3;
+
+		case YAC_CLID_POINTERARRAY:
+			pushci((sSI)cached_object);
+			// stack:
+			//         +0 object
+			//         +1 array index
+			addAPICall2((sUI)&tksvm_pointerarrayindexexpr);
+			addOpcode(VMOP_INCSTP); // cleanup object
          addOpcode(VMOP_SRETI);  // overwrite arrayidx with return value
-			return 3; 
- 
-		case YAC_CLID_STRINGARRAY: 
-			pushci((sSI)cached_object); 
-			// stack: 
-			//         +0 object 
-			//         +1 array index 
-			addAPICall2((sUI)&tksvm_stringarrayindexexpr); 
-			addOpcode(VMOP_INCSTP); // cleanup object 
+			return 3;
+
+		case YAC_CLID_STRINGARRAY:
+			pushci((sSI)cached_object);
+			// stack:
+			//         +0 object
+			//         +1 array index
+			addAPICall2((sUI)&tksvm_stringarrayindexexpr);
+			addOpcode(VMOP_INCSTP); // cleanup object
          addOpcode(VMOP_SRETI);  // overwrite arrayidx with return value
-			return 3; 
- 
-		case YAC_CLID_CLASSARRAY: 
-			pushci((sSI)cached_object); 
-			// stack: 
-			//         +0 object 
-			//         +1 array index 
-			addAPICall2((sUI)&tksvm_classarrayindexexpr); 
-			addOpcode(VMOP_INCSTP); // cleanup object 
+			return 3;
+
+		case YAC_CLID_CLASSARRAY:
+			pushci((sSI)cached_object);
+			// stack:
+			//         +0 object
+			//         +1 array index
+			addAPICall2((sUI)&tksvm_classarrayindexexpr);
+			addOpcode(VMOP_INCSTP); // cleanup object
          addOpcode(VMOP_SRETI);  // overwrite arrayidx with return value
-			return 3; 
- 
-	} 
-} 
- 
- 
+			return 3;
+
+	}
+}
+
+
 void VMCore::addCPPCallY(const YAC_CommandY *command, sUI _numRetObj) {
 
    // (note) _numRetObj is either 0 or 1 (if => call syntax is used)
-	
-   loadfxc((sSI)command->y_adr); 
+
+   loadfxc((sSI)command->y_adr);
 
 #ifndef DX_X86
 	addOpcode(VMOP_BEGAPICALL2 + _numRetObj);   // 2 for 'this' and arglist*
@@ -4870,9 +4870,9 @@ void VMCore::addCPPCallY(const YAC_CommandY *command, sUI _numRetObj) {
    addOpcode(VMOP_ENDAPICALL2 + _numRetObj);
 #endif
 
-	if(0 == command->y_return_type) 
+	if(0 == command->y_return_type)
    {
-		addOpcode(VMOP_INCSTP); // discard object 
+		addOpcode(VMOP_INCSTP); // discard object
    }
 
    // (note) always wrapped arg
@@ -4881,34 +4881,34 @@ void VMCore::addCPPCallY(const YAC_CommandY *command, sUI _numRetObj) {
 		addOpcode(VMOP_INCSTP); // discard arg*
    }
 
-	sUI i; 
-	for(i=0; i<command->y_arg_num; i++) 
+	sUI i;
+	for(i=0; i<command->y_arg_num; i++)
    {
 		addOpcode(VMOP_INCSTP); // discard args  (todo) use INCSTPn
    }
 
-	switch(command->y_return_type) 
-	{ 
-	case 1: 
-	case 3: 
+	switch(command->y_return_type)
+	{
+	case 1:
+	case 3:
 		addOpcode(VMOP_SRETI); // read from eax / d0 / r0
-		break; 
-	case 2: 
+		break;
+	case 2:
 		addOpcode(VMOP_SRETF); // read from FPU register resp. r0
-		break; 
-	} 
-} 
- 
-void VMCore::addCCallY(const YAC_CommandY *command, sUI _numRetObj) { 
+		break;
+	}
+}
+
+void VMCore::addCCallY(const YAC_CommandY *command, sUI _numRetObj) {
 
    // (note) _numRetObj is either 0 or 1 (if => call syntax is used)
 
    loadfxc((sSI)command->y_adr);
 
-   if(command->y_callstyle < 5) // use wrapped args ? 
+   if(command->y_callstyle < 5) // use wrapped args ?
    {
 #ifndef DX_X86
-	   addOpcode(VMOP_BEGAPICALL1 + _numRetObj); 
+	   addOpcode(VMOP_BEGAPICALL1 + _numRetObj);
 #endif
       execAPICall();
 #ifndef DX_X86
@@ -4918,7 +4918,7 @@ void VMCore::addCCallY(const YAC_CommandY *command, sUI _numRetObj) {
    else
    {
 #ifndef DX_X86
-	   addOpcode(VMOP_BEGAPICALL0 + command->y_arg_num + _numRetObj); 
+	   addOpcode(VMOP_BEGAPICALL0 + command->y_arg_num + _numRetObj);
       // (note) do not align stack on ARM (affects only builtin functions)
 #endif
       addOpcode(VMOP_APICALL);
@@ -4927,52 +4927,52 @@ void VMCore::addCCallY(const YAC_CommandY *command, sUI _numRetObj) {
 #endif
    }
 
-	if(command->y_arg_num) 
-	{ 
-		if(command->y_callstyle < 5) 
+	if(command->y_arg_num)
+	{
+		if(command->y_callstyle < 5)
       {
-			addOpcode(VMOP_INCSTP); // discard arglist* 
+			addOpcode(VMOP_INCSTP); // discard arglist*
       }
 
-		sUI i; 
-		for(i=0; i<command->y_arg_num; i++) 
+		sUI i;
+		for(i=0; i<command->y_arg_num; i++)
       {
 			addOpcode(VMOP_INCSTP); // discard args  (todo) use INCSTPn
       }
 	}
 
-	switch(command->y_return_type) 
-	{ 
-	case 1: 
-	case 3: 
+	switch(command->y_return_type)
+	{
+	case 1:
+	case 3:
 		addOpcode(VMOP_SRETI); // read from eax / d0 / r0
-		break; 
-	case 2: 
+		break;
+	case 2:
 		addOpcode(VMOP_SRETF); // read from FPU register resp. r0
-		break; 
-	} 
-} 
-  
-void VMCore::resetArrayCache(void) { 
-   c_array = NULL; 
-} 
+		break;
+	}
+}
 
-void VMCore::selectIntArray(TKS_CachedObject *_var) { 
-	if(jit.b_allowArrayCache && (c_array==_var) ) 
-		return; 
-	addOpcode(VMOP_IASEL); 
-	vm_code[vm_pc++]=addIntArray(_var); 
-	c_array=_var; 
-} 
- 
-void VMCore::selectFloatArray(TKS_CachedObject *_var) { 
-	if(jit.b_allowArrayCache && (c_array==_var) ) 
-		return; 
-	addOpcode(VMOP_FASEL); 
-	vm_code[vm_pc++]=addFloatArray(_var); 
-	c_array=_var; 
-} 
- 
+void VMCore::resetArrayCache(void) {
+   c_array = NULL;
+}
+
+void VMCore::selectIntArray(TKS_CachedObject *_var) {
+	if(jit.b_allowArrayCache && (c_array==_var) )
+		return;
+	addOpcode(VMOP_IASEL);
+	vm_code[vm_pc++]=addIntArray(_var);
+	c_array=_var;
+}
+
+void VMCore::selectFloatArray(TKS_CachedObject *_var) {
+	if(jit.b_allowArrayCache && (c_array==_var) )
+		return;
+	addOpcode(VMOP_FASEL);
+	vm_code[vm_pc++]=addFloatArray(_var);
+	c_array=_var;
+}
+
 void VMCore::pushContext (void) {
    addOpcode(VMOP_PUSHLV);
    vm_code[vm_pc++]=TKSVM_LVAR_CONTEXT;
@@ -4987,66 +4987,66 @@ void VMCore::pushEnv(void) {
 
 
 
- 
- 
-void YAC_CALL tksvm_classmemberassign_if(TKS_CachedObject *_co, sUI id, sUI _if) { 
-	// stack:    
-	//        +0=var 
-	//        +1=member 
-	//        +2=if value 
-	TKS_ScriptClassInstance*o=(TKS_ScriptClassInstance*)_co->value.object_val; 
-    *(sUI*)&o->member_data[(sU16)((id&0xFFF) + o->class_decl->class_relocation_table[(id>>16)&0xFFFF])] = _if; 
-} 
- 
-void YAC_CALL tksvm_classmemberassign_stack_if(TKS_Context *_context, sUI id, sUI _if) { 
-	// stack:    
-	//        +0=member 
-	//        +1=if value 
+
+
+void YAC_CALL tksvm_classmemberassign_if(TKS_CachedObject *_co, sUI id, sUI _if) {
+	// stack:
+	//        +0=var
+	//        +1=member
+	//        +2=if value
+	TKS_ScriptClassInstance*o=(TKS_ScriptClassInstance*)_co->value.object_val;
+    *(sUI*)&o->member_data[(sU16)((id&0xFFF) + o->class_decl->class_relocation_table[(id>>16)&0xFFFF])] = _if;
+}
+
+void YAC_CALL tksvm_classmemberassign_stack_if(TKS_Context *_context, sUI id, sUI _if) {
+	// stack:
+	//        +0=member
+	//        +1=if value
    // xxx TKS_MT: MUST use *real* context (JIT only works in main thread for now)
-    *(sUI*)&_context->tksvm_class_stack_object->member_data[(sU16)((id&0xFFF) + _context->tksvm_class_stack_object->class_decl->class_relocation_table[(id>>16)&0xFFFF])]  
-		= _if; 
-} 
- 
-sUI YAC_CALL tksvm_classmemberexpr_if(TKS_CachedObject *_co, sUI id) { 
-	// stack:    
-	//        +0=object 
-	//        +1=member 
-	TKS_ScriptClassInstance *o=(TKS_ScriptClassInstance*)_co->value.object_val; 
-   ////*(sUI*)&id= (*(sUI*)&o->member_data[(sU16)((id&0xFFF) + o->class_decl->class_relocation_table[(id>>16)&0xFFFF])]); 
-   return (*(sUI*)&o->member_data[(sU16)((id&0xFFF) + o->class_decl->class_relocation_table[(id>>16)&0xFFFF])]); 
-} 
- 
-////void tksvm_classmemberexpr_o(sUI *_st) { 
-YAC_Object *YAC_CALL tksvm_classmemberexpr_o(TKS_CachedObject *_co, sUI id) { 
-	// stack:    
-	//        +0=object 
-	//        +1=member 
-	TKS_ScriptClassInstance*o=(TKS_ScriptClassInstance*)_co->value.object_val; 
-   ////*(YAC_Object**)&id= (*(YAC_Object**)&o->member_data[(sU16)((id&0xFF) + o->class_decl->class_relocation_table[(id>>16)&0xFFFF]+1)]); 
-   return (*(YAC_Object**)&o->member_data[(sU16)((id&0xFFF) + o->class_decl->class_relocation_table[(id>>16)&0xFFFF]+1)]); 
-} 
- 
-sUI YAC_CALL tksvm_classmemberexpr_stack_if(TKS_Context *_context, sUI id) { 
-	// stack:    
-	//        +0=member 
+    *(sUI*)&_context->tksvm_class_stack_object->member_data[(sU16)((id&0xFFF) + _context->tksvm_class_stack_object->class_decl->class_relocation_table[(id>>16)&0xFFFF])]
+		= _if;
+}
+
+sUI YAC_CALL tksvm_classmemberexpr_if(TKS_CachedObject *_co, sUI id) {
+	// stack:
+	//        +0=object
+	//        +1=member
+	TKS_ScriptClassInstance *o=(TKS_ScriptClassInstance*)_co->value.object_val;
+   ////*(sUI*)&id= (*(sUI*)&o->member_data[(sU16)((id&0xFFF) + o->class_decl->class_relocation_table[(id>>16)&0xFFFF])]);
+   return (*(sUI*)&o->member_data[(sU16)((id&0xFFF) + o->class_decl->class_relocation_table[(id>>16)&0xFFFF])]);
+}
+
+////void tksvm_classmemberexpr_o(sUI *_st) {
+YAC_Object *YAC_CALL tksvm_classmemberexpr_o(TKS_CachedObject *_co, sUI id) {
+	// stack:
+	//        +0=object
+	//        +1=member
+	TKS_ScriptClassInstance*o=(TKS_ScriptClassInstance*)_co->value.object_val;
+   ////*(YAC_Object**)&id= (*(YAC_Object**)&o->member_data[(sU16)((id&0xFF) + o->class_decl->class_relocation_table[(id>>16)&0xFFFF]+1)]);
+   return (*(YAC_Object**)&o->member_data[(sU16)((id&0xFFF) + o->class_decl->class_relocation_table[(id>>16)&0xFFFF]+1)]);
+}
+
+sUI YAC_CALL tksvm_classmemberexpr_stack_if(TKS_Context *_context, sUI id) {
+	// stack:
+	//        +0=member
    // xxx TKS_MT: MUST use *real* context (JIT only works in main thread for now)
 
-   // // *(sSI*)&id= (*(sSI*)&_context->tksvm_class_stack_object->member_data[(sU16)((id&0xFF) +  
-	// // 	_context->tksvm_class_stack_object->class_decl->class_relocation_table[(id>>16)&0xFFFF])]); 
-   return (*(sUI*)&_context->tksvm_class_stack_object->member_data[(sU16)((id&0xFFF) +  
-		_context->tksvm_class_stack_object->class_decl->class_relocation_table[(id>>16)&0xFFFF])]); 
-} 
- 
-YAC_Object *YAC_CALL tksvm_classmemberexpr_stack_o(TKS_Context *_context, sUI id) { 
-	// stack:    
-	//        +0=member 
+   // // *(sSI*)&id= (*(sSI*)&_context->tksvm_class_stack_object->member_data[(sU16)((id&0xFF) +
+	// // 	_context->tksvm_class_stack_object->class_decl->class_relocation_table[(id>>16)&0xFFFF])]);
+   return (*(sUI*)&_context->tksvm_class_stack_object->member_data[(sU16)((id&0xFFF) +
+		_context->tksvm_class_stack_object->class_decl->class_relocation_table[(id>>16)&0xFFFF])]);
+}
+
+YAC_Object *YAC_CALL tksvm_classmemberexpr_stack_o(TKS_Context *_context, sUI id) {
+	// stack:
+	//        +0=member
    // xxx TKS_MT: MUST use *real* context (JIT only works in main thread for now)
-   
-   // // *(YAC_Object**)&id= (*(YAC_Object**)&_context->tksvm_class_stack_object->member_data[(sU16)((id&0xFF) +  
-   // //   _context->tksvm_class_stack_object->class_decl->class_relocation_table[(id>>16)&0xFFFF]+1)]); 
-   return (*(YAC_Object**)&_context->tksvm_class_stack_object->member_data[(sU16)((id&0xFFF) +  
-	   _context->tksvm_class_stack_object->class_decl->class_relocation_table[(id>>16)&0xFFFF]+1)]); 
-} 
+
+   // // *(YAC_Object**)&id= (*(YAC_Object**)&_context->tksvm_class_stack_object->member_data[(sU16)((id&0xFF) +
+   // //   _context->tksvm_class_stack_object->class_decl->class_relocation_table[(id>>16)&0xFFFF]+1)]);
+   return (*(YAC_Object**)&_context->tksvm_class_stack_object->member_data[(sU16)((id&0xFFF) +
+	   _context->tksvm_class_stack_object->class_decl->class_relocation_table[(id>>16)&0xFFFF]+1)]);
+}
 
 
 
@@ -5054,63 +5054,63 @@ YAC_Object *YAC_CALL tksvm_classmemberexpr_stack_o(TKS_Context *_context, sUI id
 
 
 
-// // void YAC_CALL tksvm_unsetvo(sUI _del, sUI _type, YAC_Object *_o) { 
-// // 	// ---- unset variable object ---- 
-// // 	// ---- stack: 
-// // 	//             +2: value 
-// // 	//             +1: type 
-// // 	//             +0: deleteme 
-// // 	if((_type>2)&&_del) 
-// // 	{ 
-// // 		delete _o; 
-// // 		_o=0; 
-// // 	} 
-// // 	// ---- increase stack by +2 ---- 
-// // } 
- 
-void YAC_CALL tksvm_opassign(YAC_Object *_this, YAC_Object *_o) { 
-	// ---- generic object assign , never returns anything ---- 
-	// ---- stack: 
-	//             +1: Object *_o 
-	//             +0: Object *_this 
-	_this->yacOperatorAssign(_o); 
-} 
- 
-// only called in expressions 
-sUI YAC_CALL tksvm_operator(sSI _cmd, YAC_Object *_right, YAC_Object *_left) { 
-	// ---- generic object operator ---- 
-	// ---- stack: 
-	//             +2: left Object 
-	//             +1: right Object 
-	//             +0: operator (TKSOP_, YAC_OP_) 
+// // void YAC_CALL tksvm_unsetvo(sUI _del, sUI _type, YAC_Object *_o) {
+// // 	// ---- unset variable object ----
+// // 	// ---- stack:
+// // 	//             +2: value
+// // 	//             +1: type
+// // 	//             +0: deleteme
+// // 	if((_type>2)&&_del)
+// // 	{
+// // 		delete _o;
+// // 		_o=0;
+// // 	}
+// // 	// ---- increase stack by +2 ----
+// // }
+
+void YAC_CALL tksvm_opassign(YAC_Object *_this, YAC_Object *_o) {
+	// ---- generic object assign , never returns anything ----
+	// ---- stack:
+	//             +1: Object *_o
+	//             +0: Object *_this
+	_this->yacOperatorAssign(_o);
+}
+
+// only called in expressions
+sUI YAC_CALL tksvm_operator(sSI _cmd, YAC_Object *_right, YAC_Object *_left) {
+	// ---- generic object operator ----
+	// ---- stack:
+	//             +2: left Object
+	//             +1: right Object
+	//             +0: operator (TKSOP_, YAC_OP_)
 	if(_left)
 	{
       YAC_Value r;
-		_left->yacOperator(_cmd, _right, &r);////&tksvm_env.cret); 
-		////*(sSI*)&_left = r.value.int_val;////tksvm_env.cret.value.int_val; 
+		_left->yacOperator(_cmd, _right, &r);////&tksvm_env.cret);
+		////*(sSI*)&_left = r.value.int_val;////tksvm_env.cret.value.int_val;
       // (todo) assumes that yacOperator() does not return new/deletable object
       return *(sUI*)&r.value.int_val;
-	} 
-	else  
-	{ 
-		switch(_cmd) 
-		{ 
-      //case YAC_OP_CEQ:*(sSI*)&_left=((sUI)_left)==((sUI)_right);break;  
-		//case YAC_OP_CNE:*(sSI*)&_left=((sUI)_left)!=((sUI)_right);break;  
-         case YAC_OP_CEQ: 
-            if(_right) 
-            { 
+	}
+	else
+	{
+		switch(_cmd)
+		{
+      //case YAC_OP_CEQ:*(sSI*)&_left=((sUI)_left)==((sUI)_right);break;
+		//case YAC_OP_CNE:*(sSI*)&_left=((sUI)_left)!=((sUI)_right);break;
+         case YAC_OP_CEQ:
+            if(_right)
+            {
                if(_right->class_ID==YAC_CLID_OBJECT)
                {
                   ////*(sSI*)&_left=1;
                   return 1;
                }
-               else 
+               else
                {
                   ////*(sSI*)&_left=0;
                   return 0;
                }
-            } 
+            }
             else
             {
                ////*(sSI*)&_left=1;
@@ -5141,89 +5141,89 @@ sUI YAC_CALL tksvm_operator(sSI _cmd, YAC_Object *_right, YAC_Object *_left) {
 	}
 
    return (sUI)_left; // (todo) is this actually used?
-} 
-  
+}
+
 // ---- returns int, only used for comparisons
-sSI YAC_CALL tksvm_operatori(sSI _cmd, sSI _right, YAC_Object *_left) {  
-	// ---- generic object operator ----  
-	// ---- stack:  
-	//             +2: left Object  
-	//             +1: right Object  
-	//             +0: operator (TKSOP_, YAC_OP_)  
-	if(_left)  
-	{  
+sSI YAC_CALL tksvm_operatori(sSI _cmd, sSI _right, YAC_Object *_left) {
+	// ---- generic object operator ----
+	// ---- stack:
+	//             +2: left Object
+	//             +1: right Object
+	//             +0: operator (TKSOP_, YAC_OP_)
+	if(_left)
+	{
       YAC_Value r;
-		_left->yacOperatorI(_cmd, _right, &r);////&tksvm_env.cret);  
+		_left->yacOperatorI(_cmd, _right, &r);////&tksvm_env.cret);
 		////*(sSI*)&_left = r.value.int_val;////tksvm_env.cret.value.int_val;
       return r.value.int_val;
-	}  
-	else   
-	{  
-		switch(_cmd)  
-		{  
+	}
+	else
+	{
+		switch(_cmd)
+		{
          case YAC_OP_CEQ:
             ////*(sSI*)&_left=((sUI)_left)==((sUI)_right);
             return ((sUI)_left)==((sUI)_right);
          case YAC_OP_CNE:
             ////*(sSI*)&_left=((sUI)_left)!=((sUI)_right);
             return ((sUI)_left)!=((sUI)_right);
-		}  
+		}
 	}
    return (sSI)_left; // (todo) is this actually used? (most likely not)
-}  
- 
-// returns int (only used for comparisons) 
-sUI YAC_CALL tksvm_operatorf(sSI _cmd, sF32 _right, YAC_Object *_left) {  
-	// ---- generic object operator ----  
-	// ---- stack:  
-	//             +2: left Object  
-	//             +1: right Object  
-	//             +0: operator (TKSOP_, YAC_OP_)  
-	if(_left)  
-	{  
+}
+
+// returns int (only used for comparisons)
+sUI YAC_CALL tksvm_operatorf(sSI _cmd, sF32 _right, YAC_Object *_left) {
+	// ---- generic object operator ----
+	// ---- stack:
+	//             +2: left Object
+	//             +1: right Object
+	//             +0: operator (TKSOP_, YAC_OP_)
+	if(_left)
+	{
       YAC_Value r;
-		_left->yacOperatorF32(_cmd, _right, &r);////&tksvm_env.cret);  
-		////*(sSI*)&_left = r.value.int_val;////tksvm_env.cret.value.int_val;  
+		_left->yacOperatorF32(_cmd, _right, &r);////&tksvm_env.cret);
+		////*(sSI*)&_left = r.value.int_val;////tksvm_env.cret.value.int_val;
       return *(sUI*)&r.value.int_val;
-	}  
-	else   
-	{  
+	}
+	else
+	{
       ////*(sSI*)&_left=0;
       return 0;
 	}
-}  
- 
-void YAC_CALL tksvm_pointerassign(TKS_CachedObject *co, YAC_Object *_o) { 
-	// ---- stack: 
-	//             +0 TKS_CachedObject *var 
-	//             +1 Object *o 
-	co->unsetFast(); 
-	co->deleteme=0; 
-	////co->flags=0; 
+}
 
-   if(_o) 
+void YAC_CALL tksvm_pointerassign(TKS_CachedObject *co, YAC_Object *_o) {
+	// ---- stack:
+	//             +0 TKS_CachedObject *var
+	//             +1 Object *o
+	co->unsetFast();
+	co->deleteme=0;
+	////co->flags=0;
+
+   if(_o)
    {
-      if(_o->class_ID==YAC_CLID_OBJECT) 
+      if(_o->class_ID==YAC_CLID_OBJECT)
       {
          _o = NULL; // replace 'null' Object ptr with 0/NULL
       }
    }
 
-	co->value.object_val = _o; 
-	// ---- increase stack by +2 ---- 
-} 
-           
-static YAC_Value*tksvm_local_co; 
-void YAC_CALL tksvm_pointerassign_local(TKS_Context *_context, TKS_CachedObject *co, YAC_Object *_o) { 
-	// ---- stack: 
-	//             +0 TKS_CachedObject *var 
-	//             +1 Object *o 
+	co->value.object_val = _o;
+	// ---- increase stack by +2 ----
+}
+
+static YAC_Value*tksvm_local_co;
+void YAC_CALL tksvm_pointerassign_local(TKS_Context *_context, TKS_CachedObject *co, YAC_Object *_o) {
+	// ---- stack:
+	//             +0 TKS_CachedObject *var
+	//             +1 Object *o
    // xxx TKS_MT: use *real* context
    // xxx the context should be passed as an argument to tksvm_hybridstat()
-	tksvm_local_co=&_context->tks_fstackc[co->local_index]; 
-	tksvm_local_co->unsetFast(); 
-	tksvm_local_co->deleteme=0; 
-	//co->flags=0;  
+	tksvm_local_co=&_context->tks_fstackc[co->local_index];
+	tksvm_local_co->unsetFast();
+	tksvm_local_co->deleteme=0;
+	//co->flags=0;
 
    if(_o)
    {
@@ -5233,165 +5233,165 @@ void YAC_CALL tksvm_pointerassign_local(TKS_Context *_context, TKS_CachedObject 
       }
    }
 
-	tksvm_local_co->value.object_val = _o; 
-	// ---- increase stack by +3 ---- 
-} 
- 
-void YAC_CALL tksvm_delete(TKS_CachedObject *co) { 
-	// ---- stack: 
-	//             +0 TKS_CachedObject *var 
-	co->unsetFast(); 
+	tksvm_local_co->value.object_val = _o;
+	// ---- increase stack by +3 ----
+}
+
+void YAC_CALL tksvm_delete(TKS_CachedObject *co) {
+	// ---- stack:
+	//             +0 TKS_CachedObject *var
+	co->unsetFast();
 	co->deleteme=0;
-   co->value.object_val = NULL;  
-	////delPointer(); 
-	// ---- increase stack by +1 ---- 
-} 
- 
-void YAC_CALL tksvm_delete_local(TKS_Context *_context, TKS_CachedObject *co) { 
-	// ---- stack: 
-	//             +0 TKS_CachedObject *var 
+   co->value.object_val = NULL;
+	////delPointer();
+	// ---- increase stack by +1 ----
+}
+
+void YAC_CALL tksvm_delete_local(TKS_Context *_context, TKS_CachedObject *co) {
+	// ---- stack:
+	//             +0 TKS_CachedObject *var
    // xxx TKS_MT: use *real* context
    // xxx the context should be passed as an argument to tksvm_hybridstat()
-	tksvm_local_co=&_context->tks_fstackc[co->local_index]; 
-	tksvm_local_co->unsetFast(); 
-	tksvm_local_co->deleteme=0;  
-	tksvm_local_co->value.object_val=0;  
-	//delPointer(); 
-	// ---- increase stack by +2 ---- 
-} 
- 
+	tksvm_local_co=&_context->tks_fstackc[co->local_index];
+	tksvm_local_co->unsetFast();
+	tksvm_local_co->deleteme=0;
+	tksvm_local_co->value.object_val=0;
+	//delPointer();
+	// ---- increase stack by +2 ----
+}
 
-void YAC_CALL tksvm_hybridstat(PTN_Env *_env, PTN_Statement *_st) { 
-	// ---- stack: 
+
+void YAC_CALL tksvm_hybridstat(PTN_Env *_env, PTN_Statement *_st) {
+	// ---- stack:
    //             +0 env**
-	//             +1 statement* 
+	//             +1 statement*
    // xxx TODO: the context should be passed as an argument to tksvm_hybridstat() (currently native code needs to get
    //           the context using TLS. however, most methods will not require the context, it is mostly used to raise
    //           exceptions from within native code
    //
-	_st->eval(_env); 
-	// ---- increase stack by +2 ---- 
-} 
- 
+	_st->eval(_env);
+	// ---- increase stack by +2 ----
+}
+
 sS32 YAC_CALL tksvm_irnd(sS32 _val) {
-	// ---- stack: 
-	//             +0 max/int target 
-	////_val=(sSI) ((rand()*(1.0f/((sF32)RAND_MAX))*_val)); 
+	// ---- stack:
+	//             +0 max/int target
+	////_val=(sSI) ((rand()*(1.0f/((sF32)RAND_MAX))*_val));
    if(_val)
    {
-      return (rand() % _val); 
+      return (rand() % _val);
    }
    else
    {
       return 0;
    }
-} 
- 
+}
+
 sF32 YAC_CALL tksvm_frnd(sF32 _val) {
-	// ---- stack: 
-	//             +0 max/float target 
-	return (sF32) ((rand()*(0.999999999f/((sF32)RAND_MAX))*_val)); 
-} 
- 
-YAC_Object *YAC_CALL tksvm_pointerarrayindexexpr(TKS_CachedObject *_co, sUI _idx) { 
-	// stack: 
-	//         +0 object 
-	//         +1 array index 
-	////(*(YAC_Object**)&_idx)=((YAC_PointerArray*)_co->value.object_val)->elements[_idx].value.object_val; 
-   return ((YAC_PointerArray*)_co->value.object_val)->elements[_idx].value.object_val; 
-} 
- 
-YAC_String *YAC_CALL tksvm_stringarrayindexexpr(TKS_CachedObject *_co, sUI _idx) { 
-	// stack: 
-	//         +0 object 
-	//         +1 array index 
-	////(*(YAC_String**)&_idx)=&((YAC_StringArray*)_co->value.object_val)->elements[_idx]; 
-   return &((YAC_StringArray*)_co->value.object_val)->elements[_idx]; 
-} 
- 
-YAC_Object *YAC_CALL tksvm_objectarrayindexexpr(TKS_CachedObject *_co, sUI _idx) { 
-	// stack: 
-	//         +0 object 
-	//         +1 array index 
-	////(*(YAC_Object**)&_idx)=((YAC_ObjectArray*)_co->value.object_val)->elements[_idx]; 
-   return ((YAC_ObjectArray*)_co->value.object_val)->elements[_idx]; 
-} 
- 
-YAC_Object *YAC_CALL tksvm_classarrayindexexpr(TKS_CachedObject *_co, sUI _idx) { 
-	// stack: 
-	//         +0 object 
-	//         +1 array index 
-   ////(*(YAC_Object**)&_idx)=((YAC_ClassArray*)_co->value.object_val)->elements[_idx]; 
-	return (YAC_Object*) ((YAC_ClassArray*)_co->value.object_val)->elements[_idx]; 
-} 
- 
- 
+	// ---- stack:
+	//             +0 max/float target
+	return (sF32) ((rand()*(0.999999999f/((sF32)RAND_MAX))*_val));
+}
+
+YAC_Object *YAC_CALL tksvm_pointerarrayindexexpr(TKS_CachedObject *_co, sUI _idx) {
+	// stack:
+	//         +0 object
+	//         +1 array index
+	////(*(YAC_Object**)&_idx)=((YAC_PointerArray*)_co->value.object_val)->elements[_idx].value.object_val;
+   return ((YAC_PointerArray*)_co->value.object_val)->elements[_idx].value.object_val;
+}
+
+YAC_String *YAC_CALL tksvm_stringarrayindexexpr(TKS_CachedObject *_co, sUI _idx) {
+	// stack:
+	//         +0 object
+	//         +1 array index
+	////(*(YAC_String**)&_idx)=&((YAC_StringArray*)_co->value.object_val)->elements[_idx];
+   return &((YAC_StringArray*)_co->value.object_val)->elements[_idx];
+}
+
+YAC_Object *YAC_CALL tksvm_objectarrayindexexpr(TKS_CachedObject *_co, sUI _idx) {
+	// stack:
+	//         +0 object
+	//         +1 array index
+	////(*(YAC_Object**)&_idx)=((YAC_ObjectArray*)_co->value.object_val)->elements[_idx];
+   return ((YAC_ObjectArray*)_co->value.object_val)->elements[_idx];
+}
+
+YAC_Object *YAC_CALL tksvm_classarrayindexexpr(TKS_CachedObject *_co, sUI _idx) {
+	// stack:
+	//         +0 object
+	//         +1 array index
+   ////(*(YAC_Object**)&_idx)=((YAC_ClassArray*)_co->value.object_val)->elements[_idx];
+	return (YAC_Object*) ((YAC_ClassArray*)_co->value.object_val)->elements[_idx];
+}
+
+
 //#define DX_JIT_TRACKARRAYELEMENTS  see tks-config.h
- 
-/*void tksvm_vectorarrayindexassign(TKS_CachedObject *_co, sUI idx, TKSVector *s) { 
-	// stack: 
-	//         +0 var 
-	//         +1 array int index 
-	//         +2 rvalue (Vector) 
-	TKSVectorArray *va=(TKSVectorArray*)_co->pointer.object; 
-#ifdef DX_JIT_TRACKARRAYELEMENTS 
-	if(idx>va->num_elements) va->num_elements=idx+1; // use counter 
-#endif 
-	TKSVector *d=&va->elements[idx]; 
-	d->x=s->x; d->y=s->y; d->z=s->z; 
-}*/ 
- 
-//void tksvm_pointerarrayindexassign(sUI *_st) { 
-void YAC_CALL tksvm_pointerarrayindexassign(TKS_CachedObject *_co, sUI idx, YAC_Object *o) { 
-	// stack: 
-	//         +0 var 
-	//         +1 array int index 
-	//         +2 rvalue (Object) 
-	YAC_PointerArray *pa=(YAC_PointerArray*)_co->value.object_val; 
-#ifdef DX_JIT_TRACKARRAYELEMENTS 
-	if(idx>pa->num_elements) pa->num_elements=idx+1; // use counter 
-#endif 
-	YAC_Value *d=&pa->elements[idx]; 
-	d->unsetFast(); d->initObject(o, 0); // xxx fix string type 
-} 
- 
-void YAC_CALL tksvm_stringarrayindexassign(TKS_CachedObject *_co, sUI idx, YAC_String *s) { 
-	// stack: 
-	//         +0 var 
-	//         +1 array int index 
-	//         +2 rvalue (String) 
-	YAC_StringArray *sa=(YAC_StringArray*)_co->value.object_val; 
-#ifdef DX_JIT_TRACKARRAYELEMENTS 
-	if(idx>sa->num_elements) sa->num_elements=idx+1; // use counter 
-#endif 
-	sa->elements[idx].yacCopy(s); 
-} 
- 
-void YAC_CALL tksvm_objectarrayindexassign(TKS_CachedObject *_co, sUI idx, YAC_Object *o) { 
-	// stack: 
-	//         +0 var 
-	//         +1 array int index 
-	//         +2 rvalue (Vector) 
-	YAC_ObjectArray *oa=(YAC_ObjectArray*)_co->value.object_val; 
-#ifdef DX_JIT_TRACKARRAYELEMENTS 
-	if(idx>oa->num_elements) oa->num_elements=idx+1; // use counter 
-#endif 
-	oa->elements[idx]->yacOperatorAssign(o); 
-} 
- 
-void YAC_CALL tksvm_classarrayindexassign(TKS_CachedObject *_co, sUI idx, TKS_ScriptClassInstance *cc) { 
-	// stack: 
-	//         +0 var 
-	//         +1 array int index 
-	//         +2 rvalue (Vector) 
-	YAC_ClassArray*ca=(YAC_ClassArray*)_co->value.object_val; 
-#ifdef DX_JIT_TRACKARRAYELEMENTS 
-	if(idx>ca->num_elements) ca->num_elements=idx+1; // use counter 
-#endif 
-	TKS_ScriptClassInstance *d=ca->elements[idx]; 
-	d->yacOperatorAssign(cc); 
-} 
- 
+
+/*void tksvm_vectorarrayindexassign(TKS_CachedObject *_co, sUI idx, TKSVector *s) {
+	// stack:
+	//         +0 var
+	//         +1 array int index
+	//         +2 rvalue (Vector)
+	TKSVectorArray *va=(TKSVectorArray*)_co->pointer.object;
+#ifdef DX_JIT_TRACKARRAYELEMENTS
+	if(idx>va->num_elements) va->num_elements=idx+1; // use counter
+#endif
+	TKSVector *d=&va->elements[idx];
+	d->x=s->x; d->y=s->y; d->z=s->z;
+}*/
+
+//void tksvm_pointerarrayindexassign(sUI *_st) {
+void YAC_CALL tksvm_pointerarrayindexassign(TKS_CachedObject *_co, sUI idx, YAC_Object *o) {
+	// stack:
+	//         +0 var
+	//         +1 array int index
+	//         +2 rvalue (Object)
+	YAC_PointerArray *pa=(YAC_PointerArray*)_co->value.object_val;
+#ifdef DX_JIT_TRACKARRAYELEMENTS
+	if(idx>pa->num_elements) pa->num_elements=idx+1; // use counter
+#endif
+	YAC_Value *d=&pa->elements[idx];
+	d->unsetFast(); d->initObject(o, 0); // xxx fix string type
+}
+
+void YAC_CALL tksvm_stringarrayindexassign(TKS_CachedObject *_co, sUI idx, YAC_String *s) {
+	// stack:
+	//         +0 var
+	//         +1 array int index
+	//         +2 rvalue (String)
+	YAC_StringArray *sa=(YAC_StringArray*)_co->value.object_val;
+#ifdef DX_JIT_TRACKARRAYELEMENTS
+	if(idx>sa->num_elements) sa->num_elements=idx+1; // use counter
+#endif
+	sa->elements[idx].yacCopy(s);
+}
+
+void YAC_CALL tksvm_objectarrayindexassign(TKS_CachedObject *_co, sUI idx, YAC_Object *o) {
+	// stack:
+	//         +0 var
+	//         +1 array int index
+	//         +2 rvalue (Vector)
+	YAC_ObjectArray *oa=(YAC_ObjectArray*)_co->value.object_val;
+#ifdef DX_JIT_TRACKARRAYELEMENTS
+	if(idx>oa->num_elements) oa->num_elements=idx+1; // use counter
+#endif
+	oa->elements[idx]->yacOperatorAssign(o);
+}
+
+void YAC_CALL tksvm_classarrayindexassign(TKS_CachedObject *_co, sUI idx, TKS_ScriptClassInstance *cc) {
+	// stack:
+	//         +0 var
+	//         +1 array int index
+	//         +2 rvalue (Vector)
+	YAC_ClassArray*ca=(YAC_ClassArray*)_co->value.object_val;
+#ifdef DX_JIT_TRACKARRAYELEMENTS
+	if(idx>ca->num_elements) ca->num_elements=idx+1; // use counter
+#endif
+	TKS_ScriptClassInstance *d=ca->elements[idx];
+	d->yacOperatorAssign(cc);
+}
+
 ////extern void *YAC_CALL tksvm_get_ipointer (void**_v) {
 ////   ////// stack:
 ////   ///////         +0 void**
@@ -5432,9 +5432,9 @@ void    VMCore::eval              (PTN_Env *_env) const {
    parser_tree->evalFirst(_env);
 }
 
-static void VMCore__eval(PTN_Env *_env, const PTN_Statement *_st) { 
+static void VMCore__eval(PTN_Env *_env, const PTN_Statement *_st) {
    Dtracest;
-	VMCore *st=(VMCore *)_st; 
+	VMCore *st=(VMCore *)_st;
 
    st->parser_tree->evalFirst(_env);
 }
@@ -5470,5 +5470,4 @@ void    VMCore::subGenCallList    (void) {
 
 // ---- end STUB --------------------------------------------
 
-#endif // TKS_JIT 
- 
+#endif // TKS_JIT

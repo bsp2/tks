@@ -1,9 +1,8 @@
 /// PTN_UnresolvedModuleMemberExpr.cpp
 ///
-/// (c) 2001-2024 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
-
 
 #include "tks.h"
 
@@ -260,4 +259,4 @@ sU8 PTN_UnresolvedModuleMemberExpr::compile(VMCore *_vm) {
 	tkscript->printResolveError((sChar*)module_member_name.chars);
 	return 0xFF;
 }
-#endif
+#endif // TKS_JIT

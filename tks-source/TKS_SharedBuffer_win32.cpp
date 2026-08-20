@@ -1,7 +1,7 @@
 /// TKS_SharedBuffer_win32.cpp
 ///
-/// (c) 2005-2023 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under terms of the GNU general public license (GPL).
+/// (c) 2005-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 ///
 

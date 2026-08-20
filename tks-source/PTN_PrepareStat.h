@@ -1,10 +1,11 @@
 /// PTN_PrepareStat.h
 ///
-/// (c) 2001-2009 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
-#ifndef __PTN_PREPARESTAT_H__
-#define __PTN_PREPARESTAT_H__
+
+#ifndef PTN_PREPARESTAT_H__
+#define PTN_PREPARESTAT_H__
 
 
 class PTN_PrepareStat : public PTN_Statement {
@@ -26,4 +27,4 @@ public:
 };
 
 
-#endif // __PTN_PREPARESTAT_H__
+#endif // PTN_PREPARESTAT_H__

@@ -1,10 +1,11 @@
 /// TKS_XMLParser.h
 ///
-/// (c) 2001-2024 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
-#ifndef __TKS_XML_PARSER_H__
-#define __TKS_XML_PARSER_H__
+
+#ifndef TKS_XML_PARSER_H__
+#define TKS_XML_PARSER_H__
 
 
 #define TKS_XMLParser_MAX_ALLOWED_LINES 1000000
@@ -42,7 +43,7 @@ enum __xml_entities {
    XML_ENTITY_LT,
    XML_ENTITY_GT,
    XML_ENTITY_AMP,
-   
+
    XML_ENTITY_NUM
 };
 
@@ -177,4 +178,4 @@ public:
 };
 
 
-#endif // __TKS_XML_PARSER_H__
+#endif // TKS_XML_PARSER_H__

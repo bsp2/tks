@@ -1,10 +1,11 @@
-/// vmcore.h 
-/// 
-/// (c) 2002-2014 Bastian Spiegel <bs@tkscript.de> 
-///     - distributed under terms of the GNU general public license (GPL). 
-/// 
-#ifndef __TKS_VMCORE_H___
-#define __TKS_VMCORE_H___
+/// VMCore.h
+///
+/// (c) 2002-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
+///
+
+#ifndef TKS_VMCORE_H__
+#define TKS_VMCORE_H__
 
 #ifdef TKS_JIT
 
@@ -42,8 +43,8 @@ extern sUI  vm86del;
 
 // Limits per compile() block:
 #define TKS_VMCORE_NUMARRAYS   32
-#define TKS_VMCORE_NUMVARS    128 
-#define TKS_VMCORE_NUMLVARS    64 
+#define TKS_VMCORE_NUMVARS    128
+#define TKS_VMCORE_NUMLVARS    64
 #define TKS_VMCORE_NUMCONSTS  256
 
 
@@ -63,15 +64,15 @@ public:
    yacmemptr      vm_vars[TKS_VMCORE_NUMVARS];
    sBool          use_arrays;
    const char    *vm_varnames[TKS_VMCORE_NUMVARS];
-   const char    *vm_localvarnames[TKS_VMCORE_NUMLVARS]; 
-   
-   PTN_Statement     *parser_tree; 
+   const char    *vm_localvarnames[TKS_VMCORE_NUMLVARS];
+
+   PTN_Statement     *parser_tree;
    TKS_CachedObject *c_array; // current array var
 
    // (note) The context and vm_env fields are used as a (very clumsy) way to
    //         pass the actual context/env pointers to the JIT code.
-   ////static TKS_Context   *context; 
-   ////static PTN_Env       *vm_env; 
+   ////static TKS_Context   *context;
+   ////static PTN_Env       *vm_env;
 
 #ifdef TKS_MT
    ////static TKS_Mutex    *mutex; // TKS_MT: JIT prologue code is protected by mutex
@@ -87,7 +88,7 @@ public:
       sU8 *nonaligned_code; // Allocate pointer, not necessarily aligned to page size..
       sUI  sz_code;         // Actual code size (without alignment justifications)
       sUI  sz_aligned;      // Alloc size (including alignment)
-      sBool b_allowArrayCache; 
+      sBool b_allowArrayCache;
    } jit;
 
   protected:
@@ -104,26 +105,26 @@ public:
 #endif
 
    void execAPICall(void);
-   
-   
+
+
    public:
       VMCore(void);
       ~VMCore();
-      
+
        sUI     getID             (void) const;
        void    prepareCompile    (void);
        void    finishCompile     (void);
-       void    eval              (PTN_Env *_env) const; 
+       void    eval              (PTN_Env *_env) const;
        Fevalst getEvalSt         (void) const;
-       void    addOpcode         (sU16 _opcodeid); 
-       sU16    addConstInt       (sS32); 
+       void    addOpcode         (sU16 _opcodeid);
+       sU16    addConstInt       (sS32);
        void    addConstFloat     (sF32);
        sU16    addVarRef         (yacmemptr _d, const char *);
        sU16    addLocalVarRef    (const char *);
        sU16    addIntArray       (TKS_CachedObject *);
        sU16    addFloatArray     (TKS_CachedObject *);
-static void    InitTables        (void);	
-       void    clean             (void); 
+static void    InitTables        (void);
+       void    clean             (void);
        void    cleanJIT          (void);
        void    typecastStack     (sU8 _from, sU8 _to); // _from may be 4 (= variable )
        void    disassemble       (YAC_String *_s, sU16 _pc, sU16 _epc);
@@ -132,25 +133,25 @@ static void    ScanCPUTable      (void);
        sBool   compileThis       (void);
        sBool   createJITCode     (void);
 
-       sBool   semanticCheck     (void); 
+       sBool   semanticCheck     (void);
        void    subGenCallList    (void);
        sBool   resolveXRef       (void);
-       void    optimize          (void); 
+       void    optimize          (void);
 
-       void    addHybridStatement(PTN_Statement *); 
-       void    addAPICall1       (sUI _fadr/**void(_name(...))**/); 
-       void    addAPICall2       (sUI _fadr/**void(_name(...))**/); 
-       void    addAPICall3       (sUI _fadr/**void(_name(...))**/); 
-       void    addCPPCallY       (const YAC_CommandY*, sUI _numRetObj); 
-       void    addCCallY         (const YAC_CommandY*, sUI _numRetObj); 
-       void    loadfxc           (sS32); 
-       void    pushci            (sS32); 
-       void    pushcf            (sF32); 
-       void    pushv             (TKS_CachedObject*); 
-       sU8     apush             (TKS_CachedObject*); 
-       void    objassign         (sU16 _left_clid, sU16 _right_clid); // may use speedpaths 
-       void    selectIntArray    (TKS_CachedObject*); 
-       void    selectFloatArray  (TKS_CachedObject*);  
+       void    addHybridStatement(PTN_Statement *);
+       void    addAPICall1       (sUI _fadr/**void(_name(...))**/);
+       void    addAPICall2       (sUI _fadr/**void(_name(...))**/);
+       void    addAPICall3       (sUI _fadr/**void(_name(...))**/);
+       void    addCPPCallY       (const YAC_CommandY*, sUI _numRetObj);
+       void    addCCallY         (const YAC_CommandY*, sUI _numRetObj);
+       void    loadfxc           (sS32);
+       void    pushci            (sS32);
+       void    pushcf            (sF32);
+       void    pushv             (TKS_CachedObject*);
+       sU8     apush             (TKS_CachedObject*);
+       void    objassign         (sU16 _left_clid, sU16 _right_clid); // may use speedpaths
+       void    selectIntArray    (TKS_CachedObject*);
+       void    selectFloatArray  (TKS_CachedObject*);
        void    resetArrayCache   (void); // called by loop/do/while/for
        void    pushContext       (void);
        void    pushEnv           (void);
@@ -161,7 +162,7 @@ static void    ScanCPUTable      (void);
 class VMCoreInline : public VMCore {
 public:
    sU8 compile(VMCore *); // relocate code
-}; 
+};
 #endif // 0
 
 #else // no TKS_JIT
@@ -170,21 +171,21 @@ public:
 //
 class VMCore : public PTN_Statement {
 public:
-   PTN_Statement *parser_tree; 
-   
+   PTN_Statement *parser_tree;
+
 public:
    VMCore(void);
    ~VMCore();
-   
+
    sUI     getID             (void) const;
    void    eval              (PTN_Env *_env) const;
    Fevalst getEvalSt         (void) const;
-   sBool   semanticCheck     (void); 
+   sBool   semanticCheck     (void);
    void    subGenCallList    (void);
    sBool   resolveXRef       (void);
-   void    optimize          (void); 
+   void    optimize          (void);
 };
 
 #endif // TKS_JIT
 
-#endif 
+#endif // TKS_VMCORE_H__

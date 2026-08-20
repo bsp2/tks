@@ -1,10 +1,11 @@
 /// PTN_Break.h
 ///
-/// (c) 2001-2014 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
-#ifndef __PTN_BREAK_H__
-#define __PTN_BREAK_H__
+
+#ifndef PTN_BREAK_H__
+#define PTN_BREAK_H__
 
 
 class PTN_Break : public PTN_Statement {

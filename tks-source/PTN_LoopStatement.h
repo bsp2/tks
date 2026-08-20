@@ -1,10 +1,11 @@
 /// PTN_LoopStatement.h
 ///
-/// (c) 2001-2014 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
-#ifndef __PTN_LOOPSTATEMENT_H__
-#define __PTN_LOOPSTATEMENT_H__
+
+#ifndef PTN_LOOPSTATEMENT_H__
+#define PTN_LOOPSTATEMENT_H__
 
 
 class PTN_LoopStatement : public PTN_BreakableStatement {
@@ -16,12 +17,12 @@ public:
    Feval         expr_opt;
    Fevalst       body_opt;
    sBool         break_tag;
-   
+
 public:
    PTN_LoopStatement  (void);
    void init          (PTN_Expr *_expr, PTN_Statement *_body);
    ~PTN_LoopStatement ();
-   
+
    sUI     getID          (void) const;
    void    eval           (PTN_Env *_env) const;
    Fevalst getEvalSt      (void) const;
@@ -38,4 +39,4 @@ public:
 };
 
 
-#endif // __PTN_LOOPSTATEMENT_H__
+#endif // PTN_LOOPSTATEMENT_H__

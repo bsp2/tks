@@ -1,7 +1,7 @@
 /// TKS_CachedScript.h
 ///
-/// (c) 2001-2025 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 
 #ifndef TKS_CACHEDSCRIPT_H__

@@ -1,7 +1,7 @@
-/// TKS_CachedScript_macros.h 
-/// 
-/// author : (c) 2001-2008 Bastian Spiegel <bs@tkscript.de> 
-///    published under terms of the GNU general public license (GPL). 
+/// TKS_CachedScript_macros.h
+///
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///    - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 /// this was put into a separate file in order to not confuse the emacs c++ mode .>
 
@@ -16,15 +16,15 @@
 #define Dsetparami(p,v) state_stack[stp].param[p].value=v
 #define Dgetparami(p) state_stack[stp].param[p].value
 #define Dsetparamn(p,v) state_stack[stp].param[p].node.node=v
-#define Dgetparamn(p) state_stack[stp].param[p].node 
-#define Dsetparams(p,v) state_stack[stp].param[p].str=v  
+#define Dgetparamn(p) state_stack[stp].param[p].node
+#define Dsetparams(p,v) state_stack[stp].param[p].str=v
 #define Dgetparams(p) state_stack[stp].param[p].str
 #define Dsetparamv(p,v) state_stack[stp].param[p].any=v;
 #define Dgetparamv(p) state_stack[stp].param[p].any
 #define Dsetparamnspace(p,v) state_stack[stp].param[p].any = (void*)v
 #define Dgetparamnspace(p) (TKS_Namespace*)state_stack[stp].param[p].any
 #define Dparseerror parseError((sU16)linenr/*, (sU16)state, (sU16)state_index*/, toki, (sU16)tok); return 0
-//#define Dfindconst(p) co=0; co=tkscript->global_constant_namespace.findEntry(p) 
+//#define Dfindconst(p) co=0; co=tkscript->global_constant_namespace.findEntry(p)
 #define Dclassparseerror parseError(linenr/*, state, state_index*/, toki, tok); return 0
 #define Dexptok(a) if(tok!=(a)) { Dparseerror; }
 #define Dtryindirectobjectexpr_head \
@@ -44,7 +44,7 @@
                           state_index=100;\
                           break;\
                        }
-						  
+
 
 #define Dtryindirectobjectexprnopopstate Dtryindirectobjectexpr_head  }
 
@@ -55,18 +55,18 @@
                        }\
                     }
 
-// ---- test whether class member a.b is accessible from current context 
+// ---- test whether class member a.b is accessible from current context
 #define DcheckMemberAccess(a,b) \
               if(!(a)->allowMemberAccess((b), this, cclassdecl, create_namespace))\
               {\
                  Dparseerror;\
               }
- 
-// ---- test whether current (class-) function/method may see class member "a". 
-// ---- functions/methods shadow class members. 
-// ---- class functions may not see (non-static) class members. 
-// ---- if the test fails, the current (resolved) var is set to 0 so the parser  
-// ---- falls back to local and global variables. 
+
+// ---- test whether current (class-) function/method may see class member "a".
+// ---- functions/methods shadow class members.
+// ---- class functions may not see (non-static) class members.
+// ---- if the test fails, the current (resolved) var is set to 0 so the parser
+// ---- falls back to local and global variables.
 #define DcheckFunMemberAccess(a) \
             if(cfunction) \
             {\
@@ -79,17 +79,17 @@
                   co=0; \
                }\
             } (void)0
- 
- 
- 
-// ---- test whether class method a.b is accessible from current context 
+
+
+
+// ---- test whether class method a.b is accessible from current context
 #define DcheckMethodAccess(a,b) \
 				if(!(a)->allowMethodCall((b), this, cclassdecl, create_namespace))\
 				  {\
 				    Dparseerror;\
 				  }
- 
-// ---- test whether class function a.b is accessible from current context 
+
+// ---- test whether class function a.b is accessible from current context
 #define DcheckFunctionAccess(a,b) \
 				if(!(a)->allowFunctionCall((b), this, cclassdecl, create_namespace))\
 				  {\

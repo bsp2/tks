@@ -1,7 +1,7 @@
 /// PTN_DynamicVarAssign.cpp
 ///
-/// (c) 2003-2014 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2003-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 
 #include "tks.h"
@@ -14,21 +14,21 @@
 #include "PTN_DynamicVarAssign.h"
 
 
-PTN_DynamicVarAssign::PTN_DynamicVarAssign(TKS_CachedObject * _var,  
-                                           PTN_Expr         * _expr 
-                                           )  
+PTN_DynamicVarAssign::PTN_DynamicVarAssign(TKS_CachedObject * _var,
+                                           PTN_Expr         * _expr
+                                           )
                                            : PTN_VarAssign(_var, _expr)
 {
 }
 
-static void PTN_DynamicVarAssign__eval(PTN_Env *_env, const PTN_Statement *_st) { 
+static void PTN_DynamicVarAssign__eval(PTN_Env *_env, const PTN_Statement *_st) {
    Dtracest;
-   const PTN_DynamicVarAssign *st = (const PTN_DynamicVarAssign*)_st; 
+   const PTN_DynamicVarAssign *st = (const PTN_DynamicVarAssign*)_st;
 
-   YAC_Value *co = Dgetvar(st->var); 
+   YAC_Value *co = Dgetvar(st->var);
    YAC_Value r;
-   st->expr_opt(_env, &r, st->expr); 
-   
+   st->expr_opt(_env, &r, st->expr);
+
    sBool bSkipUnset = 0;
 
    if(co->type >= YAC_TYPE_OBJECT)
@@ -56,18 +56,18 @@ static void PTN_DynamicVarAssign__eval(PTN_Env *_env, const PTN_Statement *_st) 
       Dhandleexception(st->expr);
       return;
    }
-} 
+}
 
-Fevalst PTN_DynamicVarAssign::getEvalSt(void) const { 
-   return PTN_DynamicVarAssign__eval; 
-} 
+Fevalst PTN_DynamicVarAssign::getEvalSt(void) const {
+   return PTN_DynamicVarAssign__eval;
+}
 
-void PTN_DynamicVarAssign::eval(PTN_Env *_env) const { 
-   PTN_DynamicVarAssign__eval(_env, this); 
-} 
+void PTN_DynamicVarAssign::eval(PTN_Env *_env) const {
+   PTN_DynamicVarAssign__eval(_env, this);
+}
 
-#ifdef TKS_JIT 
-sBool PTN_DynamicVarAssign::forceHybrid(void) { 
-   return 1; 
-} 
-#endif 
+#ifdef TKS_JIT
+sBool PTN_DynamicVarAssign::forceHybrid(void) {
+   return YAC_TRUE;
+}
+#endif // TKS_JIT

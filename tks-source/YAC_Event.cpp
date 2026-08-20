@@ -1,25 +1,27 @@
 /// YAC_Event.cpp
 ///
-/// (c) 2001-2009 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 ///
+
 #include "tks.h"
 #include "YAC_String.h"
 #include "YAC_ValueObject.h"
 #include "YAC_Event.h"
- 
+
+
 YAC_Event::YAC_Event(void) {
   class_ID = YAC_CLID_EVENT;
   id     = 0;
   sub_id = 0;
 }
 
-YAC_Event::~YAC_Event() { 
+YAC_Event::~YAC_Event() {
 }
 
 void YAC_VCALL YAC_Event::yacOperator(sSI _cmd, YAC_Object *_o, YAC_Value *_r) {
-   YAC_Object::yacOperator(_cmd, _o, _r);  
+   YAC_Object::yacOperator(_cmd, _o, _r);
 
    if(YAC_OP_ASSIGN == _cmd)
    {

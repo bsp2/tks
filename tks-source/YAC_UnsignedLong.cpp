@@ -1,7 +1,7 @@
 /// YAC_UnsignedLong.cpp
 ///
-/// (c) 2006-2024 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2006-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 
 #include <stdio.h>
@@ -19,8 +19,8 @@ YAC_UnsignedLong::~YAC_UnsignedLong(void) {
 }
 
 void YAC_UnsignedLong::_Newi(sSI _v, YAC_Value *_r) {
-   YAC_UnsignedLong *ro=(YAC_UnsignedLong *)YAC_NEW_CORE_POOLED(YAC_CLID_UNSIGNEDLONG);
-   ro->value=(sS64)_v;
+   YAC_UnsignedLong *ro = (YAC_UnsignedLong *)YAC_NEW_CORE_POOLED(YAC_CLID_UNSIGNEDLONG);
+   ro->value = (sS64)_v;
    _r->initObject(ro, 1);
 }
 
@@ -100,15 +100,19 @@ void YAC_VCALL YAC_UnsignedLong::yacOperator(sSI _cmd, YAC_Object *_o, YAC_Value
       case YAC_OP_SHL:
          YAC_Object::yacOperator(YAC_OP_SHL, _o, _r);
          break;
+
       case YAC_OP_NEG:
-         value=(sU64) -*((sS64*)&value);
+         value = (sU64) -*((sS64*)&value);
          break;
+
       case YAC_OP_NOT:
-         value=!value;
+         value = !value;
          break;
+
       case YAC_OP_BITNOT:
-         value=~value;
+         value = ~value;
          break;
+
       default:
          if(YAC_VALID(_o))
          {

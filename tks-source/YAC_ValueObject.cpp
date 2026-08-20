@@ -1,7 +1,7 @@
 /// YAC_ValueObject.cpp
 ///
 /// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 
 #include "tks.h"
@@ -21,6 +21,7 @@
 #include "PTN_Node.h"
 #include "PTN_Statement.h"
 
+
 YAC_ValueObject::YAC_ValueObject(void) {
    initVoid();
 }
@@ -29,15 +30,15 @@ YAC_ValueObject::~YAC_ValueObject() {
    _unset();
 }
 
-void YAC_ValueObject::_unset(void) {  
+void YAC_ValueObject::_unset(void) {
    if( (type>=YAC_TYPE_OBJECT) && deleteme && value.any)
-   { 
-      YAC_DELETE(value.object_val); 
+   {
+      YAC_DELETE(value.object_val);
       deleteme = YAC_FALSE;
-   } 
-   type      = YAC_TYPE_VOID; 
-   value.any = NULL;  
-} 
+   }
+   type      = YAC_TYPE_VOID;
+   value.any = NULL;
+}
 
 void YAC_VCALL YAC_ValueObject::yacSerialize(YAC_Object *_ofs, sUI _rtti) {
    YAC_BEG_SERIALIZE();
@@ -104,31 +105,31 @@ sUI YAC_VCALL YAC_ValueObject::yacDeserialize(YAC_Object *_ifs, sUI _rtti) {
    }
    return YAC_TRUE;
 }
- 
-void YAC_VCALL YAC_ValueObject::yacOperator(sSI _cmd, YAC_Object *_o, YAC_Value *_r) { 
-   switch(_cmd) 
-   { 
-   case YAC_OP_ASSIGN: 
-      yacOperatorAssign(_o); 
-      return; 
-   case YAC_OP_CEQ: 
-      if(YAC_BCHK(_o, YAC_CLID_VALUE)) 
-      { 
-         _r->initInt(compareValue((YAC_ValueObject*)_o)); 
-         return; 
-      } 
-      break; 
-   case YAC_OP_CNE: 
-      if(YAC_BCHK(_o, YAC_CLID_VALUE)) 
-      { 
-         _r->initInt(!compareValue((YAC_ValueObject*)_o)); 
-         return; 
-      } 
-      break; 
-   } 
-   // ---- call default operator 
-   YAC_Object::yacOperator(_cmd, _o, _r); 
-} 
+
+void YAC_VCALL YAC_ValueObject::yacOperator(sSI _cmd, YAC_Object *_o, YAC_Value *_r) {
+   switch(_cmd)
+   {
+   case YAC_OP_ASSIGN:
+      yacOperatorAssign(_o);
+      return;
+   case YAC_OP_CEQ:
+      if(YAC_BCHK(_o, YAC_CLID_VALUE))
+      {
+         _r->initInt(compareValue((YAC_ValueObject*)_o));
+         return;
+      }
+      break;
+   case YAC_OP_CNE:
+      if(YAC_BCHK(_o, YAC_CLID_VALUE))
+      {
+         _r->initInt(!compareValue((YAC_ValueObject*)_o));
+         return;
+      }
+      break;
+   }
+   // ---- call default operator
+   YAC_Object::yacOperator(_cmd, _o, _r);
+}
 
 void YAC_VCALL YAC_ValueObject::yacOperatorAssign(YAC_Object *_o) {
    if(YAC_BCHK(_o, YAC_CLID_VALUE))
@@ -140,7 +141,7 @@ void YAC_VCALL YAC_ValueObject::yacOperatorAssign(YAC_Object *_o) {
       unsetFast();
       initNewString((YAC_String*)_o);
    }
-   else 
+   else
    {
       safeInitObject(_o, 0);
    }
@@ -214,19 +215,19 @@ sSI YAC_ValueObject::_getType(void) {
 
 void YAC_ValueObject::_setObjectValue(YAC_Object *_o) {
    unset();
-   type = YAC_TYPE_OBJECT; 
-   if(YAC_VALID(_o)) 
+   type = YAC_TYPE_OBJECT;
+   if(YAC_VALID(_o))
    {
-      value.object_val = _o; 
-   } 
-   else 
-   { 
-      value.object_val = yac_null; 
+      value.object_val = _o;
    }
-} 
- 
-void YAC_ValueObject::_initNull(void) { 
-   safeInitNull(); 
+   else
+   {
+      value.object_val = yac_null;
+   }
+}
+
+void YAC_ValueObject::_initNull(void) {
+   safeInitNull();
 }
 
 void YAC_ValueObject::_setStringValue(YAC_Object *_s) {
@@ -289,10 +290,10 @@ sBool YAC_VCALL YAC_ValueObject::yacToString(YAC_String *_s) const {
    toString(_s);
    return 1;
 }
- 
-void YAC_ValueObject::_initVoid(void) { 
-   unset(); 
-} 
+
+void YAC_ValueObject::_initVoid(void) {
+   unset();
+}
 
 void YAC_ValueObject::_getDeref (YAC_Value *_r) {
    _r->copySafe(this);

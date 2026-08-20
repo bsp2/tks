@@ -1,10 +1,11 @@
 /// TKS_FunctionProfiler.h
 ///
-/// (c) 2010 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2010-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
-#ifndef __TKS_FUNCTIONPROFILER_H__
-#define __TKS_FUNCTIONPROFILER_H__
+
+#ifndef TKS_FUNCTIONPROFILER_H__
+#define TKS_FUNCTIONPROFILER_H__
 
 
 #ifdef TKS_PROFILE_FUNCTIONS
@@ -25,5 +26,4 @@ public:
 #endif // TKS_PROFILE_FUNCTIONS
 
 
-#endif // __TKS_FUNCTIONPROFILER_H__
-
+#endif // TKS_FUNCTIONPROFILER_H__

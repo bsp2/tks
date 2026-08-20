@@ -1,7 +1,7 @@
 // TKS_Mutex.cpp
 ///
-/// (c) 2002-2023 by Bastian Spiegel <bs@tkscript.de>
-///     - distributed under terms of the GNU general public license (GPL).
+/// (c) 2002-2026 by Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 ///     13Apr2004: thanks to Carsten Busse <car.busse@gmx.de> for help with the
 ///                  pthread support
@@ -43,8 +43,8 @@ static int macos_pthread_mutex_timedlock(pthread_mutex_t *mutex, const struct ti
    remaining = *abs_timeout;
    while ((rv = pthread_mutex_trylock(mutex)) == EBUSY) {
       ts.tv_sec = 0;
-      ts.tv_nsec = (remaining.tv_sec > 0 ? 10000000 : 
-                    (remaining.tv_nsec < 10000000 ? remaining.tv_nsec : 
+      ts.tv_nsec = (remaining.tv_sec > 0 ? 10000000 :
+                    (remaining.tv_nsec < 10000000 ? remaining.tv_nsec :
                      10000000));
       nanosleep(&ts, &slept);
       ts.tv_nsec -= slept.tv_nsec;

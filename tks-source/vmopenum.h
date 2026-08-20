@@ -1,14 +1,14 @@
 /// vmopenum.h
 ///
-/// (c) 2002-2014 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under terms of the GNU general public license (GPL).
+/// (c) 2002-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 
-#ifndef __VMOP_ENUM_H__
-#define __VMOP_ENUM_H__
+#ifndef VMOP_ENUM_H__
+#define VMOP_ENUM_H__
 
 enum __vmopcodes {
-	VMOP_HALT=0,
+	VMOP_HALT = 0,
 	VMOP_BRA,
 	////VMOP_SFCMP,                // unused  ">",">=","<","<=","!=","=="
 	////VMOP_SICMP,                // unused  ">",">=","<","<=","!=","=="
@@ -160,15 +160,15 @@ enum __vmopcodes {
 	VMOP_SIPOP,
 	////VMOP_STCOI,                // unused
 	////VMOP_STCOF,                // unused
-	VMOP_BEGAPICALL0, 
-	VMOP_BEGAPICALL1, 
-	VMOP_BEGAPICALL2, 
-	VMOP_BEGAPICALL3, 
-	VMOP_BEGAPICALL4, 
-	VMOP_BEGAPICALL5, 
-	VMOP_BEGAPICALL6, 
-	VMOP_BEGAPICALL7, 
-	VMOP_BEGAPICALL8, 
+	VMOP_BEGAPICALL0,
+	VMOP_BEGAPICALL1,
+	VMOP_BEGAPICALL2,
+	VMOP_BEGAPICALL3,
+	VMOP_BEGAPICALL4,
+	VMOP_BEGAPICALL5,
+	VMOP_BEGAPICALL6,
+	VMOP_BEGAPICALL7,
+	VMOP_BEGAPICALL8,
 	VMOP_APICALL,                  // exec apicall
    VMOP_ENDAPICALL0,
    VMOP_ENDAPICALL1,
@@ -179,8 +179,8 @@ enum __vmopcodes {
    VMOP_ENDAPICALL6,
    VMOP_ENDAPICALL7,
    VMOP_ENDAPICALL8,
-	VMOP_INCSTP, 
-	VMOP_DECSTP, 
+	VMOP_INCSTP,
+	VMOP_DECSTP,
 	////VMOP_SFSIN01,              // unused
 	////VMOP_SFCOS01,              // unused
 	////VMOP_SISWAPW,              // unused
@@ -256,25 +256,25 @@ enum __vmopcodes {
 	VMOP_PUSHFVSUBC,
 	VMOP_PUSHFVMULC,
 	VMOP_PUSHFVDIVC,
- 
-   VMOP_JGTIVIV, 
-	VMOP_JGEIVIV, 
-   VMOP_JLTIVIV, 
-	VMOP_JLEIVIV, 
-   VMOP_JNEIVIV, 
-	VMOP_JEQIVIV, 
 
-   VMOP_JGTIVIC, 
-	VMOP_JGEIVIC, 
-   VMOP_JLTIVIC, 
-	VMOP_JLEIVIC, 
-   VMOP_JNEIVIC, 
-	VMOP_JEQIVIC, 
- 
+   VMOP_JGTIVIV,
+	VMOP_JGEIVIV,
+   VMOP_JLTIVIV,
+	VMOP_JLEIVIV,
+   VMOP_JNEIVIV,
+	VMOP_JEQIVIV,
+
+   VMOP_JGTIVIC,
+	VMOP_JGEIVIC,
+   VMOP_JLTIVIC,
+	VMOP_JLEIVIC,
+   VMOP_JNEIVIC,
+	VMOP_JEQIVIC,
+
 
 	VMOP_ENUM
 };
 
 //////#define VMOP_NUMCLASSES VMOP_PAD
 
-#endif // __VMOP_ENUM_H__
+#endif // VMOP_ENUM_H__

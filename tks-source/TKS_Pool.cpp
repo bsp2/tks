@@ -1,7 +1,7 @@
 /// TKS_Pool.cpp
 ///
-/// (c) 2001-2010 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 
 #include "tks.h"
@@ -16,22 +16,22 @@ sBool YAC_VCALL TKS_Pool::yacIteratorInit(YAC_Iterator *_it) const {
 }
 
 TKS_Pool::TKS_Pool(void) {
-   class_ID        = TKS_CLID_POOL; 
+   class_ID        = TKS_CLID_POOL;
    fix_stringtype  = 0;
    init_classtype  = 0;
-   template_object = 0;
+   template_object = NULL;
 }
 
 TKS_Pool::~TKS_Pool(void) {
    fix_stringtype  = 0;
    init_classtype  = 0;
-   template_object = 0; 
+   template_object = NULL;
    TKS_Pool::_free();
 }
 
 void YAC_VCALL TKS_Pool::yacArrayGet(void *_context, sUI _id, YAC_Value *_r) {
    YAC_Object *o = (YAC_Object*) (*this)[_id];
-   
+
    if(o != NULL)
    {
       _r->initObject(o, 0);
@@ -39,19 +39,18 @@ void YAC_VCALL TKS_Pool::yacArrayGet(void *_context, sUI _id, YAC_Value *_r) {
    else
    {
       YAC_String *msg = (YAC_String*) YAC_NEW_CORE_POOLED(YAC_CLID_STRING128);
-      //msg->alloc(96);
       msg->printf("Pool id >>%i<< is not in use", _id);
       PTN_Env env; env.continue_flag=1; env.context=(TKS_Context*)_context;
       PTN_Env*_env = &env;
       Drtthrow(NULL, TKS_EXCEPTION_READARRAYOUTOFBOUNDS, msg);
    }
-} 
+}
 
-void YAC_VCALL TKS_Pool::yacArraySet(void *_context, sUI _id, YAC_Value *_value) { 
-   YAC_Object *o = (YAC_Object*) (*this)[_id]; 
+void YAC_VCALL TKS_Pool::yacArraySet(void *_context, sUI _id, YAC_Value *_value) {
+   YAC_Object *o = (YAC_Object*) (*this)[_id];
 
-   if(o != NULL) 
-   { 
+   if(NULL != o)
+   {
       YAC_Value r;
       YAC_Value value; value = _value;
       if(value.type < YAC_TYPE_OBJECT)
@@ -60,12 +59,10 @@ void YAC_VCALL TKS_Pool::yacArraySet(void *_context, sUI _id, YAC_Value *_value)
       }
       o->yacOperator(YAC_OP_ASSIGN, value.value.object_val, &r);
       value.unsetFast();
-      ////o->yacOperatorAssign(_value->value.object_val); 
-   } 
+   }
    else
    {
       YAC_String *msg = (YAC_String*) YAC_NEW_CORE_POOLED(YAC_CLID_STRING128);
-      ////msg->alloc(96);
       msg->printf("Pool id >>%i<< is not in use", _id);
       PTN_Env env; env.continue_flag=1; env.context=(TKS_Context*)_context;
       PTN_Env*_env = &env;
@@ -76,7 +73,7 @@ void YAC_VCALL TKS_Pool::yacArraySet(void *_context, sUI _id, YAC_Value *_value)
 void YAC_VCALL TKS_Pool::yacOperator(sSI _cmd, YAC_Object *_o, YAC_Value *_r) {
    if(_o!=((YAC_Object*)this))
    {
-      if(_cmd==YAC_OP_ASSIGN)
+      if(YAC_OP_ASSIGN == _cmd)
       {
          /// xxx copy pool
          return;
@@ -87,7 +84,7 @@ void YAC_VCALL TKS_Pool::yacOperator(sSI _cmd, YAC_Object *_o, YAC_Value *_r) {
 
 void YAC_VCALL TKS_Pool::yacSerialize(YAC_Object *_ofs, sUI _rtti) {
    YAC_BEG_SERIALIZE();
-   
+
    /// ---- first write template class name ----
    if(template_object)
    {
@@ -96,11 +93,11 @@ void YAC_VCALL TKS_Pool::yacSerialize(YAC_Object *_ofs, sUI _rtti) {
    }
    else
    {
-      YAC_String tcln; 
-      tcln.yacSerialize(_ofs, 0); // serialize empty string		
+      YAC_String tcln;
+      tcln.yacSerialize(_ofs, 0); // serialize empty string
       return;
    }
-   
+
    // ---- store pool size ----
    YAC_SERIALIZE_I16((sU16)max_elements);
    YAC_SERIALIZE_I16((sU16)used_elements);
@@ -118,12 +115,11 @@ void YAC_VCALL TKS_Pool::yacSerialize(YAC_Object *_ofs, sUI _rtti) {
 
 sUI YAC_VCALL TKS_Pool::yacDeserialize(YAC_Object *_ifs, sUI _rtti) {
    YAC_BEG_DESERIALIZE();
-   
+
    _free();
-   
+
    /// ---- first read class name and find suitable template object ----
    YAC_String cln;
-   //cln.setEngine(tkscript);
    cln.yacDeserialize(_ifs, 0);
    if(cln.isBlank())
    {
@@ -133,35 +129,35 @@ sUI YAC_VCALL TKS_Pool::yacDeserialize(YAC_Object *_ifs, sUI _rtti) {
    if(!template_object)
    {
       Dprintf("[---] Pool::deserialize: cannot find template for class \"%s\".\n",
-         cln.chars);
+              cln.chars);
       return 0; // ---- cannot find class ----
    }
-   
-   sUI me=YAC_DESERIALIZE_I16();
-   sUI ne=YAC_DESERIALIZE_I16();
-   
-   if(((sUI)me)>=tkscript->configuration.streamMaxArraySize)
+
+   sUI me = YAC_DESERIALIZE_I16();
+   sUI ne = YAC_DESERIALIZE_I16();
+
+   if(((sUI)me) >= tkscript->configuration.streamMaxArraySize)
    {
       Dprintf("[---] Pool::deserialize: insane array size (maxElements) (%i>%i)\n",
-         me, tkscript->configuration.streamMaxArraySize);
+              me, tkscript->configuration.streamMaxArraySize);
       return 0;
    }
-   
-   if(((sUI)ne)>=tkscript->configuration.streamMaxArraySize)
+
+   if(((sUI)ne) >= tkscript->configuration.streamMaxArraySize)
    {
       Dprintf("[---] Pool::deserialize: insane array size (numElements) (%i>%i)\n",
          ne, tkscript->configuration.streamMaxArraySize);
       return 0;
    }
-   
+
    if(_alloc(me))
    {
       // ---- now restore objects ----
       sUI i;
-      for(i=0; i<ne; i++)
+      for(i = 0u; i < ne; i++)
       {
          /// ---- deserialize single object ----
-         sSI eid=qAlloc();
+         sSI eid = qAlloc();
          if(! ((YAC_Object*)elements[eid])->yacDeserialize(_ifs, 0))
          {
             return 0;
@@ -173,7 +169,7 @@ sUI YAC_VCALL TKS_Pool::yacDeserialize(YAC_Object *_ifs, sUI _rtti) {
       Dprintf("[---] Pool::deserialize: failed to alloc %i elements.\n", me);
       return 0;
    }
-   
+
    /// max_elements/used_elements *should* be restored now
    return 1;
 }
@@ -200,7 +196,7 @@ sSI TKS_Pool::_alloc(sSI _max) {
          int i;
          YAC_Object **op = (YAC_Object**) elements;
          TKS_Context *ctx = tkscript->lockGlobalContext();
-         for(i=0; i<_max; i++) 
+         for(i=0; i<_max; i++)
          {
             op[i] = YAC_CLONE_POOLED(ctx, template_object); // // xxx TKS_MT: use *real* thread context, reset objects in qAlloc() (no c'tors available without thread context)
          }
@@ -209,11 +205,11 @@ sSI TKS_Pool::_alloc(sSI _max) {
       }
    }
    return 0;
-}	
+}
 
 void TKS_Pool::_free(void) {
    int i;
-   for(i=0; i<max_elements; i++)
+   for(i = 0; i < max_elements; i++)
    {
       if(NULL != elements[i])
       {
@@ -230,10 +226,10 @@ sSI TKS_Pool::getNumElements(void) {
 }
 
 sSI TKS_Pool::getMaxElements(void) {
-   return max_elements-1;
+   return max_elements - 1;
 }
 
 void TKS_Pool::_qFreeByObject(YAC_Object *_o) {
-   int id=Pool::getIDByObject(_o);
-   if(id!=-1) Pool::qFree(id);
+   int id = Pool::getIDByObject(_o);
+   if(-1 != id) Pool::qFree(id);
 }

@@ -1,16 +1,17 @@
 /// TKX_PakFile.h
 ///
-/// (c) 2001-2024 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 ///
-#ifndef __TKX_PAKFILE_H__
-#define __TKX_PAKFILE_H__
+
+#ifndef TKX_PAKFILE_H__
+#define TKX_PAKFILE_H__
 
 
 class TKX_PakFile {
 public:
-   
+
    enum __takerrorcodes {
       TKXERRUNKNOWN = 0,
       TKXERROPENFILE,
@@ -26,7 +27,7 @@ public:
 
       TKXNUMERRORS
    };
-   
+
 public:
    YAC_String str_tkpfilename;
    YAC_String str_takfilename;
@@ -40,7 +41,7 @@ public:
    YAC_String str_sourcefilename;
    YAC_String str_chaptername;
    sU32 pak_size;
-   
+
    TKX_Chapter *chapters;
    TKX_Chapter *current_chapter;
    YAC_String   current_chapter_name;
@@ -51,11 +52,11 @@ public:
 private:
    void addChapter (void);
    void addFile    (sBool _bPre = YAC_FALSE);
-   
+
 public:
    TKX_PakFile(void);
    ~TKX_PakFile();
-   
+
    void      cleanUp                (void);
    void      scanProject            (void);
    void      writeTKX               (void);
@@ -65,11 +66,11 @@ public:
    void      selectChapterByName    (YAC_String *_name);
    TKX_File *findLogic              (char *_name);
    TKX_File *findLogic              (YAC_String *_name);
-   sBool     prepareTKXDownload     (sU8 *_firstkheader); /// when the first ~1024 byte have been downloaded, this fun is called to check file header and prepare the tkx file buffer 
+   sBool     prepareTKXDownload     (sU8 *_firstkheader); /// when the first ~1024 byte have been downloaded, this fun is called to check file header and prepare the tkx file buffer
    void      listContent            (void);
    void      addExtraFile           (const char *_name, sBool _bPre); // used to add additional files after a .tkp/.tkx has been loaded
    sBool     mergeLocalTSL          (YAC_String *_libName);
 };
 
 
-#endif // __TKX_PAKFILE_H__
+#endif // TKX_PAKFILE_H__

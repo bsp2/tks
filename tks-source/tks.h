@@ -1,7 +1,7 @@
 /// tks.h
 ///
 /// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under terms of the GNU general public license (GPL).
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 
 #ifndef TKS_CORE_H__
@@ -17,8 +17,8 @@ class TKS_PluginCallback;
 extern TKS_ScriptEngine *tkscript;
 
 // Version information
-#define TKS_VERSION_STR_BASE "0.9.92.20"
-#define TKS_VERSION 0x00095C14
+#define TKS_VERSION_STR_BASE "0.9.92.22"
+#define TKS_VERSION 0x00095C16
 #ifdef DX_X64
 #define TKS_VERSION_STR TKS_VERSION_STR_BASE " (x64)"
 #elif defined(DX_X86)

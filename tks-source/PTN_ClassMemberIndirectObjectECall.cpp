@@ -1,7 +1,7 @@
 /// PTN_ClassMemberIndirectObjectECall.cpp
 ///
-/// (c) 2001-2013 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 
 #include "tks.h"
@@ -12,9 +12,9 @@
 #include "PTN_ClassMemberIndirectObjectECall.h"
 
 
-PTN_ClassMemberIndirectObjectECall::PTN_ClassMemberIndirectObjectECall(TKS_CachedObject *_member,  
-                                                                       PTN_CallableExpr *_indirectecall 
-                                                                       )  
+PTN_ClassMemberIndirectObjectECall::PTN_ClassMemberIndirectObjectECall(TKS_CachedObject *_member,
+                                                                       PTN_CallableExpr *_indirectecall
+                                                                       )
 {
    member             = _member;
    indirect_ecall     = _indirectecall;
@@ -25,22 +25,22 @@ PTN_ClassMemberIndirectObjectECall::PTN_ClassMemberIndirectObjectECall(TKS_Cache
 PTN_ClassMemberIndirectObjectECall::~PTN_ClassMemberIndirectObjectECall() {
    if(indirect_ecall)
    {
-      delete indirect_ecall; 
+      delete indirect_ecall;
       indirect_ecall = NULL;
    }
 
-   member      = NULL;
+   member = NULL;
 }
 
 sBool PTN_ClassMemberIndirectObjectECall::semanticCheck(void) {
    return
-      (member != NULL) && 
-      (indirect_ecall ? indirect_ecall->semanticCheck() : 0) 
+      (member != NULL) &&
+      (indirect_ecall ? indirect_ecall->semanticCheck() : YAC_FALSE)
       ;
 }
 
 void PTN_ClassMemberIndirectObjectECall::optimize(void) {
-   if(indirect_ecall) 
+   if(indirect_ecall)
    {
       indirect_ecall->optimize();
       indirect_ecall_opt = indirect_ecall->getEval();
@@ -48,11 +48,9 @@ void PTN_ClassMemberIndirectObjectECall::optimize(void) {
 }
 
 sBool PTN_ClassMemberIndirectObjectECall::resolveXRef(void) {
-   if(indirect_ecall) 
-   {
-      return indirect_ecall->resolveXRef(); 
-   }
-   return 0;
+   if(indirect_ecall)
+      return indirect_ecall->resolveXRef();
+   return YAC_FALSE;
 }
 
 void PTN_ClassMemberIndirectObjectECall::setStatementHint(void) {
@@ -67,17 +65,17 @@ static void PTN_ClassMemberIndirectObjectECall__evalCallStatement(PTN_Env *_env,
 
    // ---- find object member in current class ----
    YAC_Value mv;
-   _env->context->tksvm_class_stack_object->getClassMemberValueByID(&mv, (sUI)st->member->value.int_val); 
+   _env->context->tksvm_class_stack_object->getClassMemberValueByID(&mv, (sUI)st->member->value.int_val);
    if(mv.type >= YAC_TYPE_OBJECT)
    {
       if(TKS_VALID(mv.value.object_val))
-      { 
+      {
          YAC_Value r;
 
          _env->context->tksvm_indirect_object = mv.value.object_val;
 
          // TODO: optimize using Feval funptr
-         st->indirect_ecall_opt(_env, &r, st->indirect_ecall); 
+         st->indirect_ecall_opt(_env, &r, st->indirect_ecall);
 
          // Discard return value
          r.unsetFast();
@@ -86,7 +84,7 @@ static void PTN_ClassMemberIndirectObjectECall__evalCallStatement(PTN_Env *_env,
       {
          Drtthrowinvalidpointer(st, "invalid class member object", mv.value.object_val);
       }
-   } 
+   }
 }
 
 Fevalst PTN_ClassMemberIndirectObjectECall::getEvalCallSt(void) const {
@@ -101,20 +99,20 @@ static void PTN_ClassMemberIndirectObjectECall__eval(PTN_Env *_env, YAC_Value *_
 
    YAC_Value mv;
    // ---- find object member in current class ----
-   _env->context->tksvm_class_stack_object->getClassMemberValueByID(&mv, (sUI)st->member->value.int_val); 
+   _env->context->tksvm_class_stack_object->getClassMemberValueByID(&mv, (sUI)st->member->value.int_val);
    if(mv.type >= YAC_TYPE_OBJECT)
    {
       if(TKS_VALID(mv.value.object_val))
-      { 
+      {
          _env->context->tksvm_indirect_object = mv.value.object_val;
-         ////indirect_ecall->evalCallableExpr(_env, _r); 
+         ////indirect_ecall->evalCallableExpr(_env, _r);
          st->indirect_ecall_opt(_env, _r, st->indirect_ecall);
       }
       else
       {
          Drtthrowinvalidpointer(st, "invalid class member object", mv.value.object_val);
       }
-   } 
+   }
 }
 
 Feval PTN_ClassMemberIndirectObjectECall::getEval(void) const {

@@ -1,7 +1,7 @@
 /// YAC_Buffer.cpp
 ///
-/// (c) 2002-2025 Bastian Spiegel <bs@tkscript.de> 
-///     - distributed under terms of the GNU general public license (GPL).
+/// (c) 2002-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 ///
 
@@ -17,21 +17,21 @@ extern "C" {
 #endif
 
 
-YAC_Buffer::YAC_Buffer(void) { 
-   class_ID  = YAC_CLID_BUFFER; 
-   size      = 0u; 
-   io_offset = 0u; 
-   buffer    = NULL; 
+YAC_Buffer::YAC_Buffer(void) {
+   class_ID  = YAC_CLID_BUFFER;
+   size      = 0u;
+   io_offset = 0u;
+   buffer    = NULL;
    deleteme  = YAC_FALSE;
-} 
- 
-YAC_Buffer::~YAC_Buffer(void) { 
-   free(); 
-} 
+}
 
-sBool YAC_VCALL YAC_Buffer::yacEquals(YAC_Object *_o) { 
-   if(YAC_Is_Buffer(_o)) 
-   { 
+YAC_Buffer::~YAC_Buffer(void) {
+   free();
+}
+
+sBool YAC_VCALL YAC_Buffer::yacEquals(YAC_Object *_o) {
+   if(YAC_Is_Buffer(_o))
+   {
       YAC_CAST_ARG(YAC_Buffer, o, _o);
       if(io_offset == o->io_offset)
       {
@@ -42,10 +42,10 @@ sBool YAC_VCALL YAC_Buffer::yacEquals(YAC_Object *_o) {
          }
          return YAC_TRUE;
       }
-   } 
-   return YAC_FALSE; 
-} 
- 
+   }
+   return YAC_FALSE;
+}
+
 sBool YAC_VCALL YAC_Buffer::yacArrayRealloc(sUI _sx, sUI _sy, sUI _type, sUI _elementbytesize) {
 
    (void)_sy;
@@ -118,7 +118,7 @@ void YAC_VCALL YAC_Buffer::yacOperator(sSI _cmd, YAC_Object *_o, YAC_Value *_r) 
                return;
          }
       }
-      else 
+      else
       {
          if(YAC_OP_CEQ == _cmd)
          {
@@ -157,15 +157,15 @@ void YAC_VCALL YAC_Buffer::yacGetConstantStringList(YAC_String *_s) {
 
 void YAC_VCALL YAC_Buffer::yacArraySet(void *_context, sUI _index, YAC_Value *_value) {
    if(((sUI)_index) >= size)
-   { 
+   {
       if(tkscript->configuration.b_autoresizearrays && (((sSI)_index) >= 0))
-      { 
-         if(YAC_Buffer::resize(tks_grow_array(_index+1))) 
-         { 
-            io_offset = _index + 1u; 
-            goto yacbufferstream_yacarrayset_1; 
-         } 
-      } 
+      {
+         if(YAC_Buffer::resize(tks_grow_array(_index+1)))
+         {
+            io_offset = _index + 1u;
+            goto yacbufferstream_yacarrayset_1;
+         }
+      }
 
       YAC_String *msg = (YAC_String*) YAC_NEW_CORE_POOLED(YAC_CLID_STRING128);
       //msg->alloc(96);
@@ -173,30 +173,30 @@ void YAC_VCALL YAC_Buffer::yacArraySet(void *_context, sUI _index, YAC_Value *_v
       PTN_Env env; env.continue_flag=1; env.context=(TKS_Context*)_context;
       PTN_Env*_env = &env;
       Drtthrow(NULL, TKS_EXCEPTION_WRITEARRAYOUTOFBOUNDS, msg);
-      return; 
+      return;
    }
    if(((sUI)_index) >= io_offset) // track highest access point
    {
-      io_offset = _index + 1u; 
+      io_offset = _index + 1u;
    }
 
 yacbufferstream_yacarrayset_1:
 
-   if(_value->type != YAC_TYPE_INT) 
-   { 
-      _value->typecast(YAC_TYPE_INT); 
-   } 
+   if(_value->type != YAC_TYPE_INT)
+   {
+      _value->typecast(YAC_TYPE_INT);
+   }
    buffer[_index] = (sU8) _value->value.int_val;
 }
 
 void YAC_VCALL YAC_Buffer::yacArrayGet(void *_context, sUI _index, YAC_Value *_r) {
-   if(((sUI)_index)<size) 
+   if(((sUI)_index)<size)
    {
       _r->initInt(buffer[_index]);
    }
    else
    {
-      _r->initVoid(); 
+      _r->initVoid();
       YAC_String *msg = (YAC_String*) YAC_NEW_CORE_POOLED(YAC_CLID_STRING128);
       ////msg->alloc(96);
       msg->printf("Buffer index >>%i<< out of bounds (max=%i)", _index, size);
@@ -244,9 +244,9 @@ sUI YAC_VCALL YAC_Buffer::yacDeserialize(YAC_Object *_ifs, sUI _rtti) {
    }
    return 1u;
 }
- 
-sBool YAC_VCALL YAC_Buffer::yacArrayAlloc(sUI _sx, sUI, sUI, sUI) { 
-   return setSize((sSI)_sx); 
+
+sBool YAC_VCALL YAC_Buffer::yacArrayAlloc(sUI _sx, sUI, sUI, sUI) {
+   return setSize((sSI)_sx);
 }
 
 sBool YAC_Buffer::setSize(sUI _num) {
@@ -324,7 +324,7 @@ sBool YAC_Buffer::resize(sUI _num) {
          }
       }
    }
-   else 
+   else
    {
       // size already allocated
       return YAC_TRUE;
@@ -352,7 +352,7 @@ void YAC_Buffer::free(void) {
    {
       if(YAC_FALSE != deleteme)
       {
-         delete [] buffer; 
+         delete [] buffer;
       }
 
       buffer = NULL;
@@ -432,7 +432,7 @@ void YAC_Buffer::pokeI16(sSI _offset, sSI _value) {
    }
    Dprintf("[---] Buffer::pokeI16: index out of bounds!! (offset=%i, size=%i)\n",
       _offset, size);
-   
+
 }
 
 void YAC_Buffer::pokeI14(sSI _offset, sSI _value) {
@@ -815,9 +815,9 @@ void YAC_Buffer::getString(sUI _off, sUI _len, YAC_Value *_r) {
          sU8 *s = buffer + _off;
          // find ASCIIZ
          sUI l = 0u;
-         while(l < size && *s++) 
+         while(l < size && *s++)
          {
-            l++; 
+            l++;
          }
          if(ns->alloc(l + 1u))
          {
@@ -825,18 +825,18 @@ void YAC_Buffer::getString(sUI _off, sUI _len, YAC_Value *_r) {
             sU8 *d = ns->chars;
             for(sUI i = 0u; i < l; i++)
                *d++ = *s++;
-            *d++ = 0u; 
+            *d++ = 0u;
             ns->length = l + 1u;
             YAC_RETS(ns, 1);
             return;
          }
-         else 
-         { 
-            Dprintf("[---] Buffer::getString: failed to alloc %u bytes.\n", l + 1u); 
+         else
+         {
+            Dprintf("[---] Buffer::getString: failed to alloc %u bytes.\n", l + 1u);
          }
       }
-   } 
-   YAC_RETS(0, 0); 
+   }
+   YAC_RETS(0, 0);
 }
 
 sBool YAC_Buffer::setString(sUI _off, YAC_String *_st) {
@@ -853,10 +853,10 @@ sBool YAC_Buffer::setString(sUI _off, YAC_String *_st) {
             for(i = 0u; i < st->length; i++)
             {
                *d++=*s++;
-            } 
-            if( (_off + st->length) > io_offset )   
+            }
+            if( (_off + st->length) > io_offset )
             {
-               io_offset = (_off + st->length); 
+               io_offset = (_off + st->length);
             }
             return YAC_TRUE;
          }
@@ -867,7 +867,7 @@ sBool YAC_Buffer::setString(sUI _off, YAC_String *_st) {
 
 sSI YAC_Buffer::gzip(YAC_Object *_src, sSI _off, sSI _len, sSI _level) {
 #ifdef DX_Z
-   if(YAC_BCHK(_src, YAC_CLID_BUFFER)) 
+   if(YAC_BCHK(_src, YAC_CLID_BUFFER))
    {
       YAC_Buffer *src=(YAC_Buffer*)_src;
       if( ((sUI)(_off+_len))<=src->size )
@@ -920,7 +920,7 @@ sSI YAC_Buffer::_getChecksum(void) {
    sUI j = 1;
    for(i = 0u; i < io_offset; i++)
    {
-      key = 53 * key + j * buffer[i]; 
+      key = 53 * key + j * buffer[i];
       j += 128;
    }
    return (sSI) key;
@@ -1014,7 +1014,7 @@ sUI YAC_Buffer::base64Encode(YAC_String *_out) {
             const sU8 b1 = buffer[off + 0u];
             const sU8 b2 = buffer[off + 1u];
             const sU8 b3 = buffer[off + 2u];
-            
+
             d[outOff++] = base64_enc_table[(b1>>2) & 63u];
             d[outOff++] = base64_enc_table[((b1&3u)<<4) | ((b2>>4)&15u)];
             d[outOff++] = base64_enc_table[((b2&15u)<<2) | ((b3>>6)&3u)];
@@ -1227,8 +1227,8 @@ void YAC_Buffer::hexdump(sUI _start, sUI _num) {
 
 sUI YAC_Buffer::ringWriteBuffer(sUI _ringStartOff, sUI _ringSz, sUI _writeOff, YAC_Buffer *_src, sUI _srcOff, sUI _numBytes) {
    sUI r = _writeOff;
-   if(YAC_Is_Buffer(_src)) 
-   { 
+   if(YAC_Is_Buffer(_src))
+   {
       if(_ringSz > 0u && _ringSz <= size)
       {
          if( (_ringStartOff + _ringSz) <= size )
@@ -1256,8 +1256,8 @@ sUI YAC_Buffer::ringWriteBuffer(sUI _ringStartOff, sUI _ringSz, sUI _writeOff, Y
 
 sUI YAC_Buffer::ringReadBuffer(sUI _ringStartOff, sUI _ringSz, sUI _readOff, YAC_Buffer *_dst, sUI _dstOff, sUI _numBytes) {
    sUI r = _readOff;
-   if(YAC_Is_Buffer(_dst)) 
-   { 
+   if(YAC_Is_Buffer(_dst))
+   {
       if(_ringSz > 0u && _ringSz <= size)
       {
          if( (_ringStartOff + _ringSz) <= size )

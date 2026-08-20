@@ -1,7 +1,7 @@
 /// YAC_StringArray.cpp
 ///
-/// (c) 2001-2024 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 
 #include "tks.h"
@@ -29,7 +29,7 @@ YAC_StringArray::~YAC_StringArray() {
 
 sBool YAC_VCALL YAC_StringArray::yacIteratorInit(YAC_Iterator *_it) const {
    Diteratorinit(TKS_StringArrayIterator);
-   return 1;
+   return YAC_TRUE;
 }
 
 sBool YAC_VCALL YAC_StringArray::yacToString(YAC_String *_s) const {

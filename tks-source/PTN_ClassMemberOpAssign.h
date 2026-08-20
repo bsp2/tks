@@ -1,10 +1,11 @@
 /// PTN_ClassMemberOpAssign.h
 ///
-/// (c) 2001-2010 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
-#ifndef __PTN_CLASSMEMBEROPASSIGN_H__
-#define __PTN_CLASSMEMBEROPASSIGN_H__
+
+#ifndef PTN_CLASSMEMBEROPASSIGN_H__
+#define PTN_CLASSMEMBEROPASSIGN_H__
 
 
 class PTN_ClassMemberOpAssign : public PTN_Statement {
@@ -16,7 +17,7 @@ public:
     PTN_Expr         *expr;
     Feval             expr_opt;
     sBool             b_indirect;
-    
+
 public:
     PTN_ClassMemberOpAssign(TKS_CachedObject *_co, TKS_CachedObject *_cc_co, sU8 _aop, PTN_Expr *_expr);
     ~PTN_ClassMemberOpAssign();
@@ -32,9 +33,8 @@ public:
 #ifdef TKS_JIT
     sU8   compile       (VMCore *);
     sBool forceHybrid   (void);
-#endif 
+#endif
 };
 
 
-#endif //__PTN_CLASSMEMBEROPASSIGN_H__
-
+#endif // PTN_CLASSMEMBEROPASSIGN_H__

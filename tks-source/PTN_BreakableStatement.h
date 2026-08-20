@@ -1,10 +1,11 @@
 /// PTN_BreakableStatement.h
 ///
-/// (c) 2014 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2014-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
-#ifndef __PTN_BREAKABLESTATEMENT_H__
-#define __PTN_BREAKABLESTATEMENT_H__
+
+#ifndef PTN_BREAKABLESTATEMENT_H__
+#define PTN_BREAKABLESTATEMENT_H__
 
 
 class PTN_BreakableStatement : public PTN_Statement {
@@ -21,4 +22,4 @@ public:
    void jitFixBreakPCs (sU16 _vmpcLoopEnd);
 };
 
-#endif // __PTN_BREAKABLESTATEMENT_H__
+#endif // PTN_BREAKABLESTATEMENT_H__

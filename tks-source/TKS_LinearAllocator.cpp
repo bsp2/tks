@@ -1,12 +1,13 @@
 /// TKS_LinearAllocator.cpp
 ///
-/// (c) 2009 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under terms of the GNU general public license (GPL).
+/// (c) 2009-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 
 #include "tks.h"
 
 #include "TKS_LinearAllocator.h"
+
 
 TKS_LinearAllocatorStripe::TKS_LinearAllocatorStripe(sUI _stripeSize, TKS_LinearAllocatorStripe *_next)
 {

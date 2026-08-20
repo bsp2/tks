@@ -1,7 +1,7 @@
 /// PTN_EmptyStatement.cpp
 ///
-/// (c) 2001-2008 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 
 #include "tks.h"
@@ -12,9 +12,9 @@
 
 #ifdef TKS_JIT
 sBool PTN_EmptyStatement::forceHybrid(void) {
-	return 0;
+	return YAC_FALSE;
 }
-#endif
+#endif // TKS_JIT
 
 sUI PTN_EmptyStatementNoTerm::getID(void) const {
    return PTN_EMPTY;

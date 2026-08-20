@@ -1,10 +1,11 @@
-/// TKS_Exception.h 
-/// 
-/// (c) 2006-2009 Bastian Spiegel <bs@tkscript.de> 
-///     - distributed under terms of the GNU general public license (GPL). 
-/// 
-#ifndef __TKS_EXCEPTION_H__
-#define __TKS_EXCEPTION_H__
+/// TKS_Exception.h
+///
+/// (c) 2006-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
+///
+
+#ifndef TKS_EXCEPTION_H__
+#define TKS_EXCEPTION_H__
 
 
 class PTN_Node;
@@ -21,7 +22,7 @@ public:
    const PTN_Node             *node_handled; // where the exception was first handled
    YAC_String                 *cpp_src_file; // name of the C++ source file if this exception was thrown within native code
    sUI                         cpp_src_line; // line number (1..) within the C++ source (if cpp_src_file!=NULL)
-#ifdef DX_TRACEFUNCTIONCALLS 
+#ifdef DX_TRACEFUNCTIONCALLS
    TKS_FunctionCallStackEntry *stack_trace;  // a snapshot of the callstack[]
    sUI                         stack_trace_num; // number of elements in stack_trace[]
 #endif
@@ -43,4 +44,4 @@ public:
 };
 
 
-#endif // __TKS_EXCEPTION_H__
+#endif // TKS_EXCEPTION_H__

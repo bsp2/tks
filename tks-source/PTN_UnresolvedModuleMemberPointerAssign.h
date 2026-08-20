@@ -1,10 +1,11 @@
 /// PTN_UnresolvedModuleMemberPointerAssign.h
 ///
-/// (c) 2001-2009 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
-#ifndef __PTN_UNRESOLVEDMODULEMEMBERPOINTERASSIGN_H__
-#define __PTN_UNRESOLVEDMODULEMEMBERPOINTERASSIGN_H__
+
+#ifndef PTN_UNRESOLVEDMODULEMEMBERPOINTERASSIGN_H__
+#define PTN_UNRESOLVEDMODULEMEMBERPOINTERASSIGN_H__
 
 
 class PTN_UnresolvedModuleMemberPointerAssign : public PTN_Statement {
@@ -19,7 +20,7 @@ public:
 
 public:
     PTN_UnresolvedModuleMemberPointerAssign(void);
-    PTN_UnresolvedModuleMemberPointerAssign(YAC_String *_module, sBool _bDefaultModule, 
+    PTN_UnresolvedModuleMemberPointerAssign(YAC_String *_module, sBool _bDefaultModule,
                                             YAC_String *_member, PTN_Expr *_expr
                                             );
     ~PTN_UnresolvedModuleMemberPointerAssign();
@@ -32,4 +33,4 @@ public:
 };
 
 
-#endif // __PTN_UNRESOLVEDMODULEMEMBERPOINTERASSIGN_H__
+#endif // PTN_UNRESOLVEDMODULEMEMBERPOINTERASSIGN_H__

@@ -1,10 +1,11 @@
 /// TKS_IntArrayIterator.h
 ///
-/// (c) 2001-2009 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
-#ifndef __TKS_INTARRAYITERATOR_H__
-#define __TKS_INTARRAYITERATOR_H__
+
+#ifndef TKS_INTARRAYITERATOR_H__
+#define TKS_INTARRAYITERATOR_H__
 
 
 class TKS_IntArrayIterator : public YAC_Iterator {
@@ -20,4 +21,4 @@ public:
 };
 
 
-#endif // __TKS_INTARRAYITERATOR_H__
+#endif // TKS_INTARRAYITERATOR_H__

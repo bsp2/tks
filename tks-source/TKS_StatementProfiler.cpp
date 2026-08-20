@@ -1,7 +1,7 @@
 /// TKS_StatementProfiler.cpp
 ///
-/// (c) 2006-2024 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2006-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 
 #include "tks.h"
@@ -27,7 +27,7 @@ TKS_StatementProfiler::~TKS_StatementProfiler() {
 
 void TKS_StatementProfiler::init(void) {
    num_modules = 0;
-   for(int i=0; i<TKS_MAX_MODULES; i++)
+   for(int i = 0; i < TKS_MAX_MODULES; i++)
    {
       line_count   [i] = 0;
       call_count   [i] = NULL;
@@ -82,7 +82,7 @@ void TKS_StatementProfiler::addModule(sUI _numLines) {
 }
 
 void TKS_StatementProfiler::addResult(sUI _srcLoc, sF64 _deltaMilliSec) {
-/*   tkscript->printf("TKS_StatementProfiler::addResult: loc=%i:%i ms=%.64lg\n", 
+/*   tkscript->printf("TKS_StatementProfiler::addResult: loc=%i:%i ms=%.64lg\n",
       (_srcLoc>>16),
       (_srcLoc&0xFFFF),
       _deltaMilliSec
@@ -99,7 +99,7 @@ void TKS_StatementProfiler::addResult(sUI _srcLoc, sF64 _deltaMilliSec) {
 #ifdef TKS_MT
          mtx_result->lock();
 #endif // TKS_MT
-         
+
          sUI *cc  = &call_count   [modIdx][lineIdx];
          if(*cc==0)
          {
@@ -154,7 +154,7 @@ void TKS_StatementProfiler::writeMilliString(YAC_String *_s) {
    if(cc_ia.num_elements>1)
    {
       sBool bSwapped;
-      do 
+      do
       {
          bSwapped = 0;
          sUI i;
@@ -180,11 +180,11 @@ void TKS_StatementProfiler::writeMilliString(YAC_String *_s) {
       }
       while(bSwapped);
    }
-   
+
    {
       // Build ratios
       sUI ne = cc_ia.num_elements;
-      if(ne > MAX_RESULT_LINES) 
+      if(ne > MAX_RESULT_LINES)
       {
          ne = MAX_RESULT_LINES;
       }
@@ -214,11 +214,11 @@ void TKS_StatementProfiler::writeMilliString(YAC_String *_s) {
             lcc = cc;
          }
       }
-      
+
       _s->append("------------------------------------\n");
       _s->append("Profile result (millisec_sum):\n");
       writeSortedArray(&cc_ia, ra1st, raParent, _s);
-      
+
       delete [] raParent;
       delete [] ra1st;
    }
@@ -252,7 +252,7 @@ void TKS_StatementProfiler::writeAvgMilliString(YAC_String *_s) {
    if(cc_ia.num_elements>1)
    {
       sBool bSwapped;
-      do 
+      do
       {
          bSwapped = 0;
          sUI i;
@@ -278,11 +278,11 @@ void TKS_StatementProfiler::writeAvgMilliString(YAC_String *_s) {
       }
       while(bSwapped);
    }
-   
+
    {
       // Build ratios
       sUI ne = cc_ia.num_elements;
-      if(ne > MAX_RESULT_LINES) 
+      if(ne > MAX_RESULT_LINES)
       {
          ne = MAX_RESULT_LINES;
       }
@@ -312,11 +312,11 @@ void TKS_StatementProfiler::writeAvgMilliString(YAC_String *_s) {
             lcc = cc;
          }
       }
-      
+
       _s->append("------------------------------------\n");
       _s->append("Profile result (avg_millisec):\n");
       writeSortedArray(&cc_ia, ra1st, raParent, _s);
-      
+
       delete [] raParent;
       delete [] ra1st;
    }
@@ -355,7 +355,7 @@ void TKS_StatementProfiler::writeCountString(YAC_String *_s) {
    if(cc_ia.num_elements>1)
    {
       sBool bSwapped;
-      do 
+      do
       {
          bSwapped = 0;
          sUI i;
@@ -385,7 +385,7 @@ void TKS_StatementProfiler::writeCountString(YAC_String *_s) {
    {
       // Build ratios
       sUI ne = cc_ia.num_elements;
-      if(ne > MAX_RESULT_LINES) 
+      if(ne > MAX_RESULT_LINES)
       {
          ne = MAX_RESULT_LINES;
       }
@@ -415,11 +415,11 @@ void TKS_StatementProfiler::writeCountString(YAC_String *_s) {
             lcc = cc;
          }
       }
-      
+
       _s->append("------------------------------------\n");
       _s->append("Profile result (call_count):\n");
       writeSortedArray(&cc_ia, ra1st, raParent, _s);
-      
+
       delete [] raParent;
       delete [] ra1st;
    }
@@ -444,21 +444,21 @@ void TKS_StatementProfiler::writeSortedArray(YAC_IntArray *cc_ia, sF64 *_ratios1
       t.printf("  <rank>   <module_name>:<line_nr> <total_ms> <avg_ms> <call_count> <ratio1st> <ratioParent>\n");
       _s->append(&t);
       sUI j=1;
-      for(sSI i=(sSI)cc_ia->num_elements-1; (i>=0) && (j<=MAX_RESULT_LINES); i--, j++) 
+      for(sSI i=(sSI)cc_ia->num_elements-1; (i>=0) && (j<=MAX_RESULT_LINES); i--, j++)
       {
          sUI srcLoc = cc_ia->elements[i];
          t.empty();
          ////t.printf("  %05d.: %s:%i %.012lg %lg %d (1/%.012lg) (1/%.012lg) *** ",
          t.printf("  %05d.: %s:%i %g %g %d (1/%g) (1/%g) *** ",
             j,
-            ((TKS_Compiler*)tkscript->compiler)->getModuleNameByIndex( ((srcLoc>>16)+1) & 0xFFFF ),  
+            ((TKS_Compiler*)tkscript->compiler)->getModuleNameByIndex( ((srcLoc>>16)+1) & 0xFFFF ),
             (srcLoc&0xFFFF)+1 ,
             millisec_sum[(srcLoc>>16)][(srcLoc&0xFFFF)],
             avg_millisec[(srcLoc>>16)][(srcLoc&0xFFFF)],
             call_count[(srcLoc>>16)][(srcLoc&0xFFFF)],
             _ratios1st[i],
             _ratiosParent[i]
-            );  
+            );
          _s->append(&t);
          TKS_CachedScript *cs = Dtkscompiler->getModuleByIndex( ((srcLoc>>16)+1) & 0xFFFF );
          if(cs != NULL)
@@ -481,7 +481,7 @@ void TKS_StatementProfiler::printResultString(void) {
    buf.empty();
    writeMilliString(&buf);
    tks_fputs2((const char*)buf.chars);
-   
+
    buf.empty();
    writeAvgMilliString(&buf);
    tks_fputs2((const char*)buf.chars);

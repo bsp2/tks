@@ -1,8 +1,9 @@
 /// TKS_ScriptModule.cpp
 ///
-/// (c) 2005-2025 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2005-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
+
 #include <stdlib.h>
 #include <string.h>
 
@@ -136,7 +137,7 @@ sSI TKS_ScriptModule::load(YAC_String *_s) {
             tkscript->ptn_error_loc  = 0u;
 
             // Dprintf("xxx TKS_ScriptModule::load: LEAVE (fail)\n");
-   
+
             return YAC_FALSE;
          }
 
@@ -177,9 +178,9 @@ sSI TKS_ScriptModule::load(YAC_String *_s) {
 #ifdef TKS_MT
                   tkscript->unlockGlobalContext();
 #endif // TKS_MT
-                  
+
                   // Dprintf("xxx TKS_ScriptModule::load: LEAVE (OK)\n");
-                  
+
                   return YAC_TRUE;
                }
                else

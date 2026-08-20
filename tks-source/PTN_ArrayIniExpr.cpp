@@ -1,7 +1,7 @@
 /// PTN_ArrayIniExpr.cpp
 ///
-/// (c) 2001-2013 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 
 #include "tks.h"
@@ -22,11 +22,10 @@ PTN_ArrayIniExpr::PTN_ArrayIniExpr(PTN_ExprArrayEntry *_first, sBool _bAlwaysNew
    first_entry      = _first;
    num_entries      = 0;
    arrays.any_array = NULL;
-   cached_arraytype = ATYPE_UNKNOWN; 
+   cached_arraytype = ATYPE_UNKNOWN;
    is_const         = 0;
    b_always_new     = _bAlwaysNew;
 }
-
 
 PTN_ArrayIniExpr::~PTN_ArrayIniExpr() {
    if(NULL != first_entry)
@@ -42,118 +41,110 @@ PTN_ArrayIniExpr::~PTN_ArrayIniExpr() {
    }
 }
 
-
 sBool PTN_ArrayIniExpr::semanticCheck(void) {
    return (first_entry ? first_entry->semanticCheck() : YAC_TRUE);
 }
 
-
 sBool PTN_ArrayIniExpr::resolveXRef(void) {
-   if(NULL != first_entry)  
-   { 
-      return first_entry->resolveXRef();  
+   if(NULL != first_entry)
+   {
+      return first_entry->resolveXRef();
    }
-   else  
-   { 
+   else
+   {
       return YAC_TRUE;
    }
 }
 
-
 void PTN_ArrayIniExpr::optimize(void) {
-   if(2 != is_const) 
-   { 
-      if(NULL != first_entry)  
-      { 
-         first_entry->optimize();  
+   if(2 != is_const)
+   {
+      if(NULL != first_entry)
+      {
+         first_entry->optimize();
       }
-   } 
-   else  
+   }
+   else
    {
       // Already optimized in isConst()
       is_const = 1;
    }
 }
 
-
-sBool PTN_ArrayIniExpr::isConst(void) { 
+sBool PTN_ArrayIniExpr::isConst(void) {
    if(!b_always_new)
    {
-      sBool r  = YAC_TRUE; 
-      sBool r2 = YAC_FALSE; 
-      PTN_ExprArrayEntry *c = first_entry; 
+      sBool r  = YAC_TRUE;
+      sBool r2 = YAC_FALSE;
+      PTN_ExprArrayEntry *c = first_entry;
 
       while(r && (NULL != c))
-      { 
-         r  = r && c->expr->isConst(); 
-         r2 = r2 | tks_isobjectconstval(c->expr); 
-         c  = c->next; 
+      {
+         r  = r && c->expr->isConst();
+         r2 = r2 | tks_isobjectconstval(c->expr);
+         c  = c->next;
       }
 
-      if(r) 
-      { 
-         if(r2) 
-         { 
-            optimize(); 
-            YAC_Value t;  
+      if(r)
+      {
+         if(r2)
+         {
+            optimize();
+            YAC_Value t;
             PTN_Env env; env.initDefault();
-            eval(&env, &t, 0); 
+            eval(&env, &t, 0);
             is_const = 2; // set optimized flag as a hint for subsequent optimize() call
-         } 
-         else  
+         }
+         else
          {
             return YAC_TRUE;
          }
-      } 
+      }
    }
 
-   return YAC_FALSE;  
-} 
+   return YAC_FALSE;
+}
 
-
-void PTN_ArrayIniExpr::evalConst(YAC_Value *_r) { 
+void PTN_ArrayIniExpr::evalConst(YAC_Value *_r) {
    // xxx TKS_MT: is evalConst really only called during initialization? (temp scripts!)
    PTN_Env env; env.initDefault();
-   eval(&env, _r, 1); 
+   eval(&env, _r, 1);
    arrays.any_array = NULL;
-} 
+}
 
-
-static void PTN_ArrayIniExpr__eval(PTN_Env *_env, YAC_Value *_r, const PTN_Expr *_st) { 
+static void PTN_ArrayIniExpr__eval(PTN_Env *_env, YAC_Value *_r, const PTN_Expr *_st) {
    PTN_ArrayIniExpr *st = (PTN_ArrayIniExpr*)_st; // xxx discard const qualifier
    Dtracest;
    st->eval(_env, _r, 0); // (todo) optimize me
-} 
+}
 
-
-void PTN_ArrayIniExpr::eval(PTN_Env *_env, YAC_Value *_r) const { 
-   PTN_ArrayIniExpr__eval(_env, _r, this); 
-} 
-
+void PTN_ArrayIniExpr::eval(PTN_Env *_env, YAC_Value *_r) const {
+   PTN_ArrayIniExpr__eval(_env, _r, this);
+}
 
 Feval PTN_ArrayIniExpr::getEval(void) const {
-   return PTN_ArrayIniExpr__eval; 
-} 
+   return PTN_ArrayIniExpr__eval;
+}
 
 
 void PTN_ArrayIniExpr::eval(PTN_Env *_env, YAC_Value *_r, sBool _const) {
-   if(!is_const) 
+   if(!is_const)
    {
       if(NULL == first_entry)
       {
          // Empty array
          // xxx use YAC_ValueArray
-         cached_arraytype=ATYPE_POINTER; 
+         cached_arraytype=ATYPE_POINTER;
          arrays.pointer_array = (YAC_PointerArray*)YAC_NEW_CORE_POOLED(YAC_CLID_POINTERARRAY);
          arrays.pointer_array->alloc(num_entries);
          _r->initObject(arrays.any_array, _const);
          return;
-      } 
-      
+      }
+
       if(ATYPE_UNKNOWN == cached_arraytype)
       {
-         /** evaluate entries and determine array type **/  
-         PTN_ExprArrayEntry *en = first_entry; 
+         /** evaluate entries and determine array type **/
+         PTN_ExprArrayEntry *en = first_entry;
 
          while(NULL != en)
          {
@@ -171,10 +162,10 @@ void PTN_ArrayIniExpr::eval(PTN_Env *_env, YAC_Value *_r, sBool _const) {
                }
                else if( (ATYPE_FLOAT != cached_arraytype) || (ATYPE_INT != at) )
                {
-                  cached_arraytype = ATYPE_VALUE; 
+                  cached_arraytype = ATYPE_VALUE;
                }
             }
-            
+
             en = en->next;
          }
 
@@ -194,18 +185,18 @@ void PTN_ArrayIniExpr::eval(PTN_Env *_env, YAC_Value *_r, sBool _const) {
       }
 
       // Iterate and evaluate array element expressions
-      PTN_ExprArrayEntry *en = first_entry; 
+      PTN_ExprArrayEntry *en = first_entry;
 
       sSI ci = 0;
       do
       {
-         if(_const)  
+         if(_const)
          {
-            en->expr->evalConst(_r);  
+            en->expr->evalConst(_r);
          }
-         else  
+         else
          {
-            en->expr->eval(_env, _r);  
+            en->expr->eval(_env, _r);
          }
 
          if(NULL != _env)
@@ -223,13 +214,13 @@ void PTN_ArrayIniExpr::eval(PTN_Env *_env, YAC_Value *_r, sBool _const) {
          {
             _r->typecast(cached_arraytype);
          }
-         
+
          arrays.any_array->yacArraySet((void*)_env->context, ci, _r);
          _r->unset();
 
          en = en->next;
       }
-      while(++ci < num_entries); 
+      while(++ci < num_entries);
 
       if(NULL != _env)
       {
@@ -248,11 +239,10 @@ void PTN_ArrayIniExpr::eval(PTN_Env *_env, YAC_Value *_r, sBool _const) {
    }
 }
 
-
 void PTN_ArrayIniExpr::allocArray(void) {
    switch(cached_arraytype)
    {
-   default: 
+   default:
    case ATYPE_VALUE:
       cached_arraytype = ATYPE_VALUE;
       arrays.value_array = (YAC_ValueArray*)YAC_NEW_CORE_POOLED(YAC_CLID_VALUEARRAY);

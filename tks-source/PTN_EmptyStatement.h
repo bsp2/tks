@@ -1,24 +1,25 @@
 /// PTN_EmptyStatement.h
 ///
-/// (c) 2001-2009 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
-#ifndef __PTN_EMPTYSTATEMENT_H__
-#define __PTN_EMPTYSTATEMENT_H__
 
- 
+#ifndef PTN_EMPTYSTATEMENT_H__
+#define PTN_EMPTYSTATEMENT_H__
+
+
 class PTN_EmptyStatement : public PTN_Statement {
-public: 
+public:
 #ifdef TKS_JIT
    sBool forceHybrid(void);
 #endif
 };
- 
-// ---- used for enum 
-class PTN_EmptyStatementNoTerm : public PTN_EmptyStatement { 
-public: 
-   sUI getID (void) const; 
-};
- 
 
-#endif // __PTN_EMPTYSTATEMENT_H__
+// ---- used for enum
+class PTN_EmptyStatementNoTerm : public PTN_EmptyStatement {
+public:
+   sUI getID (void) const;
+};
+
+
+#endif // PTN_EMPTYSTATEMENT_H__

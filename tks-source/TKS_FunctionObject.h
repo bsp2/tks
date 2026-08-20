@@ -1,8 +1,9 @@
 /// TKS_FunctionObject.h
 ///
-/// (c) 2005-2023 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2005-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
+
 #ifndef TKS_FUNCTIONOBJECT_H__
 #define TKS_FUNCTIONOBJECT_H__
 

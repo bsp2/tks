@@ -1,7 +1,7 @@
 /// TKS_SharedBuffer_stub.cpp
 ///
-/// (c) 2005-2006 Bastian Spiegel <bs@tkscript.de> 
-///     - distributed under terms of the GNU general public license (GPL).
+/// (c) 2005-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 ///
 
@@ -32,5 +32,3 @@ sSI TKS_SharedBuffer::visitSharedMemory (YAC_String *_shmKey, sSI _size) {
 #endif
    return 0;
 }
-
-

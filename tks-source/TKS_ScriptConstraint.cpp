@@ -1,7 +1,7 @@
 /// TKS_ScriptConstraint.cpp
 ///
-/// (c) 2001-2023 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 
 #include "tks.h"
@@ -36,23 +36,23 @@ sBool TKS_ScriptConstraint::checkConstraintExpr(PTN_Env *_env, YAC_Value *_curre
    sBool b = YAC_FALSE;
    switch(r.type)
    {
-   case YAC_TYPE_VOID:
-      break;
+      case YAC_TYPE_VOID:
+         break;
 
-   case YAC_TYPE_INT:
-      b = (0 != r.value.int_val);
-      break;
+      case YAC_TYPE_INT:
+         b = (0 != r.value.int_val);
+         break;
 
-   case YAC_TYPE_FLOAT:
-      b = (0 != ((sSI)r.value.float_val));
-      break;
+      case YAC_TYPE_FLOAT:
+         b = (0 != ((sSI)r.value.float_val));
+         break;
 
-   default:
-      if(YAC_VALID(r.value.object_val))
-      {
-         b = (YAC_CLID_OBJECT != r.value.object_val->class_ID); // not null object
-      }
-      break;
+      default:
+         if(YAC_VALID(r.value.object_val))
+         {
+            b = (YAC_CLID_OBJECT != r.value.object_val->class_ID); // not null object
+         }
+         break;
    }
 
    // ---- xxx raise constraint failed "exception"

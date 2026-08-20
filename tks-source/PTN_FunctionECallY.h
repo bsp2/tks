@@ -1,10 +1,11 @@
 /// PTN_FunctionECallY.h
 ///
-/// (c) 2001-2010 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
-#ifndef __PTN_FUNCTIONECALLY_H__
-#define __PTN_FUNCTIONECALLY_H__
+
+#ifndef PTN_FUNCTIONECALLY_H__
+#define PTN_FUNCTIONECALLY_H__
 
 
 class PTN_FunctionECallY : public PTN_CallableExpr {
@@ -18,7 +19,7 @@ public:
    Feval         retobj_expr_opt;
    sBool         b_ret_retobj; // 1:<=> operator, 0:=> operator or regular function
 
-  
+
 public:
    PTN_FunctionECallY(void);
    PTN_FunctionECallY(YAC_CommandY *_fun, PTN_ArgList *_args);
@@ -27,7 +28,7 @@ public:
    static sBool CheckRootCommand(sBool _bHaveRetObjExpr, const YAC_CommandY**_cmdAddr, sBool _bRSELF, sBool *_bRSELF_emulRet);
 
    sBool handleRootCommand (void); // early semantic check: Check whether RARG/RVAL/RSELF fun. variants are in effect, return 0(false) if a problem occured
-   
+
    sBool resolveXRef          (void);
    sBool semanticCheck        (void);
    void  optimize             (void);
@@ -43,4 +44,4 @@ public:
 };
 
 
-#endif // __PTN_FUNCTIONECALLY_H__
+#endif // PTN_FUNCTIONECALLY_H__

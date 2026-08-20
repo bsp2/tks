@@ -1,7 +1,7 @@
 /// Pool.cpp
 ///
-/// (c) 2001-2020 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 ///
 
@@ -10,8 +10,8 @@
 
 
 Pool::Pool(void) {
-   elements     = NULL; 
-   max_elements = free_elements = used_elements = 0u; 
+   elements     = NULL;
+   max_elements = free_elements = used_elements = 0u;
    freelist     = NULL;
    uselist      = NULL;
    usecopylist  = NULL;
@@ -79,7 +79,7 @@ sBool Pool::allocElements(sSI _maxelements) {
                   freelist = NULL;
 
                   delete [] elements;
-                  elements = NULL; 
+                  elements = NULL;
 
                   max_elements = 0;
                }
@@ -124,33 +124,33 @@ sBool Pool::allocElements(sSI _maxelements) {
 void Pool::freeElements(void) {
    if(NULL != elements)
    {
-      delete [] elements; 
+      delete [] elements;
       elements = NULL;
 
       max_elements = 0;
 
-      if(NULL != logictable) 
+      if(NULL != logictable)
       {
          delete [] logictable;
          logictable = NULL;
       }
 
-      if(NULL != freelist) 
-      { 
-         delete [] freelist; 
-         freelist = NULL; 
+      if(NULL != freelist)
+      {
+         delete [] freelist;
+         freelist = NULL;
       }
 
-      if(NULL != uselist) 
-      { 
-         delete [] uselist; 
-         uselist = NULL; 
+      if(NULL != uselist)
+      {
+         delete [] uselist;
+         uselist = NULL;
       }
 
-      if(NULL != usecopylist) 
-      { 
-         delete [] usecopylist; 
-         usecopylist = NULL; 
+      if(NULL != usecopylist)
+      {
+         delete [] usecopylist;
+         usecopylist = NULL;
       }
 
       free_elements = 0;
@@ -238,10 +238,10 @@ void Pool::empty(void) {
    for(i=0; i<max_elements; i++)
    {
       uselist[i] = usecopylist[i] = logictable[i] = NO_ID;
-      freelist[i] = i; 
+      freelist[i] = i;
    }
 
-	used_elements = 0; 
+	used_elements = 0;
 	free_elements = max_elements;
    uselist[i] = freelist[i] = usecopylist[i] = NO_ID;
 }
@@ -250,24 +250,24 @@ sBool Pool::isEmpty(void) {
    return (0u == used_elements);
 }
 
-PoolId Pool::getIDByObject(void *_o) const { 
-	sSI i = 0; 
-	for(; i<used_elements; i++)  
-	{ 
+PoolId Pool::getIDByObject(void *_o) const {
+	sSI i = 0;
+	for(; i<used_elements; i++)
+	{
 		if(elements[uselist[i]] == _o)
       {
-			return uselist[i]; 
+			return uselist[i];
       }
 	}
-   
-	return NO_ID; 
-} 
+
+	return NO_ID;
+}
 
 void Pool::printDebug(const char *_name) {
 #ifdef TKS_POOL_ACCOUNTING
-   tkscript->printf("[...] %s pool load=%i/%i (%3.2f pct, %i allocations, peak load=%i)\n", 
+   tkscript->printf("[...] %s pool load=%i/%i (%3.2f pct, %i allocations, peak load=%i)\n",
                     _name,
-                    used_elements, max_elements, 
+                    used_elements, max_elements,
                     100.0f * (used_elements / ((sF32)max_elements)),
                     total_num_allocs,
                     peak_load

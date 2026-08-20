@@ -1,10 +1,11 @@
 /// PTN_Statement.h
 ///
-/// (c) 2001-2010 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
-#ifndef __PTN_STATEMENT_H__
-#define __PTN_STATEMENT_H__
+
+#ifndef PTN_STATEMENT_H__
+#define PTN_STATEMENT_H__
 
 
 // Note: also see PTN_CallablExpr.h for fxn profiler macros
@@ -15,8 +16,6 @@
  #define Dbeginstprofile
  #define Dendstprofile(loc)
 #endif // TKS_PROFILE_STATEMENTS
-
-
 
 
 class PTN_Statement : public PTN_Node {
@@ -61,4 +60,4 @@ public:
 };
 
 
-#endif // __PTN_STATEMENT_H__
+#endif // PTN_STATEMENT_H__

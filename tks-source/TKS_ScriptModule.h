@@ -1,11 +1,12 @@
 /// TKS_ScriptModule.h
 ///
-/// (c) 2001-2024 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 ///
-#ifndef __TKS_SCRIPTMODULE_H__
-#define __TKS_SCRIPTMODULE_H__
+
+#ifndef TKS_SCRIPTMODULE_H__
+#define TKS_SCRIPTMODULE_H__
 
 
 class TKS_ScriptModule : public YAC_Object {
@@ -36,4 +37,4 @@ public:
 };
 
 
-#endif // __TKS_SCRIPTMODULE_H__
+#endif // TKS_SCRIPTMODULE_H__

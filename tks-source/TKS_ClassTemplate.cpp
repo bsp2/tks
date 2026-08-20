@@ -1,7 +1,7 @@
 /// TKS_ClassTemplate.cpp
 ///
-/// (c) 2001-2020 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 ///
 
@@ -18,13 +18,13 @@ TKS_ClassTemplate::TKS_ClassTemplate(void) { init();  }
 TKS_ClassTemplate::~TKS_ClassTemplate()    { clean(); }
 
 void TKS_ClassTemplate::init(void) {
-	template_object = 0;
-	num_signals     = 0;
-	flags           = 0;
-	isplugin        = 0; 
+	template_object = NULL;
+	num_signals     = 0u;
+	flags           = 0u;
+	isplugin        = YAC_FALSE;
 
-	sU16 i; 
-   for(i=0; i<513; i++) 
+	sUI i;
+   for(i = 0u; i < 513u; i++)
    {
       quad_hash_table[i] = 0;
    }
@@ -33,12 +33,12 @@ void TKS_ClassTemplate::init(void) {
 void TKS_ClassTemplate::clean(void) {
 	if(!isplugin)
 	{
-		if(template_object)  
-      { 
-         delete template_object; 
+		if(template_object)
+      {
+         delete template_object;
       }
 	}
-	template_object=0;
+	template_object = NULL;
 	sUI i; for(i=0; i<513; i++) quad_hash_table[i]=0;
 	class_name.empty();
 }
@@ -83,12 +83,12 @@ sBool TKS_ClassTemplate::setTemplateY(YAC_Object *_template) {
             {
                if((bRARG && bRVAL) || (bRARG && bRSELF) || (bRVAL && bRSELF))
                {
-                  Dprintf("[---] register class method \"%s::%s\": method variant must be either RARG, RVAL or RSELF.\n", 
+                  Dprintf("[---] register class method \"%s::%s\": method variant must be either RARG, RVAL or RSELF.\n",
                      (char*)class_name.chars, (char*)mnRoot.chars
                      );
                   return 0;
                }
-               
+
                if(bRARG)
                {
                   mnRoot.replace("_YAC_RARG", "");
@@ -101,13 +101,13 @@ sBool TKS_ClassTemplate::setTemplateY(YAC_Object *_template) {
                {
                   mnRoot.replace("_YAC_RSELF", "");
                }
-               
+
                // Validate function signature
                if(bRVAL)
                {
                   if(4 != all_method_return_types[i])
                   {
-                     Dprintf("[---] register class method \"%s::%s\": RVAL function variant must have variable return type (YAC_Value *_r).\n", 
+                     Dprintf("[---] register class method \"%s::%s\": RVAL function variant must have variable return type (YAC_Value *_r).\n",
                         (char*)class_name.chars, (char*)mnRoot.chars
                         );
                      return 0;
@@ -117,32 +117,32 @@ sBool TKS_ClassTemplate::setTemplateY(YAC_Object *_template) {
                {
                   if(0 == numargs)
                   {
-                     Dprintf("[---] register class method \"%s::%s\": last argument to RARG function variant must be YAC_Object* (no args found).\n", 
+                     Dprintf("[---] register class method \"%s::%s\": last argument to RARG function variant must be YAC_Object* (no args found).\n",
                         (char*)class_name.chars, (char*)mnRoot.chars
                         );
                      return 0;
                   }
-                  else 
+                  else
                   {
                      if(0 != all_method_return_types[i])
                      {
-                        Dprintf("[---] register class method \"%s::%s\": RARG function variant must have void return type.\n", 
+                        Dprintf("[---] register class method \"%s::%s\": RARG function variant must have void return type.\n",
                            (char*)class_name.chars, (char*)mnRoot.chars
                            );
                         return 0;
                      }
                      // Decrease argcount since the last argument is actually the return type!
-                     numargs--; 
+                     numargs--;
                      if(all_method_param_types[i][numargs] < YAC_TYPE_OBJECT)
                      {
-                        Dprintf("[---] register class method \"%s::%s\": last argument to RARG function variant must be YAC_Object* (return arg has wrong type).\n", 
+                        Dprintf("[---] register class method \"%s::%s\": last argument to RARG function variant must be YAC_Object* (return arg has wrong type).\n",
                            (char*)class_name.chars, (char*)mnRoot.chars
                            );
                         return 0;
                      }
                   }
                }
-               
+
                // Find or create root method entry if it doesn't already exist
                YAC_CommandY *cRoot = findCommandY2(&mnRoot);
                if(NULL == cRoot)
@@ -152,21 +152,21 @@ sBool TKS_ClassTemplate::setTemplateY(YAC_Object *_template) {
                   cRoot->root_name = new YAC_String();
                   ////cRoot->root_name->yacCopy(&mnRoot);
                   cRoot->root_name->refCopy(&mnRoot);
-                  
-                  cRoot->y_adr          = NULL; 
-                  cRoot->y_name         = (const char*) cRoot->root_name->chars; 
-                  cRoot->y_return_type  = 0; 
-                  cRoot->y_return_otype = 0; 
-                  cRoot->y_arg_num      = numargs; 
-                  cRoot->y_arg_types    = NULL; 
-                  cRoot->y_arg_otypes   = NULL; 
-                  cRoot->y_callstyle    = 0; 
+
+                  cRoot->y_adr          = NULL;
+                  cRoot->y_name         = (const char*) cRoot->root_name->chars;
+                  cRoot->y_return_type  = 0;
+                  cRoot->y_return_otype = 0;
+                  cRoot->y_arg_num      = numargs;
+                  cRoot->y_arg_types    = NULL;
+                  cRoot->y_arg_otypes   = NULL;
+                  cRoot->y_callstyle    = 0;
                   cRoot->b_method       = 1; // Delete retarg, retval YAC_CommandY pointer in d'tor
 
                   addToQuadHash(i, &mnRoot);
 
                   com = NULL;
-                  
+
                }
                // Found/created root method entry
                if(bRARG)
@@ -179,7 +179,7 @@ sBool TKS_ClassTemplate::setTemplateY(YAC_Object *_template) {
                      }
                      else
                      {
-                        Dprintf("[---] register class method \"%s::%s\": RARG method variant has different argcount than root function entry (%u != %u).\n", 
+                        Dprintf("[---] register class method \"%s::%s\": RARG method variant has different argcount than root function entry (%u != %u).\n",
                            (char*)class_name.chars, (char*)mnRoot.chars, numargs, cRoot->y_arg_num
                            );
                         return 0;
@@ -187,7 +187,7 @@ sBool TKS_ClassTemplate::setTemplateY(YAC_Object *_template) {
                   }
                   else
                   {
-                     Dprintf("[---] register class method \"%s::%s\": RARG method variant already registered.\n", 
+                     Dprintf("[---] register class method \"%s::%s\": RARG method variant already registered.\n",
                         (char*)class_name.chars, (char*)mnRoot.chars
                         );
                      return 0;
@@ -203,7 +203,7 @@ sBool TKS_ClassTemplate::setTemplateY(YAC_Object *_template) {
                      }
                      else
                      {
-                        Dprintf("[---] register class method \"%s::%s\": RVAL method variant has different argcount than root function entry (%u != %u).\n", 
+                        Dprintf("[---] register class method \"%s::%s\": RVAL method variant has different argcount than root function entry (%u != %u).\n",
                            (char*)class_name.chars, (char*)mnRoot.chars, numargs, cRoot->y_arg_num
                            );
                         return 0;
@@ -211,7 +211,7 @@ sBool TKS_ClassTemplate::setTemplateY(YAC_Object *_template) {
                   }
                   else
                   {
-                     Dprintf("[---] register class method \"%s::%s\": RVAL method variant already registered.\n", 
+                     Dprintf("[---] register class method \"%s::%s\": RVAL method variant already registered.\n",
                         (char*)class_name.chars, (char*)mnRoot.chars
                         );
                      return 0;
@@ -227,7 +227,7 @@ sBool TKS_ClassTemplate::setTemplateY(YAC_Object *_template) {
                      }
                      else
                      {
-                        Dprintf("[---] register class method \"%s::%s\": RSELF method variant has different argcount than root function entry (%u != %u).\n", 
+                        Dprintf("[---] register class method \"%s::%s\": RSELF method variant has different argcount than root function entry (%u != %u).\n",
                            (char*)class_name.chars, (char*)mnRoot.chars, numargs, cRoot->y_arg_num
                            );
                         return 0;
@@ -235,7 +235,7 @@ sBool TKS_ClassTemplate::setTemplateY(YAC_Object *_template) {
                   }
                   else
                   {
-                     Dprintf("[---] register class method \"%s::%s\": RSELF method variant already registered.\n", 
+                     Dprintf("[---] register class method \"%s::%s\": RSELF method variant already registered.\n",
                         (char*)class_name.chars, (char*)mnRoot.chars
                         );
                      return 0;
@@ -265,7 +265,7 @@ sBool TKS_ClassTemplate::setTemplateY(YAC_Object *_template) {
             // Sanity check (debug?)
             if(numargs && !com->y_arg_types)
             {
-               Dprintf("[---] C++ class \"%s\" method \"%s\" has %i args but does not export y_arg_types array.\n", 
+               Dprintf("[---] C++ class \"%s\" method \"%s\" has %i args but does not export y_arg_types array.\n",
                   class_name.chars,
                   com->y_name,
                   com->y_arg_num
@@ -331,8 +331,8 @@ sBool TKS_ClassTemplate::setTemplateY(YAC_Object *_template) {
          if(pool_priority >= YAC_NUM_POOL_PRIORITIES)
          {
 #ifdef TKS_DCON
-            printf("[~~~] TKS_ClassTemplate::setTemplateY: class \"%s\" requests invalid pool priority %u. Setting lowest priority.\n", 
-               (char*)class_name.chars, 
+            printf("[~~~] TKS_ClassTemplate::setTemplateY: class \"%s\" requests invalid pool priority %u. Setting lowest priority.\n",
+               (char*)class_name.chars,
                pool_priority
                );
 #endif
@@ -343,8 +343,8 @@ sBool TKS_ClassTemplate::setTemplateY(YAC_Object *_template) {
          if(pool_size >= ObjectPool::NUM_POOL_SLOTS)
          {
 #ifdef TKS_DCON
-            printf("[~~~] TKS_ClassTemplate::setTemplateY: class \"%s\" requests invalid pool size %u. Disabling pooling for this class.\n", 
-               (char*)class_name.chars, 
+            printf("[~~~] TKS_ClassTemplate::setTemplateY: class \"%s\" requests invalid pool size %u. Disabling pooling for this class.\n",
+               (char*)class_name.chars,
                _template->yacPoolGetSize()
                );
 #endif
@@ -362,7 +362,7 @@ void TKS_ClassTemplate::addToQuadHash(sUI _i, YAC_String *_mnRoot) {
    //
    sUI h = (_mnRoot->getKey() & 0x000Fffffu) | (_i << 20)/*method idx*/;
    sUI *qp = &quad_hash_table[h & 511u];
-   while(*qp) 
+   while(*qp)
       qp++;
    *qp = h;
 }
@@ -387,7 +387,7 @@ YAC_CommandY *TKS_ClassTemplate::findCommandY2(YAC_String *_s) const {
             return NULL;
          }
       }
-   } 
+   }
    while(*++qp);
    return NULL;
 }
@@ -401,7 +401,7 @@ const YAC_CommandY *TKS_ClassTemplate::findCommandY(YAC_String *_s) const {
 		{
 			// ---- search base classes ----
 			sU8 *tcmap = &tkscript->cpp_typecast_map[template_object->class_ID][0];
-			sUI i; 
+			sUI i;
          for(i=0; (i<YAC_MAX_CLASSES) && !ret; i++)
 			{
 				if(tcmap[i])

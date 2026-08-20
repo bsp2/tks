@@ -1,9 +1,8 @@
 /// PTN_ConstVal.cpp
 ///
-/// (c) 2001-2008 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
-
 
 #include "tks.h"
 #include "tks_inc_class.h"
@@ -24,7 +23,7 @@ PTN_ConstVal::PTN_ConstVal(sSI _v) {
 }
 
 PTN_ConstVal::PTN_ConstVal(YAC_Object *_o) {
-   const_value.initObject(_o, 0);
+   const_value.initObject(_o, YAC_FALSE);
 }
 
 PTN_ConstVal::~PTN_ConstVal() {
@@ -35,14 +34,14 @@ void PTN_ConstVal::eval(PTN_Env *_env, YAC_Value *_r) const {
    (void)_env;
    _r->value.any = const_value.value.any;
    _r->type      = const_value.type;
-   _r->deleteme  = 0;
+   _r->deleteme  = YAC_FALSE;
 }
 
 static void PTN_ConstVal__eval(PTN_Env *_env, YAC_Value *_r, const PTN_Expr *_st) {
    Dtracest;
    _r->value.any = ((PTN_ConstVal*)_st)->const_value.value.any;
    _r->type      = ((PTN_ConstVal*)_st)->const_value.type;
-   _r->deleteme  = 0;
+   _r->deleteme  = YAC_FALSE;
    (void)_env;
 }
 
@@ -58,48 +57,52 @@ void PTN_ConstVal::evalConst(YAC_Value *_r) {
    _r->value.any = const_value.value.any;
    _r->type      = const_value.type;
    _r->deleteme  = const_value.deleteme;
-   const_value.deleteme = 0;
+   const_value.deleteme = YAC_FALSE;
 }
 
 sBool PTN_ConstVal::isConst(void) {
-   return 1;
+   return YAC_TRUE;
 }
 
 #ifdef TKS_JIT
 sU8 PTN_ConstVal::compile(VMCore *_vm) {
    switch(const_value.type)
    {
-   default:
-      Dcterror(PTNERR_ERRCOMPILE);
-      return 0xFF;
-   case 1:
-      _vm->pushci(const_value.value.int_val);
-      return 1;
-   case 2:
-      _vm->pushcf(const_value.value.float_val);
-      return 2;
-   case 3:
-   case 4:
-      _vm->pushci(const_value.value.int_val);
-      return 3;
+      default:
+         Dcterror(PTNERR_ERRCOMPILE);
+         return 0xFF;
+
+      case YAC_TYPE_INT:
+         _vm->pushci(const_value.value.int_val);
+         return 1;
+
+      case YAC_TYPE_FLOAT:
+         _vm->pushcf(const_value.value.float_val);
+         return 2;
+
+      case YAC_TYPE_OBJECT:
+      case YAC_TYPE_STRING:
+         _vm->pushci(const_value.value.int_val);
+         return 3;
    }
 }
 
 sBool PTN_ConstVal::forceHybrid(void) {
-   return 0;
+   return YAC_FALSE;
 }
-#endif
-
+#endif // TKS_JIT
 
 sBool tks_isobjectconstval(PTN_Expr *_expr) {
    if(_expr)
    {
-      if(_expr->getID()==PTN_CONSTVAL)
+      if(PTN_CONSTVAL == _expr->getID())
       {
          // ---- keep object/string constants! ----
-         return (((PTN_ConstVal*)_expr)->const_value.type>=YAC_TYPE_OBJECT)&&
-            (((PTN_ConstVal*)_expr)->const_value.deleteme);
+         return
+            (((PTN_ConstVal*)_expr)->const_value.type >= YAC_TYPE_OBJECT) &&
+            (((PTN_ConstVal*)_expr)->const_value.deleteme)
+            ;
       }
    }
-   return 0;
+   return YAC_FALSE;
 }

@@ -1,11 +1,11 @@
 /// PTN_ArrayIniExpr.h
 ///
-/// (c) 2001-2013 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 
-#ifndef __PTN_ARRAYINIEXPR_H__
-#define __PTN_ARRAYINIEXPR_H__
+#ifndef PTN_ARRAYINIEXPR_H__
+#define PTN_ARRAYINIEXPR_H__
 
 
 class PTN_ArrayIniExpr : public PTN_Expr {
@@ -17,10 +17,10 @@ public:
       ATYPE_FLOAT   = 2,
       ATYPE_POINTER = 3,
       ATYPE_STRING  = 4,
-         
+
       ATYPE_PAD
-   }; 
-   
+   };
+
 public:
    PTN_ExprArrayEntry *first_entry;
    sSI                num_entries;      // array size
@@ -33,24 +33,24 @@ public:
       YAC_StringArray  *string_array;
       YAC_Object       *any_array;
    } arrays;
-   sBool              is_const;     // 2=const+optimized in isConst(), 1=const+optimized in optimize(), 0=dynamic 
+   sBool              is_const;     // 2=const+optimized in isConst(), 1=const+optimized in optimize(), 0=dynamic
    sBool              b_always_new; // 1=always return array copies (reentrancy!)
-   
+
 public:
    PTN_ArrayIniExpr  (PTN_ExprArrayEntry *_first, sBool _bAlwaysNew);
    ~PTN_ArrayIniExpr ();
-   
+
    sBool     semanticCheck (void);
    sBool     resolveXRef   (void);
-   void      optimize      (void); 
+   void      optimize      (void);
    sBool     isConst       (void);
-   void      eval          (PTN_Env *_env, YAC_Value *) const; 
-   void      eval          (PTN_Env *_env, YAC_Value *, sBool _const); 
-   void      evalConst     (YAC_Value *); 
-   Feval     getEval       (void) const; 
+   void      eval          (PTN_Env *_env, YAC_Value *) const;
+   void      eval          (PTN_Env *_env, YAC_Value *, sBool _const);
+   void      evalConst     (YAC_Value *);
+   Feval     getEval       (void) const;
 
    void allocArray (void);
 };
 
 
-#endif // __PTN_ARRAYINIEXPR_H__
+#endif // PTN_ARRAYINIEXPR_H__

@@ -1,7 +1,7 @@
 /// TKS_ListIterator.cpp
 ///
-/// (c) 2001-2006 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 
 #include "tks.h"
@@ -15,8 +15,8 @@
 
 
 TKS_ListIterator::TKS_ListIterator(const YAC_List*_l) {
-   l=_l?_l->head:0;
-   lc=l;
+   l = _l ? _l->head : NULL;
+   lc = l;
 }
 
 TKS_ListIterator::~TKS_ListIterator() {
@@ -27,13 +27,12 @@ void YAC_VCALL TKS_ListIterator::getNext(YAC_Value *_r) {
    if(lc)
    {
       _r->initObject((YAC_Object*)lc, 0);
-      lc=lc->next;
+      lc = lc->next;
    }
    else
    {
       _r->type      = 0xFF;
       _r->value.any = NULL;
-      _r->deleteme  = 0;
+      _r->deleteme  = YAC_FALSE;
    }
 }
-

@@ -1,7 +1,7 @@
 /// PTN_IMethodECall.cpp
 ///
-/// (c) 2001-2024 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 
 #include "tks.h"
@@ -59,14 +59,14 @@ sBool PTN_IMethodECall::resolveXRef(void) {
          {
             return method_arglist->resolveXRef();
          }
-         return 1;
+         return YAC_TRUE;
       }
    }
    else
    {
       Dprintf("[---] PTN_IMethodECallExpr::resolveXRef: missing obj_expr.\n");
    }
-   return 0;
+   return YAC_FALSE;
 }
 
 void PTN_IMethodECall::optimize(void) {
@@ -109,7 +109,7 @@ static void PTN_IMethodECall__eval(PTN_Env *_env, YAC_Value *_r, const PTN_Expr 
          // Get C++ class ID
          sUI ccid = iobjVal.value.object_val->class_ID;
 
-         sBool btrynext = 1;
+         sBool btrynext = YAC_TRUE;
 
          //
          // Try to call meta-class method

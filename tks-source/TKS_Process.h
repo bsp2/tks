@@ -1,10 +1,11 @@
 /// TKS_Process.h
 ///
-/// (c) 2018-2024 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under terms of the GNU general public license (GPL).
+/// (c) 2018-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
-#ifndef __TKS_PROCESS_H__
-#define __TKS_PROCESS_H__
+
+#ifndef TKS_PROCESS_H__
+#define TKS_PROCESS_H__
 
 
 #ifdef YAC_WIN32
@@ -88,4 +89,4 @@ public:
 };
 
 
-#endif // __YAC_BUFFER_H__
+#endif // TKS_PROCESS_H__

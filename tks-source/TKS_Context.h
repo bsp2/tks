@@ -1,10 +1,11 @@
 /// TKS_Context.h
 ///
-/// (c) 2006-2024 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2006-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
-#ifndef __TKS_CONTEXT_H__
-#define __TKS_CONTEXT_H__
+
+#ifndef TKS_CONTEXT_H__
+#define TKS_CONTEXT_H__
 
 #define PTN_MAX_CLASS_STACK 256
 
@@ -19,11 +20,11 @@ public:
 
 public:
 
-   sBool b_running; // 1=eval statements, 0=exit 
+   sBool b_running; // 1=eval statements, 0=exit
 
    // ---- runtime class stack ----
    TKS_ScriptClassInstance *class_stack[PTN_MAX_CLASS_STACK+1];
-   
+
    TKS_ScriptClassInstance**tksvm_class_stack; // == class_stack
    TKS_ScriptClassInstance *tksvm_class_stack_object;
    sUI                      tksvm_class_stack_index;
@@ -42,22 +43,22 @@ public:
    jmp_buf jmp_thread_exit;
 
 
-#ifdef DX_TRACEFUNCTIONCALLS 
-   TKS_FunctionCallStackEntry  *tks_fcallstack; 
-   sSI                          tks_fcallstacki; 
-#endif 
+#ifdef DX_TRACEFUNCTIONCALLS
+   TKS_FunctionCallStackEntry  *tks_fcallstack;
+   sSI                          tks_fcallstacki;
+#endif
 
    void             pushClassStack  (YAC_Object *_co);
    void             popClassStack   (void);
    void             clearClassStack (void);
-    
-   // ---- runtime function localvar stack 
-   void             initFunctionStack (void); 
-   void             freeFunctionStack (void); 
+
+   // ---- runtime function localvar stack
+   void             initFunctionStack (void);
+   void             freeFunctionStack (void);
 
    YAC_Value *pushStackFrame            (PTN_Function *_f); // alloc new stackframe, return pointer
    void       pushStackFrame2           (PTN_Function *_f); // really change tks_fstackc
-   void       popStackFrame             (PTN_Function *_f); 
+   void       popStackFrame             (PTN_Function *_f);
 
    // ---- switch cmpvalue stack
    YAC_Value  switch_stack[TKS_SWITCH_STACK_SIZE];
@@ -78,18 +79,18 @@ public:
    void       popBreak       (void);
 
   // ---- function call stack
-   
-#ifdef DX_TRACEFUNCTIONCALLS 
-   // ---- runtime functioncall stack (used for backtrace) 
-   void             initFunctionCallStack  (void); 
-   void             freeFunctionCallStack  (void); 
-   void             pushFunctionCall       (const PTN_Function *_calledFunction, sUI _srcLoc); 
-   void             pushFunctionCallY      (YAC_Object *_object, const YAC_CommandY *_commandY, sUI _srcLoc); 
-   inline void      popFunctionCall        (void) { tks_fcallstacki++; } 
-   inline void      popFunctionCallY       (void) { tks_fcallstacki++; } 
-   void             printFunctionCallStack (void); 
+
+#ifdef DX_TRACEFUNCTIONCALLS
+   // ---- runtime functioncall stack (used for backtrace)
+   void             initFunctionCallStack  (void);
+   void             freeFunctionCallStack  (void);
+   void             pushFunctionCall       (const PTN_Function *_calledFunction, sUI _srcLoc);
+   void             pushFunctionCallY      (YAC_Object *_object, const YAC_CommandY *_commandY, sUI _srcLoc);
+   inline void      popFunctionCall        (void) { tks_fcallstacki++; }
+   inline void      popFunctionCallY       (void) { tks_fcallstacki++; }
+   void             printFunctionCallStack (void);
    void             copyFunctionCallStack  (TKS_FunctionCallStackEntry**_entryReturn, sUI *_numReturn);
-#endif 
+#endif
 
    TKS_CachedObject     current_exception_var;  // value.object_val != NULL if exception was raised
    TKS_CachedObject    *saved_exception;        // required for re-throwing an exception, see PTN_TryCatchFinally, PTN_Throw
@@ -124,4 +125,4 @@ public:
 };
 
 
-#endif // __TKS_CONTEXT_H__
+#endif // TKS_CONTEXT_H__

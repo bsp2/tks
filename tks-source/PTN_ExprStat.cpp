@@ -1,9 +1,8 @@
 /// PTN_ExprStat.cpp
 ///
-/// (c) 2001-2014 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
-
 
 #include "tks.h"
 #include "PTN_Node.h"
@@ -14,10 +13,10 @@
 #include "PTN_ExprStat.h"
 
 
-PTN_ExprStat::PTN_ExprStat(PTN_Expr *_expr) {  
-   expr     = _expr;  
-   expr_opt = expr->getEval(); 
-} 
+PTN_ExprStat::PTN_ExprStat(PTN_Expr *_expr) {
+   expr     = _expr;
+   expr_opt = expr->getEval();
+}
 
 PTN_ExprStat::~PTN_ExprStat() {
    TKS_DELETE_SAFE(expr);
@@ -25,41 +24,30 @@ PTN_ExprStat::~PTN_ExprStat() {
 
 sBool PTN_ExprStat::semanticCheck(void) {
    if(expr)
-   {
       return expr->semanticCheck();
-   }
-   else
-   {
-      return 0;
-   }
+   return YAC_FALSE;
 }
 
 sBool PTN_ExprStat::resolveXRef(void) {
-   if(expr) 
-   {
+   if(expr)
       return expr->resolveXRef();
-   }
-   else
-   {
-      return 0;
-   }
+   return YAC_FALSE;
 }
 
 void PTN_ExprStat::optimize(void) {
-   if(expr)  
-   { 
-      expr->optimize(); 
-      expr_opt = expr->getEval(); 
+   if(expr)
+   {
+      expr->optimize();
+      expr_opt = expr->getEval();
    }
 }
 
-
-static void PTN_ExprStat__eval(PTN_Env *_env, const PTN_Statement *_st) { 
+static void PTN_ExprStat__eval(PTN_Env *_env, const PTN_Statement *_st) {
    Dtracest;
 
    YAC_Value r;
    const PTN_ExprStat *st = (const PTN_ExprStat*) _st;
-   st->expr_opt(_env, &r, st->expr); 
+   st->expr_opt(_env, &r, st->expr);
    if(Dhaveexception)
    {
       r.unsetFast();

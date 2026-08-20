@@ -1,16 +1,14 @@
 /// PTN_ModuleDef.h
-/// (c) 2001-2005 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
 ///
-#ifndef __PTN_MODULEDEF_H__
-#define __PTN_MODULEDEF_H__
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
+///
 
-//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-//~                                   ~
-//~ PTN_ModuleDef                     ~
-//~                                   ~
-//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-class PTN_ModuleDef : public PTN_Statement {
-};
+#ifndef PTN_MODULEDEF_H__
+#define PTN_MODULEDEF_H__
 
-#endif
+
+class PTN_ModuleDef : public PTN_Statement { };
+
+
+#endif // PTN_MODULEDEF_H__

@@ -1,14 +1,14 @@
 /// StaticList.cpp
 ///
-/// (c) 1999-2006 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under terms of the GNU general public license (GPL).
+/// (c) 1999-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 ///
- 
-#include <stdlib.h> 
-#include <stdio.h> 
- 
-#include "tks.h" 
+
+#include <stdlib.h>
+#include <stdio.h>
+
+#include "tks.h"
 
 StaticList::StaticList(void) { }
 
@@ -39,12 +39,12 @@ void StaticList::Free( StaticList::Node **a ) {
 void StaticList::CreateEmpty(StaticList::Node **a) {
   if(a)
   {
-    *a=STATICLIST_NEW_NODE;
-    if((*a))
+    *a = STATICLIST_NEW_NODE;
+    if(*a)
     {
-	    (*a)->previous=0;
-	    (*a)->next=0;
-	    (*a)->data=0;
+	    (*a)->previous = NULL;
+	    (*a)->next     = NULL;
+	    (*a)->data     = NULL;
     }
   }
 }
@@ -55,23 +55,23 @@ StaticList::Node *StaticList::Insert( StaticList::Node **a, void *b ) {
     if(!*a)
     {
 	    StaticList::CreateEmpty(a);
-	    (*a)->data=b;
+	    (*a)->data = b;
 	    return *a;
     }
-    return *a=StaticList::Insert(*a, b);
+    return *a = StaticList::Insert(*a, b);
   }
-  return 0;
+  return NULL;
 }
 
 StaticList::Node *StaticList::Insert(StaticList::Node *a, void *b) {
   StaticList::Node *p;
   p= STATICLIST_NEW_NODE;
-  if(!p) return 0;
-  p->data=b;
-  p->previous=a->previous;
-  p->next=a;
-  if(a->previous) a->previous->next=p;
-  a->previous=p;
+  if(!p) return NULL;
+  p->data     = b;
+  p->previous = a->previous;
+  p->next     = a;
+  if(a->previous) a->previous->next = p;
+  a->previous = p;
   return p;
 }
 
@@ -81,79 +81,79 @@ StaticList::Node *StaticList::InsertHead(StaticList::Node **a, void *b) {
 		if(!*a)
 		{
 			StaticList::CreateEmpty(a);
-			(*a)->data=b;
+			(*a)->data = b;
 			return *a;
 		}
 		else
 			StaticList::Insert(a,b);
 	}
-	return 0;
+	return NULL;
 }
- 
+
 void StaticList::Remove( StaticList::Node *a ) {
-   if(a) 
+   if(a)
    {
-      if( a->next ) 
+      if(a->next)
       {
-         a->next->previous=a->previous;
+         a->next->previous = a->previous;
       }
-      if(a->previous) 
+      if(a->previous)
       {
-         a->previous->next=a->next;
+         a->previous->next = a->next;
       }
       ::free((void*)a);
    }
 }
 
-void StaticList::Remove ( StaticList::Node **l, StaticList::Node *n) { 
-   if(n->previous) 
+void StaticList::Remove ( StaticList::Node **l, StaticList::Node *n) {
+   if(n->previous)
    {
-      n->previous->next=n->next; 
+      n->previous->next = n->next;
    }
-   else 
-   { 
-      if(n==(*l)) 
+   else
+   {
+      if(n == (*l))
       {
-         *l=n->next; 
+         *l = n->next;
       }
-   } 
-   if(n->next) 
-   {
-      n->next->previous=n->previous; 
    }
-   n->previous=n->next=0; 
-   ::free((void*)n); 
-} 
+   if(n->next)
+   {
+      n->next->previous = n->previous;
+   }
+   n->previous = n->next = NULL;
+   ::free((void*)n);
+}
 
 
 StaticList::Node *StaticList::Append( StaticList::Node *a, void *b ) {
-   if(a->next) 
+   if(a->next)
    {
       return StaticList::Insert(a->next, b);
    }
-   a->next= STATICLIST_NEW_NODE;
-   if(!a->next) 
+   a->next = STATICLIST_NEW_NODE;
+   if(!a->next)
    {
       Dprintf("[---] StaticList::Append: cannot allocate node.\n");
-      return 0;
+      return NULL;
    }
-   a->next->previous=a;
-   a=a->next;
-   a->next=0;
-   a->data=b;
+   a->next->previous = a;
+   a = a->next;
+   a->next = 0;
+   a->data = b;
    return a;
 }
 
 StaticList::Node *StaticList::Append( StaticList::Node **a, void *b ) {
-   if(a) 
+   if(a)
    {
-      if(!(*a)) 
+      if(!(*a))
       {
          StaticList::CreateEmpty(a);
-         (*a)->data=b;
+         (*a)->data = b;
          return *a;
       }
       return StaticList::Append(*a, b);
    }
-   return 0;
+   return NULL;
 }

@@ -1,7 +1,7 @@
 /// TKX_File.cpp
 ///
-/// (c) 2001-2023 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 ///
 #include "tks.h"
@@ -18,9 +18,9 @@ TKX_File::TKX_File(void) {
    b_done               = YAC_FALSE;
 }
 
-TKX_File::~TKX_File() { 
+TKX_File::~TKX_File() {
    freeTokenizedSource();
-} 
+}
 
 sBool TKX_File::initLibFile(const char *_libName) {
    type = CFE_TYPE_LIB;
@@ -40,4 +40,3 @@ void TKX_File::freeTokenizedSource(void) {
       tokenized_source.any = NULL;
    }
 }
-

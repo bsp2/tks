@@ -1,7 +1,7 @@
 /// PTN_Statement.cpp
 ///
-/// (c) 2001-2024 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 
 #include "tks.h"
@@ -240,7 +240,7 @@ sU8 PTN_Statement::compile(VMCore *_vm) {
    }
    else
    {
-      return 0;
+      return YAC_FALSE;
    }
 }
 
@@ -254,7 +254,7 @@ sU8 PTN_Statement::compileHybridStatement(VMCore *_vm) {
       }
       else
       {
-         return 0;
+         return YAC_FALSE;
       }
    }
    else
@@ -264,7 +264,7 @@ sU8 PTN_Statement::compileHybridStatement(VMCore *_vm) {
 }
 
 sBool PTN_Statement::forceHybrid(void) {
-   return 1;
+   return YAC_TRUE;
 }
 
 #endif // TKS_JIT

@@ -1,8 +1,9 @@
 /// PTN_SingleArgExpr.h
 ///
-/// (c) 2001-2009 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
+
 #ifndef PTN_SINGLEARGEXPR_H__
 #define PTN_SINGLEARGEXPR_H__
 

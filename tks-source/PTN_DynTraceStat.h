@@ -1,15 +1,16 @@
 /// PTN_DynTraceStat.h
 ///
-/// (c) 2001-2006 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
-#ifndef __PTN_DYNTRACESTAT_H__
-#define __PTN_DYNTRACESTAT_H__
+
+#ifndef PTN_DYNTRACESTAT_H__
+#define PTN_DYNTRACESTAT_H__
 
 
 class PTN_DynTraceStat : public PTN_Statement {
-public: 
-    PTN_Expr *enable_expr; 
+public:
+    PTN_Expr *enable_expr;
     Feval     enable_expr_opt;
 
 public:
@@ -18,10 +19,10 @@ public:
 
     void    eval           (PTN_Env *_env) const;
     Fevalst getEvalSt      (void) const;
-    sBool   semanticCheck  (void); 
-    void    optimize       (void);  
-    sBool   resolveXRef    (void); 
+    sBool   semanticCheck  (void);
+    void    optimize       (void);
+    sBool   resolveXRef    (void);
 };
 
 
-#endif // __PTN_DYNTRACESTAT_H__
+#endif // PTN_DYNTRACESTAT_H__

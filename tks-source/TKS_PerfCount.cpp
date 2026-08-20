@@ -1,8 +1,8 @@
-// TKS_PerfCount.cpp 
-/// 
-/// (c) 2009 by Bastian Spiegel <bs@tkscript.de> 
-///     - distributed under terms of the GNU general public license (GPL). 
-/// 
+// TKS_PerfCount.cpp
+///
+/// (c) 2009-2026 by Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
+///
 
 #include "tks.h"
 
@@ -88,11 +88,11 @@ void TKS_PerfCount::print(void) {
       //Dprintf("int relTime=%.llu\n", s->total_time);
       //Dprintf("  relTime=%G\n", relTime);
       //Dprintf("totalTime=%G\n", totalTime);
-      Dprintf("[dbg]   sample[%u\"%s\"]: #calls=%u time=%.llu rel=%G\n", 
-         i, 
+      Dprintf("[dbg]   sample[%u\"%s\"]: #calls=%u time=%.llu rel=%G\n",
+         i,
          sample_names[i],
-         s->num_calls, 
-         s->total_time, 
+         s->num_calls,
+         s->total_time,
          100.0 * (((sF64)s->total_time) / totalTime)
          );
    }

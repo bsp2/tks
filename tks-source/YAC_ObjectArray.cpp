@@ -1,9 +1,8 @@
 /// YAC_ObjectArray.cpp
 ///
-/// (c) 2001-2023 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
-
 
 #include "tks.h"
 #include "PTN_Node.h"
@@ -68,7 +67,7 @@ void YAC_ObjectArray::_getString(YAC_Value *_r) const {
 
 void YAC_VCALL YAC_ObjectArray::yacSerialize(YAC_Object *_ofs, sUI _rtti) {
    YAC_BEG_SERIALIZE();
-   
+
    /// ---- first write template class name ----
    if(template_object)
    {
@@ -77,15 +76,15 @@ void YAC_VCALL YAC_ObjectArray::yacSerialize(YAC_Object *_ofs, sUI _rtti) {
    }
    else
    {
-      YAC_String tcln; 
+      YAC_String tcln;
       //tcln.setEngine(tkscript);
-      tcln.yacSerialize(_ofs, 0); // serialize empty string		
+      tcln.yacSerialize(_ofs, 0); // serialize empty string
       return;
    }
-   
+
    /// ---- write number of elements ----
    YAC_SERIALIZE_I32(num_elements);
-   
+
    if(num_elements)
    {
       sUI i;
@@ -108,7 +107,7 @@ void YAC_VCALL YAC_ObjectArray::yacSerialize(YAC_Object *_ofs, sUI _rtti) {
 
 sUI YAC_VCALL YAC_ObjectArray::yacDeserialize(YAC_Object *_ifs, sUI _rtti) {
    YAC_BEG_DESERIALIZE();
-   
+
    /// ---- first read class name and find suitable template object ----
    YAC_String cln;
    //cln.setEngine(tkscript);
@@ -122,14 +121,14 @@ sUI YAC_VCALL YAC_ObjectArray::yacDeserialize(YAC_Object *_ifs, sUI _rtti) {
          cln.chars);
       return 0; // ---- cannot find class ----
    }
-   
+
    sUI ne = YAC_DESERIALIZE_I32();
 
    if(((sUI)ne) < tkscript->configuration.streamMaxArraySize)
    {
       if(YAC_ObjectArray::alloc(ne)) // create new elements according to template_object
       {
-         sUI i; 
+         sUI i;
          num_elements=ne;
          for(i=0; i<ne; i++)
          {
@@ -166,15 +165,15 @@ void YAC_VCALL YAC_ObjectArray::yacArrayCopySize(YAC_Object *_array) {
 
 void YAC_VCALL YAC_ObjectArray::yacArraySet(void *_context, sUI _index, YAC_Value *_value) {
    if(((sUI)_index)>=max_elements)
-   { 
+   {
       if(tkscript->configuration.b_autoresizearrays && (((sSI)_index) >= 0))
-      { 
-         if(YAC_ObjectArray::realloc(tks_grow_array(_index+1))) 
-         { 
-            num_elements=_index+1; 
-            goto YAC_ObjectArray_yacarrayset_1; 
-         } 
-      } 
+      {
+         if(YAC_ObjectArray::realloc(tks_grow_array(_index+1)))
+         {
+            num_elements=_index+1;
+            goto YAC_ObjectArray_yacarrayset_1;
+         }
+      }
 
       YAC_String *msg = (YAC_String*) YAC_NEW_CORE_POOLED(YAC_CLID_STRING128);
       ////msg->alloc(96);
@@ -182,15 +181,15 @@ void YAC_VCALL YAC_ObjectArray::yacArraySet(void *_context, sUI _index, YAC_Valu
       PTN_Env env; env.continue_flag=1; env.context=(TKS_Context*)_context;
       PTN_Env*_env = &env;
       Drtthrow(NULL, TKS_EXCEPTION_WRITEARRAYOUTOFBOUNDS, msg);
-      return; 
-   } 
-
-   if(((sUI)_index) >= num_elements) // track highest access point 
-   {
-      num_elements = _index + 1; 
+      return;
    }
 
-YAC_ObjectArray_yacarrayset_1: 
+   if(((sUI)_index) >= num_elements) // track highest access point
+   {
+      num_elements = _index + 1;
+   }
+
+YAC_ObjectArray_yacarrayset_1:
 
    YAC_Value value; value = _value; // Grabs deleteme flag from _value
 
@@ -221,7 +220,7 @@ YAC_ObjectArray_yacarrayset_1:
             {
                elements[_index] = YAC_CLONE_POOLED(NULL, template_object);
             }
-            elements[_index]->yacOperatorAssign(_value->value.object_val); 
+            elements[_index]->yacOperatorAssign(_value->value.object_val);
          }
       }
       else
@@ -231,10 +230,10 @@ YAC_ObjectArray_yacarrayset_1:
          {
             elements[_index] = YAC_CLONE_POOLED(NULL, template_object);
          }
-         // ---- copy _value to existing object ---- 
+         // ---- copy _value to existing object ----
          elements[_index]->yacOperatorAssign(_value->value.object_val);
       }
-      
+
    } // if valid _value.object
    else
    {
@@ -247,24 +246,24 @@ YAC_ObjectArray_yacarrayset_1:
    value.unsetFast();
 }
 
-sSI YAC_ObjectArray::_add(YAC_Object *_value) { 
-   if(YAC_CHK(_value, YAC_CLID_VALUE)) 
-   { 
+sSI YAC_ObjectArray::_add(YAC_Object *_value) {
+   if(YAC_CHK(_value, YAC_CLID_VALUE))
+   {
       yacArraySet(NULL, num_elements, (YAC_ValueObject*)_value); // xxx TKS_MT: should use *real* thread context (exceptions)
-      return 1; 
-   } 
-   else 
-   { 
-      // ---- wrap (read-only) ScriptObject in YAC_Value 
-      YAC_Value v; v.initObject(_value, 0); 
+      return 1;
+   }
+   else
+   {
+      // ---- wrap (read-only) ScriptObject in YAC_Value
+      YAC_Value v; v.initObject(_value, 0);
       yacArraySet(NULL, num_elements, &v); // xxx TKS_MT: should use *real* thread context (exceptions)
-      return 1; 
-   } 
-} 
+      return 1;
+   }
+}
 
 sSI YAC_ObjectArray::_remove(YAC_Object *_o) {
    sUI i;
-   for(i=0; i<num_elements; i++) 
+   for(i=0; i<num_elements; i++)
    {
       if((void*)elements[i] == (void*)_o)
       {
@@ -328,9 +327,9 @@ sSI YAC_ObjectArray::_insert(sSI _index, YAC_Object *_val) {
             {
                // ---- create new object and copy _value ----
                elements[_index] = YAC_CLONE_POOLED(NULL, template_object);
-               if(elements[_index]) 
+               if(elements[_index])
                {
-                  elements[_index]->yacOperatorAssign(o); 
+                  elements[_index]->yacOperatorAssign(o);
                }
             }
             return 1;
@@ -353,9 +352,9 @@ sSI YAC_ObjectArray::_insert(sSI _index, YAC_Object *_val) {
       {
          // ---- create new object and copy _value ----
          elements[_index] = YAC_CLONE_POOLED(NULL, template_object);
-         if(elements[_index]) 
+         if(elements[_index])
          {
-            elements[_index]->yacOperatorAssign(_val); 
+            elements[_index]->yacOperatorAssign(_val);
          }
          return 1;
       }
@@ -383,9 +382,9 @@ sSI YAC_ObjectArray::_delete(sSI _index) {
             YAC_DELETE(elements[index]);
             elements[index] = NULL;
          }
-         for(sUI i=index; i<(num_elements-1); i++) 
+         for(sUI i=index; i<(num_elements-1); i++)
          {
-            elements[i]=elements[i+1]; 
+            elements[i]=elements[i+1];
          }
          elements[num_elements-1] = NULL;
       }
@@ -396,9 +395,9 @@ sSI YAC_ObjectArray::_delete(sSI _index) {
 }
 
 void YAC_VCALL YAC_ObjectArray::yacArraySetWidth(sUI _num) {
-   if(_num<=max_elements) 
+   if(_num<=max_elements)
    {
-      num_elements=_num; 
+      num_elements=_num;
    }
 }
 
@@ -409,7 +408,7 @@ void YAC_VCALL YAC_ObjectArray::yacArrayGet(void *_context, sUI _index, YAC_Valu
    }
    else
    {
-      _r->initVoid(); 
+      _r->initVoid();
 
       YAC_String *msg = (YAC_String*) YAC_NEW_CORE_POOLED(YAC_CLID_STRING128);
       ////msg->alloc(96);
@@ -419,7 +418,7 @@ void YAC_VCALL YAC_ObjectArray::yacArrayGet(void *_context, sUI _index, YAC_Valu
       Drtthrow(NULL, TKS_EXCEPTION_READARRAYOUTOFBOUNDS, msg);
    }
 }
- 
+
 void YAC_VCALL YAC_ObjectArray::yacArrayGetDeref(void *_context, sUI _index, YAC_Value *_r) {
    if(((sUI)_index)<max_elements)
    {
@@ -435,7 +434,7 @@ void YAC_VCALL YAC_ObjectArray::yacArrayGetDeref(void *_context, sUI _index, YAC
    }
    else
    {
-      _r->initVoid(); 
+      _r->initVoid();
 
       YAC_String *msg = (YAC_String*) YAC_NEW_CORE_POOLED(YAC_CLID_STRING128);
       ////msg->alloc(96);
@@ -446,18 +445,18 @@ void YAC_VCALL YAC_ObjectArray::yacArrayGetDeref(void *_context, sUI _index, YAC
    }
 }
 
-YAC_Object *YAC_ObjectArray::get(sSI _index) { 
-   if(((sUI)_index) < max_elements) 
-   { 
-      return elements[_index]; // return read-only 
-   } 
-   else 
-   { 
-      return yac_null; 
-   } 
-} 
+YAC_Object *YAC_ObjectArray::get(sSI _index) {
+   if(((sUI)_index) < max_elements)
+   {
+      return elements[_index]; // return read-only
+   }
+   else
+   {
+      return yac_null;
+   }
+}
 
-void YAC_ObjectArray::getDeref(sSI _index, YAC_Value *_r) { 
+void YAC_ObjectArray::getDeref(sSI _index, YAC_Value *_r) {
    if(((sUI)_index) < max_elements)
    {
       if(elements[_index])
@@ -467,7 +466,7 @@ void YAC_ObjectArray::getDeref(sSI _index, YAC_Value *_r) {
       }
    }
    _r->initNull(); // silently return null in case an error has occured
-} 
+}
 
 void YAC_ObjectArray::unlink(YAC_Object *_o, YAC_Value *_r) {
    sSI idx = indexOfPointer(_o, 0);
@@ -483,13 +482,13 @@ void YAC_ObjectArray::unlink(YAC_Object *_o, YAC_Value *_r) {
 }
 
 sBool YAC_VCALL YAC_ObjectArray::yacArrayAlloc(sUI _maxelements, sUI,sUI,sUI) {
-   if(YAC_ObjectArray::alloc(_maxelements))  
+   if(YAC_ObjectArray::alloc(_maxelements))
    {
-      return (elements != NULL); 
+      return (elements != NULL);
    }
-   else   
+   else
    {
-      return YAC_FALSE; 
+      return YAC_FALSE;
    }
 }
 
@@ -516,7 +515,7 @@ sBool YAC_ObjectArray::alloc(sUI _maxElements) {
          {
             // ---- create new objects based on template type ----
             TKS_Context *ctx = tkscript->lockGlobalContext();
-            for(; i < max_elements; i++) 
+            for(; i < max_elements; i++)
             {
                elements[i] = YAC_CLONE_POOLED(ctx, template_object); // xxx TKS_MT: use *real* thread context (no c'tors otherwise)
             }
@@ -525,9 +524,9 @@ sBool YAC_ObjectArray::alloc(sUI _maxElements) {
          else
          {
             // ---- reference/pointer array ----
-            for(; i < max_elements; i++)  
+            for(; i < max_elements; i++)
             {
-               elements[i] = NULL; 
+               elements[i] = NULL;
             }
          }
          return YAC_TRUE;
@@ -574,9 +573,9 @@ sBool YAC_ObjectArray::realloc(sUI _maxElements) {
          if(_maxElements <= max_elements)
          {
             // shrink
-            for(; i < _maxElements; i++) 
+            for(; i < _maxElements; i++)
             {
-               ne[i] = elements[i]; // copy elements 
+               ne[i] = elements[i]; // copy elements
                if(NULL == ne[i])
                {
                   // Fix holes left by preceeding delete() calls
@@ -598,9 +597,9 @@ sBool YAC_ObjectArray::realloc(sUI _maxElements) {
          else
          {
             // expand
-            for(; i < max_elements; i++) 
+            for(; i < max_elements; i++)
             {
-               ne[i] = elements[i]; // copy existing region 
+               ne[i] = elements[i]; // copy existing region
                if(NULL == ne[i])
                {
                   // Fix holes left by preceeding delete() calls
@@ -612,16 +611,16 @@ sBool YAC_ObjectArray::realloc(sUI _maxElements) {
             }
             if(template_object)
             {
-               for(; i < _maxElements; i++) // init new region 
+               for(; i < _maxElements; i++) // init new region
                {
                   ne[i] = YAC_CLONE_POOLED(NULL, template_object); // xxx TKS_MT: use *real* thread context (no c'tors otherwise)
                }
             }
             else
             {
-               for(; i < _maxElements; i++) // init new region 
+               for(; i < _maxElements; i++) // init new region
                {
-                  ne[i] = NULL; 
+                  ne[i] = NULL;
                }
             }
          }
@@ -631,9 +630,9 @@ sBool YAC_ObjectArray::realloc(sUI _maxElements) {
          }
          elements = ne;
          max_elements = _maxElements;
-         if(num_elements > max_elements) 
+         if(num_elements > max_elements)
          {
-            num_elements = max_elements; 
+            num_elements = max_elements;
          }
          return YAC_TRUE;
       }
@@ -687,13 +686,13 @@ void YAC_VCALL YAC_ObjectArray::yacOperator(sSI _cmd, YAC_Object *_o, YAC_Value 
             {
                if(o->elements[i])
                {
-                  if(!elements[i]) 
+                  if(!elements[i])
                   {
-                     elements[i] = YAC_CLONE_POOLED(NULL, o->elements[i]); 
+                     elements[i] = YAC_CLONE_POOLED(NULL, o->elements[i]);
                   }
-                  if(elements[i]) 
+                  if(elements[i])
                   {
-                     elements[i]->yacOperatorAssign(o->elements[i]); 
+                     elements[i]->yacOperatorAssign(o->elements[i]);
                   }
                }
                else
@@ -784,8 +783,8 @@ sUI YAC_ObjectArray::getNumElements(void) {
    return num_elements;
 }
 
-void YAC_ObjectArray::empty(void) { 
-   num_elements = 0u; 
+void YAC_ObjectArray::empty(void) {
+   num_elements = 0u;
 }
 
 sBool YAC_ObjectArray::isEmpty(void) {
@@ -793,9 +792,9 @@ sBool YAC_ObjectArray::isEmpty(void) {
 }
 
 void YAC_ObjectArray::setNumElements(sSI _i) {
-   if(((sUI)_i) <= max_elements) 
+   if(((sUI)_i) <= max_elements)
    {
-      num_elements = _i; 
+      num_elements = _i;
    }
 }
 
@@ -817,54 +816,54 @@ void YAC_ObjectArray::reverse(void) {
 }
 
 YAC_Object *YAC_ObjectArray::getNextFree(void) {
-   if(num_elements!=max_elements) 
+   if(num_elements!=max_elements)
    {
-      return elements[num_elements++]; 
+      return elements[num_elements++];
    }
-   else 
+   else
    {
-      return 0; 
+      return 0;
    }
 }
- 
-sSI YAC_ObjectArray::indexOfPointer(YAC_Object *_o, sSI _startOff) { 
+
+sSI YAC_ObjectArray::indexOfPointer(YAC_Object *_o, sSI _startOff) {
    if(YAC_VALID(_o)) // StringArray never stores null pointers!
    {
-      sUI i = (sUI) _startOff; 
-      for(i=0; i<num_elements; i++) 
-      { 
-         if( ((void*)elements[i]) == (void*)_o) 
-         { 
+      sUI i = (sUI) _startOff;
+      for(i=0; i<num_elements; i++)
+      {
+         if( ((void*)elements[i]) == (void*)_o)
+         {
             // Ok, found matching object
-            return (sSI) i; 
-         } 
-      } 
+            return (sSI) i;
+         }
+      }
    }
    // Failed, object address was not found in this array
-   return -1; 
-} 
+   return -1;
+}
 
-sSI YAC_ObjectArray::indexOfObject(YAC_Object *_s, sSI _startOff) { 
-   sUI i = (sUI) _startOff; 
-   for(i=0; i<num_elements; i++) 
-   { 
-      if(elements[i]->yacEquals(_s)) 
-      { 
+sSI YAC_ObjectArray::indexOfObject(YAC_Object *_s, sSI _startOff) {
+   sUI i = (sUI) _startOff;
+   for(i=0; i<num_elements; i++)
+   {
+      if(elements[i]->yacEquals(_s))
+      {
          // Ok, found matching object
-         return (sSI) i; 
-      } 
-   } 
+         return (sSI) i;
+      }
+   }
    // Failed, object was not found in this array
-   return -1; 
-} 
+   return -1;
+}
 
-sSI YAC_ObjectArray::containsObject(YAC_Object *_s) { 
+sSI YAC_ObjectArray::containsObject(YAC_Object *_s) {
    return ( -1 != indexOfObject(_s, 0) );
-} 
+}
 
-sSI YAC_ObjectArray::containsPointer(YAC_Object *_s) { 
+sSI YAC_ObjectArray::containsPointer(YAC_Object *_s) {
    return ( -1 != indexOfPointer(_s, 0) );
-} 
+}
 
 
 sSI YAC_ObjectArray::_swap(sSI _indexs, sSI _indexd) {

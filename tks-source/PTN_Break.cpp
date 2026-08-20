@@ -1,7 +1,7 @@
 /// PTN_Break.cpp
 ///
-/// (c) 2001-2014 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 
 #include "tks.h"
@@ -15,26 +15,26 @@
 
 PTN_Break::PTN_Break(void) {
    parent_st = NULL;
-} 
+}
 
-PTN_Break::~PTN_Break() { 
-} 
+PTN_Break::~PTN_Break() {
+}
 
-void PTN_Break::eval(PTN_Env *_env) const { 
+void PTN_Break::eval(PTN_Env *_env) const {
    _env->context->break_stack[_env->context->break_stacki] = 1;
-   _env->continue_flag = 0; 
-} 
+   _env->continue_flag = YAC_FALSE;
+}
 
-static void PTN_Break__eval(PTN_Env *_env, const PTN_Statement *_st) { 
+static void PTN_Break__eval(PTN_Env *_env, const PTN_Statement *_st) {
    Dtracest;
    _env->context->break_stack[_env->context->break_stacki] = 1;
-   _env->continue_flag = 0; 
+   _env->continue_flag = YAC_FALSE;
    (void)_st;
-} 
+}
 
 Fevalst PTN_Break::getEvalSt(void) const {
-   return PTN_Break__eval; 
-} 
+   return PTN_Break__eval;
+}
 
 #ifdef TKS_JIT
 sU8 PTN_Break::compile(VMCore *_vm) {
@@ -47,7 +47,7 @@ sU8 PTN_Break::compile(VMCore *_vm) {
    }
    else
    {
-      return 0;
+      return 0u;
    }
 }
 

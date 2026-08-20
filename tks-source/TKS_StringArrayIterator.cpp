@@ -1,7 +1,7 @@
 /// TKS_StringArrayIterator.cpp
 ///
-/// (c) 2001-2009 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 
 #include "tks.h"
@@ -20,9 +20,9 @@ TKS_StringArrayIterator::~TKS_StringArrayIterator() {
 }
 
 void YAC_VCALL TKS_StringArrayIterator::getNext(YAC_Value*r) {
-	if(current_index<array->num_elements) 
+	if(current_index<array->num_elements)
    {
-		r->initString(&array->elements[current_index++], 0); 
+		r->initString(&array->elements[current_index++], 0);
    }
 	else
 	{
@@ -31,4 +31,3 @@ void YAC_VCALL TKS_StringArrayIterator::getNext(YAC_Value*r) {
 		r->deleteme  = 0;
 	}
 }
-

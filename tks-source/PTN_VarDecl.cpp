@@ -1,7 +1,7 @@
 /// PTN_VarDecl.cpp
 ///
-/// (c) 2001-2014 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 
 /// Note: this should be removed since it duplicates the functionality of PTN_VarAssign..
@@ -23,20 +23,20 @@ PTN_VarDecl::PTN_VarDecl(void) {
 
 PTN_VarDecl::PTN_VarDecl(TKS_CachedObject *_co, PTN_Expr *_expr) {
    var  = _co;
-   expr = _expr; 
-   if(expr)  
+   expr = _expr;
+   if(expr)
    {
       expr_opt = expr->getEval();  /// xxx move to optimize()
    }
 }
 PTN_VarDecl::~PTN_VarDecl() {
    var = NULL;
-   
+
    TKS_DELETE_SAFE(expr);
 }
 
 sBool PTN_VarDecl::semanticCheck(void) {
-   return 
+   return
       (var) &&
       (expr ? expr->semanticCheck() : 1)
       ;
@@ -48,20 +48,20 @@ sBool PTN_VarDecl::resolveXRef(void) {
       ;
 }
 
-void PTN_VarDecl::optimize(void) { 
-   if(expr) 
+void PTN_VarDecl::optimize(void) {
+   if(expr)
    {
-      tks_optimize_expr(&expr, 0); 
-      expr_opt = expr->getEval(); 
-   } 
+      tks_optimize_expr(&expr, 0);
+      expr_opt = expr->getEval();
+   }
 }
 
-static void PTN_VarDecl__eval(PTN_Env *_env, const PTN_Statement *_st) { 
+static void PTN_VarDecl__eval(PTN_Env *_env, const PTN_Statement *_st) {
    Dtracest;
-   const PTN_VarDecl *st = (const PTN_VarDecl*)_st; 
-   
+   const PTN_VarDecl *st = (const PTN_VarDecl*)_st;
+
    YAC_Value r;
-   st->expr_opt(_env, &r, st->expr); 
+   st->expr_opt(_env, &r, st->expr);
    if(Dhaveexception)
    {
       r.unsetFast();
@@ -70,24 +70,24 @@ static void PTN_VarDecl__eval(PTN_Env *_env, const PTN_Statement *_st) {
    }
 
    Dgetvar(st->var)->assignValue(&r);
-   r.unsetFast(); 
-} 
+   r.unsetFast();
+}
 
-static void PTN_VarDecl__eval_dynamic(PTN_Env *_env, const PTN_Statement *_st) { 
+static void PTN_VarDecl__eval_dynamic(PTN_Env *_env, const PTN_Statement *_st) {
    Dtracest;
    const PTN_VarDecl *st = (const PTN_VarDecl*)_st;
-   
+
    YAC_Value *co = Dgetvar(st->var);
-   st->expr_opt(_env, co, st->expr); 
+   st->expr_opt(_env, co, st->expr);
    if(Dhaveexception)
    {
       Dhandleexception(st->expr);
       return;
    }
-} 
+}
 
-Fevalst PTN_VarDecl::getEvalSt(void) const { 
-   if(expr)  
+Fevalst PTN_VarDecl::getEvalSt(void) const {
+   if(expr)
    {
       if(var->flags & TKS_CachedObject::ISDYNAMIC)
       {
@@ -98,16 +98,15 @@ Fevalst PTN_VarDecl::getEvalSt(void) const {
          return PTN_VarDecl__eval;
       }
    }
-   else  
+   else
    {
-      return 0;  
+      return 0;
    }
-} 
+}
 
-void PTN_VarDecl::eval(PTN_Env *_env) const { 
-   if(expr)  
+void PTN_VarDecl::eval(PTN_Env *_env) const {
+   if(expr)
    {
-      PTN_VarDecl__eval(_env, this);  
+      PTN_VarDecl__eval(_env, this);
    }
-} 
-
+}

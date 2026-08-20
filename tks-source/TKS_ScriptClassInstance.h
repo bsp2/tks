@@ -1,20 +1,21 @@
 /// TKS_ScriptClassInstance.h
 ///
-/// (c) 2001-2020 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
-#ifndef __TKS_SCRIPTCLASSINSTANCE_H__
-#define __TKS_SCRIPTCLASSINSTANCE_H__
+
+#ifndef TKS_SCRIPTCLASSINSTANCE_H__
+#define TKS_SCRIPTCLASSINSTANCE_H__
 
 
-class PTN_ArgList; 
+class PTN_ArgList;
 
- 
+
 class TKS_ScriptClassInstance : public YAC_Object {
 public:
    TKS_ClassDecl *class_decl;
    yacmem        *member_data;
-   yacmemptr      custom_data; 
+   yacmemptr      custom_data;
 #ifdef TKS_MT
    TKS_Mutex     *mtx_this; // !=NULL if any method is synchronized to this ('==')
 #endif //TKS_MT
@@ -23,21 +24,21 @@ public:
    static sSI object_counter;
 #endif // TKS_SCI_OBJECTCOUNTER
 
-    
-   // ---- The delegate HashTable dynamically maps named "slots" to PTN_Functino references. 
-   YAC_HashTable *delegates; 
-    
-   
+
+   // ---- The delegate HashTable dynamically maps named "slots" to PTN_Functino references.
+   YAC_HashTable *delegates;
+
+
 public:
    TKS_ScriptClassInstance(void);
    ~TKS_ScriptClassInstance();
-   
+
    void              YAC_VCALL yacOperator                    (sSI _i, YAC_Object *_o, YAC_Value *_r);
    void              YAC_VCALL yacOperatorInit                (void *_context, YAC_Object *_arg); // calls constructors
    void              YAC_VCALL yacOperatorAssign              (YAC_Object *_arg);
    void              YAC_VCALL yacSerialize                   (YAC_Object *, sUI);
    sUI               YAC_VCALL yacDeserialize                 (YAC_Object *, sUI);
-   void              YAC_VCALL yacSerializeClassName          (YAC_Object *); 
+   void              YAC_VCALL yacSerializeClassName          (YAC_Object *);
    void              YAC_VCALL yacFinalizeObject              (void *_context); // calls destructors
    sBool             YAC_VCALL yacIsComposite                 (void) {return 1;}
 
@@ -62,13 +63,13 @@ public:
    void              getPreDecClassMemberValueByID  (YAC_Value *, sUI _id);
    void              postIncClassMemberValueByID    (sUI _id);
    void              postDecClassMemberValueByID    (sUI _id);
-   void              callMemberInitializersPushSelf (PTN_Env *_env); 
-   void              callMemberInitializers         (PTN_Env *_env); 
+   void              callMemberInitializersPushSelf (PTN_Env *_env);
+   void              callMemberInitializers         (PTN_Env *_env);
    void              callConstructors               (PTN_Env *_env);
    void              callDestructors                (PTN_Env *_env);
-   sBool             initFromHashTable              (YAC_HashTable *_ht); 
-   sBool             writeToHashTable               (YAC_HashTable *_ht); 
-   
+   sBool             initFromHashTable              (YAC_HashTable *_ht);
+   sBool             writeToHashTable               (YAC_HashTable *_ht);
+
    sChar        *YAC_VCALL yacMetaClassName                      (void);
    sUI           YAC_VCALL yacMetaClassMemberGetNum              (void);
    sUI           YAC_VCALL yacMetaClassMemberGetAccessKeyByIndex (sUI _idx);
@@ -77,16 +78,16 @@ public:
    sChar        *YAC_VCALL yacMetaClassMemberGetName             (sUI _ak);
    void          YAC_VCALL yacMetaClassMemberSet                 (sUI _ak, YAC_Value*);
    void          YAC_VCALL yacMetaClassMemberGet                 (sUI _ak, YAC_Value*);
-   sSI           YAC_VCALL yacMetaClassInstanceOf                (YAC_Object *); 
-    
-   sBool         YAC_VCALL yacToString(YAC_String *_r) const; 
-   sBool         YAC_VCALL yacEquals(YAC_Object *_o); 
-    
-    
-   void          setDelegate  (YAC_String *_name, PTN_Function *_fun); 
-   sBool         evalDelegate (YAC_String *_name, PTN_ArgList *_args, sUI _srcLoc, PTN_Env *_env, YAC_Value *_r) const; 
-   
+   sSI           YAC_VCALL yacMetaClassInstanceOf                (YAC_Object *);
+
+   sBool         YAC_VCALL yacToString(YAC_String *_r) const;
+   sBool         YAC_VCALL yacEquals(YAC_Object *_o);
+
+
+   void          setDelegate  (YAC_String *_name, PTN_Function *_fun);
+   sBool         evalDelegate (YAC_String *_name, PTN_ArgList *_args, sUI _srcLoc, PTN_Env *_env, YAC_Value *_r) const;
+
 };
 
 
-#endif // __TKS_SCRIPTCLASSINSTANCE_H__
+#endif // TKS_SCRIPTCLASSINSTANCE_H__

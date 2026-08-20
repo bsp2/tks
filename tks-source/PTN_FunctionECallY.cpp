@@ -1,7 +1,7 @@
 /// PTN_FunctionECallY.cpp
 ///
-/// (c) 2001-2024 Bastian Spiegel <bs@tkscript.de>.
-///     - distributed under terms of the GNU General Public License (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>.
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 ///
 

@@ -1,10 +1,11 @@
 /// TKS_StateStackEntry.h
 ///
-/// (c) 2001-2009 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
-#ifndef __TKS_STATESTACKENTRY_H__
-#define __TKS_STATESTACKENTRY_H__
+
+#ifndef TKS_STATESTACKENTRY_H__
+#define TKS_STATESTACKENTRY_H__
 
 
 class TKS_StateStackEntry {
@@ -18,9 +19,9 @@ public:
       sUI          value;
       void        *any;
    } param[4];
-   
+
    void initParams(void) { param[3].any=param[2].any=param[1].any = NULL; };
 };
 
 
-#endif // __TKS_STATESTACKENTRY_H__
+#endif // TKS_STATESTACKENTRY_H__

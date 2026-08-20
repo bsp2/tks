@@ -1,15 +1,16 @@
 /// PTN_ClassMemberIndirectClassExpr.h
 ///
-/// (c) 2001-2009 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
-#ifndef __PTN_CLASSMEMBERINDIRECTCLASSEXPR_H__
-#define __PTN_CLASSMEMBERINDIRECTCLASSEXPR_H__
 
- 
+#ifndef PTN_CLASSMEMBERINDIRECTCLASSEXPR_H__
+#define PTN_CLASSMEMBERINDIRECTCLASSEXPR_H__
+
+
 class PTN_ClassMemberIndirectClassExpr : public PTN_Expr {
 public:
-    TKS_CachedObject *member; 
+    TKS_CachedObject *member;
     PTN_Expr         *indirect_expr;
     Feval             indirect_expr_opt;
 
@@ -25,4 +26,4 @@ public:
 };
 
 
-#endif // __PTN_CLASSMEMBERINDIRECTCLASSEXPR_H__
+#endif // PTN_CLASSMEMBERINDIRECTCLASSEXPR_H__

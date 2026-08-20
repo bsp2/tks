@@ -1,7 +1,7 @@
 /// PTN_ClassMemberIndirectClassExpr.cpp
 ///
-/// (c) 2001-2009 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 
 #include "tks.h"
@@ -10,10 +10,10 @@
 #include "YAC_HashTable.h"
 #include "PTN_ClassMemberIndirectClassExpr.h"
 
- 
-PTN_ClassMemberIndirectClassExpr::PTN_ClassMemberIndirectClassExpr(TKS_CachedObject *_member,  
-                                                                   PTN_Expr *_indirectexpr 
-                                                                   )  
+
+PTN_ClassMemberIndirectClassExpr::PTN_ClassMemberIndirectClassExpr(TKS_CachedObject *_member,
+                                                                   PTN_Expr *_indirectexpr
+                                                                   )
 {
    member            = _member;
    indirect_expr     = _indirectexpr;
@@ -31,40 +31,38 @@ PTN_ClassMemberIndirectClassExpr::~PTN_ClassMemberIndirectClassExpr() {
 }
 
 sBool PTN_ClassMemberIndirectClassExpr::semanticCheck(void) {
-   return 
-      (member != NULL) &&
-      (indirect_expr ? indirect_expr->semanticCheck() : 0)
+   return
+      (NULL != member) &&
+      (indirect_expr ? indirect_expr->semanticCheck() : YAC_FALSE)
       ;
 }
 
 sBool PTN_ClassMemberIndirectClassExpr::resolveXRef(void) {
    if(indirect_expr)
-   {
       return indirect_expr->resolveXRef();
-   }
-   return 0;
+   return YAC_FALSE;
 }
 
 void PTN_ClassMemberIndirectClassExpr::optimize(void) {
    if(indirect_expr)
    {
-      indirect_expr->optimize(); 
-      indirect_expr_opt=indirect_expr->getEval(); 
+      indirect_expr->optimize();
+      indirect_expr_opt=indirect_expr->getEval();
    }
 }
 
-static void PTN_ClassMemberIndirectClassExpr__eval(PTN_Env *_env, YAC_Value *_r, const PTN_Expr *_st) { 
+static void PTN_ClassMemberIndirectClassExpr__eval(PTN_Env *_env, YAC_Value *_r, const PTN_Expr *_st) {
    Dtracest;
 
-   const PTN_ClassMemberIndirectClassExpr*st = (const PTN_ClassMemberIndirectClassExpr*)_st; 
-   
+   const PTN_ClassMemberIndirectClassExpr*st = (const PTN_ClassMemberIndirectClassExpr*)_st;
+
    YAC_Value mv;
    // ---- find class member in current class ----
    _env->context->tksvm_class_stack_object->getClassMemberValueByID(&mv, (sUI)st->member->value.int_val);
    if(mv.type >= YAC_TYPE_OBJECT)
    {
       if(TKS_VALID(mv.value.object_val))
-      { 
+      {
          _env->context->tksvm_indirect_object = mv.value.object_val;
 
          st->indirect_expr_opt(_env, _r, st->indirect_expr);
@@ -81,14 +79,14 @@ static void PTN_ClassMemberIndirectClassExpr__eval(PTN_Env *_env, YAC_Value *_r,
       {
          Drtthrowinvalidpointer(st, "invalid class member object", mv.value.object_val);
       }
-   } 
-   _r->initVoid(); 
+   }
+   _r->initVoid();
 }
 
-void PTN_ClassMemberIndirectClassExpr::eval(PTN_Env *_env, YAC_Value *_r) const { 
-   PTN_ClassMemberIndirectClassExpr__eval(_env, _r, this); 
-} 
+void PTN_ClassMemberIndirectClassExpr::eval(PTN_Env *_env, YAC_Value *_r) const {
+   PTN_ClassMemberIndirectClassExpr__eval(_env, _r, this);
+}
 
-Feval PTN_ClassMemberIndirectClassExpr::getEval(void) const { 
-   return PTN_ClassMemberIndirectClassExpr__eval; 
-} 
+Feval PTN_ClassMemberIndirectClassExpr::getEval(void) const {
+   return PTN_ClassMemberIndirectClassExpr__eval;
+}

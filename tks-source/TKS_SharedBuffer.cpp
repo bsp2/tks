@@ -1,7 +1,7 @@
 /// TKS_SharedBuffer.cpp
 ///
-/// (c) 2005-2023 Bastian Spiegel <bs@tkscript.de> 
-///     - distributed under terms of the GNU general public license (GPL).
+/// (c) 2005-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 ///
 
@@ -12,7 +12,7 @@
 #include "TKS_SharedBuffer.h"
 
 #ifdef YAC_WIN32
-#include <windows.h> 
+#include <windows.h>
 #endif
 
 #include <time.h>
@@ -53,7 +53,7 @@ void TKS_SharedBuffer::free(void) {
 
 sBool TKS_SharedBuffer::allocSharedMemory(sUI _size) {
    TKS_SharedBuffer::free();
-   
+
    genSharedMemoryKey();
 
 #ifdef YAC_WIN32
@@ -68,7 +68,7 @@ sBool TKS_SharedBuffer::allocSharedMemory(sUI _size) {
 }
 
 void TKS_SharedBuffer::genSharedMemoryKey(void) {
-   time_t t; time(&t); 
+   time_t t; time(&t);
    sUI rand_ms = (sUI)t;
    shmKey.alloc(18);
    shmKey.printf("%08x%08x", rand_ms, &rand_ms);
@@ -89,13 +89,13 @@ sBool TKS_SharedBuffer::resize(sUI _size) {
 }
 
 sBool YAC_VCALL TKS_SharedBuffer::yacArrayAlloc(sUI _sx, sUI _sy, sUI _type, sUI _elementByteSize) {
-   Dprintf("[---] warning: yacArrayAlloc(sx=%i sy=%i type=%i elementByteSize=%i) called on SharedBuffer.\n", 
+   Dprintf("[---] warning: yacArrayAlloc(sx=%i sy=%i type=%i elementByteSize=%i) called on SharedBuffer.\n",
       _sx, _sy, _type, _elementByteSize);
    return YAC_FALSE;
 }
 
 sBool YAC_VCALL TKS_SharedBuffer::yacArrayRealloc(sUI _sx, sUI _sy, sUI _type, sUI _elementByteSize) {
-   Dprintf("[---] warning: yacArrayRealloc(sx=%i sy=%i type=%i elementByteSize=%i) called on SharedBuffer.\n", 
+   Dprintf("[---] warning: yacArrayRealloc(sx=%i sy=%i type=%i elementByteSize=%i) called on SharedBuffer.\n",
       _sx, _sy, _type, _elementByteSize);
    return YAC_FALSE;
 }
@@ -108,8 +108,8 @@ sUI TKS_SharedBuffer::ringWriteBuffer(sUI _ringStartOff, sUI _ringSz, sUI _write
       {
          if(_ringSz > 0u && 0u == (_ringSz & 3u) && _ringSz <= size && (_ringStartOff + _ringSz) <= size)
          {
-            if(YAC_Is_Buffer(_src)) 
-            { 
+            if(YAC_Is_Buffer(_src))
+            {
                if(_writeOff < _ringSz)
                {
                   if(_srcOff < _src->size && (_srcOff + _numBytes) <= _src->size)
@@ -213,8 +213,8 @@ sUI TKS_SharedBuffer::ringReadBuffer(sUI _ringStartOff, sUI _ringSz, sUI _readOf
       {
          if(_ringSz > 0u && 0u == (_ringSz & 3u) && _ringSz <= size && (_ringStartOff + _ringSz) <= size)
          {
-            if(YAC_Is_Buffer(_dst)) 
-            { 
+            if(YAC_Is_Buffer(_dst))
+            {
                if(_readOff < _ringSz)
                {
                   if(_dstOff < _dst->size && (_dstOff + _numBytes) <= _dst->size)

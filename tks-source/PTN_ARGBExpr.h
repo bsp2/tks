@@ -1,11 +1,11 @@
 /// PTN_ARGBExpr.h
 ///
-/// (c) 2001-2013 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 
-#ifndef __PTN_ARGBEXPR_H__
-#define __PTN_ARGBEXPR_H__
+#ifndef PTN_ARGBEXPR_H__
+#define PTN_ARGBEXPR_H__
 
 // (todo) should actually be called Pack4Expr
 
@@ -39,4 +39,4 @@ public:
 };
 
 
-#endif // __PTN_ARGBEXPR_H__
+#endif // PTN_ARGBEXPR_H__

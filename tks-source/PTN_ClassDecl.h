@@ -1,10 +1,11 @@
 /// PTN_ClassDecl.h
 ///
-/// (c) 2001-2009 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
-#ifndef __PTN_CLASSDECL_H__
-#define __PTN_CLASSDECL_H__
+
+#ifndef PTN_CLASSDECL_H__
+#define PTN_CLASSDECL_H__
 
 
 class PTN_ClassDecl : public PTN_Statement {
@@ -13,7 +14,7 @@ public:
 public:
     PTN_ClassDecl(void);
     PTN_ClassDecl(TKS_ClassDecl*);
-    ~PTN_ClassDecl(void); 
+    ~PTN_ClassDecl(void);
 
     sUI   getID         (void) const { return PTN_CLASSDECL; };
     sBool semanticCheck (void);
@@ -22,4 +23,4 @@ public:
 };
 
 
-#endif // __PTN_CLASSDECL_H__
+#endif // PTN_CLASSDECL_H__

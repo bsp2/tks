@@ -1,7 +1,7 @@
 /// PTN_VarAssign.cpp
 ///
-/// (c) 2001-2014 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 
 #include "tks.h"
@@ -15,7 +15,7 @@
 
 PTN_VarAssign::PTN_VarAssign(TKS_CachedObject *_var, PTN_Expr *_expr) {
 	var      = _var;
-	expr     = _expr; 
+	expr     = _expr;
 	expr_opt = expr->getEval();
 }
 
@@ -28,7 +28,7 @@ PTN_VarAssign::~PTN_VarAssign() {
 }
 
 sBool PTN_VarAssign::semanticCheck(void) {
-	return 
+	return
       (var)                              &&
       (expr ? expr->semanticCheck() : 0)
       ;
@@ -39,16 +39,16 @@ sBool PTN_VarAssign::resolveXRef(void) {
 }
 
 void PTN_VarAssign::optimize(void) {
-   tks_optimize_expr(&expr, 0); 
-   expr_opt = expr->getEval(); 
+   tks_optimize_expr(&expr, 0);
+   expr_opt = expr->getEval();
 }
 
-static void PTN_VarAssign__eval(PTN_Env *_env, const PTN_Statement*_st) { 
+static void PTN_VarAssign__eval(PTN_Env *_env, const PTN_Statement*_st) {
    Dtracest;
-   const PTN_VarAssign*st = (const PTN_VarAssign*)_st; 
+   const PTN_VarAssign*st = (const PTN_VarAssign*)_st;
 
    YAC_Value r;
-   st->expr_opt(_env, &r, st->expr); 
+   st->expr_opt(_env, &r, st->expr);
    if(Dhaveexception)
    {
       r.unsetFast();
@@ -56,39 +56,39 @@ static void PTN_VarAssign__eval(PTN_Env *_env, const PTN_Statement*_st) {
       return;
    }
 
-   Dgetvar(st->var)->assignValue(&r); 
+   Dgetvar(st->var)->assignValue(&r);
    r.unsetFast();
-} 
+}
 
-Fevalst PTN_VarAssign::getEvalSt(void) const { 
-   return PTN_VarAssign__eval; 
-} 
+Fevalst PTN_VarAssign::getEvalSt(void) const {
+   return PTN_VarAssign__eval;
+}
 
-void PTN_VarAssign::eval(PTN_Env *_env) const { 
-   PTN_VarAssign__eval(_env, this); 
-} 
+void PTN_VarAssign::eval(PTN_Env *_env) const {
+   PTN_VarAssign__eval(_env, this);
+}
 
-#ifdef TKS_JIT 
-sBool PTN_VarAssign::forceHybrid(void) { 
-   return expr?expr->forceHybrid():0; 
-} 
+#ifdef TKS_JIT
+sBool PTN_VarAssign::forceHybrid(void) {
+   return expr?expr->forceHybrid():0;
+}
 
 sU8 PTN_VarAssign::compile(VMCore *_vm) {
-   if(!expr) 
-   { 
-      if(next) 
-         return next->compileHybridStatement(_vm); 
-      else 
-         return 0; 
-   } 
-   if(expr->forceHybrid()) 
-   { 
-      _vm->addHybridStatement(this); 
-      if(next) 
-         return next->compileHybridStatement(_vm); 
-      else 
-         return 0; 
-   } 
+   if(!expr)
+   {
+      if(next)
+         return next->compileHybridStatement(_vm);
+      else
+         return 0;
+   }
+   if(expr->forceHybrid())
+   {
+      _vm->addHybridStatement(this);
+      if(next)
+         return next->compileHybridStatement(_vm);
+      else
+         return 0;
+   }
    yacmemptr varptr;
    varptr.s32 = &var->value.int_val;
 
@@ -134,8 +134,8 @@ sU8 PTN_VarAssign::compile(VMCore *_vm) {
          }
          break;
       case 3:
-      case 4: 
-         Dcterror(PTNERR_ERRCOMPILE); 
+      case 4:
+         Dcterror(PTNERR_ERRCOMPILE);
          return 0xFF;
       }
       break;
@@ -157,7 +157,7 @@ sU8 PTN_VarAssign::compile(VMCore *_vm) {
          {
             // intvar=float
             Dasmop(VMOP_POPV);   // popvi var
-            _vm->vm_code[_vm->vm_pc++]=_vm->addVarRef(varptr, VM_VARNAMECHARS); 
+            _vm->vm_code[_vm->vm_pc++]=_vm->addVarRef(varptr, VM_VARNAMECHARS);
          }
          break;
       case 2:
@@ -183,18 +183,18 @@ sU8 PTN_VarAssign::compile(VMCore *_vm) {
    case 3:
       switch(var->type)
       {
-      default: 
-      case 0: 
-      case 1: 
-      case 2: 
+      default:
+      case 0:
+      case 1:
+      case 2:
          Dcterror(PTNERR_ERRCOMPILE);
          return 0xFF;
       case 3:
-      case 4: 
-         _vm->pushv(var); 
-         _vm->objassign(0,0); 
-         Dasmop(VMOP_INCSTP); // discard this 
-         Dasmop(VMOP_INCSTP); // discard obj 
+      case 4:
+         _vm->pushv(var);
+         _vm->objassign(0,0);
+         Dasmop(VMOP_INCSTP); // discard this
+         Dasmop(VMOP_INCSTP); // discard obj
          break;
       }
       break;
@@ -207,4 +207,4 @@ sU8 PTN_VarAssign::compile(VMCore *_vm) {
    else     return 0;
 }
 
-#endif 
+#endif // TKS_JIT

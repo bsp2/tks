@@ -1,10 +1,11 @@
 /// PTN_OpVarAssign.h
 ///
-/// (c) 2001-2009 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
-#ifndef __PTN_OPVARASSIGN_H__
-#define __PTN_OPVARASSIGN_H__
+
+#ifndef PTN_OPVARASSIGN_H__
+#define PTN_OPVARASSIGN_H__
 
 
 class PTN_OpVarAssign : public PTN_Statement {
@@ -13,12 +14,12 @@ public:
    PTN_Expr         *expr; // rw reference to right hand exression
    sU8               expr_operator;
    Feval             expr_opt;
-   
+
 public:
    PTN_OpVarAssign(void);
    PTN_OpVarAssign(TKS_CachedObject *_var, PTN_Expr *_expr, sU8 _op);
    ~PTN_OpVarAssign();
-   
+
    void    eval          (PTN_Env *_env) const;
    Fevalst getEvalSt     (void) const;
    sBool   semanticCheck (void);
@@ -31,4 +32,4 @@ public:
 };
 
 
-#endif // __PTN_OPVARASSIGN_H__
+#endif // PTN_OPVARASSIGN_H__

@@ -1,7 +1,7 @@
 /// TKS_CachedObject.cpp
 ///
-/// (c) 1999-2023 by Bastian Spiegel <bs@tkscript.de>
-///     - published under terms of the GNU general public license (GPL).
+/// (c) 1999-2026 by Bastian Spiegel <bs@tkscript.de>
+///    - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 ///
 

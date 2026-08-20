@@ -1,7 +1,7 @@
 /// PTN_TryCatchFinally.cpp
 ///
-/// (c) 2006-2025 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2006-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 
 #include "tks.h"
@@ -186,7 +186,7 @@ static void PTN_TryCatchFinally__eval(PTN_Env *_env, const PTN_Statement *_st) {
 
    const PTN_TryCatchFinally *sav_last_try = _env->context->last_try;
    _env->context->last_try = st;
-   
+
    st->try_body->evalFirst(_env);
 
    TKS_Context *ctx = _env->context;

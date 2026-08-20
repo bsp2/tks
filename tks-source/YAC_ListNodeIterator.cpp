@@ -1,7 +1,7 @@
 /// YAC_ListNodeIterator.cpp
 ///
-/// (c) 2003-2009 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2003-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 
 #include "tks.h"
@@ -25,7 +25,7 @@ void YAC_VCALL YAC_ListNodeIterator::getNext(YAC_Value *_r) {
    if(lc)
    {
       _r->initObject((YAC_Object*)lc, 0);
-      lc=lc->next;
+      lc = lc->next;
    }
    else
    {
@@ -34,4 +34,3 @@ void YAC_VCALL YAC_ListNodeIterator::getNext(YAC_Value *_r) {
       _r->deleteme  = 0;
    }
 }
-

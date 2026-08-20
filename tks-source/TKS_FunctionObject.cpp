@@ -1,7 +1,7 @@
 /// TKS_FunctionObject.cpp
 ///
-/// (c) 2005-2023 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2005-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 
 #include "tks.h"
@@ -38,19 +38,19 @@ sBool TKS_FunctionObject::isValid(void) {
 }
 
 YAC_String *TKS_FunctionObject::getName(void) {
-   if(isValid()) 
+   if(isValid())
    {
       if(NULL != fun)
          return &fun->name; // xxx caller could modify internal function name..
    }
-   return tks_empty_string; 
+   return tks_empty_string;
 }
 
 void TKS_FunctionObject::eval(YAC_Object *_args, YAC_Value *_r) {
    if(NULL != fun)
    {
       sUI numArgs = 0;
-      YAC_Value args[16]; // xxx numargs hardcoded 
+      YAC_Value args[16]; // xxx numargs hardcoded
 
       if(YAC_VALID(_args))
       {
@@ -59,7 +59,7 @@ void TKS_FunctionObject::eval(YAC_Object *_args, YAC_Value *_r) {
 
          if(numArgs > 0)
          {
-            // Convert arguments (if any) to array 
+            // Convert arguments (if any) to array
             if(numArgs <= 16)
             {
                sUI i;

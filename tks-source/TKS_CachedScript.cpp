@@ -1,7 +1,7 @@
 /// TKS_CachedScript.cpp
 ///
-/// author : (c) 2001-2025 Bastian Spiegel <bs@tkscript.de>
-///    published under terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///    - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 /// created: 07Jun2001
 /// changed: 27Feb2005, ..., 25Jul2005, ..., 21Dec2005, 18-Jan-2006, 20-Mai-2006

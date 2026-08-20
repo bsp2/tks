@@ -1,26 +1,27 @@
 /// PTN_IfElse.h
 ///
-/// (c) 2001-2009 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
-#ifndef __PTN_IFELSE_H__
-#define __PTN_IFELSE_H__
+
+#ifndef PTN_IFELSE_H__
+#define PTN_IFELSE_H__
 
 
 class PTN_IfElse : public PTN_Statement {
 
 public:
-   PTN_Expr     *cond;
+   PTN_Expr      *cond;
    PTN_Statement *body;
    PTN_Statement *else_body;
-   Feval         cond_opt;
-   
+   Feval          cond_opt;
+
 public:
    PTN_IfElse(void);
    PTN_IfElse(PTN_Expr *_cond, PTN_Statement *_body, PTN_Statement *_else_body);
    ~PTN_IfElse();
 
-   
+
    void    eval           (PTN_Env *_env) const;
    Fevalst getEvalSt      (void) const;
    sUI     getID          (void) const;
@@ -36,4 +37,4 @@ public:
 };
 
 
-#endif // __PTN_IFELSE_H__
+#endif // PTN_IFELSE_H__

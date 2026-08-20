@@ -1,7 +1,7 @@
 /// YAC_String.cpp
 ///
 /// (c) 1998-2026 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under terms of the GNU General Public License (GPL).
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 ///
 
@@ -5500,7 +5500,7 @@ void YAC_String::tokenizeEx(const YAC_Object *_cs, YAC_Object *_retRanges, YAC_O
                      }
                      offsets = (sUI*)retRanges->elements;
                   }
-                  
+
                   if(length >= MAX_STATIC_SUBSTRINGS)
                   {
                      if(NULL == retRanges)
@@ -5864,7 +5864,7 @@ void YAC_String::_splitChar_YAC_RARG(sSI _delim, YAC_Object *_r) {
                      k = i + 1;
                      j = 0;
                   // // }
-                  
+
                   if(chars[length-2] == _delim)
                   {
                      // Last char before ASCIIZ is delimiter
@@ -6530,7 +6530,7 @@ sSI YAC_String::_charsetIndexOfWordEnd(YAC_String *_charset, sSI _off) const {
          }
       }
    }
-   
+
    return -1;
 }
 

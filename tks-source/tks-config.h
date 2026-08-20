@@ -1,18 +1,16 @@
 /// tks-config.h
 ///
-///  (c) 2001-2014 Bastian Spiegel <bs@tkscript.de>
-///      - distributed under terms of the GNU general public license (GPL).
-///
-///
+///  (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///      - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 
-#ifndef __TKS_CONFIG_H__
-#define __TKS_CONFIG_H__
+#ifndef TKS_CONFIG_H__
+#define TKS_CONFIG_H__
 
 
 ///============================================================================
 ///
-/// Define this to effectively disable exceptions, constraints, node-tracing, 
+/// Define this to effectively disable exceptions, constraints, node-tracing,
 ///  profiling, abstractcall and other paranoia checks
 ///
 ///============================================================================
@@ -26,41 +24,41 @@
 ///
 /// usually you won't have to change anything in this file.
 /// please see "config.h" instead.
-/// 
+///
 ///============================================================================
 
-#define TKS_PLUGIN defined 
-#define TKS_DCON defined 
+#define TKS_PLUGIN defined
+#define TKS_DCON defined
 
 
 ///============================================================================
 ///
 /// OS-CONFIG
-/// 
+///
 ///============================================================================
 
- 
+
 /// Define if your hardware can access multi-byte values at odd addresses (e.g. intel, not 68k)
 ///  (note) currently only relevant in the JIT compiler
 #ifdef YAC_LITTLE_ENDIAN
 #define DX_ODDADDR defined
 #endif
- 
-#ifdef YAC_POSIX 
-#ifndef DX_NO_PTHREADS 
-#define DX_PTHREADS defined 
-#endif 
-#endif 
- 
-#ifdef YAC_MSDOS 
-#undef HAVE_VSNPRINTF 
-#endif 
- 
+
+#ifdef YAC_POSIX
+#ifndef DX_NO_PTHREADS
+#define DX_PTHREADS defined
+#endif
+#endif
+
+#ifdef YAC_MSDOS
+#undef HAVE_VSNPRINTF
+#endif
+
 
 ///============================================================================
 ///
 /// ENVIRONMENT-CONFIG
-/// 
+///
 ///============================================================================
 
 /// Define if you want to compile with the VM disassembler (also requires TKS_JIT to be defined)
@@ -77,12 +75,12 @@
 
 /// Define to write out "c" code for the entity scanners ("autogen_tks_entitytree_lookup.cpp")
 /* #define TKS_EXPORT_ENTITY_SCANNER defined */
- 
-/// Define if script function calls shall be tracked in a functioncallstack (useful for debug purposes) 
-#define DX_TRACEFUNCTIONCALLS defined 
- 
+
+/// Define if script function calls shall be tracked in a functioncallstack (useful for debug purposes)
+#define DX_TRACEFUNCTIONCALLS defined
+
 /// Define if you want script constraints
-#define DX_SCRIPTCONSTRAINTS defined 
+#define DX_SCRIPTCONSTRAINTS defined
 
 /// Define if you want a thread-safe script engine
 /// this will enable TKS_Mutex, TKS_Thread, .. classes
@@ -110,13 +108,13 @@
 //   Note: this is defined in makefile.msvc (32bit build only)
 //#define DX_RDTSC defined
 
-/// Define if you are sure that parameters are never passed in registers 
+/// Define if you are sure that parameters are never passed in registers
 //#define TKS_ALLOWINTFLOATMIXUP defined
 
 /// Define to check for raised exceptions
 #define TKS_CHECKEXCEPTION defined
 
-/// Define to print exceptions immediately (e.g. print backtrace to console even if the exception 
+/// Define to print exceptions immediately (e.g. print backtrace to console even if the exception
 /// is later caught by a try/catch statement). Defining this might cause confusion in e.g. unit-tests
 /// (read: the prints destroy the text flow).
 //#define TKS_PRINTEXCEPTION defined
@@ -179,4 +177,4 @@
 #define TKS_WIN32_USE_PERFCOUNTER defined
 
 
-#endif // __TKS_CONFIG_H__
+#endif // TKS_CONFIG_H__

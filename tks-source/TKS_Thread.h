@@ -1,16 +1,16 @@
 /// TKS_Thread.h
 ///
-/// (c) 2002-2025 Bastian Spiegel <bs@tkscript.de>
-///     - Distributed under terms of the GNU General Public License (GPL).
-///       See COPYING and <http://www.gnu.org/licenses/licenses.html#GPL> for further information.
+/// (c) 2002-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 ///
+
 #ifndef TKS_THREAD_H__
 #define TKS_THREAD_H__
 
 
-#ifdef DX_PTHREADS 
-#include <pthread.h> 
+#ifdef DX_PTHREADS
+#include <pthread.h>
 #else
 #ifdef YAC_WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -19,7 +19,7 @@ typedef struct win32_yac_threadentry_userdata_s {
    yac_thread_fxn_t fxn;
    void *userdata;
 } win32_yac_threadentry_userdata_t;
-#endif 
+#endif
 #endif
 
 #ifdef YAC_LINUX

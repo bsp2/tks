@@ -1,10 +1,11 @@
 /// TKS_ClassTemplate.h
 ////
-/// (c) 2001-2020 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
-#ifndef __TKS_CLASSTEMPLATE_H__
-#define __TKS_CLASSTEMPLATE_H__
+
+#ifndef TKS_CLASSTEMPLATE_H__
+#define TKS_CLASSTEMPLATE_H__
 
 
 enum __tkclasstemplateflags {
@@ -31,7 +32,7 @@ public:
 public:
 	TKS_ClassTemplate(void);
 	~TKS_ClassTemplate();
-	
+
 	void          init           (void);                                           // ---- clear pointers (constructor)
 	void          clean          (void);                                           // ---- delete mapping, template and unset class_name (destructor)
 	sBool         setTemplateY   (YAC_Object *_template);                          // ---- init commands, class_name, template_object, YInG/YAC interface
@@ -42,4 +43,4 @@ public:
 };
 
 
-#endif // __TKS_CLASSTEMPLATE_H__
+#endif // TKS_CLASSTEMPLATE_H__

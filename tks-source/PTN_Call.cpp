@@ -1,7 +1,7 @@
 /// PTN_Call.cpp
 ///
-/// (c) 2001-2025 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 
 #include "tks.h"
@@ -27,7 +27,7 @@ PTN_Call::PTN_Call(PTN_CallableExpr *_expr) {
 PTN_Call::~PTN_Call() {
    if(expr)
    {
-      delete expr; 
+      delete expr;
       expr = NULL;
    }
 }
@@ -42,8 +42,8 @@ sBool PTN_Call::semanticCheck(void) {
 }
 
 void PTN_Call::optimize(void) {
-   expr->optimize(); 
-   expr_opt = expr->getEval(); 
+   expr->optimize();
+   expr_opt = expr->getEval();
    if(NULL == expr_opt)
    {
       Dprintf("[---] internal error: PTN_Call::optimize: expr_opt is NULL.\n");
@@ -54,7 +54,7 @@ sBool PTN_Call::resolveXRef(void) {
    return expr->resolveXRef();
 }
 
-static void PTN_Call__eval(PTN_Env *_env, const PTN_Statement *_st) { 
+static void PTN_Call__eval(PTN_Env *_env, const PTN_Statement *_st) {
    const PTN_Call *st = (const PTN_Call *)_st;
 
    Dtracest;
@@ -62,8 +62,8 @@ static void PTN_Call__eval(PTN_Env *_env, const PTN_Statement *_st) {
    ////PTN_Env env(_env);
    ////st->expr_opt(_env, &_env->cret, st->expr);
    ////// Discard return value
-   ////env.cret.unsetFast(); 
-   
+   ////env.cret.unsetFast();
+
    YAC_Value r;
    // tkscript->printf("xxx PTN_Call__eval: st=%p\n", st);
    // tkscript->printf("xxx PTN_Call__eval: st->expr_opt=%p\n", st->expr_opt);
@@ -80,14 +80,14 @@ static void PTN_Call__eval(PTN_Env *_env, const PTN_Statement *_st) {
 
    // Discard return value
    r.unsetFast();
-} 
+}
 
 void PTN_Call::eval(PTN_Env *_env) const {
    PTN_Call__eval(_env, this);
 }
 
 
-Fevalst PTN_Call::getEvalSt(void) const { 
+Fevalst PTN_Call::getEvalSt(void) const {
    Fevalst callst = expr->getEvalCallSt();
    if(callst)
    {
@@ -97,9 +97,9 @@ Fevalst PTN_Call::getEvalSt(void) const {
    else
    {
       // Use generic version that simply calls expr->evalCallableExpr(_env)
-      return PTN_Call__eval; 
+      return PTN_Call__eval;
    }
-} 
+}
 
 const PTN_Statement *PTN_Call::getEvalStArg(void) const {
    // Check whether expression can be called as a statement
@@ -107,7 +107,7 @@ const PTN_Statement *PTN_Call::getEvalStArg(void) const {
    {
       // Expression has optimized statement eval function --> return inner expr object instead of statement wrapper
       // hack: temporarily cast to statement (will be cast back to CallableExpr when evaluated)
-      return (PTN_Statement*) expr; 
+      return (PTN_Statement*) expr;
    }
    else
    {
@@ -116,45 +116,45 @@ const PTN_Statement *PTN_Call::getEvalStArg(void) const {
    }
 }
 
-#ifdef TKS_JIT 
-sBool PTN_Call::forceHybrid(void) { 
-   return expr->forceHybrid(); 
-} 
+#ifdef TKS_JIT
+sBool PTN_Call::forceHybrid(void) {
+   return expr->forceHybrid();
+}
 
-sU8 PTN_Call::compile(VMCore *_vm) { 
-   if(expr->forceHybrid())  
+sU8 PTN_Call::compile(VMCore *_vm) {
+   if(expr->forceHybrid())
    {
-      _vm->addHybridStatement(this);  
+      _vm->addHybridStatement(this);
    }
-   else 
+   else
    {
       sU8 r=expr->compileCallStatement(_vm);
       if(r!=0xFF)
-      { 
-         if(r) 
-         { 
-            if(r==4) 
-            { 
-               Dprintf("[---] Call: variable return type not supported by JIT.\n"); 
-               return 0xFF; 
-            } 
-            Dasmop(VMOP_INCSTP); 
-         } 
-      } 
-      else  
-      { 
-         Dprintf("[---] Call: cannot compile call statement (unsupported by JIT).\n"); 
-         return 0xFF; 
-      } 
+      {
+         if(r)
+         {
+            if(r==4)
+            {
+               Dprintf("[---] Call: variable return type not supported by JIT.\n");
+               return 0xFF;
+            }
+            Dasmop(VMOP_INCSTP);
+         }
+      }
+      else
+      {
+         Dprintf("[---] Call: cannot compile call statement (unsupported by JIT).\n");
+         return 0xFF;
+      }
    }
-   if(next)   
+   if(next)
    {
-      return next->compileHybridStatement(_vm); 
+      return next->compileHybridStatement(_vm);
    }
-   else   
+   else
    {
-      return 0; 
+      return 0;
    }
 }
 
-#endif
+#endif // TKS_JIT

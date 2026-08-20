@@ -1,8 +1,9 @@
 /// TKS_Mailbox.h
 ///
 /// (c) 2009-2026 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
+
 #ifndef TKS_MAILBOX_H__
 #define TKS_MAILBOX_H__
 

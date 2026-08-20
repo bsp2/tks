@@ -1,10 +1,11 @@
-/// PTN_ClassMemberIncDecStat.h 
+/// PTN_ClassMemberIncDecStat.h
 ///
-/// (c) 2001-2013 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
-#ifndef __PTN_CLASSMEMBERINCDECSTAT_H__
-#define __PTN_CLASSMEMBERINCDECSTAT_H__
+
+#ifndef PTN_CLASSMEMBERINCDECSTAT_H__
+#define PTN_CLASSMEMBERINCDECSTAT_H__
 
 
 class PTN_ClassMemberIncDecStat : public PTN_Statement {
@@ -27,4 +28,4 @@ public:
 };
 
 
-#endif // __PTN_CLASSMEMBERINCDECSTAT_H__
+#endif // PTN_CLASSMEMBERINCDECSTAT_H__

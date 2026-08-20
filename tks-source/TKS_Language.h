@@ -1,11 +1,12 @@
 /// TKS_Language.h
 ///
-/// (c) 2001-2025 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 
 #ifndef TKS_LANGUAGE_H__
 #define TKS_LANGUAGE_H__
+
 
 enum __tks_language_signals {
    TKS_SIG_SIGNAL       = 0,
@@ -18,8 +19,8 @@ public:
    YAC_String s_versionString;
 
 public:
-   TKS_Language                       (void);
-   ~TKS_Language                      ();
+   TKS_Language  (void);
+   ~TKS_Language ();
 
    void YAC_VCALL yacGetSignalStringList             (YAC_String *_sig);
    void YAC_VCALL yacRegisterSignal                  (sUI _id, YAC_FunctionHandle _f);

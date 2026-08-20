@@ -1,10 +1,11 @@
 /// YAC_TreeNode.h
 ///
-/// (c) 2001-2015 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
-#ifndef __YAC_TREENODE_H__
-#define __YAC_TREENODE_H__
+
+#ifndef YAC_TREENODE_H__
+#define YAC_TREENODE_H__
 
 
 class YAC_TreeNode : public YAC_ValueObject {
@@ -14,11 +15,11 @@ public:
    YAC_TreeNode *parent;
    YAC_String    name;
    YAC_String    id;
-   
+
 public:
    YAC_TreeNode  (void);
    ~YAC_TreeNode ();
-   
+
    void          YAC_VCALL yacOperator     (sSI, YAC_Object *, YAC_Value *);
    sBool         YAC_VCALL yacIsComposite  (void) {return 1;}
 
@@ -27,7 +28,7 @@ public:
    YAC_TreeNode *findByName2    (YAC_String *_s, sSI _depth);
    YAC_TreeNode *findById2      (YAC_String *_s, sSI _depth);
    void          addToHashTable (YAC_String *_name, YAC_Object *_hash);
-  
+
    YAC_Object *_insertLeft       (YAC_Object *_templ);
    YAC_Object *_insertRight      (YAC_Object *_templ);
    YAC_Object *_findByName       (YAC_String *_s, sSI _depth);
@@ -48,4 +49,4 @@ public:
 };
 
 
-#endif // __YAC_TREENODE_H__
+#endif // YAC_TREENODE_H__

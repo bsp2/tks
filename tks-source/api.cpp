@@ -1,7 +1,7 @@
 /// api.cpp
 ///
 /// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
-///    published under terms of the GNU general public license (GPL).
+///    - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 /// Note: the ying_* files (except for ying_core_Object) are created with
 ///       $~/tks-source: tks ../yac/ying -ng -nc api.cpp

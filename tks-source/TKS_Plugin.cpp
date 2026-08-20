@@ -1,7 +1,7 @@
 /// TKS_Plugin.cpp
 ///
-/// (c) 2001-2014 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 
 #include "tks.h"
@@ -52,7 +52,7 @@ void TKS_Plugin::unload(void) {
       // Call plugin shutdown handler (YAC_Exit)
       if(fn_exit)
       {
-         fn_exit(tkscript);   
+         fn_exit(tkscript);
 
          Dfixfpuflags;
       }
@@ -108,7 +108,7 @@ sBool TKS_Plugin::load(void) {
    // Loop pathname variants until library has been openend or until no more variants are left to try
    //
    int variantIdx = 0;
-   do 
+   do
    {
       //
       // Build plugin pathname for current variant
@@ -165,15 +165,15 @@ sBool TKS_Plugin::load(void) {
          }
          else
          {
-   			Dprintf("[---] failed to get symbol \"YAC_Init\" of plugin \"%s\". err=\"%s\"", 
-               (char*)path_name.chars, 
+   			Dprintf("[---] failed to get symbol \"YAC_Init\" of plugin \"%s\". err=\"%s\"",
+               (char*)path_name.chars,
                plafGetErrorString()
                );
             plafCloseLibrary();
 	   		return 0;
          }
 
-      
+
          //
          // Resolve YAC_Exit() [required]
          //
@@ -186,7 +186,7 @@ sBool TKS_Plugin::load(void) {
                Dprintf("[...] loadplugin: found symbol \"YAC_Exit\". adr=" YAC_PRINTF_PTRPREFIX "%p\n", fn_exit);
             }
 
-            // 
+            //
             // OK, Initialize plugin
             //
             fn_init(tkscript);
@@ -198,8 +198,8 @@ sBool TKS_Plugin::load(void) {
          }
          else
          {
-   			Dprintf("[---] failed to get symbol \"YAC_Exit\" of plugin \"%s\". err=\"%s\"", 
-               (char*)path_name.chars, 
+   			Dprintf("[---] failed to get symbol \"YAC_Exit\" of plugin \"%s\". err=\"%s\"",
+               (char*)path_name.chars,
                plafGetErrorString()
                );
             plafCloseLibrary();
@@ -209,7 +209,7 @@ sBool TKS_Plugin::load(void) {
 		else
 		{
          //
-         // Failed to open library. 
+         // Failed to open library.
          // Try next variant..
          //
       }

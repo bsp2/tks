@@ -1,10 +1,11 @@
 /// YAC_StringArray.h
 ///
-/// (c) 2001-2024 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
-#ifndef __YAC_STRINGARRAY_H__
-#define __YAC_STRINGARRAY_H__
+
+#ifndef YAC_STRINGARRAY_H__
+#define YAC_STRINGARRAY_H__
 
 
 class YAC_StringArray : public YAC_Object {
@@ -84,4 +85,4 @@ public:
 };
 
 
-#endif // __YAC_STRINGARRAY_H__
+#endif // YAC_STRINGARRAY_H__

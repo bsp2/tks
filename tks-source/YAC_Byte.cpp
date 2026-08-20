@@ -1,7 +1,7 @@
 /// YAC_Byte.cpp
 ///
-/// (c) 2004-2024 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2004-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 
 #include <stdio.h>

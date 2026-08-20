@@ -1,11 +1,12 @@
 /// TKS_ClassDeclMethod.h
 ///
-/// (c) 2001-2009 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 ///
-#ifndef __TKS_CLASSDECLMETHOD_H__
-#define __TKS_CLASSDECLMETHOD_H__
+
+#ifndef TKS_CLASSDECLMETHOD_H__
+#define TKS_CLASSDECLMETHOD_H__
 
 
 class PTN_Function;
@@ -49,4 +50,4 @@ public:
 };
 
 
-#endif // __TKS_CLASSDECLMETHOD_H__
+#endif // TKS_CLASSDECLMETHOD_H__

@@ -1,7 +1,7 @@
 /// TKS_Plugin_stub.cpp
 ///
-/// (c) 2001-2009 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 
 #include "tks.h"
@@ -21,7 +21,7 @@ sBool TKS_Plugin::plafOpenLibrary(const char *_pathName) {
 
    Dprintf("[---] TKS_Plugin_stub: plafOpenLibrary() called.\n");
 
-   return 0;
+   return YAC_FALSE;
 }
 
 void TKS_Plugin::plafCloseLibrary(void) {

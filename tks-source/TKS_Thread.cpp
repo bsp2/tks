@@ -1,8 +1,7 @@
 /// Thread.cpp
 ///
-/// (c) 2002-2025 Bastian Spiegel <bs@tkscript.de>
-///     - Distributed under terms of the GNU General Public License (GPL).
-///       See COPYING and <http://www.gnu.org/licenses/licenses.html#GPL> for further information.
+/// (c) 2002-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 ///
 /// changelog:
@@ -666,7 +665,7 @@ sBool TKS_Thread::create2(yac_thread_fxn_t _threadFxn, void *_userData) {
       {
          Dprintf("[dbg] Thread::create2: prio=TIME_CRITICAL HAVE_APPLE_QOS\n");
       }
-      pthread_attr_set_qos_class_np(&attr, 
+      pthread_attr_set_qos_class_np(&attr,
                                     QOS_CLASS_USER_INTERACTIVE, 0
                                     );
 #else
@@ -683,7 +682,7 @@ sBool TKS_Thread::create2(yac_thread_fxn_t _threadFxn, void *_userData) {
 #endif
    }
 #endif // YAC_MACOS
-   
+
    b_created = (0 == pthread_create(&pthread_id, &attr, _threadFxn, _userData));
 
 #ifdef YAC_MACOS
@@ -982,12 +981,12 @@ void TKS_Thread::_setPriority(sSI _priority) {
                // https://github.com/apple-oss-distributions/xnu/blob/main/osfmk/mach/thread_policy.h
                struct thread_time_constraint_policy ttcpolicy;
                thread_port_t threadport = pthread_mach_thread_np(pthread_id);
- 
+
                ttcpolicy.period      = 0; // HZ / 1000;
                ttcpolicy.computation = 0; // HZ / 2000; // HZ/3300;
                ttcpolicy.constraint  = 0; // HZ / 1000; // HZ/2200;
                ttcpolicy.preemptible = 1; // ignored, see thread_policy.h
- 
+
                // => fails with err=4
                int err = thread_policy_set(threadport,
                                            THREAD_TIME_CONSTRAINT_POLICY, (thread_policy_t)&ttcpolicy,
@@ -1468,6 +1467,7 @@ sBool TKS_Thread::Delay2(void) {
    return YAC_TRUE;
 #endif
 }
+
 sBool TKS_Thread::_Delay(void) {
    return TKS_Thread::Delay2();
 }

@@ -1,7 +1,7 @@
 /// PTN_ClassMemberIncDecExpr.cpp
 ///
-/// (c) 2001-2013 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 
 #include "tks.h"
@@ -16,11 +16,11 @@ PTN_ClassMemberIncDecExpr::PTN_ClassMemberIncDecExpr(TKS_CachedObject *_co, TKS_
    class_id   = TKS_INVALID_SCRIPT_CLASS_ID;
    post       = _post;
    dec        = _dec;
-   b_indirect = 0;
+   b_indirect = YAC_FALSE;
 
    if(var)
    {
-      if(var->type==YAC_TYPE_OBJECT)
+      if(YAC_TYPE_OBJECT == var->type)
       {
          if(var->value.object_val)
          {
@@ -28,7 +28,7 @@ PTN_ClassMemberIncDecExpr::PTN_ClassMemberIncDecExpr(TKS_CachedObject *_co, TKS_
          }
       }
    }
-         
+
 }
 
 PTN_ClassMemberIncDecExpr::~PTN_ClassMemberIncDecExpr() {
@@ -36,8 +36,8 @@ PTN_ClassMemberIncDecExpr::~PTN_ClassMemberIncDecExpr() {
    member = NULL;
 }
 
-static void PTN_ClassMemberIncDecExpr__eval(PTN_Env *_env, YAC_Value *_r, const PTN_Expr *_st) { 
-   const PTN_ClassMemberIncDecExpr*st = (const PTN_ClassMemberIncDecExpr*)_st; 
+static void PTN_ClassMemberIncDecExpr__eval(PTN_Env *_env, YAC_Value *_r, const PTN_Expr *_st) {
+   const PTN_ClassMemberIncDecExpr*st = (const PTN_ClassMemberIncDecExpr*)_st;
    Dtracest;
 
    TKS_ScriptClassInstance *robj;
@@ -56,16 +56,16 @@ static void PTN_ClassMemberIncDecExpr__eval(PTN_Env *_env, YAC_Value *_r, const 
 
    if(TKS_VALID(robj))
    {
-#ifdef DX_SAFEMODE 
+#ifdef DX_SAFEMODE
       if(robj->class_ID == YAC_CLID_CLASS)
-      { 
+      {
          if(robj->class_decl->ancestor_table[st->class_id])
-         { 
+         {
 #endif
             if(st->post)
             {
                if(st->dec)
-               { 
+               {
                   robj->getPostDecClassMemberValueByID(_r, (sUI)st->member->value.int_val);
                   return;
                }
@@ -87,30 +87,29 @@ static void PTN_ClassMemberIncDecExpr__eval(PTN_Env *_env, YAC_Value *_r, const 
                   robj->getPreIncClassMemberValueByID(_r, (sUI)st->member->value.int_val);
                   return;
                }
-            } 
-#ifdef DX_SAFEMODE 
+            }
+#ifdef DX_SAFEMODE
          }
       }
-#endif 
+#endif
    }
    else
    {
       Drtthrowinvalidpointer(st, "invalid <this> object", robj);
-   } 
-   _r->initVoid(); 
+   }
+   _r->initVoid();
 }
 
-void PTN_ClassMemberIncDecExpr::eval(PTN_Env *_env, YAC_Value *_r) const { 
-   PTN_ClassMemberIncDecExpr__eval(_env, _r, this); 
-} 
+void PTN_ClassMemberIncDecExpr::eval(PTN_Env *_env, YAC_Value *_r) const {
+   PTN_ClassMemberIncDecExpr__eval(_env, _r, this);
+}
 
-Feval PTN_ClassMemberIncDecExpr::getEval(void) const { 
-   return PTN_ClassMemberIncDecExpr__eval; 
-} 
+Feval PTN_ClassMemberIncDecExpr::getEval(void) const {
+   return PTN_ClassMemberIncDecExpr__eval;
+}
 
-#ifdef TKS_JIT 
-sBool PTN_ClassMemberIncDecExpr::forceHybrid(void) { 
-   return 1; 
-} 
-#endif  
-
+#ifdef TKS_JIT
+sBool PTN_ClassMemberIncDecExpr::forceHybrid(void) {
+   return 1;
+}
+#endif // TKS_JIT

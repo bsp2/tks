@@ -1,10 +1,11 @@
 /// TKS_SignalEntry.h
 ///
-/// (c) 2001-2009 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
-#ifndef __TKS_SIGNALENTRY_H__
-#define __TKS_SIGNALENTRY_H__
+
+#ifndef TKS_SIGNALENTRY_H__
+#define TKS_SIGNALENTRY_H__
 
 
 class TKS_SignalEntry {
@@ -17,4 +18,4 @@ public:
 };
 
 
-#endif // __TKS_SIGNALENTRY_H__
+#endif // TKS_SIGNALENTRY_H__

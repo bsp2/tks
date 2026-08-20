@@ -1,8 +1,7 @@
 /// TKX_Chapter.cpp
 ///
-/// (c) 2001-2023 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
-///
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 ///
 
@@ -32,14 +31,14 @@ TKX_Chapter::TKX_Chapter(TKX_PakFile *_parent) {
 }
 
 TKX_Chapter::~TKX_Chapter() {
-   if(NULL != compr_data) 
-   { 
-      delete [] compr_data; 
-      compr_data = NULL; 
+   if(NULL != compr_data)
+   {
+      delete [] compr_data;
+      compr_data = NULL;
    }
 }
 
-void TKX_Chapter::createCompressedChapter(void) { 
+void TKX_Chapter::createCompressedChapter(void) {
 #ifdef DX_Z
    /// indextablesize+indextable+files
    sU32 total_chapter_size = 4 + total_chapter_filesize + total_chapter_indexsize;
@@ -80,7 +79,7 @@ void TKX_Chapter::createCompressedChapter(void) {
       {
          cfte[10+log_l+i] = cfe->source_name.chars[i];
       }
-      
+
       if(TKX_File::CFE_TYPE_FILE == cfe->type)
       {
          // Local file (to be directly included in pak file)
@@ -134,11 +133,11 @@ void TKX_Chapter::createCompressedChapter(void) {
       // Align to word boundary
       if(fesize & 1)
       {
-         fesize++; 
+         fesize++;
       }
 
       cfte += fesize;
-      
+
       // Next file
       cfe = cfe->next;
    }
@@ -157,7 +156,7 @@ void TKX_Chapter::createCompressedChapter(void) {
       orig_data = NULL;
       return;
    }
-   
+
    if(::compress2((unsigned char*)compr_data, &compr_size, (unsigned char*)orig_data, orig_size, 9)!=Z_OK)
    {
       parent->tak_error_code = TKX_PakFile::TKXERRCOMPRESS;
@@ -167,19 +166,19 @@ void TKX_Chapter::createCompressedChapter(void) {
       compr_data = NULL;
       return;
    }
-   
+
    //printf("[...] chapter orig=%i compr=%i ratio=%f header=%08x\n",
    //    orig_size, compr_size, ((sF32)compr_size)/((sF32)orig_size),
    //    *(sU32*)compr_data);
-   
+
    delete [] orig_data;
    orig_data = NULL;
-#else 
-   // [...] z-lib support not compiled in; disabling tkx writer. 
+#else
+   // [...] z-lib support not compiled in; disabling tkx writer.
 #endif
 }
 
-void TKX_Chapter::loadCompressedChapter(void) { 
+void TKX_Chapter::loadCompressedChapter(void) {
    // yac_host->printf("xxx TKX_Chapter::loadCompressedChapter: compr_data=%p\n", compr_data);
 #ifdef DX_Z
    if(NULL == compr_data)
@@ -196,9 +195,9 @@ void TKX_Chapter::loadCompressedChapter(void) {
    orig_data = new(std::nothrow) unsigned char[orig_size];
 
    if(NULL == orig_data)
-   { 
+   {
 #ifdef TKS_DCON
-      ::printf("[---] loadCompressedChapter: failed to allocate %u bytes.\n", orig_size); 
+      ::printf("[---] loadCompressedChapter: failed to allocate %u bytes.\n", orig_size);
 #endif
       return;
    }
@@ -210,7 +209,7 @@ void TKX_Chapter::loadCompressedChapter(void) {
    if(uncret != Z_OK)
    {
 #ifdef TKS_DCON
-      ::printf("[---] error decompressing chapter ERRCODE=%i dec_orig_size=%u orig_size=%u\n", 
+      ::printf("[---] error decompressing chapter ERRCODE=%i dec_orig_size=%u orig_size=%u\n",
          uncret,
          (sUI)dec_orig_size,
          orig_size);
@@ -273,7 +272,7 @@ void TKX_Chapter::loadCompressedChapter(void) {
       }
 
       tf->logic_name.length = namelength;
-      
+
       namelength = *d++;
       tf->source_name.alloc(namelength);
 
@@ -300,14 +299,14 @@ void TKX_Chapter::loadCompressedChapter(void) {
 
       //printf("[...] file header=%08x\n",
       //    *(sU32*)(orig_data+tf->file_offset));
-      
+
       ftp += fesize;
       ftcsize = (sU16)(ftcsize + fesize);
    }
 
    is_loaded = YAC_TRUE;
 
-#else 
+#else
    tkscript->printf("[...] z-lib support not compiled in; unable to load compressed chapter from TKX file.\n");
 #endif
 }
@@ -348,9 +347,9 @@ sBool TKX_Chapter::mergeTSL(TKX_File *f, sBool _bTSL) {
 
          // Load tokenized script library
          YAC_String sEmpty;
-         YAC_String t; 
+         YAC_String t;
          sBool bLibOpened;
-         
+
          // Try CWD
          if(1)
          {
@@ -428,7 +427,7 @@ sBool TKX_Chapter::mergeTSL(TKX_File *f, sBool _bTSL) {
 
    if(!pf->scanTKX())
    {
-      Dprintf("[---] failed to scan TSL file logicName=\"%s\" localName=\"%s\".\n", 
+      Dprintf("[---] failed to scan TSL file logicName=\"%s\" localName=\"%s\".\n",
               (char*)f->logic_name.chars,
               (char*)f->source_name.chars
               );
@@ -440,12 +439,12 @@ sBool TKX_Chapter::mergeTSL(TKX_File *f, sBool _bTSL) {
 
    // calls TKX_Chapter::loadCompressedChapter()
    pf->continueChapterLoading();
-   
+
    // Merge files into this chapter
    {
       pf->selectFirstChapter();
       TKX_File *f2 = pf->current_chapter->chapter_files;
-      
+
       if(NULL != f2)
       {
          TKX_File *c = f2;
@@ -480,19 +479,19 @@ sBool TKX_Chapter::mergeTSL(TKX_File *f, sBool _bTSL) {
             }
          }
          while(NULL != c->next);
-         
+
          // Merge with this file list
          c->next = f->next;
       }
-      
+
       f->next = f2;
- 
+
       pf->current_chapter->chapter_files = NULL;
    }
 
    if(0 != pf->tak_error_code)
    {
-      Dprintf("[---] failed to merge TSL file logicName=\"%s\" localName=\"%s\" (errcode=%i).\n", 
+      Dprintf("[---] failed to merge TSL file logicName=\"%s\" localName=\"%s\" (errcode=%i).\n",
               (char*)f->logic_name.chars,
               (char*)f->source_name.chars,
               pf->tak_error_code
@@ -529,4 +528,4 @@ void TKX_set32(sU32*_d, sU32 _b) {
    d[2] = s[1];
    d[3] = s[0];
 }
-#endif
+#endif // !YAC_LITTLE_ENDIAN

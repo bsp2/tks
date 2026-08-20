@@ -1,9 +1,8 @@
 /// PTN_For.cpp
 ///
-/// (c) 2001-2014 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
-
 
 #include "tks.h"
 #include "PTN_Node.h"
@@ -23,11 +22,6 @@ PTN_For::PTN_For(void) {
   body      = NULL;
   break_tag = 0;
 }
-
-/*PTN_For::PTN_For(PTN_Statement *_pre, PTN_Expr *_cond, PTN_Statement *_post, PTN_Statement *_body) {
-  break_tag = 0;
-  init(_pre, _cond, _post, _body);
-}*/
 
 void PTN_For::init(PTN_Statement *_pre, PTN_Expr *_cond, PTN_Statement *_post, PTN_Statement *_body) {
   pre       = _pre;
@@ -53,7 +47,7 @@ void PTN_For::useBreak(void) {
 }
 
 sBool PTN_For::semanticCheck(void) {
-	return 
+	return
 		(pre  ? pre->semanticCheckAll()  : 0) &&
 		(cond ? cond->semanticCheck()    : 0) &&
 		(post ? post->semanticCheckAll() : 0) &&
@@ -62,19 +56,19 @@ sBool PTN_For::semanticCheck(void) {
 }
 
 void PTN_For::optimize(void) {
-	if(pre)  
-   { 
-      pre->optimizeAll(); 
+	if(pre)
+   {
+      pre->optimizeAll();
    }
-	tks_optimize_expr(&cond, 1); 
-	cond_opt = cond->getEval(); 
-	if(body)  
-   { 
-      body->optimizeAll(); 
+	tks_optimize_expr(&cond, 1);
+	cond_opt = cond->getEval();
+	if(body)
+   {
+      body->optimizeAll();
    }
-	if(post)  
-   { 
-      post->optimizeAll(); 
+	if(post)
+   {
+      post->optimizeAll();
    }
 }
 
@@ -88,28 +82,28 @@ sBool PTN_For::resolveXRef(void) {
 }
 
 void PTN_For::subGenCallList(void) {
-	if(pre)  
-   {  
-      pre->genCallList();  
-   } 
-	if(body)  
-   {  
-      body->genCallList();  
+	if(pre)
+   {
+      pre->genCallList();
    }
-	if(post)  
-   {  
-      post->genCallList();  
+	if(body)
+   {
+      body->genCallList();
+   }
+	if(post)
+   {
+      post->genCallList();
    }
 }
- 
-static void PTN_For__eval(PTN_Env *_env, const PTN_Statement *_st) { 
+
+static void PTN_For__eval(PTN_Env *_env, const PTN_Statement *_st) {
    Dtracest;
-   const PTN_For*st = (const PTN_For*)_st; 
-   
+   const PTN_For*st = (const PTN_For*)_st;
+
    st->pre->evalFirst(_env);
    YAC_Value r;
    st->cond->eval(_env, &r);
-   while(_env->context->b_running && r.value.int_val && _env->continue_flag)  
+   while(_env->context->b_running && r.value.int_val && _env->continue_flag)
    {
       st->body->evalFirst(_env);
 
@@ -132,16 +126,16 @@ static void PTN_For__eval(PTN_Env *_env, const PTN_Statement *_st) {
    r.unsetFast();
 }
 
-static void PTN_For__eval_break(PTN_Env *_env, const PTN_Statement *_st) { 
+static void PTN_For__eval_break(PTN_Env *_env, const PTN_Statement *_st) {
    Dtracest;
-   const PTN_For*st = (const PTN_For*)_st; 
+   const PTN_For*st = (const PTN_For*)_st;
 
    sBool *bBreak = _env->context->pushBreak();
-   
+
    st->pre->evalFirst(_env);
    YAC_Value r;
    st->cond->eval(_env, &r);
-   while(!*bBreak && _env->context->b_running && r.value.int_val && _env->continue_flag)  
+   while(!*bBreak && _env->context->b_running && r.value.int_val && _env->continue_flag)
    {
       st->body->evalFirst(_env);
 
@@ -166,25 +160,25 @@ static void PTN_For__eval_break(PTN_Env *_env, const PTN_Statement *_st) {
 
    if(*bBreak)
    {
-      _env->continue_flag = 1;
+      _env->continue_flag = YAC_TRUE;
    }
    _env->context->popBreak();
 }
 
-Fevalst PTN_For::getEvalSt(void) const { 
-   return break_tag ? PTN_For__eval_break : PTN_For__eval; 
-} 
- 
-void PTN_For::eval(PTN_Env *_env) const { 
+Fevalst PTN_For::getEvalSt(void) const {
+   return break_tag ? PTN_For__eval_break : PTN_For__eval;
+}
+
+void PTN_For::eval(PTN_Env *_env) const {
 	if(break_tag)
    {
-      PTN_For__eval_break(_env, this); 
+      PTN_For__eval_break(_env, this);
    }
    else
    {
-      PTN_For__eval(_env, this); 
+      PTN_For__eval(_env, this);
    }
-} 
+}
 
 #ifdef TKS_JIT
 sBool PTN_For::forceHybrid(void) {
@@ -193,22 +187,22 @@ sBool PTN_For::forceHybrid(void) {
 
 sU8 PTN_For::compile(VMCore *_vm) {
 	sU8 r=pre->compileHybridStatement(_vm);
-	if(r!=0xFF)
-	{ 
+	if(r != 0xFF)
+	{
       _vm->resetArrayCache(); // ????
-		sU16 cpc=_vm->vm_pc;
-		r=cond->compile(_vm);
-		if(r!=0xFF)
+		sU16 cpc = _vm->vm_pc;
+		r = cond->compile(_vm);
+		if(r != 0xFF)
 		{
 			_vm->typecastStack(r, 1);
 			_vm->addOpcode(VMOP_SITESTZ);
-			sU16 epc=_vm->vm_pc;
+			sU16 epc = _vm->vm_pc;
 			_vm->vm_code[_vm->vm_pc++]=0;
-			r=body->compileHybridStatement(_vm);
-			if(r!=0xFF)
+			r = body->compileHybridStatement(_vm);
+			if(r != 0xFF)
 			{
-				r=post->compileHybridStatement(_vm);
-				if(r!=0xFF)
+				r = post->compileHybridStatement(_vm);
+				if(r != 0xFF)
 				{
 					_vm->addOpcode(VMOP_BRA);
 					_vm->vm_code[_vm->vm_pc++]=cpc;
@@ -226,4 +220,4 @@ sU8 PTN_For::compile(VMCore *_vm) {
 	}
 	return 0xFF;
 }
-#endif
+#endif // TKS_JIT

@@ -1,7 +1,7 @@
 /// TKS_ScriptVariable.cpp
 ///
-/// (c) 2001-2006 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 
 #include <stdlib.h>
@@ -17,7 +17,7 @@
 
 
 TKS_ScriptVariable::TKS_ScriptVariable(void) {
-   var = 0;
+   var = NULL;
 }
 
 TKS_ScriptVariable::~TKS_ScriptVariable() {
@@ -38,7 +38,7 @@ sSI TKS_ScriptVariable::query(void) {
       }
       return 1;
    }
-   return 0; 
+   return 0;
 }
 
 sSI TKS_ScriptVariable::store(void) {
@@ -52,7 +52,7 @@ sSI TKS_ScriptVariable::store(void) {
          return 1;
       }
    }
-   return 0; 
+   return 0;
 }
 
 sSI TKS_ScriptVariable::storeDeref(void) {
@@ -68,15 +68,10 @@ sSI TKS_ScriptVariable::storeDeref(void) {
       }
    }
    return 0;
-} 
+}
 
 YAC_String *TKS_ScriptVariable::getName(void) {
-   if(isValid()) 
-   {
+   if(isValid())
       return &var->name;
-   }
-   else 
-   {
-      return 0;
-   }
+   return NULL;
 }

@@ -1,17 +1,13 @@
-// TKS_Condition.cpp 
-/// 
-/// (c) 2009-2023 by Bastian Spiegel <bs@tkscript.de> 
-///     - distributed under terms of the GNU general public license (GPL). 
-/// 
+// TKS_Condition.cpp
+///
+/// (c) 2009-2026 by Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
+///
 
-#include "tks.h" 
+#include "tks.h"
+#include "TKS_Condition.h"
 
-// Note: pthread implementation is untested
 
-
-#include "TKS_Condition.h" 
-  
- 
 #ifdef DX_PTHREADS
 
 #include <sys/time.h>
@@ -29,13 +25,13 @@ static pthread_mutex_t tks_pthread_mutex_t_init = PTHREAD_MUTEX_INITIALIZER;
 
 static pthread_cond_t tks_pthread_cond_t_init = PTHREAD_COND_INITIALIZER;
 
-TKS_Condition::TKS_Condition(void) { 
+TKS_Condition::TKS_Condition(void) {
    memcpy((void*)&mutex, (const void*)&tks_pthread_mutex_t_init, sizeof(pthread_mutex_t));
    memcpy((void*)&cond, (const void*)&tks_pthread_cond_t_init, sizeof(pthread_cond_t));
    b_condition    = YAC_FALSE;
    b_manual_reset = YAC_FALSE;
    b_created      = YAC_FALSE;
-} 
+}
 
 TKS_Condition::~TKS_Condition() {
    if(b_created)
@@ -120,7 +116,7 @@ sSI TKS_Condition::wait(sSI _timeout) {
       pthread_mutex_lock(&mutex);
 
       // Note: the while loop is used to handle spurious wakeup, see http://en.wikipedia.org/wiki/Spurious_wakeup
-      while(!b_condition) 
+      while(!b_condition)
       {
          if(_timeout)
          {

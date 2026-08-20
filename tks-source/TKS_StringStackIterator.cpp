@@ -1,13 +1,13 @@
 /// TKS_StringStackIterator.cpp
 ///
-/// (c) 2001-2009 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
+
 #include "tks.h"
 #include "YAC_String.h"
 #include "TKS_StringIterator.h"
 #include "TKS_StringStackIterator.h"
-
 
 
 TKS_StringStackIterator::TKS_StringStackIterator(const YAC_String *_s) {

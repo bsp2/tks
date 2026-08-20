@@ -1,7 +1,7 @@
 /// EntityTree.h
 ///
-/// (c) 2005-2013 by Bastian Spiegel <bs@tkscript.de>
-///     - published under the terms of the GNU general public license (GPL).
+/// (c) 2005-2026 by Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 ///
 

@@ -1,8 +1,9 @@
 /// TKS_LFSR.h
 ///
 /// (c) 2020-2026 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
+
 #ifndef TKS_LFSR_H__
 #define TKS_LFSR_H__
 
@@ -69,4 +70,4 @@ protected:
 };
 
 
-#endif // __TKS_LFSR_H__
+#endif // TKS_LFSR_H__

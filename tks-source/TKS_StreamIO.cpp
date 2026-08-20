@@ -1,11 +1,12 @@
 /// TKS_StreamIO.cpp
 ///
-/// (c) 2001-2025 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
+///
 ///     10Jan2004 <bsp> added stdin support
 ///
 
-#include <stdio.h> 
+#include <stdio.h>
 #include <stdlib.h>
 #include "tks.h"
 #ifdef YAC_WIN32
@@ -141,8 +142,8 @@ sBool TKS_StreamIO::openLogic(YAC_String *_name) {
          open_mode   = TKS_LOGIC_OPEN;
          return 1;
       }
-      else  
-		{ 
+      else
+		{
 			read_buffer = NULL;
 			io_offset   = 0;
 			io_size     = 0;
@@ -190,7 +191,7 @@ void TKS_StreamIO::close(void) {
          closeLogic();
          break;
 
-      case TKS_LOCAL_OPEN: 
+      case TKS_LOCAL_OPEN:
          closeLocal();
          break;
    }
@@ -218,11 +219,11 @@ void TKS_StreamIO::closeLocal(void) {
       open_mode   = TKS_CLOSED;
    }
 }
- 
-sSI TKS_StreamIO::read(unsigned char *_buf, sUI _num_bytes) { 
+
+sSI TKS_StreamIO::read(unsigned char *_buf, sUI _num_bytes) {
 	if(NULL == _buf)
    {
-      return 0; 
+      return 0;
    }
 
    switch(open_mode)
@@ -230,7 +231,7 @@ sSI TKS_StreamIO::read(unsigned char *_buf, sUI _num_bytes) {
       case TKS_LOGIC_OPEN:
          return readLogic(_buf, _num_bytes); // fast read
 
-      case TKS_LOCAL_OPEN: 
+      case TKS_LOCAL_OPEN:
          return readLocal(_buf, _num_bytes);
    }
 
@@ -238,7 +239,7 @@ sSI TKS_StreamIO::read(unsigned char *_buf, sUI _num_bytes) {
    return -1;
 }
 
-sSI TKS_StreamIO::readLogic(unsigned char *_buf, sUI _num_bytes) { 
+sSI TKS_StreamIO::readLogic(unsigned char *_buf, sUI _num_bytes) {
    sSI ret = -1;
 
    if(TKS_LOGIC_OPEN == open_mode)
@@ -321,7 +322,7 @@ sSI TKS_StreamIO::readLocal(unsigned char *_buf, sUI _num_bytes) {
 			if(ferror(fhandle))
 			{
 				error_code = ERRIO;
-				*_buf = 0;	// return 0 
+				*_buf = 0;	// return 0
 			}
 			else
 			{
@@ -343,7 +344,7 @@ sSI TKS_StreamIO::readLocal(unsigned char *_buf, sUI _num_bytes) {
          }
 
          if(ret)
-         { 
+         {
             int nread = (int)::fread((char*)_buf, 1, ret, fhandle);
 
             if(nread <= 0)
@@ -352,7 +353,7 @@ sSI TKS_StreamIO::readLocal(unsigned char *_buf, sUI _num_bytes) {
             }
             else
             {
-               error_code = 0; 
+               error_code = 0;
                io_offset += nread;
                ret = nread;
             }
@@ -466,7 +467,7 @@ void TKS_StreamIO::seekLogic(sSI _offset, sUI _type) {
    }
 }
 
-void TKS_StreamIO::seekLocal(sSI _offset, sUI _type) { 
+void TKS_StreamIO::seekLocal(sSI _offset, sUI _type) {
 	if(TKS_LOCAL_OPEN == open_mode)
    {
       switch(_type)
@@ -499,7 +500,7 @@ void TKS_StreamIO::seekLocal(sSI _offset, sUI _type) {
             }
             break;
 
-         case YAC_END: 
+         case YAC_END:
             if( ((io_size + _offset) >= 0) && ((io_size + _offset) <= io_size) )
             {
                io_offset = io_size + _offset;
@@ -527,7 +528,7 @@ sBool TKS_StreamIO::openLocal(char *_name, sSI _access) {
    s.visit(_name);
    return TKS_StreamIO::openLocal(&s, _access);
 }
- 
+
 sBool TKS_StreamIO::openLocal(YAC_String *_name, sSI _access) {
 	if(_access && !tkscript->configuration.b_enablelocalfiles)
 	{
@@ -539,14 +540,14 @@ sBool TKS_StreamIO::openLocal(YAC_String *_name, sSI _access) {
 	YAC_String *name = NULL;
    YAC_String fname;
    name = _name;
-	
+
    read_buffer = NULL;
    io_offset   = 0;
    io_size     = 0;
    error_code  = 0;
 
    if(_access)
-   { 
+   {
 		if(TKS_IOS_INOUT == _access)
       {
 			fhandle = ::fopen((char*)name->chars, "rb+");
@@ -558,11 +559,11 @@ sBool TKS_StreamIO::openLocal(YAC_String *_name, sSI _access) {
 
 		if(NULL != fhandle)
       {
-         open_mode = TKS_LOCAL_OPEN; 
+         open_mode = TKS_LOCAL_OPEN;
 
-			if(TKS_IOS_INOUT == _access) 
+			if(TKS_IOS_INOUT == _access)
 			{
-				fseek(fhandle, 0, SEEK_END); 
+				fseek(fhandle, 0, SEEK_END);
 				io_size = ftell(fhandle);
 
 				if(io_size < 0)
@@ -570,12 +571,12 @@ sBool TKS_StreamIO::openLocal(YAC_String *_name, sSI _access) {
 					io_size = 0;
             }
 
-				io_offset = io_size; 
-			} 
-			else 
-			{ 
-				io_size = io_offset = 0; 
-			} 
+				io_offset = io_size;
+			}
+			else
+			{
+				io_size = io_offset = 0;
+			}
          return 1;
       }
       else
@@ -584,15 +585,15 @@ sBool TKS_StreamIO::openLocal(YAC_String *_name, sSI _access) {
       }
    }
    else
-   { 
-		fhandle = fopen((char*)name->chars, "rb"); 
+   {
+		fhandle = fopen((char*)name->chars, "rb");
 
 		if(NULL != fhandle)
       {
 			fseek(fhandle, 0, SEEK_END);
 			io_size = ftell(fhandle);
 			fseek(fhandle, 0, SEEK_SET);
-         open_mode = TKS_LOCAL_OPEN; 
+         open_mode = TKS_LOCAL_OPEN;
          return 1;
       }
       else
@@ -603,7 +604,7 @@ sBool TKS_StreamIO::openLocal(YAC_String *_name, sSI _access) {
 
    return 0;
 }
- 
+
 sBool TKS_StreamIO::isOpen(void) {
    return (0 != open_mode);
 }
@@ -620,11 +621,11 @@ sUI TKS_StreamIO::getFileSize(void) {
    return io_size;
 }
 
-void TKS_StreamIO::flush(void) { 
-	switch(open_mode) 
-	{ 
-      case TKS_LOCAL_OPEN: 
-         fflush(fhandle); 
-         break; 
+void TKS_StreamIO::flush(void) {
+	switch(open_mode)
+	{
+      case TKS_LOCAL_OPEN:
+         fflush(fhandle);
+         break;
 	}
 }

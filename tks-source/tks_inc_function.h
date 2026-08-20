@@ -1,7 +1,7 @@
 /// tks_inc_function.h
 ///
-/// (c) 2010-2014 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2010-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 
 #include "PTN_Node.h"
@@ -14,7 +14,7 @@
 #include "PTN_ArgListNode.h"
 #include "PTN_ArgList.h"
 #include "TKS_FormalArgument.h"
-#include "TKS_ScriptConstraint.h" 
+#include "TKS_ScriptConstraint.h"
 #include "TKS_ScriptObjectID.h"
 #include "TKS_FunctionObject.h"
-#include "PTN_Function.h" 
+#include "PTN_Function.h"

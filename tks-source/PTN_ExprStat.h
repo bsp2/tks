@@ -1,21 +1,22 @@
 /// PTN_ExprStat.h
 ///
-/// (c) 2001-2009 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
-#ifndef __PTN_EXPRSTAT_H__
-#define __PTN_EXPRSTAT_H__
 
- 
+#ifndef PTN_EXPRSTAT_H__
+#define PTN_EXPRSTAT_H__
+
+
 class PTN_ExprStat : public PTN_Statement {
 public:
    PTN_Expr *expr;
    Feval     expr_opt;
-   
+
 public:
    PTN_ExprStat(PTN_Expr *);
    ~PTN_ExprStat();
-   
+
    sBool   semanticCheck (void);
    void    eval          (PTN_Env *_env) const;
    Fevalst getEvalSt     (void) const;
@@ -24,4 +25,4 @@ public:
 };
 
 
-#endif // __PTN_EXPRSTAT_H__
+#endif // PTN_EXPRSTAT_H__

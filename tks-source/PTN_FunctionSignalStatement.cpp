@@ -1,7 +1,7 @@
 /// PTN_FunctionSignalStatement.cpp
 ///
-/// (c) 2001-2023 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 
 #include "tks.h"
@@ -15,7 +15,7 @@
 #include "PTN_ArgListNode.h"
 #include "PTN_ArgList.h"
 #include "PTN_ArgVar.h"
-#include "PTN_ArgVarList.h" 
+#include "PTN_ArgVarList.h"
 #include "TKS_FormalArgument.h"
 #include "TKS_ScriptObjectID.h"
 #include "TKS_FunctionObject.h"
@@ -59,19 +59,19 @@ PTN_FunctionSignalStatement::~PTN_FunctionSignalStatement() {
 
 
 sBool PTN_FunctionSignalStatement::semanticCheck(void) {
-	if( (NULL == function_object) && (NULL == cached_object) ) 
+	if( (NULL == function_object) && (NULL == cached_object) )
    {
-		return 1; // autobind mode 
+		return 1; // autobind mode
    }
-	return 
-      (NULL != function_object) && 
+	return
+      (NULL != function_object) &&
       (NULL != cached_object)
       ;
 }
- 
-static void PTN_FunctionSignalStatement__eval(PTN_Env *_env, const PTN_Statement *_st) {  
+
+static void PTN_FunctionSignalStatement__eval(PTN_Env *_env, const PTN_Statement *_st) {
    Dtracest;
-	const PTN_FunctionSignalStatement *st = (const PTN_FunctionSignalStatement*)_st; 
+	const PTN_FunctionSignalStatement *st = (const PTN_FunctionSignalStatement*)_st;
 
 	if( (NULL == st->function_object) && (NULL == st->cached_object) )
 	{
@@ -87,51 +87,51 @@ static void PTN_FunctionSignalStatement__eval(PTN_Env *_env, const PTN_Statement
 			{
 				TKS_CachedScript *cs=(TKS_CachedScript*)c->data;
 				PTN_Function *f;
-				YAC_String t; 
-				// ---- scan all classes  ---- 
-				for(i=0; i<YAC_MAX_CLASSES; i++) 
-				{ 
-					TKS_ClassTemplate *clt = TKSCRIPT__ATOM_SPEEDPATH[i]; 
-					if(clt) 
-					{ 
-						if(clt->may_instantiate==YAC_CLASSTYPE_STATIC) 
-						{ 
-							sSI j=clt->num_signals; 
-							if(j) 
-							{ 
-								while(--j>=0) // ---- scan all signals ---- 
-								{ 
-									TKS_SignalEntry *sig=&clt->signals[j]; 
-									f = cs->findFunction(&sig->name); 
+				YAC_String t;
+				// ---- scan all classes  ----
+				for(i=0; i<YAC_MAX_CLASSES; i++)
+				{
+					TKS_ClassTemplate *clt = TKSCRIPT__ATOM_SPEEDPATH[i];
+					if(clt)
+					{
+						if(clt->may_instantiate==YAC_CLASSTYPE_STATIC)
+						{
+							sSI j=clt->num_signals;
+							if(j)
+							{
+								while(--j>=0) // ---- scan all signals ----
+								{
+									TKS_SignalEntry *sig=&clt->signals[j];
+									f = cs->findFunction(&sig->name);
 									if(f != NULL)
-									{ 
-										if(tkscript->configuration.debug_level>63) 
+									{
+										if(tkscript->configuration.debug_level>63)
                               {
-                                 Dprintf("[...] autobind signal %s::%s\n", 
-                                    (sChar*)clt->class_name.chars, (sChar*)sig->name.chars); 
+                                 Dprintf("[...] autobind signal %s::%s\n",
+                                    (sChar*)clt->class_name.chars, (sChar*)sig->name.chars);
                               }
-										clt->template_object->yacRegisterSignal(j, (YAC_FunctionHandle) f->getOrCreateFunctionObject()); 
+										clt->template_object->yacRegisterSignal(j, (YAC_FunctionHandle) f->getOrCreateFunctionObject());
 									}
                            else
                            {
                               //printf("[dbg] failed to auto-bind signal \"%s:%s\"\n", clt->class_name.chars, sig->name.chars);
                            }
-								} 
-							} 
-						} 
-					} 
+								}
+							}
+						}
+					}
 				}
 			}
 		}
 		return;
-	} 
+	}
 
    // Bind function to signal slot in YAC_Object
-   YAC_Value *co = Dgetvar(st->cached_object); 
-   
+   YAC_Value *co = Dgetvar(st->cached_object);
+
    if(TKS_VALID(co->value.object_val))
    {
-      co->value.object_val->yacRegisterSignal(st->signal_id, (YAC_FunctionHandle) st->function_object); 
+      co->value.object_val->yacRegisterSignal(st->signal_id, (YAC_FunctionHandle) st->function_object);
    }
    else
    {
@@ -146,4 +146,3 @@ Fevalst PTN_FunctionSignalStatement::getEvalSt(void) const {
 void PTN_FunctionSignalStatement::eval(PTN_Env *_env) const {
 	PTN_FunctionSignalStatement__eval(_env, this);
 }
-

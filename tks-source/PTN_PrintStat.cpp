@@ -1,7 +1,7 @@
 /// PTN_PrintStat.cpp
 ///
-/// (c) 2001-2022 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 ///
 
@@ -19,15 +19,15 @@
 PTN_PrintStat::PTN_PrintStat(void) {
    target      = 0;
    expr        = NULL;
-   dep_dtrace  = 0; 
+   dep_dtrace  = 0;
    add_newline = 0;
 }
 
 PTN_PrintStat::PTN_PrintStat(sU8 _d, PTN_Expr *_expr, sBool _depdtrace, sBool _addnewline) {
    target      = _d;
-   expr        = _expr; 
+   expr        = _expr;
    expr_opt    = expr->getEval();
-   dep_dtrace  = _depdtrace; 
+   dep_dtrace  = _depdtrace;
    add_newline = _addnewline;
 }
 
@@ -36,14 +36,14 @@ PTN_PrintStat::~PTN_PrintStat() {
 }
 
 sBool PTN_PrintStat::semanticCheck(void) {
-   return 
+   return
       (expr ? expr->semanticCheck() : 0)
       ;
 }
 
 void PTN_PrintStat::optimize(void) {
-   tks_optimize_expr(&expr, 0); 
-   expr_opt = expr->getEval(); 
+   tks_optimize_expr(&expr, 0);
+   expr_opt = expr->getEval();
 }
 
 
@@ -51,22 +51,22 @@ sBool PTN_PrintStat::resolveXRef(void) {
    return (expr->resolveXRef());
 }
 
-static void PTN_PrintStat__eval(PTN_Env *_env, const PTN_Statement *_st) { 
+static void PTN_PrintStat__eval(PTN_Env *_env, const PTN_Statement *_st) {
    Dtracest;
-   const PTN_PrintStat *st = (const PTN_PrintStat*)_st; 
-   
+   const PTN_PrintStat *st = (const PTN_PrintStat*)_st;
+
    const char *e_msg = NULL;
 
-   if(st->dep_dtrace) 
+   if(st->dep_dtrace)
    {
-      if(!tkscript->dtrace_enabled) 
+      if(!tkscript->dtrace_enabled)
       {
-         return;  
-      } 
+         return;
+      }
    }
-   if(!tkscript->configuration.b_enableprint && !st->target)  
+   if(!tkscript->configuration.b_enableprint && !st->target)
    {
-      return; 
+      return;
    }
 
 #ifdef TKS_MT
@@ -85,118 +85,122 @@ static void PTN_PrintStat__eval(PTN_Env *_env, const PTN_Statement *_st) {
       Dhandleexception(st->expr);
       return;
    }
-   
+
    switch(r.type)
    {
-   case 0:
-      // ---- void ----  
-      if(st->add_newline) 
-      {
-         tkscript->print("<void>\n", st->target);  
-      } 
-      else 
-      { 
-         tkscript->print("<void>", st->target);  
-      }
-      e_msg = "<void>";
-      break;
-   case 1:
-      // ---- int ----
-      {
-         YAC_String t; 
-         t.yacValueOfI(r.value.int_val); 
-         tkscript->print((char*)t.chars, st->target);
-         if(st->add_newline)  
-         { 
-            tkscript->print("\n", st->target); 
-         }
-         e_msg = (char*) t.chars;
-      }
-      break;
-   case 2:
-      // ---- float ----
-      {
-         YAC_String t; 
-         t.yacValueOfF32(r.value.float_val);
-         tkscript->print((char*)t.chars, st->target);
-         if(st->add_newline)  
-         { 
-            tkscript->print("\n", st->target); 
-         }
-         e_msg = (char*) t.chars;
-      }
-      break;
-   case 3:
-      // ---- object ---- 
-      if(YAC_VALID(r.value.object_val))
-      {
-         YAC_String t; 
-         if(!r.value.object_val->yacToString(&t)) 
-         {
-            t.alloc(128);
-            t.printf("<Object %s @%p>",
-               (char*)r.value.object_val->yacClassName(),  
-               (void*)r.value.object_val  
-               ); 
-         } 
-         tkscript->print((char*)t.chars, st->target); 
-
-         if(st->add_newline)  
-         { 
-            tkscript->print("\n", st->target); 
-         }
-         e_msg = (char*) t.chars;
-      }
-      else  
-      { 
+      case 0:
+         // ---- void ----
          if(st->add_newline)
          {
-            tkscript->print("<null>\n", st->target); 
+            tkscript->print("<void>\n", st->target);
          }
          else
          {
-            tkscript->print("<null>", st->target); 
+            tkscript->print("<void>", st->target);
          }
-         e_msg = "<null>";
+         e_msg = "<void>";
+         break;
+
+      case 1:
+         // ---- int ----
+      {
+         YAC_String t;
+         t.yacValueOfI(r.value.int_val);
+         tkscript->print((char*)t.chars, st->target);
+         if(st->add_newline)
+         {
+            tkscript->print("\n", st->target);
+         }
+         e_msg = (char*) t.chars;
       }
       break;
-   case 4:
-      // ---- string ----
-      if(YAC_BCHK(r.value.string_val, YAC_CLID_STRING))
+
+      case 2:
+         // ---- float ----
       {
-         if(r.value.string_val->length > 1u)
+         YAC_String t;
+         t.yacValueOfF32(r.value.float_val);
+         tkscript->print((char*)t.chars, st->target);
+         if(st->add_newline)
          {
-            tkscript->print((char*)r.value.string_val->chars, st->target);
+            tkscript->print("\n", st->target);
+         }
+         e_msg = (char*) t.chars;
+      }
+      break;
+
+      case 3:
+         // ---- object ----
+         if(YAC_VALID(r.value.object_val))
+         {
+            YAC_String t;
+            if(!r.value.object_val->yacToString(&t))
+            {
+               t.alloc(128);
+               t.printf("<Object %s @%p>",
+                        (char*)r.value.object_val->yacClassName(),
+                        (void*)r.value.object_val
+                        );
+            }
+            tkscript->print((char*)t.chars, st->target);
+
             if(st->add_newline)
             {
-               if(!r.value.string_val->endsWith("\n")) 
-               {
-                  tkscript->print("\n", st->target); 
-               }
+               tkscript->print("\n", st->target);
             }
-
-            e_msg = (char*) r.value.string_val->chars;
+            e_msg = (char*) t.chars;
          }
          else
          {
             if(st->add_newline)
-               tkscript->print("\n", st->target);
-            e_msg = "";
+            {
+               tkscript->print("<null>\n", st->target);
+            }
+            else
+            {
+               tkscript->print("<null>", st->target);
+            }
+            e_msg = "<null>";
          }
-      }
-      else  
-      { 
-         if(st->add_newline) 
-         { 
-            tkscript->print("<null>\n", st->target);  
-         } 
-         else 
-         { 
-            tkscript->print("<null>", st->target);  
-         } 
-         e_msg = "<null>";
-      }
-      break;
+         break;
+
+      case 4:
+         // ---- string ----
+         if(YAC_BCHK(r.value.string_val, YAC_CLID_STRING))
+         {
+            if(r.value.string_val->length > 1u)
+            {
+               tkscript->print((char*)r.value.string_val->chars, st->target);
+               if(st->add_newline)
+               {
+                  if(!r.value.string_val->endsWith("\n"))
+                  {
+                     tkscript->print("\n", st->target);
+                  }
+               }
+
+               e_msg = (char*) r.value.string_val->chars;
+            }
+            else
+            {
+               if(st->add_newline)
+                  tkscript->print("\n", st->target);
+               e_msg = "";
+            }
+         }
+         else
+         {
+            if(st->add_newline)
+            {
+               tkscript->print("<null>\n", st->target);
+            }
+            else
+            {
+               tkscript->print("<null>", st->target);
+            }
+            e_msg = "<null>";
+         }
+         break;
    }
 
 #ifdef TKS_MT
@@ -212,9 +216,9 @@ static void PTN_PrintStat__eval(PTN_Env *_env, const PTN_Statement *_st) {
 }
 
 Fevalst PTN_PrintStat::getEvalSt(void) const {
-   return PTN_PrintStat__eval; 
-} 
+   return PTN_PrintStat__eval;
+}
 
 void PTN_PrintStat::eval(PTN_Env *_env) const {
-   PTN_PrintStat__eval(_env, this); 
+   PTN_PrintStat__eval(_env, this);
 }

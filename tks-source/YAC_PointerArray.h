@@ -1,10 +1,11 @@
 /// YAC_PointerArray.h
 ///
-/// (c) 2001-2024 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
-#ifndef __YAC_POINTERARRAY_H__
-#define __YAC_POINTERARRAY_H__
+
+#ifndef YAC_POINTERARRAY_H__
+#define YAC_POINTERARRAY_H__
 
 
 class YAC_PointerArray :  public YAC_Object {
@@ -89,4 +90,4 @@ public:
 };
 
 
-#endif // __YAC_POINTERARRAY_H__
+#endif // YAC_POINTERARRAY_H__

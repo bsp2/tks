@@ -1,7 +1,7 @@
 /// TKS_ClassDeclMethod.cpp
 ///
-/// (c) 2001-2023 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 
 #include "tks.h"
@@ -67,4 +67,3 @@ sBool TKS_ClassDeclMethod::isAbstractInClass(TKS_ClassDecl *_cd) {
    return 1;
 }
 #endif // TKS_CHECK_ABSTRACTCALL
-

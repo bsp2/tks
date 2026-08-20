@@ -1,7 +1,7 @@
 /// PTN_InstanceOfExpr.cpp
 ///
-/// (c) 2004-2009 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 
 #include "tks.h"
@@ -27,11 +27,11 @@ PTN_InstanceOfExpr::~PTN_InstanceOfExpr() {
    }
 }
 
-static void PTN_InstanceOfExpr__eval(PTN_Env *_env, YAC_Value *_r, const PTN_Expr *_st) { 
+static void PTN_InstanceOfExpr__eval(PTN_Env *_env, YAC_Value *_r, const PTN_Expr *_st) {
    Dtracest;
    const PTN_InstanceOfExpr *e = (const PTN_InstanceOfExpr*)_st;
 
-   YAC_Value lv; 
+   YAC_Value lv;
    e->this_expr_opt(_env, &lv, e->this_expr);
    if(Dhaveexception)
    {
@@ -40,7 +40,7 @@ static void PTN_InstanceOfExpr__eval(PTN_Env *_env, YAC_Value *_r, const PTN_Exp
       return;
    }
 
-   YAC_Value rv; 
+   YAC_Value rv;
    e->object_expr_opt(_env, &rv, e->object_expr);
    if(Dhaveexception)
    {
@@ -50,17 +50,17 @@ static void PTN_InstanceOfExpr__eval(PTN_Env *_env, YAC_Value *_r, const PTN_Exp
       return;
    }
 
-   if(lv.type>=YAC_TYPE_OBJECT) 
+   if(lv.type>=YAC_TYPE_OBJECT)
    {
       if(rv.type>=YAC_TYPE_OBJECT)
-      { 
-         if(YAC_VALID(lv.value.object_val)) 
-         { 
-            if(YAC_VALID(rv.value.object_val)) 
+      {
+         if(YAC_VALID(lv.value.object_val))
+         {
+            if(YAC_VALID(rv.value.object_val))
             {
                if(YAC_IS_METACLASS(rv.value.object_val))
                {
-                  // ---- compare to meta class 
+                  // ---- compare to meta class
                   _r->initInt(lv.value.object_val->yacMetaClassInstanceOf(rv.value.object_val));
                }
                else
@@ -70,22 +70,22 @@ static void PTN_InstanceOfExpr__eval(PTN_Env *_env, YAC_Value *_r, const PTN_Exp
                }
                lv.unsetFast();
                rv.unsetFast();
-               return; 
+               return;
             }
-         } 
-         else 
-         { 
-            _r->initInt(0); 
          }
-      } 
-      else 
-      { 
-         _r->initInt(0); 
-      } 
+         else
+         {
+            _r->initInt(0);
+         }
+      }
+      else
+      {
+         _r->initInt(0);
+      }
    }
    lv.unsetFast();
    rv.unsetFast();
-   _r->initInt(0); 
+   _r->initInt(0);
 }
 
 void PTN_InstanceOfExpr::eval(PTN_Env *_env, YAC_Value *_r) const {
@@ -97,31 +97,31 @@ Feval PTN_InstanceOfExpr::getEval(void) const {
 }
 
 sBool PTN_InstanceOfExpr::semanticCheck(void) {
-   if(this_expr) 
+   if(this_expr)
    {
-      if(this_expr->semanticCheck()) 
+      if(this_expr->semanticCheck())
       {
-         if(object_expr) 
+         if(object_expr)
          {
-            return object_expr->semanticCheck(); 
-         } 
-      } 
+            return object_expr->semanticCheck();
+         }
+      }
    }
-   return 0;
+   return YAC_FALSE;
 }
 
 sBool PTN_InstanceOfExpr::resolveXRef(void) {
-   if(this_expr) 
+   if(this_expr)
    {
-      if(this_expr->resolveXRef()) 
+      if(this_expr->resolveXRef())
       {
-         if(object_expr) 
+         if(object_expr)
          {
-            return object_expr->resolveXRef(); 
-         } 
-      } 
+            return object_expr->resolveXRef();
+         }
+      }
    }
-   return 0;
+   return YAC_FALSE;
 }
 
 sBool PTN_InstanceOfExpr::isConst(void) {
@@ -134,4 +134,3 @@ void PTN_InstanceOfExpr::optimize(void) {
    this_expr_opt   =   this_expr->getEval();
    object_expr_opt = object_expr->getEval();
 }
-

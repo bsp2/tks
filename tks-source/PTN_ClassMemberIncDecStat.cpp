@@ -1,7 +1,7 @@
 /// PTN_ClassMemberIncDecStat.cpp
 ///
-/// (c) 2001-2013 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 
 #include "tks.h"
@@ -11,10 +11,10 @@
 #include "PTN_ClassMemberIncDecStat.h"
 
 
-PTN_ClassMemberIncDecStat::PTN_ClassMemberIncDecStat(TKS_CachedObject *_co,  
-                                                     TKS_CachedObject *_cc_co,  
-                                                     sBool             _dec 
-                                                     )  
+PTN_ClassMemberIncDecStat::PTN_ClassMemberIncDecStat(TKS_CachedObject *_co,
+                                                     TKS_CachedObject *_cc_co,
+                                                     sBool             _dec
+                                                     )
 {
    var        = _co;
    member     = _cc_co;
@@ -22,15 +22,15 @@ PTN_ClassMemberIncDecStat::PTN_ClassMemberIncDecStat(TKS_CachedObject *_co,
    class_id   = TKS_INVALID_SCRIPT_CLASS_ID;
    dec        = _dec;
    b_indirect = 0;
-   if(var) 
+   if(var)
    {
-      if(var->type == YAC_TYPE_OBJECT) 
+      if(var->type == YAC_TYPE_OBJECT)
       {
-         if(var->value.object_val) 
+         if(var->value.object_val)
          {
-            class_id = ((TKS_ScriptClassInstance*)var->value.object_val)->class_decl->class_id; 
-         } 
-      } 
+            class_id = ((TKS_ScriptClassInstance*)var->value.object_val)->class_decl->class_id;
+         }
+      }
    }
 }
 
@@ -40,14 +40,14 @@ PTN_ClassMemberIncDecStat::~PTN_ClassMemberIncDecStat() {
 }
 
 sBool PTN_ClassMemberIncDecStat::semanticCheck(void) {
-   return 
+   return
       (TKS_INVALID_SCRIPT_CLASS_ID != class_id)   &&
-      (NULL != member)     
+      (NULL != member)
       ;
 }
 
-static void PTN_ClassMemberIncDecStat__eval(PTN_Env *_env, const PTN_Statement *_st) { 
-   const PTN_ClassMemberIncDecStat *st = (const PTN_ClassMemberIncDecStat*)_st; 
+static void PTN_ClassMemberIncDecStat__eval(PTN_Env *_env, const PTN_Statement *_st) {
+   const PTN_ClassMemberIncDecStat *st = (const PTN_ClassMemberIncDecStat*)_st;
    Dtracest;
 
    TKS_ScriptClassInstance *robj;
@@ -66,11 +66,11 @@ static void PTN_ClassMemberIncDecStat__eval(PTN_Env *_env, const PTN_Statement *
 
    if(TKS_VALID(robj))
    {
-#ifdef DX_SAFEMODE 
+#ifdef DX_SAFEMODE
       if(robj->class_ID==YAC_CLID_CLASS)
-      { 
+      {
          if(robj->class_decl->ancestor_table[st->class_id])
-         { 
+         {
 #endif
             if(st->dec)
             {
@@ -84,18 +84,18 @@ static void PTN_ClassMemberIncDecStat__eval(PTN_Env *_env, const PTN_Statement *
          }
          // else classtype mismatch
       }
-#endif 
+#endif
    }
    else
    {
       Drtthrowinvalidpointer(st, "invalid <this> object", robj);
-   } 
+   }
 }
 
-void PTN_ClassMemberIncDecStat::eval(PTN_Env *_env) const { 
-   PTN_ClassMemberIncDecStat__eval(_env, this); 
-} 
+void PTN_ClassMemberIncDecStat::eval(PTN_Env *_env) const {
+   PTN_ClassMemberIncDecStat__eval(_env, this);
+}
 
-Fevalst PTN_ClassMemberIncDecStat::getEvalSt(void) const { 
-   return PTN_ClassMemberIncDecStat__eval; 
-} 
+Fevalst PTN_ClassMemberIncDecStat::getEvalSt(void) const {
+   return PTN_ClassMemberIncDecStat__eval;
+}

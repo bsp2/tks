@@ -1,7 +1,7 @@
 /// TKS_ObjectArrayIterator.cpp
 ///
-/// (c) 2001-2009 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 
 #include "tks.h"
@@ -20,15 +20,14 @@ TKS_ObjectArrayIterator::~TKS_ObjectArrayIterator() {
 }
 
 void YAC_VCALL TKS_ObjectArrayIterator::getNext(YAC_Value *r) {
-   if(current_index<array->num_elements) 
+   if(current_index<array->num_elements)
    {
-      r->initObject(array->elements[current_index++], 0); 
+      r->initObject(array->elements[current_index++], 0);
    }
    else
    {
-      r->type      = 0xFF; 
-      r->value.any = NULL; 
-      r->deleteme  = 0; 
+      r->type      = 0xFF;
+      r->value.any = NULL;
+      r->deleteme  = 0;
    }
 }
-

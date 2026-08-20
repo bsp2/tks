@@ -1,7 +1,7 @@
 /// PTN_FunctionECall.cpp
 ///
-/// (c) 2001-2025 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 
 #include "tks.h"
@@ -27,6 +27,7 @@
 #include "tks_inc_compiler.h"
 
 #include "TKS_Mutex.h"
+
 
 PTN_FunctionECall::PTN_FunctionECall(void) {
    fun         = NULL;

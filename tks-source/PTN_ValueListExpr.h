@@ -1,24 +1,25 @@
 /// PTN_ValueListExpr.h
 ///
-/// (c) 2001-2009 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
-#ifndef __PTN_VALUELISTEXPR_H__
-#define __PTN_VALUELISTEXPR_H__
+
+#ifndef PTN_VALUELISTEXPR_H__
+#define PTN_VALUELISTEXPR_H__
 
 
 class PTN_ValueListExpr : public PTN_Expr {
 public:
-	YAC_ListNode      *value_list;
+	YAC_ListNode       *value_list;
 	PTN_ValueListEntry *first_entry;
 	PTN_ValueListEntry *last_entry;
-	sBool              is_const;
-   sBool              b_always_new;
+	sBool               is_const;
+   sBool               b_always_new;
 
 public:
 	PTN_ValueListExpr  (sBool _bAlwaysNew);
 	~PTN_ValueListExpr (void);
-	
+
 	void        addExpr           (PTN_Expr *_expr);
 	sBool       semanticCheck     (void);
 	sBool       resolveXRef       (void);
@@ -31,4 +32,4 @@ public:
 };
 
 
-#endif // __PTN_VALUELISTEXPR_H__
+#endif // PTN_VALUELISTEXPR_H__

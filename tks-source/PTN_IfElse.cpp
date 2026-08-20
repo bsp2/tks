@@ -1,9 +1,8 @@
 /// PTN_IfElse.cpp
 ///
-/// (c) 2001-2014 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
-
 
 #include "tks.h"
 #include "PTN_Node.h"
@@ -22,7 +21,7 @@ PTN_IfElse::PTN_IfElse(void) {
 }
 
 PTN_IfElse::PTN_IfElse(PTN_Expr *_cond, PTN_Statement *_body, PTN_Statement *_else_body) {
-   cond      = _cond; 
+   cond      = _cond;
    cond_opt  = cond->getEval(); // xxx
    body      = _body;
    else_body = _else_body;
@@ -30,9 +29,7 @@ PTN_IfElse::PTN_IfElse(PTN_Expr *_cond, PTN_Statement *_body, PTN_Statement *_el
 
 PTN_IfElse::~PTN_IfElse() {
    TKS_DELETE_SAFE(cond);
-
    TKS_DELETE_SAFE(body);
-
    TKS_DELETE_SAFE(else_body);
 }
 
@@ -41,7 +38,7 @@ sUI PTN_IfElse::getID(void) const {
 }
 
 sBool PTN_IfElse::semanticCheck(void) {
-   return 
+   return
       (cond ? cond->semanticCheck() : 0)    &&
       (body ? body->semanticCheckAll() : 0) &&
       (else_body ? else_body->semanticCheckAll() : 1)
@@ -49,14 +46,14 @@ sBool PTN_IfElse::semanticCheck(void) {
 }
 
 void PTN_IfElse::optimize(void) {
-   tks_optimize_expr(&cond, 1); 
-   cond_opt = cond->getEval(); 
-   if(body)  
-   { 
+   tks_optimize_expr(&cond, 1);
+   cond_opt = cond->getEval();
+   if(body)
+   {
       body->optimizeAll();
    }
-   if(else_body)  
-   { 
+   if(else_body)
+   {
       else_body->optimizeAll();
    }
 }
@@ -70,23 +67,23 @@ sBool PTN_IfElse::resolveXRef(void) {
 }
 
 void PTN_IfElse::subGenCallList(void) {
-   if(body)  
-   { 
-      body->genCallList(); 
+   if(body)
+   {
+      body->genCallList();
    }
-   if(else_body)  
-   { 
-      else_body->genCallList(); 
+   if(else_body)
+   {
+      else_body->genCallList();
    }
 }
 
-static void PTN_IfElse__eval(PTN_Env *_env, const PTN_Statement *_st) { 
+static void PTN_IfElse__eval(PTN_Env *_env, const PTN_Statement *_st) {
    Dtracest;
-   const PTN_IfElse *st = (const PTN_IfElse*)_st; 
-   
-   YAC_Value r; 
+   const PTN_IfElse *st = (const PTN_IfElse*)_st;
+
+   YAC_Value r;
    r.value.any = NULL;
-   st->cond_opt(_env, &r, st->cond); 
+   st->cond_opt(_env, &r, st->cond);
    if(Dhaveexception)
    {
       r.unsetFast();
@@ -94,24 +91,24 @@ static void PTN_IfElse__eval(PTN_Env *_env, const PTN_Statement *_st) {
       return;
    }
 
-   if(!r.isNullOrIF0())   
+   if(!r.isNullOrIF0())
    {
-      st->body->evalFirst(_env); 
+      st->body->evalFirst(_env);
    }
-   else if(st->else_body)   
+   else if(st->else_body)
    {
-      st->else_body->evalFirst(_env); 
+      st->else_body->evalFirst(_env);
    }
    r.unsetFast();
-} 
+}
 
-Fevalst PTN_IfElse::getEvalSt(void) const { 
-   return PTN_IfElse__eval; 
-} 
+Fevalst PTN_IfElse::getEvalSt(void) const {
+   return PTN_IfElse__eval;
+}
 
-void PTN_IfElse::eval(PTN_Env *_env) const { 
-   PTN_IfElse__eval(_env, this); 
-} 
+void PTN_IfElse::eval(PTN_Env *_env) const {
+   PTN_IfElse__eval(_env, this);
+}
 
 #ifdef TKS_JIT
 sBool PTN_IfElse::forceHybrid(void) {
@@ -138,33 +135,33 @@ sU8 PTN_IfElse::compile(VMCore *_vm) {
             _vm->vm_code[_vm->vm_pc++]=0;
             epc=_vm->vm_pc;
             r=else_body->compileHybridStatement(_vm);
-            if(r==0xFF)  
-            { 
-               return 0xFF; 
+            if(r==0xFF)
+            {
+               return 0xFF;
             }
          }
-         else 
+         else
          {
-            epc=_vm->vm_pc; 
+            epc=_vm->vm_pc;
          }
          _vm->vm_code[spc]=epc;
-         if(xpc)	 
-         { 
-            _vm->vm_code[xpc]=_vm->vm_pc; 
+         if(xpc)
+         {
+            _vm->vm_code[xpc]=_vm->vm_pc;
          }
 
           _vm->resetArrayCache();
 
-         if(next)  
-         { 
-            return next->compileHybridStatement(_vm); 
+         if(next)
+         {
+            return next->compileHybridStatement(_vm);
          }
-         else  
-         { 
-            return 0; 
+         else
+         {
+            return 0;
          }
       }
    }
    return 0xFF;
 }
-#endif
+#endif // TKS_JIT

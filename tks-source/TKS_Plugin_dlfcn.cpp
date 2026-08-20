@@ -1,7 +1,7 @@
 /// TKS_Plugin_dlfcn.cpp
 ///
-/// (c) 2001-2023 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 
 #ifndef HAVE_DLFCN
@@ -18,11 +18,11 @@
 
 #ifdef YAC_LINUX
 #define Dappendlibsuffix path_name.append(".so")
-#endif 
+#endif
 
-#ifdef YAC_MACOS 
+#ifdef YAC_MACOS
 #define Dappendlibsuffix path_name.append(".dylib")
-#endif 
+#endif
 
 static void fix_dir_separator(YAC_String *path_name) {
    if(!path_name->endsWith("/"))

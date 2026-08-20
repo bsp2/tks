@@ -1,7 +1,7 @@
 /// YAC_Float.cpp
 ///
-/// (c) 2004-2024 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2004-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 
 #include <stdio.h>
@@ -19,8 +19,8 @@ YAC_Float::~YAC_Float(void) {
 }
 
 void YAC_Float::_New (sF32 _v, YAC_Value *_r) {
-   YAC_Float *ro=(YAC_Float *)YAC_NEW_CORE_POOLED(YAC_CLID_FLOAT);
-   ro->value=_v;
+   YAC_Float *ro = (YAC_Float *)YAC_NEW_CORE_POOLED(YAC_CLID_FLOAT);
+   ro->value = _v;
    _r->initObject(ro, 1);
 }
 
@@ -208,5 +208,5 @@ sBool YAC_VCALL YAC_Float::yacToString(YAC_String *rs) const {
    rs->alloc(32);
    Dyac_snprintf((char*)rs->chars, 32, "%g", value);
    rs->fixLength();
-   return 1;
+   return YAC_TRUE;
 }

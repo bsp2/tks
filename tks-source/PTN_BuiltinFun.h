@@ -1,7 +1,7 @@
 /// PTN_BuiltinFun.h
 ///
-/// (c) 2001-2024 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 
 #ifndef PTN_BUILTINFUN_H__
@@ -71,4 +71,3 @@ public:
 
 
 #endif // PTN_BUILTINFUN_H__
-

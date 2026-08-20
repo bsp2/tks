@@ -1,7 +1,7 @@
 /// PTN_ArgVar.cpp
 ///
-/// (c) 2001-2014 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 
 #include "tks.h"
@@ -15,14 +15,14 @@
 
 PTN_ArgVar::PTN_ArgVar(TKS_CachedObject *_var) {
    next = NULL;
-   var  = _var; 
+   var  = _var;
 }
 
 PTN_ArgVar::~PTN_ArgVar() {
    if(NULL != next)
    {
-      delete next;  
-      next = NULL;  
+      delete next;
+      next = NULL;
       var  = NULL;
    }
 }

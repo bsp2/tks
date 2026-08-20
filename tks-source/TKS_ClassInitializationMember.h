@@ -1,7 +1,7 @@
 /// TKS_ClassInitializationMember.h
 ///
 /// (c) 2005-2026 Bastian Spiegel <bs@tkscript.de>
-///    - distributed under terms of the GNU general public license (GPL).
+///    - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 ///
 #ifndef TKS_CLASSINITIALIZATION_MEMBER_H__

@@ -1,17 +1,18 @@
 /// TKS_ScriptVariable.h
 ///
-/// (c) 2001-2005 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
-#ifndef __TKS_SCRIPTVARIABLE_H__
-#define __TKS_SCRIPTVARIABLE_H__
+
+#ifndef TKS_SCRIPTVARIABLE_H__
+#define TKS_SCRIPTVARIABLE_H__
 
 
 class TKS_ScriptVariable : public YAC_ValueObject {
 public:
    TKS_CachedObject *var;
    TKS_ScriptObjectID script_id;
-   
+
 public:
    TKS_ScriptVariable(void);
    ~TKS_ScriptVariable();
@@ -25,4 +26,4 @@ public:
    YAC_String *getName     (void);
 };
 
-#endif
+#endif // TKS_SCRIPTVARIABLE_H__

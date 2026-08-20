@@ -1,8 +1,8 @@
-/// PTN_ClassMemberPointerAssign.cpp                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             /// PTN_ClassMemberPointerAssign.cpp
+/// PTN_ClassMemberPointerAssign.cpp                                                                                                       ///
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
-/// (c) 2001-2013 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
-///
+
 #include "tks.h"
 #include "tks_inc_class.h"
 #include "tks_inc_jit.h"
@@ -12,28 +12,27 @@
 #include "PTN_ClassMemberPointerAssign.h"
 
 
-PTN_ClassMemberPointerAssign::PTN_ClassMemberPointerAssign( 
-                                                           TKS_CachedObject *_co,  
-                                                           TKS_CachedObject *_cc_co,  
-                                                           PTN_Expr         *_expr 
-                                                           )  
+PTN_ClassMemberPointerAssign::PTN_ClassMemberPointerAssign(TKS_CachedObject *_co,
+                                                           TKS_CachedObject *_cc_co,
+                                                           PTN_Expr         *_expr
+                                                           )
 {
    member     = _cc_co;
-   expr       = _expr; 
+   expr       = _expr;
    expr_opt   = expr->getEval();
    var        = _co;
    class_id   = TKS_INVALID_SCRIPT_CLASS_ID;
-   b_indirect = 0;
+   b_indirect = YAC_FALSE;
 
-   if(var) 
+   if(var)
    {
-      if(var->type==YAC_TYPE_OBJECT) 
+      if(YAC_TYPE_OBJECT == var->type)
       {
-         if(var->value.object_val) 
+         if(var->value.object_val)
          {
-            class_id=((TKS_ScriptClassInstance*)var->value.object_val)->class_decl->class_id; 
-         } 
-      } 
+            class_id = ((TKS_ScriptClassInstance*)var->value.object_val)->class_decl->class_id;
+         }
+      }
    }
 }
 
@@ -44,14 +43,14 @@ PTN_ClassMemberPointerAssign::~PTN_ClassMemberPointerAssign() {
 }
 
 sBool PTN_ClassMemberPointerAssign::semanticCheck(void) {
-   return 
+   return
       (member != NULL)                   &&
-      (expr ? expr->semanticCheck() : 0) 
+      (expr ? expr->semanticCheck() : 0)
       ;
 }
 
 void PTN_ClassMemberPointerAssign::optimize(void) {
-   tks_optimize_expr(&expr, 0); 
+   tks_optimize_expr(&expr, 0);
    expr_opt = expr->getEval();
 }
 
@@ -59,10 +58,9 @@ sBool PTN_ClassMemberPointerAssign::resolveXRef(void) {
    return expr->resolveXRef();
 }
 
-static void PTN_ClassMemberPointerAssign__eval(PTN_Env *_env, const PTN_Statement *_st) { 
+static void PTN_ClassMemberPointerAssign__eval(PTN_Env *_env, const PTN_Statement *_st) {
    Dtracest;
-   const PTN_ClassMemberPointerAssign *st = (const PTN_ClassMemberPointerAssign*)_st; 
-
+   const PTN_ClassMemberPointerAssign *st = (const PTN_ClassMemberPointerAssign*)_st;
 
    TKS_ScriptClassInstance *robj;
    if(st->b_indirect)
@@ -80,11 +78,11 @@ static void PTN_ClassMemberPointerAssign__eval(PTN_Env *_env, const PTN_Statemen
 
    if(TKS_VALID(robj))
    {
-#ifdef DX_SAFEMODE 
+#ifdef DX_SAFEMODE
       if(robj->class_ID==YAC_CLID_CLASS)
-      { 
+      {
          if(robj->class_decl->ancestor_table[st->class_id])
-         { 
+         {
 #endif
             YAC_Value r;
             st->expr_opt(_env, &r, st->expr);
@@ -98,18 +96,18 @@ static void PTN_ClassMemberPointerAssign__eval(PTN_Env *_env, const PTN_Statemen
 #ifdef DX_SAFEMODE
          }
       }
-#endif 
+#endif
    }
    else
    {
       Drtthrowinvalidpointer(st, "invalid <this> object", robj);
-   } 
+   }
 }
 
 void PTN_ClassMemberPointerAssign::eval(PTN_Env *_env) const {
-   PTN_ClassMemberPointerAssign__eval(_env, this); 
-} 
+   PTN_ClassMemberPointerAssign__eval(_env, this);
+}
 
 Fevalst PTN_ClassMemberPointerAssign::getEvalSt(void) const {
-   return PTN_ClassMemberPointerAssign__eval; 
+   return PTN_ClassMemberPointerAssign__eval;
 }

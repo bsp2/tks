@@ -1,9 +1,10 @@
 /// PTN_ClassMethodECall.h
 ///
-/// (c) 2001-2025 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 ///
+
 #ifndef PTN_CLASSMETHODECALL_H__
 #define PTN_CLASSMETHODECALL_H__
 
@@ -21,7 +22,7 @@ class PTN_ClassMethodECall : public PTN_CallableExpr {
    PTN_ClassMethodECall(TKS_CachedObject *_var, TKS_ClassDeclMethod *_method, PTN_ArgList *_args);
    ~PTN_ClassMethodECall();
 
-   void initIndirect(void) { b_indirect = 1; }
+   void initIndirect(void) { b_indirect = YAC_TRUE; }
 
    sBool semanticCheck    (void);
    void  optimize         (void);

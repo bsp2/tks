@@ -1,7 +1,7 @@
 /// PTN_ClassMethodECall.cpp
 ///
-/// (c) 2001-2025 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 ///
 #include "tks.h"
@@ -20,10 +20,10 @@ PTN_ClassMethodECall::PTN_ClassMethodECall(TKS_CachedObject    * _var,
                                            TKS_ClassDeclMethod * _method,
                                            PTN_ArgList         * _args
                                            ) {
-   var         = _var;
-   method      = _method;
-   arglist     = _args;
-   class_id    = TKS_INVALID_SCRIPT_CLASS_ID;
+   var      = _var;
+   method   = _method;
+   arglist  = _args;
+   class_id = TKS_INVALID_SCRIPT_CLASS_ID;
 
    if(var)
    {

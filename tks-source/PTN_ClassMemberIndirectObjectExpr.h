@@ -1,12 +1,13 @@
 /// PTN_ClassMemberIndirectObjectExpr.h
 ///
-/// (c) 2001-2009 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
-#ifndef __PTN_CLASSMEMBERINDIRECTOBJECTEXPR_H__
-#define __PTN_CLASSMEMBERINDIRECTOBJECTEXPR_H__
 
- 
+#ifndef PTN_CLASSMEMBERINDIRECTOBJECTEXPR_H__
+#define PTN_CLASSMEMBERINDIRECTOBJECTEXPR_H__
+
+
 class PTN_ClassMemberIndirectObjectExpr : public PTN_Expr {
 public:
     TKS_CachedObject *member;
@@ -25,4 +26,4 @@ public:
 };
 
 
-#endif // __PTN_CLASSMEMBERINDIRECTOBJECTEXPR_H__
+#endif // PTN_CLASSMEMBERINDIRECTOBJECTEXPR_H__

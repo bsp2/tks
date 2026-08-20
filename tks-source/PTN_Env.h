@@ -1,10 +1,11 @@
 /// PTN_Env.h
 ///
-/// (c) 2001-2009 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
-#ifndef __PTN_ENV_H__
-#define __PTN_ENV_H__
+
+#ifndef PTN_ENV_H__
+#define PTN_ENV_H__
 
 
 // ---- "Environment" which is passed to each script statement
@@ -20,19 +21,19 @@ public:
 
 
    // Copy constructor
-   PTN_Env(PTN_Env *_env) { 
+   PTN_Env(PTN_Env *_env) {
       context       = _env->context;
-      continue_flag = 1; 
+      continue_flag = YAC_TRUE;
    }
 
    // Copy constructor
-   PTN_Env(TKS_Context *_context) { 
+   PTN_Env(TKS_Context *_context) {
       context       = _context;
-      continue_flag = 1; 
+      continue_flag = YAC_TRUE;
    }
 
    void initDefault(void); // => continue_flag=1, context=yacContextGetDefault()
 };
 
 
-#endif // __PTN_ENV_H__
+#endif // PTN_ENV_H__

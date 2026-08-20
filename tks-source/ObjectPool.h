@@ -1,11 +1,11 @@
 /// ObjectPool.h
-/// 
-/// (c) 2008-2013 Bastian Spiegel <bs@tkscript.de> 
-///     - distributed under terms of the GNU general public license (GPL). 
-/// 
+///
+/// (c) 2008-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
+///
 
-#ifndef __OBJECTPOOL_H__
-#define __OBJECTPOOL_H__
+#ifndef OBJECTPOOL_H__
+#define OBJECTPOOL_H__
 
 
 typedef sSI ObjectPoolId;
@@ -31,7 +31,7 @@ public:
    enum { MAX_POOL_CHAIN_SIZE = 8 }; // maximum number of chained pool
 
    enum { MAX_POOL_LIMIT = 32768 };  // max. kbytes used for pooling (per priority class)
-   
+
    enum { POOL_GRANULARITY = 8/*sizeof(sUI)*/ };
    enum { NUM_POOL_SLOTS = (1024 / POOL_GRANULARITY) }; // 1024=max element size
 
@@ -45,7 +45,7 @@ public:
    enum { NO_ID = -1 };
 
    static sBool b_initialized;
-   
+
    static sUI total_element_data_size_limit           [YAC_NUM_POOL_PRIORITIES]; // max. allowed size per priority
    static sUI total_element_data_size                 [YAC_NUM_POOL_PRIORITIES]; // current total size per priority
    static sUI freethreshold_total_element_data_size   [YAC_NUM_POOL_PRIORITIES]; // when to start freeing pools
@@ -77,7 +77,7 @@ public:
 #endif // TKS_OBJECTPOOL_PURE
 
    PoolId prev;               // pool chain
-   PoolId next;               // 
+   PoolId next;               //
    PoolId self_id;
    sUI    pool_chain_id;      // 0..MAX_POOL_CHAIN_SIZE-1, first pool does not free element_data
    sUI    pool_priority;
@@ -88,9 +88,9 @@ public:
 
 #ifdef TKS_OBJECTPOOL_PURE
 #ifndef YAC_64
-   sUI pad48; // 
-   sUI pad52; // 
-   sUI pad56; // 
+   sUI pad48; //
+   sUI pad52; //
+   sUI pad56; //
    sUI pad60; // to align class size to 64 bytes
 #else
    sUI pad1;  //
@@ -107,7 +107,7 @@ public:
 
 #ifdef TKS_OBJECTPOOL_PURE
    inline ObjectPoolId qAllocObject(void) {
-      ////if(free_elements) // free_elements>0 has already been checked 
+      ////if(free_elements) // free_elements>0 has already been checked
       {
          ObjectPoolId id = freelist[--free_elements];
          total_num_allocs++;
@@ -170,4 +170,4 @@ public:
 #endif // TKS_OBJECTPOOL_PURE
 
 
-#endif  // __OBJECTPOOL_H__
+#endif  // OBJECTPOOL_H__

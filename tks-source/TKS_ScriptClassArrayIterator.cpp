@@ -1,16 +1,15 @@
 /// TKS_ScriptClassArrayIterator.cpp
 ///
-/// (c) 2001-2009 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
-
 
 #include "tks.h"
 #include "tks_inc_class.h"
 #include "YAC_ClassArray.h"
 #include "tks_inc_compiler.h"
- 
-#include "TKS_ScriptClassArrayIterator.h" 
+
+#include "TKS_ScriptClassArrayIterator.h"
 
 
 TKS_ScriptClassArrayIterator::TKS_ScriptClassArrayIterator(const YAC_ClassArray*_a) {
@@ -24,9 +23,9 @@ TKS_ScriptClassArrayIterator::~TKS_ScriptClassArrayIterator() {
 }
 
 void YAC_VCALL TKS_ScriptClassArrayIterator::getNext(YAC_Value*r) {
-   if(current_index<array->num_elements) 
+   if(current_index<array->num_elements)
    {
-      r->initObject(array->elements[current_index++], 0); 
+      r->initObject(array->elements[current_index++], 0);
    }
    else
    {

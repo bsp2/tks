@@ -1,10 +1,11 @@
 /// PTN_TripleArgExpr.h
 ///
-/// (c) 2001-2009 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
-#ifndef __PTN_TRIPLEARGEXPR_H__
-#define __PTN_TRIPLEARGEXPR_H__
+
+#ifndef PTN_TRIPLEARGEXPR_H__
+#define PTN_TRIPLEARGEXPR_H__
 
 
 class PTN_TripleArgExpr : public PTN_Expr {
@@ -22,7 +23,7 @@ public:
             PTN_TripleArgExpr  (void);
             PTN_TripleArgExpr  (PTN_Expr *_expr1, sU8 _op1, PTN_Expr *_expr2, sU8 _op2, PTN_Expr *_expr3);
             ~PTN_TripleArgExpr ();
-  
+
   void      eval              (PTN_Env *_env, YAC_Value *) const;
   Feval     getEval           (void) const;
   sBool     semanticCheck     (void);
@@ -32,4 +33,4 @@ public:
 };
 
 
-#endif // __PTN_TRIPLEARGEXPR_H__
+#endif // PTN_TRIPLEARGEXPR_H__

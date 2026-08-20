@@ -1,7 +1,7 @@
 /// TKS_Process_linux.cpp
 ///
-/// (c) 2018-2024 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under terms of the GNU general public license (GPL).
+/// (c) 2018-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 ///
 

@@ -1,7 +1,7 @@
 /// PTN_PrepareStat.cpp
 ///
-/// (c) 2001-2009 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 
 #include "tks.h"
@@ -24,8 +24,8 @@ sUI PTN_PrepareStat::getID(void) const {
 }
 
 sBool PTN_PrepareStat::semanticCheck(void) {
-   return 
-      (body ? body->semanticCheckAll() : 0) 
+   return
+      (body ? body->semanticCheckAll() : 0)
       ;
 }
 
@@ -44,23 +44,21 @@ void PTN_PrepareStat::subGenCallList(void) {
    body->genCallList();
 }
 
-static void PTN_PrepareStat__eval(PTN_Env *_env, const PTN_Statement *_st) { 
+static void PTN_PrepareStat__eval(PTN_Env *_env, const PTN_Statement *_st) {
    Dtracest;
    PTN_PrepareStat *st = (PTN_PrepareStat*)_st; // xxx discards const qualifier
 
    if(st->not_prepared)
    {
-      st->not_prepared=0;
+      st->not_prepared = 0;
       st->body->evalFirst(_env);
    }
 }
 
-Fevalst PTN_PrepareStat::getEvalSt(void) const { 
-   return PTN_PrepareStat__eval; 
-} 
+Fevalst PTN_PrepareStat::getEvalSt(void) const {
+   return PTN_PrepareStat__eval;
+}
 
-void PTN_PrepareStat::eval(PTN_Env *_env) const { 
-   PTN_PrepareStat__eval(_env, this); 
-} 
-
-
+void PTN_PrepareStat::eval(PTN_Env *_env) const {
+   PTN_PrepareStat__eval(_env, this);
+}

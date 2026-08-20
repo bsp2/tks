@@ -1,10 +1,11 @@
 /// TKS_ConfigurationInter.h
 ///
-/// (c) 2001-2024 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
-#ifndef __TKS_CONFIGURATIONINTER_H__
-#define __TKS_CONFIGURATIONINTER_H__
+
+#ifndef TKS_CONFIGURATIONINTER_H__
+#define TKS_CONFIGURATIONINTER_H__
 
 
 class TKS_ConfigurationInter : public YAC_Object {
@@ -22,8 +23,8 @@ public:
     //  (note) this is a workaround for misbehaving VST plugins which should not be used in regular applications
     void setThreadTerminateOnException (sBool _bEnable);
     void setLockGlobalContext (sBool _bEnable);
-    
+
 };
 
 
-#endif // __TKS_CONFIGURATIONINTER_H__
+#endif // TKS_CONFIGURATIONINTER_H__

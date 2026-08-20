@@ -1,11 +1,12 @@
 /// TKX_Chapter.h
 ///
-/// (c) 2001-2019 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 ///
-#ifndef __TKX_CHAPTER_H__
-#define __TKX_CHAPTER_H__
+
+#ifndef TKX_CHAPTER_H__
+#define TKX_CHAPTER_H__
 
 
 #ifdef YAC_LITTLE_ENDIAN
@@ -33,11 +34,11 @@ public:
    sUI            orig_size;
    sUI            pak_size;
    sBool          is_loaded; // true if chapter has been retrieved and is ready to be accessed
-   
+
 public:
    TKX_Chapter(TKX_PakFile *_parent);
    ~TKX_Chapter();
-   
+
    void createCompressedChapter(void);
    void loadCompressedChapter(void);
 
@@ -47,5 +48,4 @@ public:
 };
 
 
-
-#endif // __TKX_CHAPTER_H__
+#endif // TKX_CHAPTER_H__

@@ -1,7 +1,7 @@
 /// PTN_DoubleArgExpr.cpp
 ///
-/// (c) 2001-2024 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under terms of the GNU general public license (GPL)
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 ///
 
@@ -4497,4 +4497,4 @@ sU8 PTN_DoubleArgExpr::CompileOp(VMCore *_vm, sU8 r1, sU8 r2, sU8 expr_operator)
    } // switch(r1)
    return 0xfF;
 }
-#endif
+#endif // TKS_JIT

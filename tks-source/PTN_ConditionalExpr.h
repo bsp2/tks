@@ -1,10 +1,11 @@
 /// PTN_ConditionalExpr.h
 ///
-/// (c) 2001-2009 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
-#ifndef __PTN_CONDITIONALEXPR_H__
-#define __PTN_CONDITIONALEXPR_H__
+
+#ifndef PTN_CONDITIONALEXPR_H__
+#define PTN_CONDITIONALEXPR_H__
 
 
 class PTN_ConditionalExpr : public PTN_Expr {
@@ -15,11 +16,11 @@ public:
    Feval     cond_expr_opt;
    Feval     vala_expr_opt;
    Feval     valb_expr_opt;
-   
+
 public:
    PTN_ConditionalExpr  (PTN_Expr *_c, PTN_Expr *_a, PTN_Expr *_b);
    ~PTN_ConditionalExpr ();
-   
+
    sBool     semanticCheck       (void);
    void      optimize            (void);
    sBool     isConst             (void);
@@ -29,4 +30,4 @@ public:
 };
 
 
-#endif
+#endif // PTN_CONDITIONALEXPR_H__

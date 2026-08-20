@@ -1,10 +1,11 @@
 /// TKS_FloatArrayIterator.h
 ///
-/// (c) 2001-2010 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
-#ifndef __TKS_FLOATARRAYITERATOR_H__
-#define __TKS_FLOATARRAYITERATOR_H__
+
+#ifndef TKS_FLOATARRAYITERATOR_H__
+#define TKS_FLOATARRAYITERATOR_H__
 
 
 class TKS_FloatArrayIterator : public YAC_Iterator {
@@ -13,10 +14,10 @@ public:
 
 public:
    TKS_FloatArrayIterator(const YAC_FloatArray *_ht);
-   ~TKS_FloatArrayIterator(); 
-   
+   ~TKS_FloatArrayIterator();
+
    void YAC_VCALL getNext(YAC_Value*);
 };
 
 
-#endif // __TKS_FLOATARRAYITERATOR_H__
+#endif // TKS_FLOATARRAYITERATOR_H__

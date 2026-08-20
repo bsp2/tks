@@ -1,7 +1,7 @@
 /// YAC_Long.cpp
 ///
-/// (c) 2004-2024 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2004-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 
 #include <stdio.h>
@@ -136,74 +136,93 @@ void YAC_VCALL YAC_Long::yacOperatorF32(sSI _cmd, sF32 _fv, YAC_Value *_r) {
 void YAC_Long::myOperator(sSI _cmd, sS64 oval, YAC_Value *_r) {
 	switch(_cmd)
 	{
-	case YAC_OP_ASSIGN:
-		value = oval;
-		break;
-	case YAC_OP_ADD:
-		value += oval;
-		break;
-	case YAC_OP_SUB:
-		value -= oval;
-		break;
-	case YAC_OP_MUL:
-		value *= oval;
-		break;
-	case YAC_OP_DIV:
-		if(oval)
-			value /= oval;
-		else
-			value = 0;
-		break;
-	case YAC_OP_MOD:
-		if(oval)
-			value = value % oval;
-		else
-			value = 0;
-		break;
-	case YAC_OP_SHL:
-		value = value << oval;
-		break;
-	case YAC_OP_SHR:
-		value = value >> oval;
-		break;
-	case YAC_OP_CEQ:
-		YAC_RETI(value == oval);
-		break;
-	case YAC_OP_CNE:
-		YAC_RETI(value != oval);
-		break;
-	case YAC_OP_CLE:
-		YAC_RETI(value <= oval);
-		break;
-	case YAC_OP_CLT:
-		YAC_RETI(value < oval);
-		break;
-	case YAC_OP_CGE:
-		YAC_RETI(value >= oval);
-		break;
-	case YAC_OP_CGT:
-		YAC_RETI(value > oval);
-		break;
-	case YAC_OP_AND:
-		value &= oval;
-		YAC_RETI(value);
-		break;
-	case YAC_OP_OR:
-		value |= oval;
-		break;
-	case YAC_OP_EOR:
-		value ^= oval;
-		break;
-	case YAC_OP_LAND:
-		YAC_RETI(value && oval);
-		break;
-	case YAC_OP_LOR:
-		YAC_RETI(value || oval);
-		break;
-	case YAC_OP_LEOR:
-		YAC_RETI(value ^ oval);
-		break;
-    }
+      case YAC_OP_ASSIGN:
+         value = oval;
+         break;
+
+      case YAC_OP_ADD:
+         value += oval;
+         break;
+
+      case YAC_OP_SUB:
+         value -= oval;
+         break;
+
+      case YAC_OP_MUL:
+         value *= oval;
+         break;
+
+      case YAC_OP_DIV:
+         if(oval)
+            value /= oval;
+         else
+            value = 0;
+         break;
+
+      case YAC_OP_MOD:
+         if(oval)
+            value = value % oval;
+         else
+            value = 0;
+         break;
+
+      case YAC_OP_SHL:
+         value = value << oval;
+         break;
+
+      case YAC_OP_SHR:
+         value = value >> oval;
+         break;
+
+      case YAC_OP_CEQ:
+         YAC_RETI(value == oval);
+         break;
+
+      case YAC_OP_CNE:
+         YAC_RETI(value != oval);
+         break;
+
+      case YAC_OP_CLE:
+         YAC_RETI(value <= oval);
+         break;
+
+      case YAC_OP_CLT:
+         YAC_RETI(value < oval);
+         break;
+
+      case YAC_OP_CGE:
+         YAC_RETI(value >= oval);
+         break;
+
+      case YAC_OP_CGT:
+         YAC_RETI(value > oval);
+         break;
+
+      case YAC_OP_AND:
+         value &= oval;
+         YAC_RETI(value);
+         break;
+
+      case YAC_OP_OR:
+         value |= oval;
+         break;
+
+      case YAC_OP_EOR:
+         value ^= oval;
+         break;
+
+      case YAC_OP_LAND:
+         YAC_RETI(value && oval);
+         break;
+
+      case YAC_OP_LOR:
+         YAC_RETI(value || oval);
+         break;
+
+      case YAC_OP_LEOR:
+         YAC_RETI(value ^ oval);
+         break;
+   }
 }
 
 void YAC_Long::setValue(sSI _v) {
@@ -277,6 +296,6 @@ sBool YAC_VCALL YAC_Long::yacToString(YAC_String *rs) const {
 	else
 		*d++ = '0';
 	*d++ = 0;
-	rs->length=(sSI)(d-rs->chars);
-	return 1;
+	rs->length = (sSI)(d-rs->chars);
+	return YAC_TRUE;
 }

@@ -1,9 +1,10 @@
 /// PTN_While.cpp
 ///
-/// (c) 2001-2014 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 ///
+
 #include "tks.h"
 #include "PTN_Node.h"
 #include "PTN_Expr.h"
@@ -15,16 +16,16 @@
 
 
 PTN_While::PTN_While(void) {
-   cond       = NULL; 
+   cond       = NULL;
    cond_opt   = NULL;
    body       = NULL;
    break_tag  = 0;
 }
 
 PTN_While::PTN_While(PTN_Expr *_cond, PTN_Statement *_body) {
-   cond       = _cond; 
+   cond       = _cond;
    cond_opt   = _cond->getEval();
-   body       = _body; 
+   body       = _body;
 }
 
 sUI PTN_While::getID(void) const {
@@ -32,19 +33,18 @@ sUI PTN_While::getID(void) const {
 }
 
 void PTN_While::init(PTN_Expr *_cond, PTN_Statement *_body) {
-   cond     = _cond; 
+   cond     = _cond;
    cond_opt = cond->getEval();
    body     = _body;
 }
 
 PTN_While::~PTN_While() {
    TKS_DELETE_SAFE(cond);
-
    TKS_DELETE_SAFE(body);
 }
 
 sBool PTN_While::semanticCheck(void) {
-   return 
+   return
       (cond ? cond->semanticCheck()    : 0) &&
       (body ? body->semanticCheckAll() : 0)
       ;
@@ -58,11 +58,11 @@ sBool PTN_While::resolveXRef(void) {
 }
 
 void PTN_While::optimize(void) {
-   tks_optimize_expr(&cond, 1); 
-   cond_opt = cond->getEval(); 
+   tks_optimize_expr(&cond, 1);
+   cond_opt = cond->getEval();
 
-   if(body)  
-   { 
+   if(body)
+   {
       body->optimizeAll();
    }
 }
@@ -72,22 +72,22 @@ void PTN_While::useBreak(void) {
 }
 
 void PTN_While::subGenCallList(void) {
-   if(body)  
-   { 
-      body->genCallList(); 
+   if(body)
+   {
+      body->genCallList();
    }
 }
 
-static void PTN_While__eval(PTN_Env *_env, const PTN_Statement *_st) {  
+static void PTN_While__eval(PTN_Env *_env, const PTN_Statement *_st) {
    Dtracest;
-   const PTN_While *st = (const PTN_While*)_st; 
-   
-   YAC_Value r; 
+   const PTN_While *st = (const PTN_While*)_st;
+
+   YAC_Value r;
    sBool beval;
-   do 
-   { 
+   do
+   {
       r.value.any = NULL;
-      st->cond_opt(_env, &r, st->cond); 
+      st->cond_opt(_env, &r, st->cond);
       if(Dhaveexception)
       {
          r.unsetFast();
@@ -96,26 +96,26 @@ static void PTN_While__eval(PTN_Env *_env, const PTN_Statement *_st) {
       }
 
       beval=!r.isNullOrIF0();
-      if(beval)	  
+      if(beval)
       {
-         st->body->evalFirst(_env); 
+         st->body->evalFirst(_env);
       }
-      r.unsetFast(); 
+      r.unsetFast();
    } while(_env->context->b_running && beval && _env->continue_flag);
 }
 
-static void PTN_While__eval_break(PTN_Env *_env, const PTN_Statement *_st) { 
+static void PTN_While__eval_break(PTN_Env *_env, const PTN_Statement *_st) {
    Dtracest;
    const PTN_While *st = (const PTN_While *)_st;
-   
+
    sBool *bBreak = _env->context->pushBreak();
-   
-   YAC_Value r; 
+
+   YAC_Value r;
    sBool beval;
-   do 
-   { 
+   do
+   {
       r.value.any = NULL;
-      st->cond_opt(_env, &r, st->cond); 
+      st->cond_opt(_env, &r, st->cond);
       if(Dhaveexception)
       {
          r.unsetFast();
@@ -124,7 +124,7 @@ static void PTN_While__eval_break(PTN_Env *_env, const PTN_Statement *_st) {
       }
 
       beval=!r.isNullOrIF0();
-      if(beval)	
+      if(beval)
       {
          st->body->evalFirst(_env);
       }
@@ -142,7 +142,7 @@ Fevalst PTN_While::getEvalSt(void) const {
    return break_tag ? PTN_While__eval_break : PTN_While__eval;
 }
 
-void PTN_While::eval(PTN_Env *_env) const { 
+void PTN_While::eval(PTN_Env *_env) const {
    if(break_tag)
    {
       PTN_While__eval_break(_env, this);
@@ -177,16 +177,16 @@ sU8 PTN_While::compile(VMCore *_vm) {
 
          jitFixBreakPCs(_vm->vm_pc);
 
-         if(next)  
-         { 
-            return next->compileHybridStatement(_vm); 
+         if(next)
+         {
+            return next->compileHybridStatement(_vm);
          }
-         else  
-         { 
-            return 0; 
+         else
+         {
+            return 0;
          }
       }
    }
    return 0xFF;
 }
-#endif
+#endif // TKS_JIT

@@ -1,7 +1,7 @@
 /// command.cpp
 ///
-/// (c) 1999-2013 Bastian Spiegel <bs@tkscript.de>
-///    published under terms of the GNU general public license (GPL).
+/// (c) 1999-2026 Bastian Spiegel <bs@tkscript.de>
+///    distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 ///
 ///
@@ -34,12 +34,12 @@ void YAC_CommandY::initCommand(void) {
 #endif // TKS_PROFILE_FUNCTIONS
 }
 
-void YAC_CommandY::initMethod(void) { 
+void YAC_CommandY::initMethod(void) {
    initCommand();
 
    b_method        = YAC_TRUE;
-} 
- 
+}
+
 YAC_CommandY::~YAC_CommandY() {
 	if(NULL != y_arg_class_IDs)
 	{
@@ -81,7 +81,7 @@ YAC_CommandListY::YAC_CommandListY(void) {
 	y_commands     = NULL;
 }
 
-YAC_CommandListY::~YAC_CommandListY() { 
+YAC_CommandListY::~YAC_CommandListY() {
 	if(NULL != y_commands)
 	{
 		delete [] y_commands;

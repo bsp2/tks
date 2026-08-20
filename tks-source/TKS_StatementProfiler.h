@@ -1,15 +1,16 @@
 /// TKS_StatementProfiler.h
 ///
-/// (c) 2001-2006 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
-#ifndef __TKS_STATEMENTPROFILER_H__
-#define __TKS_STATEMENTPROFILER_H__
+
+#ifndef TKS_STATEMENTPROFILER_H__
+#define TKS_STATEMENTPROFILER_H__
+
 
 #ifdef TKS_PROFILE_STATEMENTS
 
 #define synchronized
-
 
 
 class TKS_StatementProfiler {
@@ -48,4 +49,4 @@ public:
 #endif // TKS_PROFILE_STATEMENTS
 
 
-#endif // __TKS_STATEMENTPROFILER_H__
+#endif // TKS_STATEMENTPROFILER_H__

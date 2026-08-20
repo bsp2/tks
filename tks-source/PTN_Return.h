@@ -1,10 +1,11 @@
 /// PTN_Return.h
 ///
-/// (c) 2001-2010 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
-#ifndef __PTN_RETURN_H__
-#define __PTN_RETURN_H__
+
+#ifndef PTN_RETURN_H__
+#define PTN_RETURN_H__
 
 
 class PTN_Return : public PTN_Statement {
@@ -13,11 +14,11 @@ public:
    Feval         ret_expr_opt;  // may be NULL
    PTN_Function *fun;
    sBool         b_break;
-   
+
 public:
    PTN_Return(PTN_Expr *_retexpr, PTN_Function *_fun, sBool _bBreak);
    ~PTN_Return();
-   
+
    sBool   semanticCheck (void);
    void    print         (sU16 _i=0);
    void    eval          (PTN_Env *_env) const;
@@ -31,4 +32,4 @@ public:
 };
 
 
-#endif // __PTN_RETURN_H__
+#endif // PTN_RETURN_H__

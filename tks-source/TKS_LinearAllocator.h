@@ -1,11 +1,11 @@
 /// TKS_LinearAllocator.h
 ///
-/// (c) 2009 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under terms of the GNU general public license (GPL).
+/// (c) 2009-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 
-#ifndef __TKS_LINEARALLOCATOR_H__
-#define __TKS_LINEARALLOCATOR_H__
+#ifndef TKS_LINEARALLOCATOR_H__
+#define TKS_LINEARALLOCATOR_H__
 
 
 class TKS_LinearAllocatorStripe {
@@ -43,4 +43,4 @@ public:
 
 
 
-#endif // __TKS_LINEARALLOCATOR_H__
+#endif // TKS_LINEARALLOCATOR_H__

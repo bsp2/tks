@@ -1,6 +1,7 @@
 /// PTN_ValueListEntry.cpp
-/// (c) 2001-2005 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+///
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 
 #include "tks.h"
@@ -9,19 +10,14 @@
 #include "PTN_ValueListEntry.h"
 
 
-//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-//~                                   ~
-//~ PTN_ValueListEntry                ~
-//~                                   ~
-//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 PTN_ValueListEntry::PTN_ValueListEntry(PTN_Expr *_e) {
-  expr=_e;
-  next=0;
+  expr = _e;
+  next = NULL;
 }
 
 PTN_ValueListEntry::~PTN_ValueListEntry() {
   delete next;
-  next=0;
+  next = NULL;
   delete expr;
-  expr=0;
+  expr = NULL;
 }

@@ -1,7 +1,7 @@
 /// YAC_StreamBase.cpp
 ///
 /// (c) 2002-2026 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under terms of the GNU general public license (GPL).
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 ///
 

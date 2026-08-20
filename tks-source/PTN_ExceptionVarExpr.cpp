@@ -1,7 +1,7 @@
 /// PTN_ExceptionVarExpr.cpp
 ///
-/// (c) 2006-2008 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2006-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 
 #include "tks.h"
@@ -24,13 +24,13 @@ void PTN_ExceptionVarExpr::eval(PTN_Env *_env, YAC_Value *_r) const {
       _r->initValue(&_env->context->current_exception_var);
 }
 
-static void PTN_ExceptionVarExpr__eval(PTN_Env *_env, YAC_Value *_r, const PTN_Expr *_st) { 
+static void PTN_ExceptionVarExpr__eval(PTN_Env *_env, YAC_Value *_r, const PTN_Expr *_st) {
    Dtracest;
    _r->initValue(&_env->context->current_exception_var);
    (void)_st;
 }
 
-static void PTN_ExceptionVarExpr__eval_deref(PTN_Env *_env, YAC_Value *_r, const PTN_Expr *_st) { 
+static void PTN_ExceptionVarExpr__eval_deref(PTN_Env *_env, YAC_Value *_r, const PTN_Expr *_st) {
    Dtracest;
    _r->copySafe(&_env->context->current_exception_var);
    (void)_st;

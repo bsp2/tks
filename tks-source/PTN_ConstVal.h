@@ -1,10 +1,11 @@
 /// PTN_ConstVal.h
 ///
-/// (c) 2001-2009 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
-#ifndef __PTN_CONSTVAL_H__
-#define __PTN_CONSTVAL_H__
+
+#ifndef PTN_CONSTVAL_H__
+#define PTN_CONSTVAL_H__
 
 
 class PTN_ConstVal : public PTN_Expr {
@@ -37,4 +38,4 @@ public:
 extern sBool tks_isobjectconstval(PTN_Expr *);
 
 
-#endif // __PTN_CONSTVAL_H__
+#endif // PTN_CONSTVAL_H__

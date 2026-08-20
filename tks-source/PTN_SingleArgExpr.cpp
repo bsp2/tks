@@ -1,7 +1,7 @@
 /// PTN_SingleArgExpr.cpp
 ///
-/// (c) 2001-2014 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 
 #include "tks.h"
@@ -129,9 +129,11 @@ static void PTN_SingleArgExpr__eval(PTN_Env *_env, YAC_Value *ret, const PTN_Exp
             case 1:
                ret->value.int_val=-ret->value.int_val;
                break;
+
             case 2:
                ret->value.float_val=-ret->value.float_val;
                break;
+
             case 3:
                if(ret->value.object_val)
                {
@@ -153,6 +155,7 @@ static void PTN_SingleArgExpr__eval(PTN_Env *_env, YAC_Value *ret, const PTN_Exp
                   ret->initInt(0);
                }
                break;
+
             case 4:
                ret->safeInitInt(0);
                break;
@@ -177,14 +180,15 @@ sBool PTN_SingleArgExpr::forceHybrid(void) {
    {
       switch(expr1->getType())
       {
-      default:
-      case YAC_TYPE_VARIANT:
-      case YAC_TYPE_OBJECT:
-      case YAC_TYPE_STRING:
-         return 1;
-      case YAC_TYPE_INT:
-      case YAC_TYPE_FLOAT:
-         return 0;
+         default:
+         case YAC_TYPE_VARIANT:
+         case YAC_TYPE_OBJECT:
+         case YAC_TYPE_STRING:
+            return 1;
+
+         case YAC_TYPE_INT:
+         case YAC_TYPE_FLOAT:
+            return 0;
       }
    }
    else
@@ -192,37 +196,41 @@ sBool PTN_SingleArgExpr::forceHybrid(void) {
 }
 
 sU8 PTN_SingleArgExpr::compile(VMCore *_vm) {
-	sU8 r=expr1->compile(_vm);
+	sU8 r = expr1->compile(_vm);
 	switch(r)
 	{
-	case 1:
-		switch(unary_operator)
-		{
-		case YAC_OP_NOT:
-			Dasmop(VMOP_SINOT);
-			return 1;
-		case YAC_OP_BITNOT:
-			Dasmop(VMOP_SIINV);
-			return 1;
-		case YAC_OP_NEG:
-		case YAC_OP_SUB:
-			Dasmop(VMOP_SINEG);
-			return 1;
-		}
-		break;
-	case 2:
-		switch(unary_operator)
-		{
-		case YAC_OP_NEG:
-		case YAC_OP_SUB:
-			Dasmop(VMOP_SFNEG);
-			return 2;
-		}
-		break;
-	case 3:
-	case 4:
-		return 0xFF;
+      case 1:
+         switch(unary_operator)
+         {
+            case YAC_OP_NOT:
+               Dasmop(VMOP_SINOT);
+               return 1;
+
+            case YAC_OP_BITNOT:
+               Dasmop(VMOP_SIINV);
+               return 1;
+
+            case YAC_OP_NEG:
+            case YAC_OP_SUB:
+               Dasmop(VMOP_SINEG);
+               return 1;
+         }
+         break;
+
+      case 2:
+         switch(unary_operator)
+         {
+            case YAC_OP_NEG:
+            case YAC_OP_SUB:
+               Dasmop(VMOP_SFNEG);
+               return 2;
+         }
+         break;
+
+      case 3:
+      case 4:
+         return 0xFF;
 	}
 	return 0xFF;
 }
-#endif
+#endif // TKS_JIT

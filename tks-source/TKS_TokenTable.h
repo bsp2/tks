@@ -1,22 +1,23 @@
 /// TKS_TokenTable.h
 ///
-/// (c) 2001-2008 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 
-#ifndef __TKS_TOKENTABLE_H__
-#define __TKS_TOKENTABLE_H__
+#ifndef TKS_TOKENTABLE_H__
+#define TKS_TOKENTABLE_H__
+
 
 extern TKS_Token tks_lang_tokens[];
 
 enum __tks_lang_tokens {
       TOKEN_VAR = 0, // variable names
-      TOKEN_INTVAL, 
+      TOKEN_INTVAL,
       TOKEN_FLOATVAL,
       TOKEN_STRINGVAL,
       TOKEN_BLOCKCOMMENT,
       TOKEN_LINECOMMENT,
-      
+
       TOKEN_DOT,
       TOKEN_LISTSEP,
       TOKEN_ESAC,
@@ -38,7 +39,7 @@ enum __tks_lang_tokens {
       TOKEN_BORASSIGN,
       TOKEN_BANDASSIGN,
       TOKEN_EORASSIGN,
-      TOKEN_ADD, 
+      TOKEN_ADD,
       TOKEN_SUB,
       TOKEN_MUL,
       TOKEN_DIV, // 30
@@ -56,8 +57,8 @@ enum __tks_lang_tokens {
       TOKEN_RETOBJRET, // <=>
       TOKEN_ASSIGN,
       TOKEN_CMPNE,
-      TOKEN_NOT, 
-      TOKEN_BITNOT, 
+      TOKEN_NOT,
+      TOKEN_BITNOT,
       TOKEN_CMPLE,
       TOKEN_CMPLT,
       TOKEN_CMPGE,
@@ -66,7 +67,7 @@ enum __tks_lang_tokens {
       TOKEN_TELSE,
       TOKEN_BEGARRAY,
       TOKEN_ENDARRAY,
-      TOKEN_VALUE, 
+      TOKEN_VALUE,
       TOKEN_HASHINI,
       TOKEN_IF,
       TOKEN_ELSE,
@@ -79,7 +80,7 @@ enum __tks_lang_tokens {
       TOKEN_SWITCH,
       TOKEN_CASE,
       TOKEN_BREAK,
-      TOKEN_RANGE, 
+      TOKEN_RANGE,
       TOKEN_INT,
       TOKEN_FLOAT, // 70
       TOKEN_OBJECT,
@@ -88,7 +89,7 @@ enum __tks_lang_tokens {
       TOKEN_VOID,
       TOKEN_NULL,
       TOKEN_TRUE,
-      TOKEN_FALSE, 
+      TOKEN_FALSE,
       TOKEN_MAYBE,
       TOKEN_E,  // xxx TODO: do these constants have to be tokens ? same goes for default, null, true, false, void
       TOKEN_LOG10, // 80
@@ -103,7 +104,7 @@ enum __tks_lang_tokens {
       TOKEN_LOOP,
       TOKEN_USE, // 90
       TOKEN_NEW,
-      TOKEN_FOREACH, 
+      TOKEN_FOREACH,
       TOKEN_ENUM,
       TOKEN_DEFINE,
       TOKEN_DEFINEALT,
@@ -113,17 +114,17 @@ enum __tks_lang_tokens {
       TOKEN_THIS,
       TOKEN_DEREF, // 100
       TOKEN_PREPARE,
-      TOKEN_COMPILE, 
+      TOKEN_COMPILE,
       TOKEN_EXTENDS,
       TOKEN_METHOD,
       TOKEN_PUBLIC,
       TOKEN_PRIVATE,
       TOKEN_PROTECTED,
-      TOKEN_INSTANCEOF, 
-      TOKEN_STATIC, 
+      TOKEN_INSTANCEOF,
+      TOKEN_STATIC,
       TOKEN_RETURNS, // 110
-      TOKEN_ADDRESS, 
-      TOKEN_CONSTRAINT, 
+      TOKEN_ADDRESS,
+      TOKEN_CONSTRAINT,
       TOKEN_DELEGATE,
       TOKEN_EXPLAIN,
       TOKEN_NOP,
@@ -136,13 +137,13 @@ enum __tks_lang_tokens {
       TOKEN_NAMESPACE,
       TOKEN_ABSTRACT,
       TOKEN_VIRTUAL,
-      
+
       TOKEN_NUMTOKENS
 };
 
 TKS_Token *   tks_get_token          (sU16 _tok);
-const sChar * tks_get_token_name     (sU16 _tok); 
-const sChar * tks_get_xml_token_name (sU16 _tok); 
+const sChar * tks_get_token_name     (sU16 _tok);
+const sChar * tks_get_xml_token_name (sU16 _tok);
 
 
-#endif
+#endif // TKS_TOKENTABLE_H__

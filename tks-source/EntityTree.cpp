@@ -1,7 +1,7 @@
 /// EntityTree.cpp
 ///
-/// (c) 2005-2024 by Bastian Spiegel <bs@tkscript.de>
-///     - published under the terms of the GNU general public license (GPL).
+/// (c) 2005-2026 by Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 ///
 
@@ -75,7 +75,7 @@ sBool EntityTree::addEntity(const char *_name, sUI _id) {
       return YAC_FALSE;
    }
 
-   if(--l > (EntityTree_MAX_LENGTH - 1))
+   if(--l > (EntityTree_MAX_LENGTH - 1u))
    {
       return YAC_FALSE;
    }
@@ -208,17 +208,17 @@ void EntityTree::exportToC(const char *_filename, const char *_funname) {
          output.append(":\n");
 
          sSI depth = 0;
-         sUI bfirst = 0;
+         sUI bfirst = 0u;
          sSI j = 33;
 
          while(NULL != ct)
          {
             // ---- write out if block for each entry
-            for(; j<EntityTree_ASCII_HI; j++)
+            for(; j < EntityTree_ASCII_HI; j++)
             {
                if(NULL != ct->entries&&ct->entries[j])
                {
-                  for(sSI ind=0; ind<(9+depth*3); ind++)
+                  for(sSI ind = 0; ind < (9+depth*3); ind++)
                   {
                      output.append(" ");
                   }
@@ -271,7 +271,7 @@ void EntityTree::exportToC(const char *_filename, const char *_funname) {
             {
                depth--;
 
-               for(sSI ind=0; ind<(9+depth*3); ind++)
+               for(sSI ind = 0; ind < (9+depth*3); ind++)
                {
                   output.append(" ");
                }
@@ -282,7 +282,7 @@ void EntityTree::exportToC(const char *_filename, const char *_funname) {
             }
             else
             {
-               ct = 0;
+               ct = NULL;
             }
          }
 

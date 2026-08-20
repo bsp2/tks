@@ -1,7 +1,7 @@
 /// TKS_ScriptObjectID.cpp
 ///
-/// (c) 2005-2008 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2005-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 
 #include <stdlib.h>
@@ -9,7 +9,7 @@
 
 #include "tks.h"
 #include "tks_inc_compiler.h"
- 
+
 #include "TKS_ScriptObjectID.h"
 
 
@@ -27,9 +27,9 @@ sBool TKS_ScriptObjectID::isValid(void) {
    else if(
       ((TKS_Compiler*)tkscript->compiler)->
       temp_modules[s_id.id].magic==s_id.magic
-      ) 
+      )
    {
-      return 1; 
+      return 1;
    }
    else
    {

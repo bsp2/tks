@@ -1,7 +1,7 @@
 /// YAC_Boolean.cpp
 ///
-/// (c) 2001-2024 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 
 #include <stdio.h>
@@ -19,8 +19,8 @@ YAC_Boolean::~YAC_Boolean(void) {
 }
 
 void YAC_Boolean::_New(sSI _v, YAC_Value *_r) {
-   YAC_Boolean *ro=(YAC_Boolean *)YAC_NEW_CORE_POOLED(YAC_CLID_BOOLEAN);
-   ro->value=(_v&1);
+   YAC_Boolean *ro = (YAC_Boolean *)YAC_NEW_CORE_POOLED(YAC_CLID_BOOLEAN);
+   ro->value = (_v&1);
    _r->initObject(ro, 1);
 }
 
@@ -28,7 +28,7 @@ void YAC_Boolean::_News(YAC_Object *_s, YAC_Value *_r) {
    if(YAC_Is_String(_s))
    {
       YAC_String *s = (YAC_String*) _s;
-      YAC_Boolean *ro=(YAC_Boolean *)YAC_NEW_CORE_POOLED(YAC_CLID_BOOLEAN);
+      YAC_Boolean *ro =(YAC_Boolean *)YAC_NEW_CORE_POOLED(YAC_CLID_BOOLEAN);
       if(s->_compareIgnoreCase(&tkscript->s_true))
       {
          ro->value = 1;

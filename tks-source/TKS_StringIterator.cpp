@@ -1,6 +1,7 @@
 /// TKS_StringIterator.cpp
-/// (c) 2001-2005 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+///
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 
 #include "tks.h"
@@ -9,69 +10,69 @@
 
 
 TKS_StringIterator::TKS_StringIterator(void) {
-   root       = 0;
-   sn_current = 0;
+   root       = NULL;
+   sn_current = NULL;
 }
 
 TKS_StringIterator::~TKS_StringIterator() {
-   root       = 0;
-   sn_current = 0;
+   root       = NULL;
+   sn_current = NULL;
 }
 
 void TKS_StringIterator::begin(const YAC_String *_r) {
    if(_r)
    {
-      root=_r;
+      root = _r;
       if(root->clones)
       {
-         sn_current=root->clones;
-         if(sn_current) 
+         sn_current = root->clones;
+         if(sn_current)
          {
-            current=(YAC_String*)sn_current->data; 
+            current = (YAC_String*)sn_current->data;
          }
-         else 
+         else
          {
-            current=0; 
+            current = NULL;
          }
       }
       else
       {
-         sn_current=0;
-         current=0;
+         sn_current = NULL;
+         current = NULL;
       }
    }
    else
    {
-      root=0;
-      sn_current=0;
-      current=0;
+      root = NULL;
+      sn_current = NULL;
+      current = NULL;
    }
 }
 
 void TKS_StringIterator::end(void) {
-   root=0;
-   sn_current=0;
-   current=0;
+   root = NULL;
+   sn_current = NULL;
+   current = NULL;
 }
 
 YAC_String *TKS_StringIterator::head(void) {
    if(sn_current)
    {
-      sn_current=StaticList::Head(sn_current);
-      current=(YAC_String*)sn_current->data;
+      sn_current = StaticList::Head(sn_current);
+      current = (YAC_String*)sn_current->data;
       return current;
    }
-   return 0;
+   return NULL;
 }
 
 YAC_String *TKS_StringIterator::tail(void) {
    if(sn_current)
    {
-      sn_current=StaticList::Tail(sn_current);
-      current=(YAC_String*)sn_current->data;
+      sn_current = StaticList::Tail(sn_current);
+      current = (YAC_String*)sn_current->data;
       return current;
    }
-   return 0;
+   return NULL;
 }
 
 YAC_String *TKS_StringIterator::next(void) {
@@ -84,7 +85,7 @@ YAC_String *TKS_StringIterator::next(void) {
          return current;
       }
    }
-   return 0;
+   return NULL;
 }
 
 YAC_String *TKS_StringIterator::previous(void) {
@@ -97,7 +98,7 @@ YAC_String *TKS_StringIterator::previous(void) {
          return current;
       }
    }
-   return 0;
+   return NULL;
 }
 
 sSI TKS_StringIterator::_head(void) {
@@ -117,12 +118,12 @@ sSI TKS_StringIterator::_previous(void) {
 }
 
 YAC_String *TKS_StringIterator::_getCurrent(void) {
-   if(sn_current->data) 
+   if(sn_current->data)
    {
-      return (YAC_String*)sn_current->data; 
+      return (YAC_String*)sn_current->data;
    }
-   else 
+   else
    {
-      return 0; 
+      return NULL;
    }
 }

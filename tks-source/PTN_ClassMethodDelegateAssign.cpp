@@ -1,7 +1,7 @@
 /// PTN_ClassMethodDelegateAssign.cpp
 ///
-/// (c) 2005-2018 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2005-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 
 #include "tks.h"
@@ -61,7 +61,7 @@ sBool PTN_ClassMethodDelegateAssign::resolveXRef(void) {
          }
       }
    }
-   return 0;
+   return YAC_FALSE;
 }
 
 void PTN_ClassMethodDelegateAssign::optimize(void) {

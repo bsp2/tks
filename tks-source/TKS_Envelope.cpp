@@ -1,7 +1,7 @@
 /// TKS_Envelope.cpp
 ///
-/// (c) 2001-2023 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 
 #include <math.h>
@@ -22,7 +22,7 @@ TKS_Envelope::TKS_Envelope(void) {
    delta_time    = 0.0;
    current_index = 0u;
    time_advance  = 1.0;
-   b_shreset     = 1;
+   b_shreset     = YAC_TRUE;
    env_fun       = TKS_ENVELOPE_LINEAR;
 }
 

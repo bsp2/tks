@@ -1,10 +1,11 @@
 /// PTN_IArrayExpr.h
 ///
-/// (c) 2001-2009 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
-#ifndef __PTN_IARRAYEXPR_H__
-#define __PTN_IARRAYEXPR_H__
+
+#ifndef PTN_IARRAYEXPR_H__
+#define PTN_IARRAYEXPR_H__
 
 
 class PTN_IArrayExpr : public PTN_CallableExpr {
@@ -14,11 +15,11 @@ public:
    YAC_Value  iarray_value;
    Feval      obj_expr_opt;
    Feval      index_expr_opt;
-   
+
 public:
    PTN_IArrayExpr(PTN_Expr *_objexpr, PTN_Expr *_idexpr);
    ~PTN_IArrayExpr();
-   
+
    sBool semanticCheck     (void);
    void  evalCallableExpr  (PTN_Env *_env, YAC_Value *_r) const;
    void  eval              (PTN_Env *_env, YAC_Value *_r) const;
@@ -28,4 +29,4 @@ public:
 };
 
 
-#endif // __PTN_IARRAYEXPR_H__
+#endif // PTN_IARRAYEXPR_H__

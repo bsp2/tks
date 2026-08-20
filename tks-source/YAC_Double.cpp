@@ -1,7 +1,7 @@
 /// YAC_Double.cpp
 ///
-/// (c) 2004-2024 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2004-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 
 #include <stdio.h>
@@ -19,19 +19,19 @@ YAC_Double::~YAC_Double(void) {
 }
 
 void YAC_Double::_Newi(sSI _v, YAC_Value *_r) {
-   YAC_Double *ro=(YAC_Double *)YAC_NEW_CORE_POOLED(YAC_CLID_DOUBLE);
-   ro->value=(sF64)_v;
+   YAC_Double *ro = (YAC_Double *)YAC_NEW_CORE_POOLED(YAC_CLID_DOUBLE);
+   ro->value = (sF64)_v;
    _r->initObject(ro, 1);
 }
 
 void YAC_Double::_Newf(sF32 _v, YAC_Value *_r) {
-   YAC_Double *ro=(YAC_Double *)YAC_NEW_CORE_POOLED(YAC_CLID_DOUBLE);
-   ro->value=(sF64)_v;
+   YAC_Double *ro = (YAC_Double *)YAC_NEW_CORE_POOLED(YAC_CLID_DOUBLE);
+   ro->value = (sF64)_v;
    _r->initObject(ro, 1);
 }
 
 void YAC_Double::_News(YAC_Object *_s, YAC_Value *_r) {
-   YAC_Double *ro=(YAC_Double *)YAC_NEW_CORE_POOLED(YAC_CLID_DOUBLE);
+   YAC_Double *ro = (YAC_Double *)YAC_NEW_CORE_POOLED(YAC_CLID_DOUBLE);
    _r->initObject(ro, 1);
    if(YAC_Is_String(_s))
    {
@@ -43,8 +43,8 @@ void YAC_Double::_News(YAC_Object *_s, YAC_Value *_r) {
 sBool YAC_VCALL YAC_Double::yacEquals(YAC_Object *_o) {
    if(YAC_Is_Double(_o))
    {
-      YAC_Double *f=(YAC_Double *) _o;
-      return (value>=(f->value-YAC_DOUBLE_DEVIATION))&&(value<=(f->value+YAC_DOUBLE_DEVIATION));
+      YAC_Double *f = (YAC_Double *) _o;
+      return (value >= (f->value-YAC_DOUBLE_DEVIATION))&&(value<=(f->value+YAC_DOUBLE_DEVIATION));
    }
    return 0;
 }
@@ -81,19 +81,19 @@ sBool YAC_VCALL YAC_Double::yacScanI64(sS64 *_v) {
 }
 
 void YAC_VCALL YAC_Double::yacValueOfI(sSI _v) {
-	value=(sF64)_v;
+	value = (sF64)_v;
 }
 
 void YAC_VCALL YAC_Double::yacValueOfF32(sF32 _v) {
-	value=(sF64)_v;
+	value = (sF64)_v;
 }
 
 void YAC_VCALL YAC_Double::yacValueOfF64(sF64 _v) {
-	value=_v;
+	value = _v;
 }
 
 void YAC_VCALL YAC_Double::yacValueOfI64(sS64 _v) {
-	value=(sF64)_v;
+	value = (sF64)_v;
 }
 
 void YAC_VCALL YAC_Double::yacOperator(sSI _cmd, YAC_Object *_o, YAC_Value *_r) {
@@ -103,9 +103,11 @@ void YAC_VCALL YAC_Double::yacOperator(sSI _cmd, YAC_Object *_o, YAC_Value *_r) 
       case YAC_OP_SHL:
          YAC_Object::yacOperator(YAC_OP_SHL, _o, _r);
          break;
+
       case YAC_OP_NEG:
-         value=-value;
+         value = -value;
          break;
+
       default:
    	   if(YAC_VALID(_o))
          {
@@ -143,14 +145,17 @@ void YAC_Double::myOperator(sSI _cmd, sF64 oval, YAC_Value *_r) {
 	case YAC_OP_DIV:     if(Ddblnonzero(oval))value/=oval;      break;
 	case YAC_OP_MOD:
 		if(((sSI)oval))
-			value=(sF64)(((sSI)value)%((sSI)oval));
+			value = (sF64)(((sSI)value) % ((sSI)oval));
 		break;
+
 	case YAC_OP_SHL:
-		value=(sF64)(((sSI)value)<<((sSI)oval));
+		value = (sF64)(((sSI)value) << ((sSI)oval));
 		break;
+
 	case YAC_OP_SHR:
-		value=(sF64)(((sSI)value)>>((sSI)oval));
+		value = (sF64)(((sSI)value) >> ((sSI)oval));
 		break;
+
 	case YAC_OP_CEQ:  YAC_RETI(Ddblequal(value, oval)); break;
 	case YAC_OP_CNE:  YAC_RETI(Ddblnotequal(value, oval)); break;
 	case YAC_OP_CLE:  YAC_RETI(value<=oval); break;
@@ -158,30 +163,35 @@ void YAC_Double::myOperator(sSI _cmd, sF64 oval, YAC_Value *_r) {
 	case YAC_OP_CGE:  YAC_RETI(value>=oval); break;
 	case YAC_OP_CGT:  YAC_RETI(value>oval);  break;
 	case YAC_OP_AND:
-		//value=(sF64)(((sSI)value)&((sSI)oval));
-		YAC_RETI( (((sSI)value)&((sSI)oval)) );
-		value=(sF64)_r->value.int_val;
+		// // value=(sF64)(((sSI)value)&((sSI)oval));
+		YAC_RETI( (((sSI)value) & ((sSI)oval)) );
+		value = (sF64)_r->value.int_val;
 		break;
+
 	case YAC_OP_OR:
-		value=(sF64)(((sSI)value)|((sSI)oval));
+		value = (sF64)(((sSI)value) | ((sSI)oval));
 		break;
+
 	case YAC_OP_EOR:
-		value=(sF64)(((sSI)value)^((sSI)oval));
+		value = (sF64)(((sSI)value) ^ ((sSI)oval));
 		break;
+
 	case YAC_OP_LAND:
-		YAC_RETI(((sSI)value)&&((sSI)oval));
+		YAC_RETI(((sSI)value) && ((sSI)oval));
 		break;
+
 	case YAC_OP_LOR:
-		YAC_RETI(((sSI)value)||((sSI)oval));
+		YAC_RETI(((sSI)value) || ((sSI)oval));
 		break;
+
 	case YAC_OP_LEOR:
-		YAC_RETI(((sSI)value)^((sSI)oval));
+		YAC_RETI(((sSI)value) ^ ((sSI)oval));
 		break;
 	}
 }
 
 void YAC_Double::setValue(sF32 _v) {
-    value=(sF64)_v;
+    value = (sF64)_v;
 }
 
 sF32 YAC_Double::getValue(void) {
@@ -221,5 +231,5 @@ sBool YAC_VCALL YAC_Double::yacToString(YAC_String *rs) const {
    rs->alloc(128);
    Dyac_snprintf((char*)rs->chars, 128, "%.64lg", value);
    rs->fixLength();
-	return 1;
+	return YAC_TRUE;
 }

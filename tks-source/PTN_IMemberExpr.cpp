@@ -1,7 +1,7 @@
 /// PTN_IMemberExpr.cpp
 ///
-/// (c) 2001-2020 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 
 #include "tks.h"
@@ -15,7 +15,7 @@
 
 
 PTN_IMemberExpr::PTN_IMemberExpr(PTN_Expr *_objexpr, YAC_String *_membername) {
-   obj_expr     = _objexpr; 
+   obj_expr     = _objexpr;
    obj_expr_opt = obj_expr->getEval();
 
    member_name.yacCopy(_membername);
@@ -33,25 +33,25 @@ sBool PTN_IMemberExpr::semanticCheck(void) {
 }
 
 sBool PTN_IMemberExpr::resolveXRef(void) {
-   if(obj_expr)  
-   { 
-      return obj_expr->resolveXRef(); 
+   if(obj_expr)
+   {
+      return obj_expr->resolveXRef();
    }
    Dprintf("[---] PTN_IMemberExpr::resolveXRef: missing obj_expr.\n");
-   return 0;
+   return YAC_FALSE;
 }
 
 void PTN_IMemberExpr::optimize(void) {
-   if(obj_expr)  
-   { 
-      obj_expr->optimize(); 
-      obj_expr_opt = obj_expr->getEval(); 
+   if(obj_expr)
+   {
+      obj_expr->optimize();
+      obj_expr_opt = obj_expr->getEval();
    }
 }
 
-static void PTN_IMemberExpr__eval(PTN_Env *_env, YAC_Value *_r, const PTN_Expr *_st) { 
+static void PTN_IMemberExpr__eval(PTN_Env *_env, YAC_Value *_r, const PTN_Expr *_st) {
    const PTN_IMemberExpr *st = (const PTN_IMemberExpr*)_st;
-   
+
    TKS_CachedObject *co;
    const YAC_CommandY *cppCommandY;
 
@@ -59,7 +59,7 @@ static void PTN_IMemberExpr__eval(PTN_Env *_env, YAC_Value *_r, const PTN_Expr *
    // Evaluate object expression
    //
    YAC_Value iobjVal;
-   st->obj_expr_opt(_env, &iobjVal, st->obj_expr); 
+   st->obj_expr_opt(_env, &iobjVal, st->obj_expr);
    if(Dhaveexception)
    {
       Dhandleexception(st->obj_expr);
@@ -75,11 +75,11 @@ static void PTN_IMemberExpr__eval(PTN_Env *_env, YAC_Value *_r, const PTN_Expr *
    if(iobjVal.type >= YAC_TYPE_OBJECT)
    {
       if(TKS_VALID(iobjVal.value.object_val))
-      { 
+      {
          //
          // First try meta class member
          //
-         sUI ccid = iobjVal.value.object_val->class_ID; 
+         sUI ccid = iobjVal.value.object_val->class_ID;
 
          // Is meta class ?
          if(YAC_CLID_CLASS == ccid)
@@ -92,11 +92,11 @@ static void PTN_IMemberExpr__eval(PTN_Env *_env, YAC_Value *_r, const PTN_Expr *
             {
                // Read meta class member value
                sci->getClassMemberValueByID(_r, (sUI)co->value.int_val);
-            } 
+            }
             else
             {
                Drtthrow(st, TKS_EXCEPTION_SCRIPTCLASSMEMBERNOTFOUND, "failed to resolve script-class member");
-            } 
+            }
          }
          else
          {
@@ -107,17 +107,17 @@ static void PTN_IMemberExpr__eval(PTN_Env *_env, YAC_Value *_r, const PTN_Expr *
             // Lookup command
             TKS_ClassTemplate *clt = TKSCRIPT__ATOM_SPEEDPATH[ccid];
             cppCommandY = clt->findCommandY((YAC_String*)&st->get_method_name);
-            
-            if(cppCommandY) 
-            { 
+
+            if(cppCommandY)
+            {
                if(cppCommandY->y_retval_cmd)  // _YAC_RVAL ?
                   cppCommandY = cppCommandY->y_retval_cmd;
 
                // Read C++ property via getter method
                cppCommandY->execRead(iobjVal.value.object_val, _r);
                Ddubiousfixstringtype(_r);
-            } 
-            else 
+            }
+            else
             {
                Drtthrow(st, TKS_EXCEPTION_NATIVECLASSMEMBERNOTFOUND, "failed to resolve c++-class member");
             }
@@ -129,10 +129,10 @@ static void PTN_IMemberExpr__eval(PTN_Env *_env, YAC_Value *_r, const PTN_Expr *
       }
    }
    else
-   { 
+   {
       // type mismatch..
       Drtthrow(st, TKS_EXCEPTION_TYPEMISMATCH, "cannot get member of non-object type");
-   } 
+   }
 
    iobjVal.unsetFast();
 }
@@ -141,7 +141,7 @@ Feval PTN_IMemberExpr::getEval(void) const {
    return PTN_IMemberExpr__eval;
 }
 
-void PTN_IMemberExpr::evalCallableExpr(PTN_Env *_env, YAC_Value *_r) const { 
+void PTN_IMemberExpr::evalCallableExpr(PTN_Env *_env, YAC_Value *_r) const {
    PTN_IMemberExpr__eval(_env, _r, this);
 }
 

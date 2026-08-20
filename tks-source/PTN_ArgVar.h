@@ -1,11 +1,11 @@
 /// PTN_ArgVar.h
 ///
-/// (c) 2001-2013 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 
-#ifndef __PTN_ARGVAR_H__
-#define __PTN_ARGVAR_H__
+#ifndef PTN_ARGVAR_H__
+#define PTN_ARGVAR_H__
 
 
 class PTN_ArgVar : public PTN_Node {
@@ -22,4 +22,4 @@ public:
 };
 
 
-#endif // __PTN_ARGVAR_H__
+#endif // PTN_ARGVAR_H__

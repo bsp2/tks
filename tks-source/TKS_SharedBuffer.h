@@ -1,10 +1,12 @@
 /// TKS_SharedBuffer.h
 ///
 /// (c) 2005-2026 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under terms of the GNU general public license (GPL).
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
+
 #ifndef TKS_SHAREDBUFFER_H__
 #define TKS_SHAREDBUFFER_H__
+
 
 enum __TKS_SharedBufferHeader {
    TKS_SBH_SIZE = 0, // size of region excluding this header

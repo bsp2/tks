@@ -1,10 +1,11 @@
 /// TKS_ObjectArrayIterator.h
 ///
-/// (c) 2001-2009 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
-#ifndef __TKS_OBJECTARRAYITERATOR_H__
-#define __TKS_OBJECTARRAYITERATOR_H__
+
+#ifndef TKS_OBJECTARRAYITERATOR_H__
+#define TKS_OBJECTARRAYITERATOR_H__
 
 
 class TKS_ObjectArrayIterator : public YAC_Iterator {
@@ -14,9 +15,9 @@ public:
 public:
    TKS_ObjectArrayIterator(const YAC_ObjectArray *_ht);
    ~TKS_ObjectArrayIterator();
- 
+
    void YAC_VCALL getNext(YAC_Value*);
 };
 
 
-#endif // __TKS_OBJECTARRAYITERATOR_H__
+#endif // TKS_OBJECTARRAYITERATOR_H__

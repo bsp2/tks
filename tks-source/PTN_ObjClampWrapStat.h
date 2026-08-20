@@ -1,10 +1,11 @@
 /// PTN_ObjClampWrapStat.h
 ///
-/// (c) 2001-2009 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
-#ifndef __PTN_OBJCLAMPWRAPSTAT_H__
-#define __PTN_OBJCLAMPWRAPSTAT_H__
+
+#ifndef PTN_OBJCLAMPWRAPSTAT_H__
+#define PTN_OBJCLAMPWRAPSTAT_H__
 
 
 class PTN_ObjClampWrapStat : public PTN_Statement {
@@ -15,11 +16,11 @@ public:
    PTN_Expr         *max;
    Feval             min_opt;
    Feval             max_opt;
-   
+
 public:
    PTN_ObjClampWrapStat  (sU8 _mode, TKS_CachedObject *_var, PTN_Expr *_min, PTN_Expr *_max);
    ~PTN_ObjClampWrapStat ();
-   
+
    sBool   resolveXRef     (void);
    void    optimize        (void);
    sBool   semanticCheck   (void);
@@ -28,4 +29,4 @@ public:
 };
 
 
-#endif // __PTN_OBJCLAMPWRAPSTAT_H__
+#endif // PTN_OBJCLAMPWRAPSTAT_H__

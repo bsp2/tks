@@ -1,28 +1,29 @@
 /// YAC_IntArray.h
 ///
-/// (c) 2001-2025 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
+
 #ifndef YAC_INTARRAY_H__
 #define YAC_INTARRAY_H__
 
 
 class YAC_IntArray : public YAC_Object {
 public:
-   sBool own_data; 
+   sBool own_data;
    sUI   max_elements;
    sUI   num_elements;
-   sSI  *elements; 
-   
+   sSI  *elements;
+
 public:
    YAC_IntArray(void);
    ~YAC_IntArray();
-   
+
    sBool         YAC_VCALL yacIteratorInit (YAC_Iterator *) const;
-   
+
    void          YAC_VCALL yacSerialize               (YAC_Object *, sUI _typeinfo);
    sUI           YAC_VCALL yacDeserialize             (YAC_Object *, sUI _typeinfo);
-   
+
    void          YAC_VCALL yacArrayCopySize           (YAC_Object *_intarray);
    sBool         YAC_VCALL yacArrayAlloc              (sUI _num, sUI,sUI,sUI);
    sBool         YAC_VCALL yacArrayRealloc            (sUI _num, sUI,sUI,sUI);
@@ -39,12 +40,12 @@ public:
    sUI           YAC_VCALL yacArrayGetMaxElements     (void) { return max_elements; }
 
    sBool         YAC_VCALL yacToString                (YAC_String *_s) const;
-  
+
    void          YAC_VCALL yacOperator                (sSI, YAC_Object*, YAC_Value*);
 
    /* /\* sBool compareArray(YAC_Object *_o); *\/ */
    sBool         _isEqual           (YAC_Object *_o);
-   
+
    sBool         alloc              (sUI _maxElements);
    void          free               (void);
    sBool         add                (sSI);
@@ -71,35 +72,35 @@ public:
    void          swapByteOrder      (void);
    sBool         visitBytes         (YAC_Object *, sSI, sSI);
    void          copyFrom           (YAC_Object *_ia, sSI _off, sSI _len, sSI _doff);
-   sSI           elementExists      (sSI);  // DEPRECATED 
-   sBool         _contains          (sSI); 
-   sBool         _remove            (sSI); 
-   sUI           _read8             (YAC_Object *_st, sUI _num, sUI _doff); 
-   sUI           _read16            (YAC_Object *_st, sUI _num, sUI _doff); 
-   sUI           _read32            (YAC_Object *_st, sUI _num, sUI _doff); 
-   sUI           _write8            (YAC_Object *_st, sUI _num, sUI _doff); 
-   sUI           _write16           (YAC_Object *_st, sUI _num, sUI _doff); 
+   sSI           elementExists      (sSI);  // DEPRECATED
+   sBool         _contains          (sSI);
+   sBool         _remove            (sSI);
+   sUI           _read8             (YAC_Object *_st, sUI _num, sUI _doff);
+   sUI           _read16            (YAC_Object *_st, sUI _num, sUI _doff);
+   sUI           _read32            (YAC_Object *_st, sUI _num, sUI _doff);
+   sUI           _write8            (YAC_Object *_st, sUI _num, sUI _doff);
+   sUI           _write16           (YAC_Object *_st, sUI _num, sUI _doff);
    sUI           _write32           (YAC_Object *_st, sUI _num, sUI _doff);
    void          _getString         (YAC_Value *_r) const;
    void          _getString2        (YAC_Value *_r) const;   // (x;y) pairs
    void          _getString3        (YAC_Value *_r) const;   // (x;y;z) pairs
-   sSI           getMin             (void); 
-   sSI           getMax             (void); 
-   sSI           getAbsMin          (void); 
-   sSI           getAbsMax          (void); 
-   sF32          getMean            (void); 
-   sF32          getAbsMean         (void); 
-   sSI           get                (sSI _idx); 
+   sSI           getMin             (void);
+   sSI           getMax             (void);
+   sSI           getAbsMin          (void);
+   sSI           getAbsMax          (void);
+   sF32          getMean            (void);
+   sF32          getAbsMean         (void);
+   sSI           get                (sSI _idx);
    void         _set                (sUI _idx, sSI _val);
    sSI           _getRev            (sSI _idx);
    void          _setRev            (sSI _idx, sSI _val);
    sSI           _getDefault        (sUI _index, sSI _def);
-   void          identity           (sSI _num); 
+   void          identity           (sSI _num);
    sSI           indexOf            (sSI _val, sSI _off);
    sSI           indexOfNot         (sSI _val, sSI _off);
-   void          sortByValue        (YAC_Object *_indexTable); 
-   void          quicksortByValue   (sSI *, sSI _l, sSI _r); 
-   sBool         rearrange          (YAC_Object *_ia);    
+   void          sortByValue        (YAC_Object *_indexTable);
+   void          quicksortByValue   (sSI *, sSI _l, sSI _r);
+   sBool         rearrange          (YAC_Object *_ia);
    sBool        _swap               (sSI _indexs, sSI _indexd);
    void         _visit              (YAC_Object *_ia, sSI _off, sSI _len);
    void         _useAll             (void);

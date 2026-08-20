@@ -1,15 +1,15 @@
-// TKS_Mailbox.cpp 
-/// 
-/// (c) 2009-2023 by Bastian Spiegel <bs@tkscript.de> 
-///     - distributed under terms of the GNU general public license (GPL). 
-/// 
+// TKS_Mailbox.cpp
+///
+/// (c) 2009-2026 by Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
+///
 
-#include "tks.h" 
+#include "tks.h"
 
 #include "YAC_ValueObject.h"
 #include "YAC_Event.h"
 #include "TKS_Mutex.h"
-#include "TKS_Condition.h" 
+#include "TKS_Condition.h"
 #include "TKS_Mailbox.h"
 
 TKS_Mailbox::TKS_Mailbox(void) {
@@ -21,7 +21,7 @@ TKS_Mailbox::~TKS_Mailbox() {
 }
 
 void TKS_Mailbox::init(void) {
-   events         = NULL;
+   events            = NULL;
    max_queue_size    = 0u;
    write_off         = 0u;
    read_off          = 0u;
@@ -241,7 +241,7 @@ sSI TKS_Mailbox::findEventIdxByIdNoMtx(sSI _id) {
       {
          YAC_Event *ev = events[i];
          if(NULL != ev) // already read/unlinked ?
-         {  
+         {
             if(ev->id == _id)
             {
                // Found matching event
@@ -249,7 +249,7 @@ sSI TKS_Mailbox::findEventIdxByIdNoMtx(sSI _id) {
             }
             k--;
          }
-   
+
          // Check next event
          i = (i + 1) % max_queue_size;
       }

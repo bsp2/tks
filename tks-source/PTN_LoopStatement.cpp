@@ -1,7 +1,7 @@
 /// PTN_LoopStatement.cpp
 ///
 /// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 
 #include "tks.h"
@@ -270,4 +270,4 @@ sU8 PTN_LoopStatement::compile(VMCore *_vm) {
    }
    return 0xFF;
 }
-#endif
+#endif // TKS_JIT

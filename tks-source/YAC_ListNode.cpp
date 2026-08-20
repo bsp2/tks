@@ -1,11 +1,8 @@
 /// YAC_ListNode.cpp
 ///
-/// (c) 2002-2009 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2002-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
-
-// #include <stdlib.h>
-// #include <string.h>
 
 #include "tks.h"
 
@@ -18,8 +15,8 @@
 
 YAC_ListNode::YAC_ListNode(void) {
    class_ID = YAC_CLID_LISTNODE;
-   prev = next = NULL; 
-   b_immutable = 0;
+   prev = next = NULL;
+   b_immutable = YAC_FALSE;
 }
 
 YAC_ListNode::~YAC_ListNode() {
@@ -35,33 +32,33 @@ void YAC_ListNode::freeList(void) {
       next = n;
    }
    unset();
-} 
- 
-void YAC_ListNode::_freeList(void) { 
-   if(!b_immutable) 
-   { 
-      freeList(); 
-   } 
-   else 
-   { 
-      Dprintf("[---] ListNode::freeList(): cannot operate on immutable node.\n"); 
-   } 
+}
+
+void YAC_ListNode::_freeList(void) {
+   if(!b_immutable)
+   {
+      freeList();
+   }
+   else
+   {
+      Dprintf("[---] ListNode::freeList(): cannot operate on immutable node.\n");
+   }
 }
 
 YAC_ListNode *YAC_ListNode::getHead(void) {
    YAC_ListNode *r=this;
-   while(r->prev) 
+   while(r->prev)
    {
-      r=r->prev; 
+      r = r->prev;
    }
    return r;
 }
 
 YAC_ListNode *YAC_ListNode::getTail(void) {
    YAC_ListNode *r=this;
-   while(r->next) 
+   while(r->next)
    {
-      r=r->next; 
+      r = r->next;
    }
    return r;
 }
@@ -74,11 +71,11 @@ YAC_ListNode *YAC_ListNode::getNext(void) {
    return next;
 }
 
-void YAC_ListNode::appendNode(YAC_ListNode *_n) { 
+void YAC_ListNode::appendNode(YAC_ListNode *_n) {
    if(!next)
    {
       next = _n;
-      next->prev = this; 
+      next->prev = this;
    }
    else
    {
@@ -92,48 +89,48 @@ void YAC_ListNode::appendNode(YAC_ListNode *_n) {
 YAC_ListNode *YAC_ListNode::appendEmpty(void) {
    YAC_ListNode *n = (YAC_ListNode*) YAC_NEW_CORE_POOLED(YAC_CLID_LISTNODE);
    n->b_immutable=b_immutable;
-   if(n) 
+   if(n)
    {
-      appendNode(n); 
+      appendNode(n);
    }
    return next;
-} 
- 
-YAC_ListNode *YAC_ListNode::_appendEmpty(void) { 
-   if(b_immutable) 
-   { 
-      Dprintf("[---] ListNode::appendEmpty(): cannot operate on immutable node.\n"); 
-      return 0; 
-   } 
-   else 
-   { 
-      return appendEmpty(); 
-   } 
 }
- 
-YAC_ListNode *YAC_ListNode::_appendValue(YAC_Object *_v) { // deprecated 
-   return YAC_ListNode::_append(_v); 
-} 
- 
-YAC_ListNode *YAC_ListNode::_append(YAC_Object *_v) { 
-   if(b_immutable) 
-   { 
-      Dprintf("[---] ListNode::append(): cannot operate on immutable node.\n"); 
-      return 0; 
-   } 
-   else 
-   { 
-      return append(_v); 
-   } 
-} 
+
+YAC_ListNode *YAC_ListNode::_appendEmpty(void) {
+   if(b_immutable)
+   {
+      Dprintf("[---] ListNode::appendEmpty(): cannot operate on immutable node.\n");
+      return 0;
+   }
+   else
+   {
+      return appendEmpty();
+   }
+}
+
+YAC_ListNode *YAC_ListNode::_appendValue(YAC_Object *_v) { // deprecated
+   return YAC_ListNode::_append(_v);
+}
+
+YAC_ListNode *YAC_ListNode::_append(YAC_Object *_v) {
+   if(b_immutable)
+   {
+      Dprintf("[---] ListNode::append(): cannot operate on immutable node.\n");
+      return 0;
+   }
+   else
+   {
+      return append(_v);
+   }
+}
 
 YAC_ListNode *YAC_ListNode::append(YAC_Object *_v) {
    if(YAC_BCHK(_v, YAC_CLID_VALUE))
    {
       YAC_ValueObject *v=(YAC_ValueObject*)_v;
-      if(appendEmpty()) 
+      if(appendEmpty())
       {
-         next->copySafe(v); 
+         next->copySafe(v);
       }
       return next;
    }
@@ -162,8 +159,8 @@ YAC_ListNode *YAC_ListNode::concatListGrab(YAC_ListNode *_l) {
    return c;
 }
 
-void YAC_VCALL YAC_ListNode::yacOperatorAssign(YAC_Object *_o) { 
-   if(_o==this) 
+void YAC_VCALL YAC_ListNode::yacOperatorAssign(YAC_Object *_o) {
+   if(_o==this)
       return;
    if((!b_immutable)&&YAC_CHK(_o, YAC_CLID_LISTNODE))
    {
@@ -179,93 +176,93 @@ void YAC_VCALL YAC_ListNode::yacOperatorAssign(YAC_Object *_o) {
       {
          c->copySafe(l);
          l=l->next;
-         if(l) 
+         if(l)
          {
-            c=c->appendEmpty(); 
+            c=c->appendEmpty();
          }
       }
    }
-   else 
+   else
    {
-      if(b_immutable) 
-      { 
-         Dprintf("[---] ListNode::operator=: cannot operate on immutable node.\n"); 
-      } 
-      else 
-      { 
-         initObject(_o, 0); 
-      } 
+      if(b_immutable)
+      {
+         Dprintf("[---] ListNode::operator=: cannot operate on immutable node.\n");
+      }
+      else
+      {
+         initObject(_o, 0);
+      }
    }
 }
 
 void YAC_VCALL YAC_ListNode::yacOperator(sSI _cmd, YAC_Object *_o, YAC_Value *_r) {
-   if(_o == this) 
-   { 
+   if(_o == this)
+   {
       YAC_Object::yacOperator(_cmd, _o, _r);
-      return; 
-   } 
+      return;
+   }
    switch(_cmd) {
    default:
       YAC_ValueObject::yacOperator(_cmd, _o, _r);
       break;
-      
-   case YAC_OP_ADD: 
-      if(!b_immutable) 
-      { 
-         if(YAC_CHK(_o, YAC_CLID_LISTNODE)) 
+
+   case YAC_OP_ADD:
+      if(!b_immutable)
+      {
+         if(YAC_CHK(_o, YAC_CLID_LISTNODE))
          {
-            concatListRef((YAC_ListNode*)_o); 
+            concatListRef((YAC_ListNode*)_o);
          }
          else
          {
             YAC_ListNode *c=getTail()->appendEmpty();
-            if(c) 
+            if(c)
             {
-               if(YAC_BCHK(_o, YAC_CLID_VALUE)) 
+               if(YAC_BCHK(_o, YAC_CLID_VALUE))
                {
-                  c->initValue((YAC_ValueObject*)_o); 
+                  c->initValue((YAC_ValueObject*)_o);
                }
-               else 
+               else
                {
-                  c->initObject(_o, 0); 
-               } 
+                  c->initObject(_o, 0);
+               }
             }
-         } 
-      } 
-      else 
-      { 
-         Dprintf("[---] ListNode::operator+: cannot operate on immutable node.\n"); 
+         }
+      }
+      else
+      {
+         Dprintf("[---] ListNode::operator+: cannot operate on immutable node.\n");
       }
       break;
    case YAC_OP_EOR:
-      if(!b_immutable) 
-      { 
-         if(YAC_CHK(_o, YAC_CLID_LISTNODE)) 
+      if(!b_immutable)
+      {
+         if(YAC_CHK(_o, YAC_CLID_LISTNODE))
          {
-            concatListGrab((YAC_ListNode*)_o); 
+            concatListGrab((YAC_ListNode*)_o);
          }
          else
          {
             YAC_ListNode *c = getTail()->appendEmpty();
-            if(c) 
+            if(c)
             {
-               if(YAC_BCHK(_o, YAC_CLID_VALUE)) 
+               if(YAC_BCHK(_o, YAC_CLID_VALUE))
                {
-                  c->copySafe((YAC_ValueObject*)_o); 
+                  c->copySafe((YAC_ValueObject*)_o);
                }
-               else 
+               else
                {
-                  c->initObject(_o, 0); 
-               } 
+                  c->initObject(_o, 0);
+               }
             }
-         } 
+         }
       }
-      else 
-      { 
-         Dprintf("[---] ListNode::operator^: cannot operate on immutable node.\n"); 
-      } 
-      break; 
-      
+      else
+      {
+         Dprintf("[---] ListNode::operator^: cannot operate on immutable node.\n");
+      }
+      break;
+
    }
 }
 
@@ -280,7 +277,7 @@ sBool YAC_VCALL YAC_ListNode::yacToString(YAC_String *_s) const {
    _s->alloc(512);
    _s->copy("{");
    const YAC_ListNode *c=this;
-   do  
+   do
    {
       switch(c->type)
       {
@@ -303,9 +300,9 @@ sBool YAC_VCALL YAC_ListNode::yacToString(YAC_String *_s) const {
             c->value.object_val->yacToString(&t);
             _s->append(&t);
          }
-         else 
+         else
          {
-            _s->append("<null>"); 
+            _s->append("<null>");
          }
          break;
       ////case 4:
@@ -317,12 +314,12 @@ sBool YAC_VCALL YAC_ListNode::yacToString(YAC_String *_s) const {
       ////   break;
       }
       c=c->next;
-      if(c) 
+      if(c)
       {
-         _s->append(", "); 
+         _s->append(", ");
       }
    } while(c);
-    
+
    _s->append("}");
    return 1;
 }
@@ -351,7 +348,7 @@ void YAC_ListNode::_getDebugStrings(YAC_Value *_r) {
    YAC_String *r = (YAC_String*) YAC_NEW_CORE_POOLED(YAC_CLID_STRING);
    YAC_String t;
    t.alloc(192);
-   r->alloc(1024);  
+   r->alloc(1024);
    r->empty();
    YAC_ListNode *c = this;
    ////YAC_ListNode *p = c->prev;
@@ -370,9 +367,9 @@ void YAC_VCALL YAC_ListNode::yacArrayGet(void *_context, sUI _index, YAC_Value *
    if( ((sSI)_index)>0 )
    {
       sUI i=0;
-      while( (i++<_index) && c->next ) 
+      while( (i++<_index) && c->next )
       {
-         c=c->next; 
+         c=c->next;
       }
    }
    if(c != NULL)
@@ -382,7 +379,7 @@ void YAC_VCALL YAC_ListNode::yacArrayGet(void *_context, sUI _index, YAC_Value *
    }
    else
    {
-      _r->initVoid(); 
+      _r->initVoid();
 
       YAC_String *msg = (YAC_String*) YAC_NEW_CORE_POOLED(YAC_CLID_STRING128);
       ////msg->alloc(96);
@@ -390,18 +387,18 @@ void YAC_VCALL YAC_ListNode::yacArrayGet(void *_context, sUI _index, YAC_Value *
       PTN_Env env; env.continue_flag=1; env.context=(TKS_Context*)_context;
       PTN_Env*_env = &env;
       Drtthrow(NULL, TKS_EXCEPTION_READARRAYOUTOFBOUNDS, msg);
-      ////_v->initNull(); 
+      ////_v->initNull();
    }
 }
- 
+
 void YAC_VCALL YAC_ListNode::yacArrayGetDeref(void *_context, sUI _index, YAC_Value *_r) {
    YAC_ListNode *c = this;
    if( ((sSI)_index)>0 )
    {
       sUI i=0;
-      while( (i++<_index) && c->next ) 
+      while( (i++<_index) && c->next )
       {
-         c=c->next; 
+         c=c->next;
       }
    }
    if(c != NULL)
@@ -411,7 +408,7 @@ void YAC_VCALL YAC_ListNode::yacArrayGetDeref(void *_context, sUI _index, YAC_Va
    }
    else
    {
-      _r->initVoid(); 
+      _r->initVoid();
 
       YAC_String *msg = (YAC_String*) YAC_NEW_CORE_POOLED(YAC_CLID_STRING128);
       ////msg->alloc(96);
@@ -419,26 +416,26 @@ void YAC_VCALL YAC_ListNode::yacArrayGetDeref(void *_context, sUI _index, YAC_Va
       PTN_Env env; env.continue_flag=1; env.context=(TKS_Context*)_context;
       PTN_Env*_env = &env;
       Drtthrow(NULL, TKS_EXCEPTION_READARRAYOUTOFBOUNDS, msg);
-      ////_v->initNull(); 
+      ////_v->initNull();
    }
 }
 
-YAC_Object *YAC_ListNode::getSubList(sSI _index) { 
-   if( ((sSI)_index)>0) 
-   { 
-      sSI i=0; 
-      YAC_ListNode *c=this; 
-      while( (i++<_index) && c->next ) 
-      { 
-         c=c->next; 
-      } 
-      if(i==(_index+1)) 
-      { 
-         return c; 
-      } 
-   } 
-   return yac_null; 
-} 
+YAC_Object *YAC_ListNode::getSubList(sSI _index) {
+   if( ((sSI)_index)>0)
+   {
+      sSI i=0;
+      YAC_ListNode *c=this;
+      while( (i++<_index) && c->next )
+      {
+         c=c->next;
+      }
+      if(i==(_index+1))
+      {
+         return c;
+      }
+   }
+   return yac_null;
+}
 
 void YAC_VCALL YAC_ListNode::yacArraySet(void *_context, sUI _index, YAC_Value *_v) {
 
@@ -448,9 +445,9 @@ void YAC_VCALL YAC_ListNode::yacArraySet(void *_context, sUI _index, YAC_Value *
    if(_index)
    {
       sUI i=0;
-      while( (i++<_index) && c->next ) 
+      while( (i++<_index) && c->next )
       {
-         c=c->next; 
+         c=c->next;
       }
    }
    c->copySafe(_v);
@@ -473,27 +470,27 @@ void YAC_ListNode::_getCopy(YAC_Value*_r) {
       if(c)
       {
          rc->appendEmpty();
-         rc=rc->next;		
+         rc=rc->next;
       }
    }
    YAC_RETO(r, 1);
 }
 
-sUI YAC_ListNode::_getSize(void) { 
+sUI YAC_ListNode::_getSize(void) {
    return yacArrayGetNumElements();
 }
- 
-sUI YAC_VCALL YAC_ListNode::yacArrayGetNumElements(void) { 
-   sUI r=0; 
-   YAC_ListNode *c=this; 
-   while(c) 
-   { 
-      r++;  
-      c=c->next; 
-   } 
-   return r; 
-} 
- 
-sUI YAC_VCALL YAC_ListNode::yacArrayGetMaxElements(void) { 
-   return yacArrayGetNumElements(); 
-} 
+
+sUI YAC_VCALL YAC_ListNode::yacArrayGetNumElements(void) {
+   sUI r = 0u;
+   YAC_ListNode *c = this;
+   while(c)
+   {
+      r++;
+      c = c->next;
+   }
+   return r;
+}
+
+sUI YAC_VCALL YAC_ListNode::yacArrayGetMaxElements(void) {
+   return yacArrayGetNumElements();
+}

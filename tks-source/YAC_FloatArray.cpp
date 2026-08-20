@@ -1,7 +1,7 @@
 /// YAC_FloatArray.cpp
 ///
-/// (c) 2001-2025 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 
 #include <math.h>
@@ -33,7 +33,7 @@ extern sF32 YAC_CALL APIC_mathDistancePointPlane2d(sF32 px, sF32 py, sF32 qx, sF
 //  for your own purposes, free or commercial.
 //
 struct YAC_Biquad2 {
-   // per channel 
+   // per channel
 
    // Filter type
    enum {
@@ -93,7 +93,7 @@ struct YAC_Biquad2 {
             b1 = 2 * (K * K - 1) * norm;
             b2 = (1 - K / Q + K * K) * norm;
             break;
-            
+
          case HPF:
             norm = 1 / (1 + K / Q + K * K);
             a0 = 1 * norm;
@@ -111,7 +111,7 @@ struct YAC_Biquad2 {
             }
 #endif
             break;
-            
+
          case BPF:
             norm = 1 / (1 + K / Q + K * K);
             a0 = K / Q * norm;
@@ -120,7 +120,7 @@ struct YAC_Biquad2 {
             b1 = 2 * (K * K - 1) * norm;
             b2 = (1 - K / Q + K * K) * norm;
             break;
-            
+
          case BRF:
             norm = 1 / (1 + K / Q + K * K);
             a0 = (1 + K * K) * norm;
@@ -129,7 +129,7 @@ struct YAC_Biquad2 {
             b1 = a1;
             b2 = (1 - K / Q + K * K) * norm;
             break;
-            
+
          case PEQ:
             if(_dbGain >= 0)
             {
@@ -2557,7 +2557,7 @@ void YAC_FloatArray::biquad(YAC_Object *_faIn, sSI _type, sF32 _dbGain, sF32 _fr
             elements[i] = flt.filter(o->elements[i]);
          }
       }
-   }   
+   }
 }
 
 void YAC_FloatArray::mergeArraySkipVal(YAC_Object *_fa, float _skipVal) {
@@ -2645,7 +2645,7 @@ public:
          bit_offset = 0u;
       }
    }
-  
+
 };
 
 sBool YAC_FloatArray::saveToStreamSigned12FrameEnc(YAC_Object *_stream, sUI _numElements) {
@@ -2720,7 +2720,7 @@ sBool YAC_FloatArray::saveToStreamSigned12FrameEnc(YAC_Object *_stream, sUI _num
                {
                   s.s16 = last = smp16[srcOff++];
                   bs.write12(s.u16);
-               }               
+               }
             }
             else if( (minDelta < -128) || (maxDelta > 127) )
             {

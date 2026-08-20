@@ -1,20 +1,19 @@
 /// PTN_Throw.cpp
 ///
-/// (c) 2006-2009 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under the terms of the GNU general public license (GPL).
+/// (c) 2006-2026 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
-
 
 #include "tks.h"
 #include "PTN_Node.h"
 #include "PTN_Expr.h"
 #include "PTN_Statement.h"
 
-#include "PTN_Throw.h" 
+#include "PTN_Throw.h"
 
 
 PTN_Throw::PTN_Throw(void) {
-   exception_type = NULL; 
+   exception_type = NULL;
    msg_expr       = NULL;
    msg_expr_opt   = NULL;
 }
@@ -37,13 +36,13 @@ sBool PTN_Throw::resolveXRef(void) {
 
 void PTN_Throw::optimize(void) {
    if(msg_expr)
-   { 
-      tks_optimize_expr(&msg_expr, YAC_TYPE_STRING); 
-      msg_expr_opt = msg_expr->getEval(); 
+   {
+      tks_optimize_expr(&msg_expr, YAC_TYPE_STRING);
+      msg_expr_opt = msg_expr->getEval();
    }
 }
 
-static void PTN_Throw__eval(PTN_Env *_env, const PTN_Statement *_st) {  
+static void PTN_Throw__eval(PTN_Env *_env, const PTN_Statement *_st) {
    Dtracest;
    const PTN_Throw *st = (const PTN_Throw*)_st;
 
@@ -61,7 +60,7 @@ static void PTN_Throw__eval(PTN_Env *_env, const PTN_Statement *_st) {
             Dhandleexception(st->msg_expr);
             return;
          }
-   
+
          // Cast value to string if it aint void or <null>
          if(v.type != YAC_TYPE_VOID)
          {
@@ -73,7 +72,7 @@ static void PTN_Throw__eval(PTN_Env *_env, const PTN_Statement *_st) {
                   msg = (YAC_String*) YAC_NEW_CORE_POOLED(YAC_CLID_STRING);
                   msg->yacOperatorAssign(v.value.string_val);
                }
-            }  
+            }
             else
             {
                v.typecast(YAC_TYPE_STRING);
@@ -83,7 +82,7 @@ static void PTN_Throw__eval(PTN_Env *_env, const PTN_Statement *_st) {
          }
 
          v.unsetFast();
-      
+
       }
       _env->context->raiseExceptionByTypeAndMsg(_st, st->exception_type, msg);
    }
@@ -93,12 +92,11 @@ static void PTN_Throw__eval(PTN_Env *_env, const PTN_Statement *_st) {
       _env->context->reRaiseException();
    }
 }
- 
+
 Fevalst PTN_Throw::getEvalSt(void) const {
-   return PTN_Throw__eval; 
-} 
+   return PTN_Throw__eval;
+}
 
 void PTN_Throw::eval(PTN_Env *_env) const {
-   PTN_Throw__eval(_env, this);  
-} 
-
+   PTN_Throw__eval(_env, this);
+}
