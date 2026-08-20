@@ -20,7 +20,7 @@
 /// ----          06-Jan-2023 / 16-Jan-2023 / 26-Jan-2023 / 05-Feb-2023 / 12-Apr-2023 / 14-Apr-2023
 /// ----          17-Jul-2023 / 24-Jul-2023 / 26-Jul-2023 / 13-Jan-2024 / 07-Jun-2024 / 17-Aug-2024
 /// ----          20-Aug-2024 / 22-Aug-2024 / 10-Oct-2024 / 20-Oct-2024 / 14-Mar-2025 / 01-Oct-2025
-/// ----          03-Oct-2025 / 22-Feb-2026 / 09-Apr-2026 / 18-May-2026 / 08-Aug-2026
+/// ----          03-Oct-2025 / 22-Feb-2026 / 09-Apr-2026 / 18-May-2026 / 08-Aug-2026 / 20-Aug-2026
 /// ----
 /// ---- info   : YAC - Yet Another Component object model.  YAC is a self contained, binary level
 /// ----          C++ component/reflectance model and plugin SDK.
@@ -2118,7 +2118,7 @@ public:
     virtual void               YAC_VCALL yacDeleteModule            (YAC_ModuleHandle _mod) = 0;
     virtual YAC_FunctionHandle YAC_VCALL yacFindFunctionInModule    (YAC_ModuleHandle _mod, const char *_name) = 0;
     virtual YAC_VariableHandle YAC_VCALL yacFindVariableInModule    (YAC_ModuleHandle _mod, const char *_name) = 0;
-    virtual YAC_FunctionHandle YAC_VCALL yacFindVariableInFunction  (YAC_FunctionHandle _fn, const char *_name) = 0;
+    virtual YAC_VariableHandle YAC_VCALL yacFindVariableInFunction  (YAC_FunctionHandle _fn, const char *_name) = 0;
     virtual void               YAC_VCALL yacSetVariable             (YAC_VariableHandle _var, YAC_Value *_v) = 0;
     virtual void               YAC_VCALL yacGetVariable             (YAC_VariableHandle _var, YAC_Value *_r) = 0;
     virtual sUI                YAC_VCALL yacEvalFunctionReturn      (YAC_ContextHandle _context, YAC_FunctionHandle _script_function, sUI _numargs, YAC_Value *_args, YAC_Value *_r) = 0; // evaluate script function, e.g. used for tks signal callbacks; see YAC_Object::yacRegisterSignal(),yacGetSignalStringList(). return true or false depending on whether the function call succeeded.
@@ -2126,7 +2126,7 @@ public:
     virtual void               YAC_VCALL yacContextDestroy          (YAC_ContextHandle _context) = 0; // Destroy script execution context
     virtual YAC_ContextHandle  YAC_VCALL yacContextGetDefault       (void) = 0;
     virtual void               YAC_VCALL yacContextSetDefault       (YAC_ContextHandle _context) = 0; // Set default script context (for use in threads created by plugins / not by a Thread object)
-    virtual void               YAC_VCALL vtable_entry_3_15_reserved (void) = 0;
+    virtual void               YAC_VCALL yacAssignVariable          (YAC_VariableHandle _var, YAC_Value *_v) = 0;
     virtual void               YAC_VCALL vtable_entry_3_16_reserved (void) = 0;
     virtual void               YAC_VCALL vtable_entry_3_17_reserved (void) = 0;
     virtual void               YAC_VCALL vtable_entry_3_18_reserved (void) = 0;
