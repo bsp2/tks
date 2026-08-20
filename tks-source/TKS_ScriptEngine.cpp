@@ -2753,13 +2753,20 @@ void YAC_VCALL TKS_ScriptEngine::yacSetVariable(YAC_VariableHandle _var, YAC_Val
    }
 }
 
+void YAC_VCALL TKS_ScriptEngine::yacAssignVariable(YAC_VariableHandle _var, YAC_Value *_v) {
+   if(_var)
+   {
+      TKS_CachedObject *co = (TKS_CachedObject*)_var;
+      co->assignValue(_v);
+   }
+}
+
 void YAC_VCALL TKS_ScriptEngine::yacGetVariable(YAC_VariableHandle _var, YAC_Value *_r) {
    if(_var)
    {
       _r->initValue((TKS_CachedObject*)_var);
    }
 }
-
 
 void YAC_VCALL TKS_ScriptEngine::yacDeleteModule(void *_mod) {
    if(_mod)

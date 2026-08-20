@@ -1,7 +1,7 @@
 /// main.cpp
 ///
 /// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
-///     - distributed under terms of the GNU general public license (GPL).
+///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 ///
 ///
 
@@ -77,9 +77,11 @@
 #endif // TKS_LIB
 
 
+#ifndef TKS_LIB
 static sBool b_interactive;
 static sBool b_continue;
 static sBool b_forcenorewritescripts = YAC_TRUE; // 1=store source (often compresses better) 0=store tokenized form (sometimes compresses better)
+#endif // !TKS_LIB
 
 static sUI i_return;
 
@@ -88,18 +90,20 @@ static int  print_usage        (void);
 static void NewEngine          (int _argc, char **_argv, sBool _bRunInBG = 0);
 static void DeleteEngine       (void);
 static void exit_clean         (int _r);
+#ifndef TKS_LIB
 static void exit_print_usage   (void);
 static void exit_print_version (void);
 static int  scan_ac            (int _argc, char **_argv);
 static int  ac_compile         (const char *_name, const char *_takname);
 static int  ac_list            (const char *_name);
-static int  ac_run             (const char *_name, sBool _bRunInBG = 0);
-static int  print_version      (void);
 static int  tks_main           (int _argc, char **_argv);
 static int  StartDefaultPakfile(void);
+#endif // !TKS_LIB
+static int  ac_run             (const char *_name, sBool _bRunInBG = 0);
+static int  print_version      (void);
 
-TKS_ScriptEngine *tkscript;
-YAC_Host *yac_host;
+TKS_ScriptEngine *tkscript = NULL;
+YAC_Host *yac_host = NULL;
 
 
 class TKS_ExtraFileEntry {
@@ -340,6 +344,7 @@ void NewEngine(int _argc, char **_argv, sBool _bRunInBG) {
 
    // Remember runtime directory
    {
+#ifndef TKS_LIB
       tkscript->configuration.tks_exe_path.visit(_argv[0]);
       // // printf("xxx _argv[0]=\"%s\"\n", _argv[0]);
       YAC_String s;
@@ -351,6 +356,10 @@ void NewEngine(int _argc, char **_argv, sBool _bRunInBG) {
       loc_exe_name.replace(".exe", "");
       // // if(loc_exe_name.startsWith("/"))
       // //    loc_exe_name._substring_YAC_RSELF(1, 99);
+#else
+      (void)_argc;
+      (void)_argv;
+#endif // TKS_LIB
    }
 
    // Set app/mod/lib dirs to exe path subdirs when blank
@@ -437,6 +446,7 @@ static void extract_tkp_dirname_from(YAC_String *_s) {
    }
 }
 
+#ifndef TKS_LIB
 int ac_compile(const char *_name, const char *_takname) {
    // compile project and create .tkx file
    tkscript->tkx.str_tkpfilename.copy(_name);
@@ -502,7 +512,7 @@ int ac_compile(const char *_name, const char *_takname) {
       return 0;
    }
 }
-
+#endif // !TKS_LIB
 
 int ac_list(const char *_name) {
    // Display contents of .tkx file
@@ -786,6 +796,7 @@ int ac_run(const char *_name, sBool _bRunInBG) {
    return 1;
 }
 
+#ifndef TKS_LIB
 int StartDefaultPakfile(void) {
    // ---- treat argument as pak file name. simulate runtime
    tkscript->configuration.b_simulatevfs=0;
@@ -793,7 +804,9 @@ int StartDefaultPakfile(void) {
 
    return ac_run("data.tkx", YAC_FALSE/*bRunInBG*/);
 }
+#endif // !TKS_LIB
 
+#ifndef TKS_LIB
 int scan_ac(int _argc, char **_argv) {
    // Parse command line arguments
    int i;
@@ -1316,6 +1329,7 @@ int scan_ac(int _argc, char **_argv) {
     }
     return 0;
 }
+#endif // !TKS_LIB
 
 #ifdef TKS_PRINT_SIZEOFS
 #include "YAC_Byte.h"
@@ -1346,6 +1360,7 @@ int scan_ac(int _argc, char **_argv) {
 #define Dprintsizeof(a) ::printf("[...] sizeof(%s)=%i\n", #a, sizeof(a))
 
 
+#ifndef TKS_LIB
 int tks_main(int _argc, char **_argv) {
 
    //::printf("[...] initial (static) Object::object_counter=%i (should be %i)\n", YAC_Object::object_counter, TKS_NUM_STATIC_OBJECTS);
@@ -1441,6 +1456,7 @@ int tks_main(int _argc, char **_argv) {
 
    return i_return;
 }
+#endif // !TKS_LIB
 
 // Only use SDL_main for macOS platform
 #ifndef YAC_MACOS
@@ -1450,25 +1466,176 @@ int tks_main(int _argc, char **_argv) {
 #endif
 
 #ifdef TKS_LIB
-extern "C" void tks_lib_init(int _argc, char **_argv) {
-   NewEngine(_argc, _argv, 1/*bRunInBG*/);
+static void loc_set_lib_value_and_unset(tks_lib_value_t *_libValue, YAC_Value *_yacValue) {
+   _libValue->value.any = _yacValue->value.any;
+   _libValue->type      = _yacValue->type;
+   _yacValue->unsetFast();
 }
+
+static void loc_set_yac_value(YAC_Value *_yacValue, const tks_lib_value_t *_libValue) {
+   _yacValue->value.any  = _libValue->value.any;
+   _yacValue->type       = _libValue->type;
+   _yacValue->deleteme   = YAC_FALSE;
+   _yacValue->class_type = 0;
+}
+
+extern "C" void tks_lib_value_init_void(tks_lib_value_t *_v) {
+   _v->value.any  = NULL;
+   _v->type       = YAC_TYPE_VOID;
+}
+
+extern "C" void tks_lib_value_init_int(tks_lib_value_t *_v, int _intVal) {
+   _v->value.int_val = _intVal;
+   _v->type          = YAC_TYPE_INT;
+}
+
+extern "C" void tks_lib_value_init_float(tks_lib_value_t *_v, float _floatVal) {
+   _v->value.float_val = _floatVal;
+   _v->type            = YAC_TYPE_FLOAT;
+}
+
+extern "C" void tks_lib_value_init_object(tks_lib_value_t *_v, void *_objectVal) {
+   _v->value.object_val = _objectVal;
+   _v->type             = YAC_TYPE_OBJECT;
+}
+
+extern "C" void tks_lib_init(int _argc, char **_argv) {
+   NewEngine(0/*argc*/, NULL/*argv*/, YAC_TRUE/*bRunInBG*/);
+   tkscript->setArgs(_argc, _argv);
+}
+
 extern "C" int tks_lib_run(const char *_pathName) {
    return ac_run(_pathName, YAC_TRUE/*bRunInBG*/);
 }
-extern "C" void *tks_lib_find_function(const char *_funcName) {
-   return /*YAC_FunctionHandle*/tkscript->yacFindFunction((sChar*)_funcName);
+
+extern "C" tks_lib_context_t tks_lib_get_default_context(void) {
+   return tkscript->yacContextGetDefault();
 }
-extern "C" void tks_lib_eval_void_function(void *_functionHandle) {
-   (void)tkscript->yacEvalFunction(tkscript->yacContextGetDefault()/*context*/, _functionHandle, 0u/*numArgs*/, NULL/*args*/);
+
+extern "C" tks_lib_context_t tks_lib_create_context(void) {
+   return tkscript->yacContextCreate();
 }
+
+extern "C" void tks_lib_set_default_context(tks_lib_context_t _context) {
+   return tkscript->yacContextSetDefault(_context);
+}
+
+extern "C" void tks_lib_destroy_context(tks_lib_context_t _context) {
+   tkscript->yacContextDestroy(_context);
+}
+
+extern "C" tks_lib_function_t tks_lib_find_function(const char *_funcName) {
+   // MyFunction
+   // MMyModule.MyFunction
+   return tkscript->yacFindFunction((sChar*)_funcName);
+}
+
+extern "C" tks_lib_module_t tks_lib_compile_module(const char *_source) {
+   return tkscript->yacCompileModule(_source);
+}
+
+extern "C" void tks_lib_delete_module(tks_lib_module_t _moduleHandle) {
+   tkscript->yacDeleteModule(_moduleHandle);
+}
+
+extern "C" tks_lib_function_t tks_lib_find_module_function(tks_lib_module_t _moduleHandle, const char *_funcName) {
+   return tkscript->yacFindFunctionInModule(_moduleHandle, _funcName);
+}
+
+extern "C" tks_lib_variable_t tks_lib_find_module_variable(tks_lib_module_t _moduleHandle, const char *_varName) {
+   return tkscript->yacFindVariableInModule(_moduleHandle, _varName);
+}
+
+extern "C" tks_lib_variable_t tks_lib_find_function_variable(tks_lib_function_t _functionHandle, const char *_varName) {
+   return tkscript->yacFindVariableInFunction(_functionHandle, _varName);
+}
+
+extern "C" void tks_lib_get_variable(tks_lib_variable_t _variableHandle, tks_lib_value_t *_retValue) {
+   YAC_Value r;
+   tkscript->yacGetVariable(_variableHandle, &r);
+   loc_set_lib_value_and_unset(_retValue, &r);
+}
+
+extern "C" void tks_lib_set_variable(tks_lib_variable_t _variableHandle, tks_lib_value_t *_value) {
+   YAC_Value r;
+   loc_set_yac_value(&r, _value);
+   tkscript->yacSetVariable(_variableHandle, &r);
+}
+
+extern "C" void tks_lib_assign_variable(tks_lib_variable_t _variableHandle, tks_lib_value_t *_value) {
+   YAC_Value r;
+   loc_set_yac_value(&r, _value);
+   tkscript->yacAssignVariable(_variableHandle, &r);
+}
+
+extern "C" void tks_lib_eval_void_function(tks_lib_context_t      _contextOrNull,
+                                           tks_lib_function_t     _functionHandle,
+                                           unsigned int           _numArgs,
+                                           const tks_lib_value_t *_args
+                                           ) {
+   YAC_Value args[16];
+   sUI numArgs = sMIN(_numArgs, 16u);
+   for(sUI i = 0u; i < numArgs; i++)
+      loc_set_yac_value(&args[i], _args + i);
+   (void)tkscript->yacEvalFunction(_contextOrNull, _functionHandle, numArgs, args);
+}
+
+extern "C" int tks_lib_eval_int_function(tks_lib_context_t      _contextOrNull,
+                                         tks_lib_function_t     _functionHandle,
+                                         unsigned int           _numArgs,
+                                         const tks_lib_value_t *_args
+                                         ) {
+   YAC_Value args[16];
+   sUI numArgs = sMIN(_numArgs, 16u);
+   for(sUI i = 0u; i < numArgs; i++)
+      loc_set_yac_value(&args[i], _args + i);
+   YAC_Value r;
+   (void)tkscript->yacEvalFunctionReturn(_contextOrNull, _functionHandle, numArgs, args, &r);
+   r.typecast(YAC_TYPE_INT);
+   return r.value.int_val;
+}
+
+extern "C" float tks_lib_eval_float_function(tks_lib_context_t      _contextOrNull,
+                                             tks_lib_function_t     _functionHandle,
+                                             unsigned int           _numArgs,
+                                             const tks_lib_value_t *_args
+                                             ) {
+   YAC_Value args[16];
+   sUI numArgs = sMIN(_numArgs, 16u);
+   for(sUI i = 0u; i < numArgs; i++)
+      loc_set_yac_value(&args[i], _args + i);
+   YAC_Value r;
+   (void)tkscript->yacEvalFunctionReturn(_contextOrNull, _functionHandle, numArgs, args, &r);
+   r.typecast(YAC_TYPE_FLOAT);
+   return r.value.float_val;
+}
+
+extern "C" void *tks_lib_eval_object_function(tks_lib_context_t      _contextOrNull,
+                                              tks_lib_function_t     _functionHandle,
+                                              unsigned int           _numArgs,
+                                              const tks_lib_value_t *_args
+                                              ) {
+   YAC_Value args[16];
+   sUI numArgs = sMIN(_numArgs, 16u);
+   for(sUI i = 0u; i < numArgs; i++)
+      loc_set_yac_value(&args[i], _args + i);
+   YAC_Value r;
+   (void)tkscript->yacEvalFunctionReturn(_contextOrNull, _functionHandle, numArgs, args, &r);
+   if(r.type >= YAC_TYPE_OBJECT && !r.deleteme)
+      return r.value.object_val;
+   r.unsetFast();
+   return NULL;
+}
+
 extern "C" void tks_lib_stop(void) {
    tkscript->stop();
    ::signal(SIGINT, SIG_DFL);
 }
+
 extern "C" void tks_lib_exit(void) {
    DeleteEngine();
 }
+
 #ifdef TKS_VST
 void tks_lib_vst_open_editor(YAC_ContextHandle _context) {
    tkscript->vstOpenEditor(_context);

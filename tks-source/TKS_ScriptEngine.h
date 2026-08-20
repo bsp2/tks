@@ -77,6 +77,7 @@ public:
    void               YAC_VCALL yacDeleteModule            (YAC_ModuleHandle _mod);
    YAC_VariableHandle YAC_VCALL yacFindVariableInModule    (YAC_ModuleHandle _mod, const char *_name);
    void               YAC_VCALL yacSetVariable             (YAC_VariableHandle _var, YAC_Value *_v);
+   void               YAC_VCALL yacAssignVariable          (YAC_VariableHandle _var, YAC_Value *_v);
    void               YAC_VCALL yacGetVariable             (YAC_VariableHandle _var, YAC_Value *_r);
    YAC_VariableHandle YAC_VCALL yacFindVariableInFunction  (YAC_FunctionHandle _fn, const char *_name);
    sUI                YAC_VCALL yacGetClassIDByName        (const char *_name);
@@ -161,7 +162,6 @@ public:
    void               YAC_VCALL vtable_entry_2_14_reserved (void) { }
    void               YAC_VCALL vtable_entry_2_15_reserved (void) { }
 
-   void               YAC_VCALL vtable_entry_3_15_reserved (void) { }
    void               YAC_VCALL vtable_entry_3_16_reserved (void) { }
    void               YAC_VCALL vtable_entry_3_17_reserved (void) { }
    void               YAC_VCALL vtable_entry_3_18_reserved (void) { }
@@ -320,6 +320,7 @@ public:
 
    PTN_Function      *tks_lib_init_fxn;  // used only in bg/lib mode (TKS_LIB build option)
    PTN_Function      *tks_lib_exit_fxn;  // used only in bg/lib mode
+
 #ifdef TKS_VST
    PTN_Function      *tks_lib_vst_open_editor_fxn;
    PTN_Function      *tks_lib_vst_close_editor_fxn;
