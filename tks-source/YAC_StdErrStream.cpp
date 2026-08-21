@@ -37,11 +37,11 @@ sBool YAC_VCALL YAC_StdErrStream::yacIsStream(void) {
 }
 
 sUI YAC_VCALL YAC_StdErrStream::yacStreamGetOffset(void) {
-   return ::ftell(stdout);
+   return ::ftell(stderr);
 }
 
 sSI YAC_VCALL YAC_StdErrStream::yacStreamGetErrorCode(void) {
-   return ferror(stdout);
+   return ferror(stderr);
 }
 
 void YAC_VCALL YAC_StdErrStream::yacStreamGetErrorStringByCode(sSI _code, YAC_Value *_r) {
@@ -49,19 +49,19 @@ void YAC_VCALL YAC_StdErrStream::yacStreamGetErrorStringByCode(sSI _code, YAC_Va
 }
 
 sSI YAC_VCALL YAC_StdErrStream::yacStreamWrite(sU8 *_d, sUI _l) {
-   return (sSI)::fwrite((void*)_d, (size_t)_l, 1, stdout);
+   return (sSI)::fwrite((void*)_d, (size_t)_l, 1, stderr);
 }
 
 void YAC_VCALL YAC_StdErrStream::yacStreamWriteI8(sU8 _i) {
-   ::fputc(_i, stdout);
+   ::fputc(_i, stderr);
 }
 
-void YAC_StdErrStream::flush(void) {
-   ::fflush(stdout);
+void YAC_VCALL YAC_StdErrStream::yacStreamFlush(void) {
+   ::fflush(stderr);
 }
 
 sUI YAC_VCALL YAC_StdErrStream::yacStreamGetSize(void) {
-   return ::ftell(stdout);
+   return ::ftell(stderr);
 }
 
 sSI YAC_StdErrStream::isOpen(void) {

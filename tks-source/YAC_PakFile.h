@@ -31,6 +31,9 @@ public:
 	void  YAC_VCALL yacStreamClose(void);
 	sBool YAC_VCALL yacIsStream(void);
 
+   sBool YAC_VCALL yacStreamIsReadable (void) { return YAC_TRUE;  }
+   sBool YAC_VCALL yacStreamIsWritable (void) { return YAC_FALSE; }
+
 	sSI  _open      (YAC_String *_name);
 	sSI  openLocal (YAC_String *_name, sSI _access);
 	sSI  isOpen    (void);

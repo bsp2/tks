@@ -66,7 +66,7 @@ void YAC_VCALL YAC_StdOutStream::yacStreamWriteI8(sU8 _i) {
    }
 }
 
-void YAC_StdOutStream::flush(void) {
+void YAC_VCALL YAC_StdOutStream::yacStreamFlush(void) {
    ::fflush(stdout);
 }
 

@@ -28,6 +28,9 @@ public:
    sBool YAC_VCALL yacStreamEOF                  (void);
    sBool YAC_VCALL yacIsStream                   (void);
 
+   sBool YAC_VCALL yacStreamIsReadable (void) { return YAC_TRUE;  }
+   sBool YAC_VCALL yacStreamIsWritable (void) { return YAC_FALSE; }
+
    sSI  isOpen    (void);
    void flush     (void);
 };

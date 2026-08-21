@@ -45,6 +45,9 @@ public:
    void  YAC_VCALL yacStreamWriteF32(sF32 _value);
    sBool YAC_VCALL yacIsStream(void);
 
+   sBool YAC_VCALL yacStreamIsReadable (void) { return YAC_TRUE; }
+   sBool YAC_VCALL yacStreamIsWritable (void) { return YAC_TRUE; }
+
    void  YAC_VCALL yacSerialize(YAC_Object *, sUI _typeinfo);
    sUI   YAC_VCALL yacDeserialize(YAC_Object *, sUI _typeinfo);
    void  YAC_VCALL yacGetConstantStringList(YAC_String *_s);

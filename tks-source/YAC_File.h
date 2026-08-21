@@ -12,6 +12,7 @@ class YAC_File: public YAC_StreamBase {
 public:
    FILE *handle;
    char *tmpName;
+   sSI   access;  // 0=IOS_IN  1=IOS_OUT  2=IOS_INOUT
 
 public:
    YAC_File(void);
@@ -35,6 +36,10 @@ public:
    sBool YAC_VCALL yacStreamOpenLocal            (sChar *_logic_name, sSI _access);
    void  YAC_VCALL yacStreamClose                (void);
    sBool YAC_VCALL yacIsStream                   (void);
+
+   sBool YAC_VCALL yacStreamIsReadable (void);
+   sBool YAC_VCALL yacStreamIsWritable (void);
+   void  YAC_VCALL yacStreamFlush      (void);
 
    sSI  _open     (YAC_String *_name, sSI _access);
    sSI  openLocal (YAC_String *_name, sSI _access);

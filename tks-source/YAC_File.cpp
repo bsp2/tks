@@ -16,6 +16,7 @@
 YAC_File::YAC_File(void) {
    handle  = NULL;
    tmpName = NULL;
+   access = -1;
 }
 
 YAC_File::~YAC_File(void) {
@@ -133,31 +134,36 @@ sSI YAC_File::_open(YAC_String *_name, sSI _access) {
 
 sBool YAC_VCALL YAC_File::yacStreamOpenLocal(sChar *_name, sSI _access) {
    yacStreamClose();
-   if(_access&&!tkscript->configuration.b_enablelocalfiles)
+   access = _access;
+   if(_access && !tkscript->configuration.b_enablelocalfiles)
    {
       Dprintf("[---] File: access restrictions forbid access to local file \"%s\".\n",
          (char*)_name);
-      return 0;
+      return YAC_FALSE;
    }
    //tkscript->printf("openLocal name=%s access=%i\n", _name->chars, _access);
    switch(_access)
    {
-   default:
-      Dprintf("[---] File::open(\"%s\", %i): unsupported access mode.\n", _name, _access);
-      break;
-   case 0:
-      // IOS_IN
-      handle=::fopen((const char*)_name, "rb");
-      break;
-   case 1:
-      // IOS_OUT
-      handle=::fopen((const char*)_name, "wb");
-      break;
-   case 2:
-      // IOS_INOUT
-      handle=::fopen((const char*)_name, "rb+");
-      break;
+      default:
+         Dprintf("[---] File::open(\"%s\", %i): unsupported access mode.\n", _name, _access);
+         break;
+
+      case 0:
+         // IOS_IN
+         handle = ::fopen((const char*)_name, "rb");
+         break;
+
+      case 1:
+         // IOS_OUT
+         handle = ::fopen((const char*)_name, "wb");
+         break;
+
+      case 2:
+         // IOS_INOUT
+         handle = ::fopen((const char*)_name, "rb+");
+         break;
    }
+
    return (handle!=0);
 }
 
@@ -203,11 +209,6 @@ sU8 YAC_VCALL YAC_File::yacStreamReadI8(void) {
    {
       return 0;
    }
-}
-
-void YAC_File::flush(void) {
-   if(handle)
-      ::fflush(handle);
 }
 
 void YAC_File::removeTemp(void) {
@@ -270,4 +271,17 @@ sBool YAC_VCALL YAC_File::yacStreamEOF(void) {
    {
       return 1;
    }
+}
+
+sBool YAC_VCALL YAC_File::yacStreamIsReadable(void) {
+   return (0/*IOS_IN*/ == access) || (2/*IOS_INOUT*/ == access);
+}
+
+sBool YAC_VCALL YAC_File::yacStreamIsWritable(void) {
+   return (1/*IOS_OUT*/ == access) || (2/*IOS_INOUT*/ == access);
+}
+
+void YAC_VCALL YAC_File::yacStreamFlush(void) {
+   if(handle)
+      ::fflush(handle);
 }
