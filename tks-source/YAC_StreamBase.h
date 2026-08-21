@@ -18,6 +18,7 @@
 ///            StdErrStream
 ///            PakFile(Stream)
 ///            Process(Stream)
+///            NibbleStream(Stream)
 
 
 class YAC_StreamBase : public YAC_Object {
@@ -61,6 +62,10 @@ public:
    sBool YAC_VCALL yacStreamOpenLocal    (sChar *_local_pathname, sSI _write);
    void  YAC_VCALL yacStreamClose        (void);
 
+   sBool YAC_VCALL yacStreamIsReadable (void) { return YAC_TRUE; }
+   sBool YAC_VCALL yacStreamIsWritable (void) { return YAC_TRUE; }
+   void  YAC_VCALL yacStreamFlush      (void) { }
+
    sSI  _deserialize                  (YAC_Object *_dest, sSI _typeinfo);
    sSI   eof                          (void);
    sSI  getByteOrder                  (void);
@@ -68,6 +73,7 @@ public:
    void getErrorStringByCode          (sSI _code, YAC_Value *_r);
    void setI8                         (sSI);
    void setI16                        (sSI);
+   void setI24                        (sUI);
    void setI32                        (sSI);
    void setF16                        (sF32);
    void setF32                        (sF32);
@@ -77,8 +83,11 @@ public:
    sSI  getS8                         (void) { return getI8(); }
    sSI  getB8                         (void) { return (0 != getI8()) ? YAC_TRUE : YAC_FALSE; }
    sSI  getI16                        (void); // same as S16 (backwards compatibility)
+   sUI  getU24                        (void);
+   sSI  getS24                        (void);
    sSI  getU16                        (void);
    sSI  getS16                        (void) { return getI16(); }
+   sUI  getU32                        (void);
    sSI  getI32                        (void);
    sF32 getF16                        (void);
    sF32 getF32                        (void);
@@ -96,6 +105,7 @@ public:
    sSI  writeString                   (YAC_String *_s  , sSI _off, sSI _num);
    void setObject                     (YAC_Object *_src );
    void getObject                     (YAC_Object *_dest);
+   void _flush                        (void);
    void _close                        (void);
 
    // write from generic array object

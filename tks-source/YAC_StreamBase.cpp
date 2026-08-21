@@ -302,6 +302,12 @@ void YAC_StreamBase::setI16(sSI _i) {
    yacStreamWriteI16((sU16)_i);
 }
 
+void YAC_StreamBase::setI24(sUI _i) {
+   yacStreamWriteI8( (_i      ) & 255u );
+   yacStreamWriteI8( (_i >>  8) & 255u );
+   yacStreamWriteI8( (_i >> 16) & 255u );
+}
+
 void YAC_StreamBase::setI32(sSI _i) {
    yacStreamWriteI32(_i);
 }
@@ -727,8 +733,29 @@ sSI YAC_StreamBase::getU16(void) {
    return (sSI) yacStreamReadI16();
 }
 
-sSI YAC_StreamBase::getI32(void) {
+sUI YAC_StreamBase::getU24(void) {
+   sUI r = yacStreamReadI8();
+   r |= (yacStreamReadI8() << 8);
+   r |= (yacStreamReadI8() << 16);
+   return r;
+}
+
+sSI YAC_StreamBase::getS24(void) {
+   yacmem r;
+   r.u32 = yacStreamReadI8();
+   r.u32 |= (yacStreamReadI8() << 8);
+   r.u32 |= (yacStreamReadI8() << 16);
+   if(r.u32 & (1u << 23))
+      r.u32 |= 0xFF000000u;
+   return r.s32;
+}
+
+sUI YAC_StreamBase::getU32(void) {
    return yacStreamReadI32();
+}
+
+sSI YAC_StreamBase::getI32(void) {
+   return (sSI)yacStreamReadI32();
 }
 
 sF32 YAC_StreamBase::getF16(void) {
@@ -1253,4 +1280,8 @@ sUI YAC_StreamBase::decode8From7(YAC_Object *_enc, sUI _encNum) {
    } // if enc
 
    return retNumDec;
+}
+
+void YAC_StreamBase::_flush(void) {
+   yacStreamFlush();
 }
