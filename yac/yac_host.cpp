@@ -10,7 +10,7 @@
 /// ----          08-Jan-2009 / 05-Mar-2009 / 01-Apr-2009 / 04-Apr-2009 / 18-Apr-2009 / 04-May-2009
 /// ----          01-Jun-2009 / 11-Jul-2010 / 21-Apr-2011 / 21-Dec-2012 / 13-Aug-2013 / 05-Feb-2014
 /// ----          26-Jun-2018 / 15-Dec-2018 / 28-Dec-2018 / 18-May-2019 / 31-Jul-2019 / 26-Jan-2023
-/// ----          12-Apr-2023 / 10-Oct-2024 / 10-Feb-2025 / 01-Oct-2025 / 24-May-2026
+/// ----          12-Apr-2023 / 10-Oct-2024 / 10-Feb-2025 / 01-Oct-2025 / 24-May-2026 / 21-Aug-2026
 /// ----
 /// ---- info   : YAC - Yet Another Component object model. originally for the "tks" project
 /// ----
@@ -260,9 +260,9 @@ sF64             YAC_VCALL YAC_Object::yacStreamReadF64               (void)    
 void             YAC_VCALL YAC_Object::yacStreamWriteF64              (sF64)                                  { }
 sU64             YAC_VCALL YAC_Object::yacStreamReadI64               (void)                                  {return 0;}
 void             YAC_VCALL YAC_Object::yacStreamWriteI64              (sS64)                                  { }
-void             YAC_VCALL YAC_Object::vtable_entry_2_35_reserved     (void)                                  { }
-void             YAC_VCALL YAC_Object::vtable_entry_2_36_reserved     (void)                                  { }
-void             YAC_VCALL YAC_Object::vtable_entry_2_37_reserved     (void)                                  { }
+sBool            YAC_VCALL YAC_Object::yacStreamIsReadable            (void)                                  {return YAC_TRUE;}
+sBool            YAC_VCALL YAC_Object::yacStreamIsWritable            (void)                                  {return YAC_TRUE;}
+void             YAC_VCALL YAC_Object::yacStreamFlush                 (void)                                  { }
 void             YAC_VCALL YAC_Object::vtable_entry_2_38_reserved     (void)                                  { }
 void             YAC_VCALL YAC_Object::vtable_entry_2_39_reserved     (void)                                  { }
 void             YAC_VCALL YAC_Object::vtable_entry_2_40_reserved     (void)                                  { }

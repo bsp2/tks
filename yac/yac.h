@@ -21,6 +21,7 @@
 /// ----          17-Jul-2023 / 24-Jul-2023 / 26-Jul-2023 / 13-Jan-2024 / 07-Jun-2024 / 17-Aug-2024
 /// ----          20-Aug-2024 / 22-Aug-2024 / 10-Oct-2024 / 20-Oct-2024 / 14-Mar-2025 / 01-Oct-2025
 /// ----          03-Oct-2025 / 22-Feb-2026 / 09-Apr-2026 / 18-May-2026 / 08-Aug-2026 / 20-Aug-2026
+/// ----          21-Aug-2026
 /// ----
 /// ---- info   : YAC - Yet Another Component object model.  YAC is a self contained, binary level
 /// ----          C++ component/reflectance model and plugin SDK.
@@ -960,7 +961,7 @@ enum __yac_class_IDs {
    YAC_CLID_BUFFER,          // 31: an Array of bytes, derived from YAC_StreamBase
    YAC_CLID_FILE,            // 32: used to access local filesystems, derived from YAC_StreamBase
    YAC_CLID_PAKFILE,         // 33: used to access virtual file systems, derived from YAC_StreamBase
-   YAC_CLID_removed__1,      // 34: <removed>
+   YAC_CLID_NIBBLESTREAM,    // 34: wrapper class for any Stream, can read and write 4bit "nibbles"
 
    // Note: Be careful with the preallocated String/array variants.
    //       A buffer reallocation will waste the initial buffer memory (not leaked but it cannot be used for anything
@@ -1449,9 +1450,9 @@ public:
   virtual void             YAC_VCALL yacStreamWriteF64               (sF64);                                                 // write a standard IEEE 64bit double
   virtual sU64             YAC_VCALL yacStreamReadI64                (void);                                                 // read 64bit signed long long
   virtual void             YAC_VCALL yacStreamWriteI64               (sS64);                                                 // write 64bit signed long long
-  virtual void             YAC_VCALL vtable_entry_2_35_reserved      (void);
-  virtual void             YAC_VCALL vtable_entry_2_36_reserved      (void);
-  virtual void             YAC_VCALL vtable_entry_2_37_reserved      (void);
+  virtual sBool            YAC_VCALL yacStreamIsReadable             (void);
+  virtual sBool            YAC_VCALL yacStreamIsWritable             (void);
+  virtual void             YAC_VCALL yacStreamFlush                  (void);
   virtual void             YAC_VCALL vtable_entry_2_38_reserved      (void);
   virtual void             YAC_VCALL vtable_entry_2_39_reserved      (void);
   virtual void             YAC_VCALL vtable_entry_2_40_reserved      (void);
