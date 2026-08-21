@@ -52,9 +52,9 @@
 #include "TKS_StreamIO.h"
 #include "YAC_PakFile.h"
 #include "TKS_DummyStream.h"
+#include "YAC_NibbleStream.h"
 #include "TKS_Process.h"
 #include "TKS_LFSR.h"
-
 
 
 // Thread safe object counting
@@ -8991,12 +8991,6 @@ Seek to the given file offset.
 */
       YM //void _seek     (sSI, sSI);
 
-/* @method flush
-
-Write pending buffers to disk..
-*/
-      YM //void flush     (void);
-
 /* @method close
 
 Close the current file.
@@ -9033,11 +9027,6 @@ Check whether the stream is open (always true).
 */
    YM //sSI  isOpen    (void);
 
-/* @method flush
-
-Write pending/cached output buffers into the stream.
-*/
-      YM //void flush     (void);
 };
 #include "ying_core_StdOutStream.cpp"
 YAC_C_CORE_POOLED(_StdOutStream, "StdOutStream", YAC_CLID_STDOUTSTREAM);
@@ -9063,11 +9052,6 @@ Check whether the stream is open (always true).
 */
    YM //sSI  isOpen    (void);
 
-/* @method flush
-
-Write pending/cached output buffers into the stream.
-*/
-      YM //void flush     (void);
 };
 #include "ying_core_StdErrStream.cpp"
 YAC_C_CORE_POOLED(_StdErrStream, "StdErrStream", YAC_CLID_STDERRSTREAM);
@@ -9093,7 +9077,6 @@ Check whether the stream is open (always true).
 */
    YM //sSI  isOpen    (void);
 
-      YM //void flush     (void);
 };
 #include "ying_core_StdInStream.cpp"
 YAC_C_CORE_POOLED(_StdInStream, "StdInStream", YAC_CLID_STDINSTREAM);
@@ -9973,6 +9956,18 @@ Read signed short from stream (extend to int).
 */
       YM //sSI  getS16                        (void);
 
+/* @method getU24:int
+Read unsigned 24bit integer
+@return
+*/
+      YM //sUI  getU24                        (void);
+
+/* @method getS24:int
+Read signed 24bit integer
+@return
+*/
+      YM //sSI  getS24                        (void);
+
 /* @method getI32:int
 
 @return
@@ -10104,8 +10099,14 @@ Read signed short from stream (extend to int).
 */
       YM //void setI16                        (sSI);
 
-/* @method setI32,int v
+/* @method setI24,int v
+Write 24bit integer
+@arg v
+*/
+      YM //void setI24                        (sUI);
 
+/* @method setI32,int v
+Write 32bit integer
 @arg v
 */
       YM //void setI32                        (sSI);
@@ -10234,6 +10235,11 @@ Decode packets of 8 7bit bytes (e.g. MIDI SysEx) to 8bit raw stream bytes
 @return Number of decoded output stream bytes
    */
    YM //sUI decode8From7 (YAC_Object *_enc, sUI _encNum);
+
+/* @method _flush
+Write pending buffers.
+*/
+   YM //void _flush (void);
 
 };
 #include "ying_core_Stream.cpp"
@@ -13663,6 +13669,124 @@ Return next random value in the range 0..(len-1)
 YAC_C_CORE_POOLED(_LFSR_NR, "LFSR_NR", YAC_CLID_LFSR_NR);
 
 
+//------------------------------------------------------------------------------------- Stream
+/* @class Stream,Object
+
+Base class for input/output stream objects.
+
+*/
+YC class _NibbleStream : public YAC_NibbleStream {
+public:
+   YAC(_NibbleStream);
+
+/* @method setStream, Stream s
+Set raw byte stream
+@arg s Raw byte stream
+*/
+      YM //void        _setStream (YAC_Object *_s);
+
+/* @method getStream:Stream
+Return raw byte stream
+@return raw byte stream
+*/
+      YM //YAC_Object *_getStream (void);
+
+/* @method getU4:int
+Read unsigned nibble (0..15) from byte stream
+@return Unsigned nibble
+*/
+      YM //sUI  getU4 (void);
+
+/* @method getS4:int
+Read signed nibble (-8..7) from byte stream
+@return Signed nibble
+*/
+      YM //sSI  getS4 (void);
+
+/* @method getU4:int
+Read unsigned nibble (0..15) from byte stream
+@return Unsigned nibble
+*/
+      YM //sSI  getI4 (void);
+
+/* @method getU12:int
+Read unsigned 12-bit value (0..4095) from byte stream
+@return Unsigned 12-bit value
+*/
+      YM //sUI  getU12 (void);
+
+/* @method getS12:int
+Read signed 12-bit value (-2048..2047) from byte stream
+@return Signed 12-bit value
+*/
+      YM //sSI  getS12 (void);
+
+/* @method getI12:int
+Read signed 12-bit value (-2048..2047) from byte stream
+@return Signed 12-bit value
+*/
+      YM //sSI  getI12 (void);
+
+/* @method getU20:int
+Read unsigned 20-bit value (0..1048575) from byte stream
+@return Unsigned 20-bit value
+*/
+      YM //sUI  getU20 (void);
+
+/* @method getS20:int
+Read signed 20-bit value (-524288..524287) from byte stream
+@return Signed 20-bit value
+*/
+      YM //sSI  getS20 (void);
+
+/* @method getS20:int
+Read signed 20-bit value (-524288..524287) from byte stream
+@return Signed 20-bit value
+*/
+      YM //sSI  getI20 (void);
+
+/* @method getU28:int
+Read unsigned 28-bit value (0..268435455) from byte stream
+@return Unsigned 28-bit value
+*/
+      YM //sUI  getU28 (void);
+
+/* @method getS28:int
+Read signed 28-bit value (-134217728..134217727) from byte stream
+@return Signed 28-bit value
+*/
+      YM //sSI  getS28 (void);
+
+/* @method getS28:int
+Read signed 28-bit value (-134217728..134217727) from byte stream
+@return Signed 28-bit value
+*/
+      YM //sSI  getI28 (void);
+
+/* @method setI4:int
+Write nibble (0..15 / -8..7) to byte stream
+*/
+      YM //void setI4 (sUI _v4);
+
+/* @method setI12:int
+Write 12-bit value (0..4095 / -2048..2047) to byte stream
+*/
+      YM //void setI12 (sUI _v12);
+
+/* @method setI20:int
+Write 20-bit value (0..1048575 / -524288..524287) to byte stream
+*/
+      YM //void setI20 (sUI _v20);
+
+/* @method setI28:int
+Write 28-bit value (0..268435455 / -134217728..134217727) to byte stream
+*/
+      YM //void setI28 (sUI _v28);
+};
+#include "ying_core_NibbleStream.cpp"
+YAC_C_CORE(_NibbleStream, "NibbleStream", YAC_CLID_NIBBLESTREAM);
+
+
 
 // ---------------------------------------------------------------------------- function impl
 /* @function exit,int return
@@ -15081,6 +15205,10 @@ sBool TKS_ScriptEngine::registerBuiltinClasses(void) {
    templ=new _PakFile();         templ->class_ID=YAC_CLID_PAKFILE;
    if(!registerClass(templ, 1, 0)) return 0;
    cpp_typecast_map[YAC_CLID_PAKFILE][YAC_CLID_STREAM]=1;
+
+   templ=new _NibbleStream();    templ->class_ID=YAC_CLID_NIBBLESTREAM;
+   if(!registerClass(templ, 1, 0)) return 0;
+   cpp_typecast_map[YAC_CLID_NIBBLESTREAM][YAC_CLID_STREAM]=1;
 
    DregisterprebufString(8);
    DregisterprebufString(16);
