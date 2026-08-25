@@ -21,7 +21,7 @@
 /// ----          17-Jul-2023 / 24-Jul-2023 / 26-Jul-2023 / 13-Jan-2024 / 07-Jun-2024 / 17-Aug-2024
 /// ----          20-Aug-2024 / 22-Aug-2024 / 10-Oct-2024 / 20-Oct-2024 / 14-Mar-2025 / 01-Oct-2025
 /// ----          03-Oct-2025 / 22-Feb-2026 / 09-Apr-2026 / 18-May-2026 / 08-Aug-2026 / 20-Aug-2026
-/// ----          21-Aug-2026
+/// ----          21-Aug-2026 / 25-Aug-2026
 /// ----
 /// ---- info   : YAC - Yet Another Component object model.  YAC is a self contained, binary level
 /// ----          C++ component/reflectance model and plugin SDK.
@@ -409,12 +409,18 @@ typedef enum __yac_host_interfaces {
 // ----
 // ---- determine thread local storage attribute syntax
 // ----
-#ifdef YAC_VC
+#ifndef YAC_TLS
+#if defined(_MSC_VER)
 #define YAC_TLS __declspec(thread)
-#endif
-#ifdef YAC_GCC
+#elif defined(__clang__)
+#define YAC_TLS _Thread_local
+#elif defined(__GNUC__)
 #define YAC_TLS __thread
-#endif
+#else
+//#error unsupported TLS platform
+#define YAC_TLS
+#endif // TLS platform
+#endif // YAC_TLS
 
 // Note: using TLS in .dlls is only allowed since Windows Vista.
 //       However, I noticed that static TLS arrays increase the .dll file size
