@@ -12680,14 +12680,17 @@ void loc_minnie_setup_default(void) {
 extern "C" {
 #endif // __cplusplus
 
-/* @function minContextCreate
+/* @function minContextCreate:Object
 Create new Minnie context.
 
 Contexts are used for building MinnieDrawable objects, *not* for rendering them.
 
+
 An application may use worker threads to build drawables, then pass them to the main render thread.
 
+
 Creating contexts is optional. A default (single-threaded) context is created when Minnie is initialized (StaticInit()).
+
 
 @return new Minnie context
 
@@ -12706,7 +12709,7 @@ minnie_context_t YAC_CALL minContextCreate(void) {
    return NULL;
 }
 
-/* @function minContextBind
+/* @function minContextBind,Object context
 Bind Minnie context.
 
 The context pointer is stored in a thread-local-storage (TLS) variable.
@@ -12723,14 +12726,16 @@ void YAC_CALL minContextBind(minnie_context_t _context) {
       minnie::loc_minnie_setup_default();
 }
 
-/* @function minContextDestroy
+/* @function minContextDestroy,Object context
 Destroy Minnie context
 
-@arg context Minnie context (previously created with %minContextCreate)
+If the context to be destroyed is the current context, the default context will be bound.
 
-@group context
+@arg context Minnie context
+
+@group Context
 */
-void YAC_CALL minContextDestroy (minnie_context_t _context) {
+void YAC_CALL minContextDestroy(minnie_context_t _context) {
    if(NULL != _context)
    {
       minnie::MinnieSetup *min = (minnie::MinnieSetup *)_context;
@@ -12742,17 +12747,17 @@ void YAC_CALL minContextDestroy (minnie_context_t _context) {
 }
 
 #ifdef SHADERVG_SCRIPT_API
-YAC_Object *YAC_CALL _minContextCreate (void) {
+YAC_Object *YAC_CALL _minContextCreate(void) {
    // (todo) use ids
    return (YAC_Object*)minContextCreate();
 }
 
-void YAC_CALL _minContextBind (YAC_Object *_context) {
+void YAC_CALL _minContextBind(YAC_Object *_context) {
    // (todo) use ids
    minContextBind((minnie_context_t)_context);
 }
 
-void YAC_CALL _minContextDestroy (YAC_Object *_context) {
+void YAC_CALL _minContextDestroy(YAC_Object *_context) {
    // (todo) use ids
    minContextDestroy((minnie_context_t)_context);
 }
