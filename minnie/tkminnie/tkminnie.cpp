@@ -407,8 +407,8 @@ void YAC_CALL YAC_Init(YAC_Host *_host) {
    minnie::g_vgtesselator_alloc_max = 0;
 #endif // MINNIE_ALLOC_DEBUG
 
-   minnie::setup::Init();
-   // // sdvgInit();
+   minnie::MinnieSetup::InitStatic();
+   minnie::minnie_setup->init();
 
    loc_shared_export();
 
@@ -418,8 +418,7 @@ void YAC_CALL YAC_Init(YAC_Host *_host) {
 
 void YAC_CALL YAC_Exit(YAC_Host *_host) {
 
-   // // sdvgExit();
-   minnie::setup::Exit();
+   minnie::minnie_setup->exit();
 
    YAC_Exit_shadervg(_host);
    YAC_Exit_minnie(_host);
