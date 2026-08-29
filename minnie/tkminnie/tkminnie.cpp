@@ -408,7 +408,7 @@ void YAC_CALL YAC_Init(YAC_Host *_host) {
 #endif // MINNIE_ALLOC_DEBUG
 
    minnie::MinnieSetup::InitStatic();
-   minnie::minnie_setup->init();
+   minnie::minnie_setup_inst.init();
 
    loc_shared_export();
 
@@ -418,7 +418,7 @@ void YAC_CALL YAC_Init(YAC_Host *_host) {
 
 void YAC_CALL YAC_Exit(YAC_Host *_host) {
 
-   minnie::minnie_setup->exit();
+   minnie::minnie_setup_inst.exit();
 
    YAC_Exit_shadervg(_host);
    YAC_Exit_minnie(_host);

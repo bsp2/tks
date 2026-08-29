@@ -49,6 +49,7 @@ static void loc_BindLinePatternTex(sUI _patternLen, sUI _patternBits,
                                    sF32 _patternScale, sF32 _patternOffset
                                    ) {
    // (todo) cache multiple patterns
+   // (todo) mutex
    if(0u != _patternLen)
    {
       const sBool bFilter = YAC_TRUE;
@@ -98,7 +99,12 @@ Handle framebuffer resize / GL context lost
 
 @groupref Draw
 */
-void YAC_CALL minOnOpen(void) {
+/* @function minOnOpen
+Must be called after GL context is recreated.
+*/
+Dmin_fxn_impl_void(void, minOnOpen) {
+   /* Dmin_fxn_ctx; */
+   // (todo) mutex
    tex_line_pattern_alpha_id = 0u;
 }
 
@@ -113,8 +119,13 @@ Execute draw-list
 
 @groupref Draw
 */
-void minExecDrawListEx(YAC_Buffer *_bufDraw, sUI _glBufId, sBool _bDebug, sU32 _tint32Fill, sU32 _tint32Stroke) {
-
+Dmin_fxn_impl(void, minExecDrawListEx,
+              YAC_Buffer *_bufDraw,
+              sUI         _glBufId,
+              sBool       _bDebug,
+              sU32        _tint32Fill,
+              sU32        _tint32Stroke
+              ) {
    Ddebug_draw_list_printfv("[trc] minExecDrawListEx: tint32Fill=#%08x tint32Stroke=#%08x\n", _tint32Fill, _tint32Stroke);
 
 #ifdef SHADERVG_SCRIPT_API
@@ -1590,6 +1601,10 @@ Execute draw-list
 
 @groupref Draw
 */
-void minExecDrawList(YAC_Buffer *_bufDraw, sUI _glBufId) {
+Dmin_fxn_impl(void, minExecDrawList, YAC_Buffer *_bufDraw, sUI _glBufId) {
+#ifdef USE_MINNIE_CONTEXT_ARG
+   minExecDrawListExImpl(_ctx, _bufDraw, _glBufId, YAC_FALSE/*bDebug*/, 0u/*tint32Fill*/, 0u/*tint32Stroke*/);
+#else
    minExecDrawListEx(_bufDraw, _glBufId, YAC_FALSE/*bDebug*/, 0u/*tint32Fill*/, 0u/*tint32Stroke*/);
+#endif // USE_MINNIE_CONTEXT_ARG
 }

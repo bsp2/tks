@@ -120,11 +120,11 @@ void yac_buffer_write_4f(YAC_Buffer *_buffer, sF32 _x, sF32 _y, sF32 _z, sF32 _w
 #ifdef USE_MINNIE_MIB_SETUP
 void minnie_impl_init(void) {
    minnie::MinnieSetup::InitStatic();
-   minnie::minnie_setup->init();
+   minnie::minnie_setup_inst.init();
 }
 
 void minnie_impl_exit(void) {
-   minnie::minnie_setup->exit();
+   minnie::minnie_setup_inst.exit();
 }
 #endif // USE_MINNIE_MIB_SETUP
 
