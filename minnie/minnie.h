@@ -175,7 +175,13 @@ typedef int             sBool;
 #endif // MINNIE_USE_TLS
 
 typedef void *minnie_context_t;
+#ifdef __cplusplus
+extern "C" {
+#endif // __cplusplus
 extern YAC_TLS minnie_context_t minnie_context;
+#ifdef __cplusplus
+}
+#endif // __cplusplus
 
 // helper macros for writing to a stream
 #ifdef SHADERVG_SCRIPT_API
