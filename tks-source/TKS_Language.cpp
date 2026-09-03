@@ -41,6 +41,7 @@
 
 
 extern void tks_get_extrafile_stringarray (YAC_Value *_r);  // see main.cpp
+extern void tks_queue_restart (void);
 
 
 TKS_Language::TKS_Language(void) {
@@ -902,4 +903,10 @@ void TKS_Language::evalScript(YAC_String *_src, YAC_Value *_r) {
    script->getPrintHookOutputAndClear(_r);
    // tkscript->printf("xxx evalScript: r.chars=\"%s\"\n", (const char*)_r->value.string_val->chars);
    YAC_DELETE(script);
+}
+
+void TKS_Language::queueRestart(void) {
+#ifndef TKS_LIB
+   tks_queue_restart();
+#endif // !TKS_LIB
 }

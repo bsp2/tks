@@ -102,6 +102,8 @@ static int  StartDefaultPakfile(void);
 static int  ac_run             (const char *_name, sBool _bRunInBG = 0);
 static int  print_version      (void);
 
+void tks_queue_restart (void);
+
 TKS_ScriptEngine *tkscript = NULL;
 YAC_Host *yac_host = NULL;
 
@@ -797,6 +799,10 @@ int ac_run(const char *_name, sBool _bRunInBG) {
 }
 
 #ifndef TKS_LIB
+void tks_queue_restart (void) {
+   b_continue = YAC_TRUE;
+}
+
 int StartDefaultPakfile(void) {
    // ---- treat argument as pak file name. simulate runtime
    tkscript->configuration.b_simulatevfs=0;

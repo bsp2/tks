@@ -9853,6 +9853,12 @@ This allocates a new %Script object, installs a print hook, loads the given sour
 */
       YM //void  evalScript (YAC_String *_src, YAC_Value *_r);
 
+
+/* @method queueRestart
+Queues application restart after exit
+ */
+      YM //void queueRestart (void);
+
 };
 #include "ying_core_Language.cpp"
 YAC_C_CORE(_Language, "TKS", TKS_CLID_LANGUAGE);

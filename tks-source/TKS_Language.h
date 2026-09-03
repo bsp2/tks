@@ -78,6 +78,7 @@ public:
    void        getExtraFiles               (YAC_Value *_r);  // returns StringArray
    sBool       loadLocalTSL                (YAC_String *_libName);
    void        evalScript                  (YAC_String *_src, YAC_Value *_r);  // eval and return 'print' output string buffer
+   void        queueRestart                (void);
 };
 
 #endif  // TKS_LANGUAGE_H__
