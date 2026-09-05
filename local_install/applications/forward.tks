@@ -1,0 +1,186 @@
+
+// forwards FF loopback input default (SDL) audio device (e.g. BT headphones)
+
+use tkportaudio;
+use tksdl;
+
+String SRC_DEVNAME = "Fireface 802 (23861675)";
+
+int srcDevIdx = -1;
+int srcCh = 12;  // loopback (AES)
+
+PaStream srcStream;
+
+#define NUM_INPUT_CH   14
+#define NUM_OUTPUT_CH   2
+
+float SUGGESTED_LATENCY = (0);//(4096/44100.0);
+// float SUGGESTED_LATENCY = (0.2);//(4096/44100.0);
+
+// int SAMPLE_FORMAT = PA_INT16;  // works on Windows/ASIO(RME)
+// int SAMPLE_FORMAT = PA_INT24;   // works on Windows/ASIO(RME)
+int SAMPLE_FORMAT = PA_FLOAT32;  // the only setting that works on macOS/CoreAudio (Yamaha Montage)
+
+boolean b_debug = false;
+
+function ListDevices() {
+   int numDev = PortAudio.GetNumDevices();
+
+   trace "[dbg] ListDevices: numDev="+numDev;
+   int devIdx = 0;
+   loop(numDev)
+   {
+      PaDeviceInfo devInfo <= PortAudio.GetDeviceInfo(devIdx);
+      trace "[dbg] ListDevices:\n\t devIdx=" + devIdx +" name=\""+devInfo.name+"\" apiName=\""+devInfo.hostApiName + "\"" 
+         "\n\t maxInputCh="+devInfo.maxInputChannels+" maxOutputCh="+devInfo.maxOutputChannels+
+         "\n\t defLowInputLatency="+devInfo.defaultLowInputLatency+" defLowOutputLatency="+devInfo.defaultLowOutputLatency+
+         "\n\t defHighInputLatency="+devInfo.defaultHighInputLatency+" defHighOutputLatency="+devInfo.defaultHighOutputLatency+
+         "\n\t defSampleRate="+devInfo.defaultSampleRate;
+
+      if(SRC_DEVNAME == devInfo.name)
+         srcDevIdx = devIdx;
+
+      devIdx++;
+   }
+}
+
+
+FloatArray buf;
+buf.allocAndFill(65536, 0);
+Mutex mtx_buf;
+int buf_write_off;
+int buf_read_off;
+int buf_avail;
+
+int xxx = 0;
+function StreamCallback(PaStream _stream, FloatArray input, FloatArray output, int numFrames) {
+
+   output.fill(0.0f);
+
+   int numInCh  = _stream.numInputChannels;
+   int numOutCh = _stream.numOutputChannels;
+
+   mtx_buf.lock();
+   int i = srcCh;
+   float avg = 0;
+   loop(numFrames)
+   {
+      buf[buf_write_off + 0] = input[i + 0];
+      buf[buf_write_off + 1] = input[i + 1];
+      avg += abs(input[i+0]);
+
+      i += numInCh;
+      buf_write_off = (buf_write_off + 2) & 65535;
+   }
+   avg = int(32767 * avg/numFrames);
+   buf_avail += numFrames * 2;
+   mtx_buf.unlock();
+
+   if(0 == (xxx++ & 65535))
+      trace "[trc] StreamCallback: numInCh="+numInCh+" numOutCh="+numOutCh+" #frames="+numFrames+" avail="+buf_avail+" write_off="+buf_write_off+" read_off="+buf_read_off+" avg="+avg;
+
+}
+
+function onAudioBeginBlock(FloatArray _fa) {
+   // trace "xxx onAudioBeginBlock: numFrames="+(_fa.numElements/2);
+   // SDL callback
+   _fa.fill(0);
+   mtx_buf.lock();
+   if(buf_avail >= _fa.numElements)
+   {
+      int i = 0;
+      int j = buf_read_off;
+      loop(_fa.numElements)
+      {
+         _fa[i++] = buf[j++];
+         j = j & 65535;
+      }
+      buf_avail -= _fa.numElements;
+      buf_read_off = (buf_read_off + _fa.numElements) & 65535;
+   }
+   mtx_buf.unlock();
+   AudioDevice.finishBlock();
+}
+
+function OpenDevice(int _devIdx, int _numIn, int _numOut, PaStream _stream) {
+   PaDeviceInfo devInfo <= PortAudio.GetDeviceInfo(_devIdx);
+   if(null != devInfo)
+   {
+      PaStreamParameters isp, osp;
+
+      isp.deviceIndex      = _devIdx;
+      isp.channelCount     = _numIn;
+      isp.sampleFormat     = SAMPLE_FORMAT;
+      isp.suggestedLatency = SUGGESTED_LATENCY;
+
+      osp.deviceIndex      = _devIdx;
+      osp.channelCount     = _numOut;
+      osp.sampleFormat     = SAMPLE_FORMAT;
+      osp.suggestedLatency = SUGGESTED_LATENCY;
+
+      if(PortAudio.OpenStream(isp, osp, devInfo.defaultSampleRate, 0/*framesPerBuffer*/, StreamCallback, _stream))
+      {
+         trace "[...] OpenDevice: stream opened OK. devIdx="+_devIdx+" rate="+devInfo.defaultSampleRate;
+
+         _stream.start();
+         return true;
+      }
+      else
+      {
+         trace "[---] OpenDevice: FAILED to open stream (devIdx="+_devIdx+").\n";
+      }
+   }
+   return false;
+}
+
+function onSignal(int c) {
+   trace "[...] forward: caught signal "+c;
+
+   AudioDevice.stop();
+
+   srcStream.stop();
+   srcStream.abort();
+   srcStream.close();
+
+   trace "[...] forward: exiting..";
+   exit(0);
+}
+
+
+PortAudio.Initialize();
+
+ListDevices();
+
+if(-1 != srcDevIdx)
+{
+   use callbacks;
+
+   if(OpenDevice(srcDevIdx, NUM_INPUT_CH, 2/*numOut*/, srcStream))
+   {
+      AudioDevice.openDSP(48000, 256);
+      AudioDevice.volume=1.0;
+      AudioDevice.start();
+
+      SDL.eventLoop();
+
+      trace "closing streams..";
+
+      // for(;;)
+      //    // loop(20)
+      // {
+      //    TKS.sleep(200);
+      // }
+
+      AudioDevice.stop();
+
+      srcStream.stop();
+      srcStream.abort();
+      srcStream.close();
+   }
+   else
+      trace "[---] failed to open src stream";
+}
+else
+   trace "[---] srcDevIdx=-1";
+
+PortAudio.Terminate();
