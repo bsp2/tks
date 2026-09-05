@@ -52,6 +52,7 @@ public:
    void  _delete                 (YAC_String *_s);
    void  _free                   (void);
    void  _empty                  (void);
+   sBool _isEmpty                (void);
    sBool _alloc                  (sUI _cachesize);
    sBool _realloc                (sUI _cachesize);
    sSI   _getNumElements         (void);

@@ -11334,8 +11334,19 @@ Free cache entries but not the entry array itself (keep maxElements)
 @see free
 @see alloc
 @see realloc
+@see isEmpty
 */
       YM //void _empty                   (void);
+
+/* @method isEmpty
+Return true if hash table has no entries.
+
+@see free
+@see alloc
+@see realloc
+@see empty
+*/
+      YM //sBool _isEmpty                (void);
 
 /* @method alloc,int cacheSize:boolean
 Set new capacity and discard all entries.

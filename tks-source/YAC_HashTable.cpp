@@ -385,6 +385,10 @@ void YAC_HashTable::_empty(void) {
    varcache.freeCacheEntries(YAC_FALSE/*bDebug*/);
 }
 
+sBool YAC_HashTable::_isEmpty(void) {
+   return (0u == varcache.num_entries);
+}
+
 sBool YAC_HashTable::_alloc(sUI _cachesize) {
    return varcache.allocCache(_cachesize); // xxx hmm , add +1 for NULL element here ?
 }
