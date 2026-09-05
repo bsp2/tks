@@ -537,7 +537,7 @@ int ac_list(const char *_name) {
 
 
 int ac_run(const char *_name, sBool _bRunInBG) {
-   // Execute selected input file (.tks, .tkp, .tkx)
+   // Execute selected input file (.tks, .tkp, .tkx, .tsl)
 
    if(!tkscript->init2())
    {
@@ -552,24 +552,33 @@ int ac_run(const char *_name, sBool _bRunInBG) {
    // Handle "# tks app:ying" style program name arguments
    t.replace("app:", &tkscript->configuration.application_path);
 
+   // // // Handle "# tks lib:replay" style program name arguments
+   // // t.replace("lib:", &tkscript->configuration.library_path);
+
 #ifdef HAVE_CYGWIN
    t.replace("/usr/lib", &tkscript->configuration.cygwin_usrlib);
 #endif // HAVE_CYGWIN
 
    sBool endswithtks = t.endsWith(".tks");
+   sBool endswithtsl = t.endsWith(".tsl");  // e.g. for libtks (e.g. load replay_client.tsl)
 
    if(!endswithtks)
    {
       endswithtks = t.endsWith(".TKS"); // (note) should be removed, uppercase .TKS file suffix is not really supported
    }
 
-   if(endswithtks)
+   if(endswithtks || endswithtsl)
    {
       YAC_String proj;
       proj.alloc(512);
-      proj.printf("[project]\nname=\"n/a\"\n[chapter]\nname=\"main\"\n\"code/main.tks\" =\"%s\"\n",
-                  (char*)t.chars
-                  );
+      if(endswithtsl)
+         proj.printf("[project]\nname=\"n/a\"\n[chapter]\nname=\"main\"\n\%s\n",
+                     (char*)t.chars
+                     );
+      else
+         proj.printf("[project]\nname=\"n/a\"\n[chapter]\nname=\"main\"\n\"code/main.tks\" =\"%s\"\n",
+                     (char*)t.chars
+                     );
       tkscript->tkx.str_tkpfile.yacCopy(&proj);
       tkscript->configuration.b_simulatevfs = YAC_TRUE;
       extract_tkp_dirname_from(&t);
@@ -599,23 +608,23 @@ int ac_run(const char *_name, sBool _bRunInBG) {
          endswithtkx = t.endsWith(".TKX");
       }
 
-      if(!endswithtkx)
-      {
-         endswithtkx = t.endsWith(".tsl");
-      }
+      // // if(!endswithtkx)
+      // // {
+      // //    endswithtkx = t.endsWith(".tsl");
+      // // }
 
-      if(!endswithtkx)
-      {
-         // (todo) should be removed, uppercase .TSL file suffix is not really supported
-         endswithtkx = t.endsWith(".TSL");
-      }
+      // // if(!endswithtkx)
+      // // {
+      // //    // (todo) should be removed, uppercase .TSL file suffix is not really supported
+      // //    endswithtkx = t.endsWith(".TSL");
+      // // }
 
       sBool trynxs = endswithtkx;
       sBool trytks = YAC_TRUE;
 
       if(!(endswithtkp || endswithtkx))
       {
-         // support tab-completion. auto-expand to .tkp if multiple selections are available
+         // auto-expand to .tkp if multiple selections are available
          if(t.endsWith(".tk"))
          {
             t.append("p");
@@ -687,8 +696,8 @@ int ac_run(const char *_name, sBool _bRunInBG) {
                ::URLDownloadToCacheFile(0, (const char*)t.chars, (char*)cachename.chars, MAX_PATH-1, 0, 0);
                t.copy((char*)cachename.chars);
             }
-#endif
-#endif
+#endif // HAVE_URLMON
+#endif // YAC_WIN32
             // Treat argument as pak file name. simulate runtime
             tkscript->configuration.b_simulatevfs = YAC_FALSE;
             extract_tkp_dirname_from(&t);
@@ -742,24 +751,27 @@ int ac_run(const char *_name, sBool _bRunInBG) {
    }
 
 
+   if(!endswithtsl)
+   {
 #ifdef YAC_POSIX
-   // Disallow SIGIO signal since some linux drivers use this to notify applications
-   //  (e.g. ALSA async callback). If we would not block the SIGIO by default, the ALSA callback
-   //  would be run in the context of whatever thread is currently active.
-   sigset_t ss;
-   sigemptyset(&ss);
-   sigaddset(&ss, SIGIO);
-   sigaddset(&ss, SIGUSR1);  // (note) librs (optionally) uses this for SHM ringbuffer notifications
-   pthread_sigmask(SIG_BLOCK, &ss, NULL);
+      // Disallow SIGIO signal since some linux drivers use this to notify applications
+      //  (e.g. ALSA async callback). If we would not block the SIGIO by default, the ALSA callback
+      //  would be run in the context of whatever thread is currently active.
+      sigset_t ss;
+      sigemptyset(&ss);
+      sigaddset(&ss, SIGIO);
+      sigaddset(&ss, SIGUSR1);  // (note) librs (optionally) uses this for SHM ringbuffer notifications
+      pthread_sigmask(SIG_BLOCK, &ss, NULL);
 #endif // YAC_POSIX
 
-   ::signal(SIGINT, &tks_sigint);
+      ::signal(SIGINT, &tks_sigint);
 #ifdef YAC_POSIX
-   ::signal(SIGPIPE, &tks_sigint);
+      ::signal(SIGPIPE, &tks_sigint);
 #if 0
-   ::signal(SIGUSR1, &tks_sigusr1);
+      ::signal(SIGUSR1, &tks_sigusr1);
 #endif
 #endif
+   }
 
    if(tkscript->configuration.debug_level > 0)
    {
@@ -792,9 +804,11 @@ int ac_run(const char *_name, sBool _bRunInBG) {
       tks_delete_extrafile_list();
    }
 
-   tkscript->compileRun(_bRunInBG);
-   if(!_bRunInBG)
+   tkscript->compileRun(_bRunInBG, endswithtsl/*bTSL*/);
+
+   if(!_bRunInBG && !endswithtsl)
       ::signal(SIGINT, SIG_DFL);
+
    return 1;
 }
 

@@ -44,17 +44,17 @@ int TKS_Plugin::plafBuildPathName(int _variant) {
 
    switch(_variant)
    {
-   default: // no more variants
-      return -1;
+      default: // no more variants
+         return -1;
 
-   case 0: // try CWD
+      case 0: // try CWD
       {
          path_name.yacCopy(&base_name);
          Dappendlibsuffix;
       }
       return 1;
 
-   case 1: // try CWD/plugins/
+      case 1: // try CWD/plugins/
       {
          path_name.copy("plugins/");
          path_name.append(&base_name);
@@ -62,7 +62,7 @@ int TKS_Plugin::plafBuildPathName(int _variant) {
       }
       return 2;
 
-   case 2: // try STARTDIR
+      case 2: // try STARTDIR
       {
          path_name.yacCopy(&tkscript->configuration.tks_exe_dir);
          path_name.append(&base_name);
@@ -70,7 +70,7 @@ int TKS_Plugin::plafBuildPathName(int _variant) {
       }
       return 3;
 
-   case 3: // try STARTDIR/plugins/
+      case 3: // try STARTDIR/plugins/
       {
          path_name.yacCopy(&tkscript->configuration.tks_exe_dir);
          path_name.append("plugins/");
@@ -79,7 +79,7 @@ int TKS_Plugin::plafBuildPathName(int _variant) {
       }
       return 4;
 
-   case 4: // try plugin repository
+      case 4: // try plugin repository
       {
          path_name.yacCopy(&tkscript->configuration.plugin_path);
          fix_dir_separator(&path_name);
@@ -90,6 +90,17 @@ int TKS_Plugin::plafBuildPathName(int _variant) {
             path_name.replace("/usr/lib", &tkscript->configuration.cygwin_usrlib);
          }
 #endif
+         Dappendlibsuffix;
+      }
+      return 5;
+
+      case 5: // try system repository
+      {
+         YAC_String sysPluginPath;
+         sysPluginPath.visit("/c/Program Files/tks/plugins/");
+         path_name.yacCopy(&sysPluginPath);
+         fix_dir_separator(&path_name);
+         path_name.append(&base_name);
          Dappendlibsuffix;
       }
       return -1;

@@ -1642,7 +1642,7 @@ void TKS_ScriptEngine::clearInstanceNamespace(void) {
    global_instance_namespace.freeCache();
 }
 
-void TKS_ScriptEngine::compileRun(sBool _bRunInBG) {
+void TKS_ScriptEngine::compileRun(sBool _bRunInBG, sBool _bTSL) {
 
    if(configuration.debug_level)
    {
@@ -1674,7 +1674,7 @@ void TKS_ScriptEngine::compileRun(sBool _bRunInBG) {
 
    PTN_Env env; env.initDefault();
 
-   if(((TKS_Compiler*)compiler)->compileCurrentChapter( &env ))
+   if(((TKS_Compiler*)compiler)->compileCurrentChapter(&env, _bTSL))
    {
 #ifdef TKS_USE_CHARALLOCATOR
       TKS_ScriptEngine::b_allow_char_allocator = YAC_FALSE;
@@ -2485,11 +2485,13 @@ sBool TKS_ScriptEngine::evalFunction(YAC_ContextHandle _context, YAC_FunctionHan
                                      )
 {
    // _r may be NULL
+   if(NULL == _context)
+      _context = yacContextGetDefault();
    if( _context && _sf && ( !(_numArgs/*||_args*/)||(_numArgs&&_args) ) )
    {
       TKS_FunctionObject *fo = (TKS_FunctionObject *) _sf;
       PTN_Function *f = fo->fun;
-      // tkscript->printf("xxx evalFunction FunctionObject fo=%p f=%p\n", fo, fo->fun);
+      // tkscript->printf("xxx evalFunction FunctionObject #args=%u args=%p fo=%p f=%p\n", _numArgs, _args, fo, fo->fun);
 
       ////printf("xxx TKS_ScriptEngine::evalFunction: context->b_running=%d\n", context->b_running);
       return evalFunction2(_context, f, _numArgs, _args, _r);
@@ -2524,7 +2526,8 @@ sBool TKS_ScriptEngine::evalScriptMethodByName(YAC_ContextHandle _context,
                                                )
 {
    // _r may be NULL
-
+   if(NULL == _context)
+      _context = yacContextGetDefault();
    if( _context && ( !(_numArgs||_args)||(_numArgs&&_args) ) )
    {
       TKS_Context *context =(TKS_Context*)_context;

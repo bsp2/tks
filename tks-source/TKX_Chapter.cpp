@@ -401,6 +401,29 @@ sBool TKX_Chapter::mergeTSL(TKX_File *f, sBool _bTSL) {
             bLibOpened = pf->str_takfile.readRawFile(&t);
          }
 
+         // Try system library repository
+         //  (note) e.g. for libtks (e.g. load replay_client.tsl)
+         if(!bLibOpened)
+         {
+            t.yacCopy(&f->source_name);
+            YAC_String sysLibraryPath;
+#ifdef YAC_WIN32
+            sysLibraryPath.copy("/c/Program Files/tks/libraries/");
+#elif defined(YAC_LINUX)
+            sysLibraryPath.copy("/usr/lib/tks/libraries/");
+#elif defined(YAC_MACOS)
+            sysLibraryPath.copy("/usr/local/lib/tks/libraries/");
+#endif
+            t.replaceRegion(0, 4, &sysLibraryPath);
+#ifdef HAVE_CYGWIN
+            if('/' == t[0])
+            {
+               t.replace("/usr/lib", &tkscript->configuration.cygwin_usrlib);
+            }
+#endif // HAVE_CYGWIN
+            bLibOpened = pf->str_takfile.readRawFile(&t);
+         }
+
          // All failed ?
          if(!bLibOpened)
          {

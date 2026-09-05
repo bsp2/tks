@@ -346,7 +346,7 @@ public:
 
    // ---- script exec ----
    void             runGlobalModuleStatements (PTN_Env*);
-   void             compileRun (sBool _bRunInBG);
+   void             compileRun (sBool _bRunInBG, sBool _bTSL);
    sBool            loadLocalTSL (YAC_String *_libName);
    void             stop (void);
 

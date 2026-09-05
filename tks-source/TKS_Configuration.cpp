@@ -96,10 +96,13 @@ TKS_Configuration::TKS_Configuration(void) {
         cygwin_usrlib.fixLength();
      }
 	}
-#endif
-
-#endif
-#endif
+#endif // HAVE_CYGWIN
+#endif // HAVE_WINREG
+// #elif defined(YAC_LINUX)
+//    plugin_path.copy("/usr/lib/tks/plugins/");
+// #elif defined(YAC_MACOS)
+//    plugin_path.copy("/usr/local/lib/tks/plugins/");
+#endif // YAC_WIN32
 
 	if(plugin_path.isBlank())
    {
@@ -109,7 +112,6 @@ TKS_Configuration::TKS_Configuration(void) {
 
 	// ---- get module path ----
 	module_path.visit(::getenv("TKS_MODULE_PATH"));
-
 #ifdef YAC_WIN32
 #ifdef HAVE_WINREG
 	if(module_path.isBlank())
@@ -129,8 +131,14 @@ TKS_Configuration::TKS_Configuration(void) {
 			module_path.fixLength();
 		}
 	}
-#endif
-#endif
+#endif // HAVE_WINREG
+// #elif defined(YAC_LINUX)
+//    module_path.copy("/usr/lib/tks/modules/");
+// #elif defined(YAC_MACOS)
+//    module_path.copy("/usr/local/lib/tks/modules/");
+   // (note) use CWD
+#endif // YAC_WIN32
+
 
 	// ---- get library path ----
 	library_path.visit(::getenv("TKS_LIBRARY_PATH"));
@@ -153,14 +161,18 @@ TKS_Configuration::TKS_Configuration(void) {
 			library_path.fixLength();
 		}
 	}
-#endif
-#endif
+#endif // HAVE_WINREG
+// #elif defined(YAC_LINUX)
+//    library_path.copy("/usr/lib/tks/libraries/");
+// #elif defined(YAC_MACOS)
+//    library_path.copy("/usr/local/lib/tks/libraries/");
+   // (note) use CWD
+#endif // YAC_WIN32
 
 	// ---- get application path ----
 	application_path.visit(::getenv("TKS_APPLICATION_PATH"));
 #ifdef YAC_WIN32
 #ifdef HAVE_WINREG
-
 	if(application_path.isBlank())
 	{
 		application_path.alloc(256);
@@ -178,8 +190,13 @@ TKS_Configuration::TKS_Configuration(void) {
 			application_path.fixLength();
 		}
 	}
-#endif
-#endif
+#endif // HAVE_WINREG
+// #elif defined(YAC_LINUX)
+//    application_path.copy("/usr/lib/tks/applications/");
+// #elif defined(YAC_MACOS)
+//    application_path.copy("/usr/local/lib/tks/applications/");
+   // (note) use CWD
+#endif // YAC_WIN32
 
    home_dir.visit(::getenv("HOME"));
 
