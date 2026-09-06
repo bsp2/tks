@@ -127,7 +127,7 @@ INSTALL   = ginstall
 MAKE      = make
 RM        = rm -f
 SED       = sed
-TKS       = tks
+TKS       = $(TKS_PREFIX)/tks
 ZIP       = zip
 UPX       = upx
 MD5SUM    = md5sum
@@ -248,6 +248,7 @@ EXTRA_INCLUDES=
 EXTRA_LIBS=
 #EXTRA_LIBS= -L/home/bsp/omap35x/zlib-1.2.3
 #EXTRA_LIBS= -L$(CROSS_ROOT)/usr/lib
+EXTRA_LIBS+= -L"${TKS_LIB_PREFIX}"
 
 
 #

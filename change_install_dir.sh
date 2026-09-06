@@ -9,6 +9,11 @@ fi
 export TKS_SITE_PREFIX="${TKS_PREFIX}"
 export TKS_TARGET_PREFIX="${TKS_PREFIX}"
 export TKS_TARGET_SITE_PREFIX="${TKS_PREFIX}"
+# libtks
+export TKS_TARGET_INCLUDE_PREFIX="${TKS_PREFIX}/include/"
+export TKS_TARGET_LIB_PREFIX="${TKS_PREFIX}/lib/"
+export TKS_INCLUDE_PREFIX=${TKS_TARGET_INCLUDE_PREFIX}
+export TKS_LIB_PREFIX="${TKS_TARGET_LIB_PREFIX}"
 echo "install dir set to \"${TKS_PREFIX}\""
 
 # for all_install target

@@ -292,8 +292,8 @@ FIND      = find
 MKDIR     = mkdir -p
 RM        = rm -f
 SED       = sed
-#TKS       = "$(TKS_PREFIX)/tks"
-TKS       = "tks"
+#TKS       = "tks"
+TKS       = "$(TKS_PREFIX)/tks"
 ZIP       = zip
 7Z        = 7z
 MD5SUM    = md5sum
@@ -395,8 +395,8 @@ EXTRA_INCLUDES=
 # Extra library paths
 #
 EXTRA_LIBS=
-
 EXTRA_LIBS+= -LIBPATH:"$(WINSDK_LIB_UCRT)"
+EXTRA_LIBS+= -LIBPATH:"${TKS_LIB_PREFIX}"
 
 
 #

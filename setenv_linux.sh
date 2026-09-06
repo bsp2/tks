@@ -22,10 +22,15 @@ export CROSS_ROOT=
 # installation path, as seen on target
 export TKS_TARGET_PREFIX=/usr/bin/
 export TKS_TARGET_SITE_PREFIX=/usr/lib/tks/
+# libtks
+export TKS_TARGET_INCLUDE_PREFIX=/usr/include/
+export TKS_TARGET_LIB_PREFIX=/usr/lib/
 
 # installation path, as seen on development host
 export TKS_PREFIX=${TKS_TARGET_PREFIX}
 export TKS_SITE_PREFIX=${TKS_TARGET_SITE_PREFIX}
+export TKS_INCLUDE_PREFIX=${TKS_TARGET_INCLUDE_PREFIX}
+export TKS_LIB_PREFIX=${TKS_TARGET_LIB_PREFIX}
 
 if [ "" = "`alias m 2>/dev/null`" ] ; then
  m() { make -j10 -f makefile.linux $* ; }
