@@ -114,6 +114,7 @@ sUI              YAC_Object::object_counter                  =0;
                     pool_handle.pool_id = 0;
 #endif // YAC_OBJECT_POOL
                  }
+#ifndef YAC_SKIP_OBJECT_METHODS
 sUI              YAC_VCALL YAC_Object::yacQueryInterfaces              (void)                                  {return YAC_INTERFACE_ALL;}
 #ifndef YAC_CUST_OBJECT_IMPL
 const sChar*     YAC_VCALL YAC_Object::yacClassName                    (void)                                  {return "null";}
@@ -436,6 +437,7 @@ YAC_Object *     YAC_Object::yacNewPooled                   (YAC_ContextHandle _
 #else
 YAC_Object *     YAC_Object::yacNewPooled                   (YAC_ContextHandle _context, sUI) { return yacNew(_context); }
 #endif // YAC_OBJECT_POOL
+
 // sBool            YAC_Object::yacCanDeserializeClass         (YAC_Object *_s)                        {YAC_String s;_s->yacStreamReadString(&s, 64);if( (yacClassName()&&s.compare((sChar*)yacClassName())) || (yacMetaClassName()&&s.compare((sChar*)yacMetaClassName())) ) {return 1;}else{_s->yacStreamSeek(-((sSI)s.length), YAC_CUR);/*expect ASCIIZ*/return 0;}}
 sBool            YAC_Object::yacCanDeserializeClass         (YAC_Object *_s)                        {
 #ifndef YAC_NO_HOST
@@ -456,11 +458,14 @@ sBool            YAC_Object::yacCanDeserializeClass         (YAC_Object *_s)    
       return YAC_FALSE;
    }
 }
+
 #ifndef YAC_NO_HOST
 sBool            YAC_Object::yacInstanceOf                  (YAC_Object *_o)                        {if(_o)return(yac_host->cpp_typecast_map[class_ID][_o->class_ID]);else return 0;}
 #else
 sBool            YAC_Object::yacInstanceOf                  (YAC_Object *_o)                        {return (class_ID == _o->class_ID);}
 #endif // YAC_NO_HOST
+
+#endif // !YAC_SKIP_OBJECT_METHODS
 
 
 #ifdef YAC_OBJECT_YAC
@@ -2117,7 +2122,7 @@ sSI YAC_CALL yac_dblcmp_rel(sF64 a, sF64 b, sF64 err) {
 // ---- PointerArray tool methods
 // ----
 // ----
-#ifndef YAC_CUST_VALUE
+#ifndef YAC_CUST_POINTERARRAY
 sBool YAC_PointerArray::realloc(sUI _maxElements) {
    return yacArrayRealloc(_maxElements, 0,0,0);
 }
@@ -2168,7 +2173,7 @@ sSI YAC_PointerArray::indexOfPointer(YAC_Object *_o, sUI _off) {
    return -1;
 }
 
-#endif // YAC_CUST_VALUE
+#endif // YAC_CUST_POINTERARRAY
 
 
 #ifdef YAC_GLOBAL_NEWDELETE
