@@ -21,6 +21,7 @@
 #define YAC_CUST_BUFFER defined
 #define YAC_CUST_INTARRAY defined
 #define YAC_CUST_FLOATARRAY defined
+#define YAC_CUST_POINTERARRAY defined
 #define YAC_CUST_NUMBEROBJECTS defined
 
 #define YAC_TRACK_CHARALLOC 1
