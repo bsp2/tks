@@ -102,11 +102,13 @@ YC class StSample : public YAC_Object {
   public:
    StSample           *next;
    StSampleBank       *parent_samplebank;
-   YAC_String         *name;
    StWaveform         *waveform;
    sBool               b_own_waveform;
    sF32                sample_rate_ratio;
    StSampleMutexGroup *mutex_group;
+#ifndef LIBSYNERGY_BUILD
+   YAC_String         *name;
+#endif // LIBSYNERGY_BUILD
 
    YAC_FloatArray     *partial_magnitudes;
    YAC_FloatArray     *partial_speeds;
@@ -1086,11 +1088,13 @@ YC class StSample : public YAC_Object {
 
    sBool b_ui_autoselect;  // 1=autoselect zone when parent Sample(/SampleBank) is selected in editor
 
+#ifndef LIBSYNERGY_BUILD
    // NULL=use default (StSampleBank) freq table. 128 frequencies (MIDI notes) per table.
    sF32       *tuning_tables[STSAMPLE_MAX_TUNING_TABLES/*16*/];
    YAC_Object *tuning_tables_meta[STSAMPLE_MAX_TUNING_TABLES/*16*/];  // editor info (SampleTuningTable script objects or NULL)
    sSI         default_tuning_table_idx;      // -1=use default table (StSamplePlayer)
    sSI         forced_tuning_table_idx;       // -1=use default_tuning_table_idx
+#endif // LIBSYNERGY_BUILD
 
    sBool b_free_running_osc;  // see also: StSampleBank::b_realloc (should be 1 when this is enabled)
 
@@ -1100,7 +1104,9 @@ YC class StSample : public YAC_Object {
 
    YAC(StSample);
 
+#ifndef LIBSYNERGY_BUILD
    const sF32 *getCurrentTuningTableOrNull (void);
+#endif // LIBSYNERGY_BUILD
 
    void setSamplePlayerForGlobalModulation (StSamplePlayer *_samplePlayer);
 
@@ -1191,8 +1197,10 @@ YC class StSample : public YAC_Object {
    YM YAC_Object *_getNext     (void);
    YM void        _setNext     (YAC_Object *_next);
 
+#ifndef LIBSYNERGY_BUILD
    YM YAC_Object *_getName     (void);
    YM void        _setName     (YAC_Object *_str); // copy
+#endif // LIBSYNERGY_BUILD
 
    YM YAC_Object *_getWaveform (void);
    YM void        _setWaveform (YAC_Object *_wav); // set ref
@@ -1292,6 +1300,7 @@ YC class StSample : public YAC_Object {
    YM void  _setPlayMode (sUI _mode);
    YM sUI   _getPlayMode (void);
 
+#ifndef LIBSYNERGY_BUILD
    // first sampleLoops entry (lazy-alloc)
    YM sSI  _getFirstOffset (void);
    YM void _setFirstOffset (sSI _off);
@@ -1311,6 +1320,7 @@ YC class StSample : public YAC_Object {
 
    YM sSI  _getLastLoopOffset (void);
    YM sSI  _getLastLoopLen    (void);
+#endif // LIBSYNERGY_BUILD
 
    // offset/len (no loops). can be (0; 0) when only using sampleLoops array
    YM sSI  _getOffset (void);
@@ -1786,6 +1796,7 @@ YC class StSample : public YAC_Object {
 
    YM sBool uiCheckResetRedrawFlag (void);
 
+#ifndef LIBSYNERGY_BUILD
    YM void setUiSVOffset (sF32 _offset);
    YM sF32 getUiSVOffset (void);
 
@@ -1797,6 +1808,7 @@ YC class StSample : public YAC_Object {
 
    YM void  setUiEnableAuxToWav (sBool _bEnable);
    YM sBool getUiEnableAuxToWav (void);
+#endif // LIBSYNERGY_BUILD
 
    YM void setVoiceCalibrationValue (sUI _laneIdx, sUI _voiceIdx, sF32 _value);
    YM sF32 getVoiceCalibrationValue (sUI _laneIdx, sUI _voiceIdx);
@@ -1892,6 +1904,7 @@ YC class StSample : public YAC_Object {
    YM void  _uiSetEnableAutoSelect (sBool _bEnable);
    YM sBool _uiGetEnableAutoSelect (void);
 
+#ifndef LIBSYNERGY_BUILD
    // Lazy-alloc tuning table and copy MIDI note frequencies from FloatArray 'fa'.
    //  Frees tuning table when 'fa' is null.
    YM sBool _setTuningTable (sUI _idx, YAC_Object *_fa);
@@ -1912,6 +1925,7 @@ YC class StSample : public YAC_Object {
 
    YM void _freeTuningTables (void);
    YM void _freeTuningTablesMetaData (void);
+#endif // LIBSYNERGY_BUILD
 
    YM void  _mmVarSetEnable (sBool _bEnable);
    YM sBool _mmVarGetEnable (void);

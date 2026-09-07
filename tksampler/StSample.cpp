@@ -54,9 +54,11 @@ StSample::StSample(void) {
    lfsr.init((void*)this);
 
    next        = NULL;
-   name        = NULL;
    waveform    = NULL;
    mutex_group = NULL;
+#ifndef LIBSYNERGY_BUILD
+   name        = NULL;
+#endif // LIBSYNERGY_BUILD
 
    partial_magnitudes = NULL;
    partial_speeds     = NULL;
@@ -125,10 +127,12 @@ StSample::StSample(void) {
 
    b_ui_autoselect = YAC_TRUE;
 
+#ifndef LIBSYNERGY_BUILD
    ::memset(tuning_tables, 0, sizeof(tuning_tables));
    ::memset(tuning_tables_meta, 0, sizeof(tuning_tables_meta));
    default_tuning_table_idx = -1;
    forced_tuning_table_idx = -1;
+#endif // LIBSYNERGY_BUILD
 
    b_mmvar_enable         = YAC_FALSE;
    mmvar_num              = 2u;
@@ -336,11 +340,13 @@ void StSample::reinit(void) {
 
    voice_bus = -1;
 
+#ifndef LIBSYNERGY_BUILD
    uiSVOffset   = -1.0f;
    uiSVZoom     = 1.0;
    uiSVZoomYIdx = 0u;
 
    ui_b_auxtowav = YAC_FALSE;
+#endif // LIBSYNERGY_BUILD
 
    memset((void*)voice_calibration, 0, sizeof(sF32)*6u*8u);
    for(sUI i = 0u; i < 6u; i++)
@@ -402,7 +408,9 @@ StSample::~StSample() {
 }
 
 void StSample::free(void) {
+#ifndef LIBSYNERGY_BUILD
    YAC_DELETE_SAFE(name);
+#endif // LIBSYNERGY_BUILD
    YAC_DELETE_SAFE(sample_loops);
    YAC_DELETE_SAFE(adsr_freq);
    YAC_DELETE_SAFE(adsr_vol);
@@ -441,8 +449,10 @@ void StSample::free(void) {
 
    freePlugins();
 
+#ifndef LIBSYNERGY_BUILD
    _freeTuningTables();
    _freeTuningTablesMetaData();
+#endif // LIBSYNERGY_BUILD
 }
 
 #ifndef TKSAMPLER_SKIP_LIVEREC
@@ -496,6 +506,7 @@ void StSample::setSamplePlayerForGlobalModulation(StSamplePlayer *_samplePlayer)
    }
 }
 
+#ifndef LIBSYNERGY_BUILD
 YAC_Object *StSample::_getName(void) {
    return name;
 }
@@ -507,6 +518,7 @@ void StSample::_setName(YAC_Object *_str) {
    }
    name->yacCopy(_str);
 }
+#endif // LIBSYNERGY_BUILD
 
 YAC_Object *StSample::_getWaveform (void) {
    return waveform;
@@ -1240,6 +1252,15 @@ sSI  StSample::_getEnableJumpToLoopImmediately(void) {
    return b_jumptoloop_immediately;
 }
 
+void StSample::_setPlayMode(sUI _mode) {
+   play_mode = _mode;
+}
+
+sUI StSample::_getPlayMode(void) {
+   return play_mode;
+}
+
+#ifndef LIBSYNERGY_BUILD
 sSI  StSample::_getFirstOffset(void) {
    sSI r = 0;
 
@@ -1252,14 +1273,6 @@ sSI  StSample::_getFirstOffset(void) {
    }
 
    return r;
-}
-
-void StSample::_setPlayMode(sUI _mode) {
-   play_mode = _mode;
-}
-
-sUI StSample::_getPlayMode(void) {
-   return play_mode;
 }
 
 void StSample::_setFirstOffset(sSI _off) {
@@ -1406,6 +1419,7 @@ sSI StSample::_getLastLoopLen(void) {
 
    return r;
 }
+#endif // LIBSYNERGY_BUILD
 
 sSI StSample::_getOffset(void) {
    return (sSI) sample_offset;
@@ -5606,6 +5620,7 @@ sSI StSample::_getVoiceBus(void) {
    return voice_bus;
 }
 
+#ifndef LIBSYNERGY_BUILD
 void StSample::setUiSVOffset(sF32 _offset) {
    uiSVOffset = _offset;
 }
@@ -5643,6 +5658,7 @@ void StSample::setUiEnableAuxToWav(sBool _bEnable) {
 sBool StSample::getUiEnableAuxToWav(void) {
    return ui_b_auxtowav;
 }
+#endif // LIBSYNERGY_BUILD
 
 void StSample::setVoiceCalibrationValue(sUI _laneIdx, sUI _voiceIdx, sF32 _value) {
    if(_laneIdx > 5u)
@@ -6606,6 +6622,7 @@ sBool StSample::_uiGetEnableAutoSelect(void) {
    return b_ui_autoselect;
 }
 
+#ifndef LIBSYNERGY_BUILD
 sBool StSample::_setTuningTable(sUI _idx, YAC_Object *_fa) {
    if(_idx < STSAMPLE_MAX_TUNING_TABLES)
    {
@@ -6725,6 +6742,7 @@ const sF32 *StSample::getCurrentTuningTableOrNull(void) {
    }
    return ret;
 }
+#endif // LIBSYNERGY_BUILD
 
 void StSample::_mmVarSetEnable(sBool _bEnable) {
    b_mmvar_enable = _bEnable;
