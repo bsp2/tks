@@ -55,6 +55,7 @@ void YAC_VCALL TKS_Envelope::yacGetConstantStringList(YAC_String *_c) {
       );
 }
 
+#ifndef LIBSYNERGY_BUILD
 void YAC_VCALL TKS_Envelope::yacOperator(sSI _cmd, YAC_Object *_o, YAC_Value *_r) {
    if(_o!=((YAC_Object*)this))
    {
@@ -77,6 +78,7 @@ void YAC_VCALL TKS_Envelope::yacOperator(sSI _cmd, YAC_Object *_o, YAC_Value *_r
    }
    YAC_FloatArray::yacOperator(_cmd, _o, _r);
 }
+#endif // LIBSYNERGY_BUILD
 
 sF32 TKS_Envelope::get(void) {
    return getAndResetNew(YAC_TRUE);

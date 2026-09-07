@@ -39,7 +39,9 @@ public:
 
    void YAC_VCALL yacGetConstantStringList(YAC_String *);
 
+#ifndef LIBSYNERGY_BUILD
    void YAC_VCALL yacOperator(sSI, YAC_Object*, YAC_Value *);
+#endif // LIBSYNERGY_BUILD
 
    sF32 YAC_VCALL yacEnvGetValue (void);
    void YAC_VCALL yacEnvTickPrecise (sF32 _dt);
