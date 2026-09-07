@@ -257,7 +257,8 @@ OPTFLAGS=
 ifeq ($(RELEASE),y)
 
 ifeq ($(OPT_SIZE),y)
-OPTFLAGS += -Os
+#OPTFLAGS += -Os
+OPTFLAGS += -Oz
 else
 OPTFLAGS += -O3
 endif
