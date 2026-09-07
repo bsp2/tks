@@ -44,6 +44,7 @@
 #include <yac_host.cpp>
 
 #include "../tksampler/tksampler.h"
+#if 0
 #include "../tksampler/ying_tksampler_StADSR.cpp"
 #include "../tksampler/ying_tksampler_StEnvelope.cpp"
 #include "../tksampler/ying_tksampler_StLFO.cpp"
@@ -62,11 +63,12 @@
 #endif // LIBSYNERGY_BUILD
 #include "../tksampler/ying_tksampler_StPluginInfo.cpp"
 #include "../tksampler/ying_tksampler_StPluginShared.cpp"
-#include "../tksampler/ying_tksampler_StPluginSharedMissing.cpp"
+//#include "../tksampler/ying_tksampler_StPluginSharedMissing.cpp"
 #include "../tksampler/ying_tksampler_StPluginVoice.cpp"
 #include "../tksampler/ying_tksampler_StPluginLibrary.cpp"
 // #include "../tksampler/ying_tksampler.cpp"
 // // sUI exid_InvalidPointer;
+#endif // 0
 
 #ifdef SR_STDIO
 void sr_printf(const char *_fmt, ...) {
