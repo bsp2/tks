@@ -72,6 +72,10 @@ sF32 stsamplevoice_bipolar_to_scale(const sF32 _t, const sF32 _div, const sF32 _
    return s;
 }
 
+static sF32 loc_mm_step(sF32 d, sF32 srcValDef) {
+   return (d != 0.0f) ? (sSI(srcValDef * d + ((srcValDef >= 0.0f) ? 0.5f : -0.5f)) / d) : 0.0f;
+}
+
 // static sF32 loc_log_lin_exp(sF32 _f, sF32 _c) {
 //    // c: <0: log
 //    //     0: lin
@@ -427,10 +431,9 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
    mmdst_additive_num_partials  = 0.0f;
 #endif // LIBSYNERGY_BUILD
 
-   sUI signalTapIdx = 0u;
-
-#define Dstr(d) #d
 #ifndef LIBSYNERGY_BUILD
+   sUI signalTapIdx = 0u;
+#define Dstr(d) #d
 #define Dsignaltap(d) if(mm->b_signal_tap) Dyac_host_printf("[>>>] voice_idx=%u ticks=%u signal_tap[%u]<%s>=%f\n", voice_idx, replay_ticks, signalTapIdx++, Dstr(d), (d))
 #else
 #define Dsignaltap(d)
@@ -2051,6 +2054,7 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
             sBool bAutoMul = ((STSAMPLE_MM_OP_AUTO == mm->op) || (STSAMPLE_MM_OP_MUL == mm->op));
             sBool bAutoRep = ((STSAMPLE_MM_OP_AUTO == mm->op) || (STSAMPLE_MM_OP_REPLACE == mm->op));
 
+#ifndef LIBSYNERGY_BUILD
 #define Delse_mm_lerp(d)                                                \
          else if(STSAMPLE_MM_OP_BLEND_SRC == mm->op)                    \
             d = (d) + (srcVal - (d)) * mmAmt;                           \
@@ -2194,6 +2198,34 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
          }                                                              \
          else if(STSAMPLE_MM_OP_STEP == mm->op)                         \
             (d) = ((d) != 0.0f) ? (sSI(srcValDef * (d) + ((srcValDef >= 0.0f) ? 0.5f : -0.5f)) / (d)) : 0.0f
+
+#else
+            // synergy_replay (remove blend,compare,modulo,triangle ops)
+#define Delse_mm_lerp(d)                                                \
+         else if(STSAMPLE_MM_OP_REPLACE == mm->op)                      \
+            d = srcValDef;                                              \
+         else if(STSAMPLE_MM_OP_REPLACE_INIT == mm->op)                 \
+         { if(0u == replay_ticks) { d = srcValDef; } }                  \
+         else if(STSAMPLE_MM_OP_STEP == mm->op)                         \
+            (d) = loc_mm_step(d, srcValDef);
+
+#define Delse_mm_lerp_bipolar8(d)                                       \
+         else if(STSAMPLE_MM_OP_REPLACE == mm->op)                      \
+            d = srcValDef;                                              \
+         else if(STSAMPLE_MM_OP_REPLACE_INIT == mm->op)                 \
+         { if(0u == replay_ticks) { d = srcValDef; } }                  \
+         else if(STSAMPLE_MM_OP_STEP == mm->op)                         \
+            (d) = loc_mm_step(d, srcValDef);
+
+#define Delse_mm_lerp_scl(d, s)                                         \
+         else if(STSAMPLE_MM_OP_REPLACE == mm->op)                      \
+            d = srcValDef;                                              \
+         else if(STSAMPLE_MM_OP_REPLACE_INIT == mm->op)                 \
+         { if(0u == replay_ticks) { d = srcValDef; } }                  \
+         else if(STSAMPLE_MM_OP_STEP == mm->op)                         \
+            (d) = loc_mm_step(d, srcValDef)
+#endif // LIBSYNERGY_BUILD
+
 
             switch(mm->dst)
             {
