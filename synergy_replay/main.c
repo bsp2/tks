@@ -369,10 +369,16 @@ int main(int argc, char**argv) {
          {
             Dinfov("[...] synthesizing procedural samples: begin\n");
             unsigned int wfSz = sr_proj_get_wf_size(proj) * sizeof(float);
+#ifdef SR_PROFILE
             unsigned int t = loc_profile_ms_get();
+#endif // SR_PROFILE
             sr_calc_cycle_waveforms(proj, song, &cycle_calc_waveform_demo_2_r_sr);
+#ifdef SR_PROFILE
             t = loc_profile_ms_get() - t;
             Dinfo("[...] cycle: synthesized %4.2fk samples in %u ms\n", (wfSz / 1024.0f), t);
+#else
+            Dinfo("[...] cycle: synthesized %4.2fk samples\n", (wfSz / 1024.0f));
+#endif // SR_PROFILE
          }
 #endif
 
