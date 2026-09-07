@@ -22,7 +22,7 @@
 // ---- info   : This is part of the "syntracker" midi sequencer.
 // ----
 // ---- created: 23Sep2009
-// ---- changed: 21Jan2010, 24May2026
+// ---- changed: 21Jan2010, 24May2026, 07Sep2026
 // ----
 // ----
 // ----
@@ -32,11 +32,15 @@
 
 StSampleMutexGroup::StSampleMutexGroup(void) {
    next = NULL;
+#ifndef LIBSYNERGY_BUILD
    name = NULL;
+#endif // LIBSYNERGY_BUILD
 }
 
 StSampleMutexGroup::~StSampleMutexGroup() {
+#ifndef LIBSYNERGY_BUILD
    YAC_DELETE_SAFE(name);
+#endif // LIBSYNERGY_BUILD
 }
 
 YAC_Object *StSampleMutexGroup::_getNext(void) {
@@ -54,6 +58,7 @@ void StSampleMutexGroup::_setNext(YAC_Object *_mtxgrp) {
    }
 }
 
+#ifndef LIBSYNERGY_BUILD
 YAC_Object *StSampleMutexGroup::_getName(void) {
    return name;
 }
@@ -65,3 +70,4 @@ void StSampleMutexGroup::_setName(YAC_Object *_str) {
    }
    name->yacCopy(_str);
 }
+#endif // LIBSYNERGY_BUILD

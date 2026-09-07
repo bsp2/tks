@@ -22,7 +22,7 @@
 // ---- info   : This is part of the "syntracker" midi sequencer.
 // ----
 // ---- created: 23Sep2009
-// ---- changed: 21Jan2010, 03Oct2024, 24May2026
+// ---- changed: 21Jan2010, 03Oct2024, 24May2026, 07Sep2026
 // ----
 // ----
 // ----
@@ -38,7 +38,9 @@ YG("tksampler")
 YC class StSampleMutexGroup : public YAC_Object {
   public:
    StSampleMutexGroup *next;
+#ifndef LIBSYNERGY_BUILD
    YAC_String         *name;
+#endif // LIBSYNERGY_BUILD
 
   public:
    StSampleMutexGroup(void);
@@ -49,8 +51,10 @@ YC class StSampleMutexGroup : public YAC_Object {
    YM YAC_Object *_getNext(void);
    YM void        _setNext(YAC_Object *_mtxgrp);
 
+#ifndef LIBSYNERGY_BUILD
    YM YAC_Object *_getName     (void);
    YM void        _setName     (YAC_Object *_str); // copy
+#endif // LIBSYNERGY_BUILD
 };
 
 
