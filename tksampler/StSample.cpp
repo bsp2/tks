@@ -553,6 +553,7 @@ void StSample::_setWaveform(YAC_Object *_wav) {
    }
 }
 
+#ifndef TKSAMPLER_SKIP_ADDITIVE
 YAC_Object *StSample::_getPartialMagnitudes(void) {
    return partial_magnitudes;
 }
@@ -625,7 +626,9 @@ void StSample::_setEnablePartialPhase0(sBool _bEnable) {
 sBool StSample::_getEnablePartialPhase0(void) {
    return b_partial_phase_0;
 }
+#endif // TKSAMPLER_SKIP_ADDITIVE
 
+#ifndef LIBSYNERGY_BUILD
 sBool StSample::verify_sample_area(sUI &offset, sUI &len, const sUI range) {
 
    if( (offset + len) < offset)
@@ -893,6 +896,7 @@ sBool StSample::_verifySampleAreas(void) {
       return YAC_FALSE;
    }
 }
+#endif // LIBSYNERGY_BUILD
 
 
 YAC_Object *StSample::_getMutexGroup(void) {
@@ -2601,6 +2605,7 @@ sF32 StSample::_getMMAmt(sUI _idx) {
    return 0.0f;
 }
 
+#ifndef LIBSYNERGY_BUILD
 void StSample::_setMMSignalTap(sUI _idx, sBool _bEnable) {
    if(_idx < STSAMPLE_NUM_MODMATRIX_ENTRIES)
    {
@@ -2615,7 +2620,9 @@ sBool StSample::_getMMSignalTap(sUI _idx) {
    }
    return YAC_FALSE;
 }
+#endif // LIBSYNERGY_BUILD
 
+#ifndef LIBSYNERGY_BUILD
 sSI StSample::_findUnusedMMEntry(sUI _startIdx) {
    sUI idx = _startIdx;
    while(idx < STSAMPLE_NUM_MODMATRIX_ENTRIES)
@@ -2626,6 +2633,7 @@ sSI StSample::_findUnusedMMEntry(sUI _startIdx) {
    }
    return -1;
 }
+#endif // LIBSYNERGY_BUILD
 
 #ifndef TKSAMPLER_SKIP_LIVEREC
 void StSample::_setLiveRecEnable(sBool _bEnable) {

@@ -66,7 +66,9 @@ typedef struct StSampleMMEntry_s {
    sU16  src;           // see STSAMPLE_MM_SRC_xxx
    sF32  amt;           // arbitrary float
    sU16  dst;           // see STSAMPLE_MM_DST_xxx
+#ifndef LIBSYNERGY_BUILD
    sBool b_signal_tap;  // 1=debug-print dest value to console. not persistent.
+#endif // LIBSYNERGY_BUILD
 } StSampleMMEntry;
 
 struct st_plugin_slot_t {
@@ -1112,7 +1114,9 @@ YC class StSample : public YAC_Object {
 
    sBool filterNoteOn (sSI _note, sF32 _vel, sF32 _mod);
 
+#ifndef LIBSYNERGY_BUILD
    static sBool verify_sample_area (sUI &offset, sUI &len, const sUI range);
+#endif // LIBSYNERGY_BUILD
 
    StSample *getNextAltRandSample (void);
 
@@ -1205,6 +1209,7 @@ YC class StSample : public YAC_Object {
    YM YAC_Object *_getWaveform (void);
    YM void        _setWaveform (YAC_Object *_wav); // set ref
 
+#ifndef TKSAMPLER_SKIP_ADDITIVE
    // array size must be 256*256 (256 partials * 256 wavetable waves)
    YM YAC_Object *_getPartialMagnitudes (void);
    YM void        _setPartialMagnitudes (YAC_Object *_wav); // set ref
@@ -1225,10 +1230,13 @@ YC class StSample : public YAC_Object {
 
    YM void        _setEnablePartialPhase0 (sBool _bEnable);
    YM sBool       _getEnablePartialPhase0 (void);
+#endif // TKSAMPLER_SKIP_ADDITIVE
 
+#ifndef LIBSYNERGY_BUILD
    YM void        _handleShiftSampleArea (sUI _offset, sSI _len);
    YM void        _handleMoveSampleArea (sUI _offset, sUI _len, sUI _newOffset);
    YM sBool       _verifySampleAreas (void);
+#endif // LIBSYNERGY_BUILD
 
    YM YAC_Object *_getMutexGroup (void);
    YM void        _setMutexGroup (YAC_Object *_mtxGrp); // set ref
@@ -1658,10 +1666,14 @@ YC class StSample : public YAC_Object {
    YM void  _setMMAmt (sUI _idx, sF32 _amt);
    YM sF32  _getMMAmt (sUI _idx);
 
+#ifndef LIBSYNERGY_BUILD
    YM void  _setMMSignalTap (sUI _idx, sBool _bEnable);
    YM sBool _getMMSignalTap (sUI _idx);
+#endif // LIBSYNERGY_BUILD
 
+#ifndef LIBSYNERGY_BUILD
    YM sSI _findUnusedMMEntry (sUI _startIdx);
+#endif // LIBSYNERGY_BUILD
 
 #ifndef TKSAMPLER_SKIP_LIVEREC
    YM void  _setLiveRecEnable (sBool _bEnable);
