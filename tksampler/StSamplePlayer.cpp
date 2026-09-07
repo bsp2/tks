@@ -322,9 +322,11 @@ void StSamplePlayer::resetModulators(void) {
    sustain_pedal = YAC_FALSE;
    soft_pedal    = YAC_FALSE;
 
+#ifndef LIBSYNERGY_BUILD
    ::memset((void*)note_history_ms, 0, sizeof(note_history_ms));
    ::memset((void*)note_history_note, 0, sizeof(note_history_note));
    note_history_write_idx = 0u;
+#endif // LIBSYNERGY_BUILD
 
    global_tick_advance = 0u;
 
@@ -1430,6 +1432,7 @@ sSI StSamplePlayer::noteOffByKey(sSI _key, sF32 velocity) {
    return r;
 }
 
+#ifndef LIBSYNERGY_BUILD
 void StSamplePlayer::addToNoteHistory(sSI _note) {
    note_history_ms[note_history_write_idx] = Dyac_host_yacMilliSeconds();
    note_history_note[note_history_write_idx] = _note;
@@ -1455,6 +1458,7 @@ void StSamplePlayer::getNoteHistory(YAC_Object *_ia, sUI _maxDeltaMilliSec) {
       }
    }
 }
+#endif // LIBSYNERGY_BUILD
 
 sSI StSamplePlayer::startSample(YAC_Object *_sample, YAC_Object *_freqTableOrNull,
                                 sSI _note, sF32 _vel, sF32 _mod, sF32 _vol, sF32 _pan, sF32 _freq
@@ -1541,7 +1545,9 @@ sSI StSamplePlayer::startSample(YAC_Object *_sample, YAC_Object *_freqTableOrNul
 
             r = (sSI) next_voice_key;
 
+#ifndef LIBSYNERGY_BUILD
             addToNoteHistory(_note);
+#endif // LIBSYNERGY_BUILD
 
             next_voice_key++;
          }
@@ -1826,7 +1832,9 @@ sSI StSamplePlayer::startSampleBank(YAC_Object *_sampleBank, YAC_Object *_freqTa
 
             r = next_voice_key;
 
+#ifndef LIBSYNERGY_BUILD
             addToNoteHistory(_note);
+#endif // LIBSYNERGY_BUILD
 
             next_voice_key++;
 
@@ -1858,6 +1866,7 @@ sSI StSamplePlayer::startSampleBank(YAC_Object *_sampleBank, YAC_Object *_freqTa
    return r;
 }
 
+#ifndef LIBSYNERGY_BUILD
 sSI StSamplePlayer::_findVoicesByKey(sSI _key, YAC_Object *_retPA) {
    sSI r = 0;
 
@@ -1882,6 +1891,7 @@ sSI StSamplePlayer::_findVoicesByKey(sSI _key, YAC_Object *_retPA) {
 
    return r;
 }
+#endif // LIBSYNERGY_BUILD
 
 StSampleVoice *StSamplePlayer::findActiveVoiceBySample(StSample *_s, sBool _bAllowInRelease) {
    for(sUI i = 0u; i < num_voices; i++)
@@ -3172,6 +3182,7 @@ sUI StSamplePlayer::getLastVoiceKey(void) {
    return lastVoiceKey;
 }
 
+#ifndef LIBSYNERGY_BUILD
 void StSamplePlayer::findUniqueSamplesByVoiceKey(YAC_Object *_retSamplesPA, sUI _voiceKey) {
    if(YAC_Is_PointerArray(_retSamplesPA))
    {
@@ -3200,6 +3211,7 @@ void StSamplePlayer::findUniqueSamplesByVoiceKey(YAC_Object *_retSamplesPA, sUI 
       Dendloopallvoices;
    }
 }
+#endif // LIBSYNERGY_BUILD
 
 void StSamplePlayer::setTempo(sF32 _bpm, sSI _ppq) {
    if(_bpm < 1.0f)

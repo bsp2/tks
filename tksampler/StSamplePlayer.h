@@ -74,8 +74,10 @@ YC class StSamplePlayer : public YAC_Object {
 #define STSAMPLEPLAYER_NUM_POLYMODES    YCI 3
 
 
+#ifndef LIBSYNERGY_BUILD
 #define NOTE_HISTORY_LEN       (32u)
 #define NOTE_HISTORY_LEN_MASK  (31u)
+#endif // LIBSYNERGY_BUILD
 
 
   public:
@@ -183,10 +185,12 @@ YC class StSamplePlayer : public YAC_Object {
    sUI  global_tick_nr;
    sUI  global_tick_advance;  // valid during render()
 
+#ifndef LIBSYNERGY_BUILD
    // used for highlighting last pressed drumpads (PageSample UI)
    sUI note_history_ms[NOTE_HISTORY_LEN];
    sSI note_history_note[NOTE_HISTORY_LEN];
    sUI note_history_write_idx;
+#endif // LIBSYNERGY_BUILD
 
    sF32 bpm;
    sSI  ppq;
@@ -226,7 +230,9 @@ YC class StSamplePlayer : public YAC_Object {
    void incGlobalRegs (void);
    void decayGlobalRegs (void);
 
+#ifndef LIBSYNERGY_BUILD
    void addToNoteHistory (sSI _note);
+#endif // LIBSYNERGY_BUILD
 
    void applyMaxVoicesConstraint (StSample *_sample, sUI _voiceKey);
    void applyMaxSampleBankVoicesConstraint (StSampleBank *_sb);
@@ -513,12 +519,14 @@ YC class StSamplePlayer : public YAC_Object {
    YM sSI startSampleBank (YAC_Object *_sampleBank, YAC_Object *_freqTableOrNull, sSI _note, sF32 _velocity, sF32 _mod, sF32 _vol, sF32 _pan, sF32 _freq);
 
 
+#ifndef LIBSYNERGY_BUILD
    /* @method findVoicesByKey,int key,PointerArray ret:int
       Find all voices that are assigned the given key.
 
       @return Number of voices added to array.
    */
    YM sSI _findVoicesByKey (sSI _key, YAC_Object *_retPA);
+#endif // LIBSYNERGY_BUILD
 
 
    /* @method findPreviousGlideNoteByKey,int key:int historyIdx:int
@@ -1052,12 +1060,16 @@ YC class StSamplePlayer : public YAC_Object {
    // Get last played voice key
    YM sUI getLastVoiceKey (void);
 
+#ifndef LIBSYNERGY_BUILD
    // Find unique samples triggered by last voice key
    //  (used to select zone-by-midi in Eureka PageSample UI)
    YM void findUniqueSamplesByVoiceKey (YAC_Object *_retSamplesPA, sUI _voiceKey);
+#endif // LIBSYNERGY_BUILD
 
+#ifndef LIBSYNERGY_BUILD
    // Get last played note history (max. 32 entries)
    YM void getNoteHistory (YAC_Object *_ia, sUI _maxDeltaMilliSec);
+#endif // LIBSYNERGY_BUILD
 
    // Update BPM+PPQ (for tempo-based mod sequencers)
    YM void setTempo (sF32 _bpm, sSI _ppq);
