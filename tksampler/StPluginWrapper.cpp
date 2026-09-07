@@ -25,7 +25,7 @@
 // ---- changed: 17May2020, 19May2020, 20May2020, 08Jun2020, 09Jun2020, 03Feb2021, 30Jul2021
 // ----          12Apr2023, 20Apr2023, 29Jul2023, 16Aug2023, 24Aug2023, 03Sep2023, 30Nov2023
 // ----          02Dec2023, 07Dec2023, 22Dec2023, 06Jan2024, 12Jan2024, 19Jan2024, 21Jan2024
-// ----          10Aug2024, 15Sep2024, 07Dec2024, 24May2026
+// ----          10Aug2024, 15Sep2024, 07Dec2024, 24May2026, 07Sep2026
 // ----
 // ----
 // ----
@@ -73,6 +73,7 @@ void StPluginInfo::setIndex(sUI _index) {
    index = _index;
 }
 
+#ifndef LIBSYNERGY_BUILD
 void StPluginInfo::getId(YAC_Value *_r) {
    _r->initEmptyString();
    _r->value.string_val->visit(info->id);
@@ -104,7 +105,9 @@ sBool StPluginInfo::doVoiceBus(void) {
 sUI StPluginInfo::getCategoryId(void) {
    return info->category;
 }
+#endif // LIBSYNERGY_BUILD
 
+#ifndef LIBSYNERGY_BUILD
 const char *StPluginInfo::GetCategoryNameC(sUI _category) {
    // (todo) handle multiple categories
    switch(_category)
@@ -184,7 +187,9 @@ void StPluginInfo::getCategoryShortName(YAC_Value *_r) {
    _r->initEmptyString();
    _r->value.string_val->copy(GetCategoryShortNameC(info->category));
 }
+#endif // LIBSYNERGY_BUILD
 
+#ifndef LIBSYNERGY_BUILD
 sUI StPluginInfo::getNumMods(void) {
    return info->num_mods;
 }
@@ -445,6 +450,7 @@ void StPluginInfo::updateLUT(sUI _curveIdx, YAC_Object *_fa) {
       }
    }
 }
+#endif // LIBSYNERGY_BUILD
 
 void StPluginInfo::createSharedInstance(YAC_Value *_r) {
 
@@ -510,6 +516,7 @@ YAC_Object *StPluginShared::getInfo(void) {
    return info;
 }
 
+#ifndef LIBSYNERGY_BUILD
 void StPluginShared::queryDynamicParamName(sUI _paramIdx, YAC_Value *_r) {
    _r->initEmptyString();
    if(_paramIdx < info->info->num_params)
@@ -681,6 +688,7 @@ void StPluginShared::setArrayParamEditVariationIdx(sUI _paramIdx, sSI _variation
       }
    }
 }
+#endif // LIBSYNERGY_BUILD
 
 sF32 StPluginShared::getParamValue(sUI _paramIdx) {
    // yac_host->printf("xxx StPluginShared::getParamValue: paramIdx=%u num=%u\n", _paramIdx, info->info->num_params);
@@ -704,6 +712,7 @@ void StPluginShared::setParamValue(sUI _paramIdx, sF32 _value) {
    }
 }
 
+#ifndef LIBSYNERGY_BUILD
 void StPluginShared::getParamValueString(sUI _paramIdx, YAC_Value *_r) {
    _r->initNull();
    if(_paramIdx < info->info->num_params)
@@ -827,8 +836,10 @@ void StPluginShared::createVoiceInstance(sF32 _sampleRate, sUI _voiceIdx, YAC_Va
       Dyac_host_printf("[---] StPluginShared::createVoiceInstance: shared is NULL\n");
    }
 }
+#endif // LIBSYNERGY_BUILD
 
 
+#ifndef LIBSYNERGY_BUILD
 // <class.png>
 StPluginSharedMissing::StPluginSharedMissing(void) {
    plugin_id = NULL;
@@ -967,6 +978,7 @@ sUI StPluginSharedMissing::getNumArrayParams(void) {
    }
    return r;
 }
+#endif // LIBSYNERGY_BUILD
 
 
 // <class.png>

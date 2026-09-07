@@ -430,7 +430,11 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
    sUI signalTapIdx = 0u;
 
 #define Dstr(d) #d
+#ifndef LIBSYNERGY_BUILD
 #define Dsignaltap(d) if(mm->b_signal_tap) Dyac_host_printf("[>>>] voice_idx=%u ticks=%u signal_tap[%u]<%s>=%f\n", voice_idx, replay_ticks, signalTapIdx++, Dstr(d), (d))
+#else
+#define Dsignaltap(d)
+#endif // LIBSYNERGY_BUILD
 
    for(sUI mmIdx = 0u; mmIdx < STSAMPLE_NUM_MODMATRIX_ENTRIES; mmIdx++)
    {

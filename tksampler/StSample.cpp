@@ -40,7 +40,7 @@
 // ----          10Jan2024, 13Jan2024, 14Jan2024, 15Jan2024, 16Jan2024, 19Apr2024, 04Aug2024
 // ----          15Aug2024, 28Sep2024, 30Sep2024, 01Oct2024, 03Oct2024, 05Oct2024, 13Oct2024
 // ----          14Oct2024, 08Nov2024, 09Nov2024, 11Dec2024, 03Jan2025, 09Jan2026, 10Apr2026
-// ----          14May2026, 15May2026, 24May2026
+// ----          14May2026, 15May2026, 24May2026, 07Sep2026
 // ----
 // ----
 // ----
@@ -5203,6 +5203,7 @@ YAC_Object *StSample::_getVoicePluginShared(sUI _pluginIdx) {
    return NULL;
 }
 
+#ifndef LIBSYNERGY_BUILD
 void StSample::_setVoicePluginSharedMissing(sUI _pluginIdx, YAC_Object *_pluginSharedMissing) {
    if(_pluginIdx < STSAMPLE_NUM_PLUGINS)
    {
@@ -5243,6 +5244,7 @@ YAC_Object *StSample::_getVoicePluginSharedMissing(sUI _pluginIdx) {
    }
    return NULL;
 }
+#endif // LIBSYNERGY_BUILD
 
 void StSample::_setEnableVoicePluginPreFilter(sUI _pluginIdx, sBool _bPreFilter) {
    if(_pluginIdx < STSAMPLE_NUM_PLUGINS)
@@ -5572,10 +5574,12 @@ void StSample::freePlugins(void) {
          YAC_DELETE_SAFE(plugins[pluginIdx].shared);
       }
 
+#ifndef LIBSYNERGY_BUILD
       if(NULL != plugins[pluginIdx].shared_missing)
       {
          YAC_DELETE_SAFE(plugins[pluginIdx].shared_missing);
       }
+#endif // LIBSYNERGY_BUILD
    }
 
    plugin_mask_def = 0u;

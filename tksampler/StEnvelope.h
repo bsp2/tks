@@ -22,7 +22,7 @@
 // ---- info   : This is part of the "syntracker" midi sequencer.
 // ----
 // ---- created: 14Feb2010
-// ---- changed: 23Aug2021, 03Oct2024, 22Apr2026, 24May2026
+// ---- changed: 23Aug2021, 03Oct2024, 22Apr2026, 24May2026, 07Sep2026
 // ----
 // ----
 // ----
@@ -53,16 +53,20 @@ YC class StEnvelope : public YAC_Object {
    sF32 timescale; // usually 1.0, can be used to speed up/slow down A,D or R envelope separately
    sF32 exponent;  // usually 1.0. adsr_out=pow(env_val, exponent)
 
+#ifndef LIBSYNERGY_BUILD
    YAC_Object *metadata_object; // UI/editor-related metadata
    sBool       metadata_deleteme;
 
    YAC_String *ui_preset_name;
 
    sF32 last_played_position;  // UI
+#endif // LIBSYNERGY_BUILD
 
   protected:
+#ifndef LIBSYNERGY_BUILD
    void deleteMetaData (void);
    void deleteUIPresetName (void);
+#endif // LIBSYNERGY_BUILD
 
   public:
    StEnvelope(void);
@@ -72,9 +76,6 @@ YC class StEnvelope : public YAC_Object {
 
    YM YAC_Object *_getData (void);
    YM YAC_Object *_getOrCreateData (void);
-
-   YM void        _setMetaData (YAC_Object *_v); // set (deletable) object
-   YM YAC_Object *_getMetaData (void);           // get reference to metadata
 
    YM sF32 _getIntensity (void);
    YM void _setIntensity (sF32 _v);
@@ -88,10 +89,15 @@ YC class StEnvelope : public YAC_Object {
    YM sF32 _getExponent (void);
    YM void _setExponent (sF32 _v);
 
+#ifndef LIBSYNERGY_BUILD
+   YM void        _setMetaData (YAC_Object *_v); // set (deletable) object
+   YM YAC_Object *_getMetaData (void);           // get reference to metadata
+
    YM void        _setUiPresetName (YAC_Object *_s);
    YM YAC_Object *_getUiPresetName (void);
 
    YM sF32 _getLastPlayedPosition (void);
+#endif // LIBSYNERGY_BUILD
 
 };
 

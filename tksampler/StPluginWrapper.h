@@ -24,7 +24,7 @@
 // ---- created: 16May2020
 // ---- changed: 17May2020, 19May2020, 20May2020, 06Jun2020, 03Feb2021, 30Jul2021, 16Aug2023
 // ----          03Sep2023, 30Nov2023, 07Dec2023, 22Dec2023, 06Jan2024, 12Jan2024, 19Jan2024
-// ----          21Jan2024, 10Aug2024, 27Sep2024, 03Oct2024, 07Nov2024, 24May2026
+// ----          21Jan2024, 10Aug2024, 27Sep2024, 03Oct2024, 07Nov2024, 24May2026, 07Sep2026
 // ----
 // ----
 // ----
@@ -58,8 +58,10 @@ YC class StPluginInfo : public YAC_Object {
    sUI index;
 
   protected:
+#ifndef LIBSYNERGY_BUILD
    static const char *GetCategoryNameC (sUI _category);
    static const char *GetCategoryShortNameC (sUI _category);
+#endif // LIBSYNERGY_BUILD
 
   public:
    StPluginInfo(void);
@@ -71,6 +73,7 @@ YC class StPluginInfo : public YAC_Object {
 
    YM sUI   getIndex (void) const;
    YM void  setIndex (sUI _index);
+#ifndef LIBSYNERGY_BUILD
    YM void  getId (YAC_Value *_r);
    YM void  getAuthor (YAC_Value *_r);
    YM void  getName (YAC_Value *_r);
@@ -78,8 +81,12 @@ YC class StPluginInfo : public YAC_Object {
    YM sUI   getFlags (void);
    YM sBool doVoiceBus (void);
    YM sUI   getCategoryId (void);
+#endif // LIBSYNERGY_BUILD
+#ifndef LIBSYNERGY_BUILD
    YM void  getCategoryName (YAC_Value *_r);
    YM void  getCategoryShortName (YAC_Value *_r);
+#endif // LIBSYNERGY_BUILD
+#ifndef LIBSYNERGY_BUILD
    YM sUI   getNumMods (void);
    YM void  getModName (sUI _modIdx, YAC_Value *_r);
    YM sUI   getNumParams (void);
@@ -95,6 +102,7 @@ YC class StPluginInfo : public YAC_Object {
    YM void  getArrayParamElementName (sUI _paramIdx, sUI _elementIdx, YAC_Value *_r);
    YM sF32  getArrayParamElementReset (sUI _paramIdx, sUI _elementIdx);
    YM void  updateLUT (sUI _curveIdx, YAC_Object *_fa);
+#endif // LIBSYNERGY_BUILD
 
    YM void createSharedInstance (YAC_Value *_r);
 };
@@ -120,6 +128,7 @@ YC class StPluginShared : public YAC_Object {
 
    YM YAC_Object *getInfo (void);
 
+#ifndef LIBSYNERGY_BUILD
    // Returns new String
    YM void queryDynamicParamName (sUI _paramIdx, YAC_Value *_r);
    YM void queryDynamicModName (sUI _modIdx, YAC_Value *_r);
@@ -136,10 +145,12 @@ YC class StPluginShared : public YAC_Object {
 
    // -1=not editing array param, >=0: constantly refresh effective voice array from variation array(s)
    YM void setArrayParamEditVariationIdx (sUI _paramIdx, sSI _variationIdx);
+#endif // LIBSYNERGY_BUILD
 
    YM sF32 getParamValue (sUI _paramIdx);
    YM void setParamValue (sUI _paramIdx, sF32 _value);
 
+#ifndef LIBSYNERGY_BUILD
    // Convert param value to string (e.g. milliseconds, decibels, ..)
    //  (note) may return null when not supported by plugin
    YM void getParamValueString (sUI _paramIdx, YAC_Value *_r);
@@ -148,9 +159,11 @@ YC class StPluginShared : public YAC_Object {
    YM void benchmarkChunk (YAC_FloatArray *_ioBuf, sUI _numFramesPerChunk, sUI _numChunks);
 
    YM void createVoiceInstance (sF32 _sampleRate, sUI _voiceIdx, YAC_Value *_r);
+#endif // LIBSYNERGY_BUILD
 };
 
 
+#ifndef LIBSYNERGY_BUILD
 // <class.png>
 /* @class StPluginSharedMissing,Object
  */
@@ -197,6 +210,7 @@ YC class StPluginSharedMissing : public YAC_Object {
    YM void  getArrayParamVariationPtr (sUI _paramIdx, sUI _variationIdx, YAC_Value *_r);
    YM sUI   getNumArrayParams (void);
 };
+#endif // LIBSYNERGY_BUILD
 
 
 // <class.png>

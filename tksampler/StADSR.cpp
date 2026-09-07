@@ -117,6 +117,7 @@ void StADSR::_deleteEnvRelease(void) {
    YAC_DELETE_SAFE(env_release);
 }
 
+#ifndef LIBSYNERGY_BUILD
 YAC_Object *StADSR::_getEnvAttackMetaData(void) {
    if(NULL != env_attack)
    {
@@ -140,6 +141,7 @@ YAC_Object *StADSR::_getEnvReleaseMetaData(void) {
    }
    return NULL;
 }
+#endif // LIBSYNERGY_BUILD
 
 sF32 StADSR::_getIntensity(void) {
    return intensity;

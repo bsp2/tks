@@ -227,11 +227,16 @@ void StADSRPlayer::noteOffStartRelease(void) {
             env_index = ENV_RELEASE;
             time      = 0.0f;
 
+#ifndef LIBSYNERGY_BUILD
             orig_st_env->last_played_position = -1.0f;
+#endif // LIBSYNERGY_BUILD
 
             visitEnv(adsr->env_release);
             current_env->yacEnvSetTime(0.0f);
+
+#ifndef LIBSYNERGY_BUILD
             orig_st_env->last_played_position = -1.0f;
+#endif // LIBSYNERGY_BUILD
 
             if(0 == current_env->num_elements)
             {
@@ -246,7 +251,10 @@ void StADSRPlayer::noteOffStartRelease(void) {
 
             visitEnv(adsr->env_sustain);
             current_env->yacEnvSetTime(0.0f);
+
+#ifndef LIBSYNERGY_BUILD
             orig_st_env->last_played_position = 0.0f;
+#endif // LIBSYNERGY_BUILD
 
             if(0 == current_env->num_elements)
             {
@@ -311,7 +319,9 @@ sF32 StADSRPlayer::tick(void) {
                   // End of AD envelope, begin sustain
                   // Determine exact attack_level at end of AD env
                   current_env->yacEnvSetTime(current_env_totaltime);
+#ifndef LIBSYNERGY_BUILD
                   orig_st_env->last_played_position = -1;
+#endif // LIBSYNERGY_BUILD
 
                   t = current_env->yacEnvGetValue();
                   t = loc_powxy(t, orig_st_env->exponent);
@@ -335,7 +345,9 @@ sF32 StADSRPlayer::tick(void) {
                      visitEnv(adsr->env_sustain);
                      env_index++;
                      current_env->yacEnvSetTime((sF32)time);
+#ifndef LIBSYNERGY_BUILD
                      orig_st_env->last_played_position = time;
+#endif // LIBSYNERGY_BUILD
                   }
                }
                break;
@@ -350,13 +362,17 @@ sF32 StADSRPlayer::tick(void) {
                         // Loop sustain envelope
                         // Dyac_host_printf("xxx loop sustain env\n");
                         current_env->yacEnvSetTime((sF32)time);
+#ifndef LIBSYNERGY_BUILD
                         orig_st_env->last_played_position = time;
+#endif // LIBSYNERGY_BUILD
                      }
                      else
                      {
                         // Hold last value
                         b_sustain_finished = YAC_TRUE;
+#ifndef LIBSYNERGY_BUILD
                         orig_st_env->last_played_position = -1.0f;
+#endif // LIBSYNERGY_BUILD
                      }
                   }
                }
@@ -367,7 +383,9 @@ sF32 StADSRPlayer::tick(void) {
                   // End of release envelope
                   // Dyac_host_printf("xxx end of R envelope\n");
                   b_finished = 1;
+#ifndef LIBSYNERGY_BUILD
                   orig_st_env->last_played_position = -1.0f;
+#endif // LIBSYNERGY_BUILD
                }
                break;
             }
@@ -375,7 +393,9 @@ sF32 StADSRPlayer::tick(void) {
 
          if(!b_finished)
          {
+#ifndef LIBSYNERGY_BUILD
             orig_st_env->last_played_position = time;
+#endif // LIBSYNERGY_BUILD
 
             switch(env_index)
             {

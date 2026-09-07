@@ -46,6 +46,7 @@ StWaveform::StWaveform(void) {
    sample_name    = NULL;
    ring_offset    = 0u;
 
+#ifndef LIBSYNERGY_BUILD
    ui_last_played_offset = -1.0f;
    ui_offset             = 0;
    ui_zoom               = 1.0f;
@@ -61,6 +62,7 @@ StWaveform::StWaveform(void) {
    bwf_time        = NULL;
 
    cue_points = NULL;
+#endif // LIBSYNERGY_BUILD
 }
 
 StWaveform::~StWaveform() {
@@ -72,6 +74,7 @@ void StWaveform::_free(void) {
 
    YAC_DELETE_SAFE(sample_name);
 
+#ifndef LIBSYNERGY_BUILD
    YAC_DELETE_SAFE(ui_pathname);
    YAC_DELETE_SAFE(ui_undo);
 
@@ -81,6 +84,7 @@ void StWaveform::_free(void) {
    YAC_DELETE_SAFE(bwf_time);
 
    YAC_DELETE_SAFE(cue_points);
+#endif // LIBSYNERGY_BUILD
 }
 
 YAC_Object *StWaveform::_getSampleData(void) {
@@ -203,6 +207,15 @@ void StWaveform::_setName(YAC_Object *_name) {
    sample_name->yacCopy(_name);
 }
 
+sUI StWaveform::_getRingOffset(void) {
+   return ring_offset;
+}
+
+void StWaveform::_setRingOffset(sUI _off) {
+   ring_offset = _off;
+}
+
+#ifndef LIBSYNERGY_BUILD
 void StWaveform::_uiSetType(sUI _type) {
    ui_type = _type;
 }
@@ -245,14 +258,6 @@ void StWaveform::_uiSetPathName(YAC_Object *_pathName) {
 
 YAC_Object *StWaveform::_uiGetPathName(void) {
    return ui_pathname;
-}
-
-sUI StWaveform::_getRingOffset(void) {
-   return ring_offset;
-}
-
-void StWaveform::_setRingOffset(sUI _off) {
-   ring_offset = _off;
 }
 
 void StWaveform::_uiSetId(sSI _id) {
@@ -365,3 +370,4 @@ YAC_Object *StWaveform::_getOrCreateCuePoints(void) {
    }
    return cue_points;
 }
+#endif // LIBSYNERGY_BUILD

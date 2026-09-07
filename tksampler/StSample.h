@@ -41,7 +41,7 @@
 // ----          22Sep2023, 17Nov2023, 18Nov2023, 08Jan2024, 10Jan2024, 13Jan2024, 14Jan2024
 // ----          15Jan2024, 16Jan2024, 19Apr2024, 04Aug2024, 15Aug2024, 28Sep2024, 30Sep2024
 // ----          02Oct2024, 03Oct2024, 13Oct2024, 09Nov2024, 03Jan2025, 09Jan2026, 16Jan2026
-// ----          26Jan2026, 10Apr2026, 14May2026, 15May2026, 24May2026, 27May2026
+// ----          26Jan2026, 10Apr2026, 14May2026, 15May2026, 24May2026, 27May2026, 07Sep2026
 // ----
 // ----
 // ----
@@ -71,7 +71,9 @@ typedef struct StSampleMMEntry_s {
 
 struct st_plugin_slot_t {
    StPluginShared        *shared;           // instance
+#ifndef LIBSYNERGY_BUILD
    StPluginSharedMissing *shared_missing;   // place holder when plugin is missing
+#endif // LIBSYNERGY_BUILD
    sBool                  b_pre_filter;
    sBool                  b_skip;
    sF32                   level[2];         // l/r (calculated from drive+pan)

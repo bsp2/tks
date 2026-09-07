@@ -22,7 +22,7 @@
 // ---- info   : This is part of the "syntracker" midi sequencer.
 // ----
 // ---- created: 14Feb2010
-// ---- changed: 23Aug2021, 12Apr2023, 03Oct2024, 22Apr2026, 24May2026
+// ---- changed: 23Aug2021, 12Apr2023, 03Oct2024, 22Apr2026, 24May2026, 07Sep2026
 // ----
 // ----
 // ----
@@ -37,18 +37,23 @@ StEnvelope::StEnvelope(void) {
    timescale = 1.0f; // scaling is relative to ADSR timescale
    exponent  = 1.0f;
 
+#ifndef LIBSYNERGY_BUILD
    metadata_deleteme = 0;
    metadata_object   = NULL;
 
    ui_preset_name = NULL;
 
    last_played_position = 0.0f;
+#endif // LIBSYNERGY_BUILD
 }
 
 StEnvelope::~StEnvelope() {
    YAC_DELETE_SAFE(data);
+
+#ifndef LIBSYNERGY_BUILD
    deleteMetaData();
    deleteUIPresetName();
+#endif // LIBSYNERGY_BUILD
 }
 
 YAC_Object *StEnvelope::_getOrCreateData(void) {
@@ -68,6 +73,7 @@ YAC_Object *StEnvelope::_getData(void) {
    return data;
 }
 
+#ifndef LIBSYNERGY_BUILD
 void StEnvelope::deleteMetaData(void) {
    if(metadata_deleteme)
    {
@@ -86,6 +92,7 @@ void StEnvelope::_setMetaData(YAC_Object *_v) {
 YAC_Object *StEnvelope::_getMetaData(void) {
    return metadata_object;
 }
+#endif // LIBSYNERGY_BUILD
 
 sF32 StEnvelope::_getIntensity(void) {
    return intensity;
@@ -148,6 +155,7 @@ void StEnvelope::_setExponent(sF32 _v) {
    exponent = _v;
 }
 
+#ifndef LIBSYNERGY_BUILD
 void StEnvelope::deleteUIPresetName(void) {
    YAC_DELETE_SAFE(ui_preset_name);
 }
@@ -175,3 +183,4 @@ sF32 StEnvelope::_getLastPlayedPosition(void) {
    // Dyac_host_printf("xxx StEnvelope::_getLastPlayedPosition: last_played_position=%f\n", last_played_position);
    return last_played_position;
 }
+#endif // LIBSYNERGY_BUILD

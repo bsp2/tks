@@ -79,9 +79,11 @@ YC class StADSR : public YAC_Object {
    YM YAC_Object *_getOrCreateEnvSustain (void);
    YM YAC_Object *_getOrCreateEnvRelease (void);
 
+#ifndef LIBSYNERGY_BUILD
    YM YAC_Object *_getEnvAttackMetaData  (void); // shortcut to get current BezierEditState object
    YM YAC_Object *_getEnvSustainMetaData (void);
    YM YAC_Object *_getEnvReleaseMetaData (void);
+#endif // LIBSYNERGY_BUILD
 
    YM YAC_Object *_getOrCreateEnvAttackData  (void); // shortcut to get current/create a new StEnvelope->TKS_Envelope object
    YM YAC_Object *_getOrCreateEnvSustainData (void);

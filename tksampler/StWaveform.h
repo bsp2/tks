@@ -51,6 +51,7 @@ YC class StWaveform : public YAC_Object {
 
    YAC_String *sample_name; // for UI
 
+#ifndef LIBSYNERGY_BUILD
    sF32        ui_last_played_offset; // for sampleview
    sF32        ui_offset;
    sF32        ui_zoom;
@@ -67,6 +68,7 @@ YC class StWaveform : public YAC_Object {
    YAC_IntArray *cue_points;
 
    void *ui_last_started_voice;   // StSampleVoice ref (never dereferenced). used when updating UI last read wave pos.
+#endif // LIBSYNERGY_BUILD
 
   public:
    StWaveform(void);
@@ -107,6 +109,7 @@ YC class StWaveform : public YAC_Object {
    YM sUI         _getRingOffset    (void);
    YM void        _setRingOffset    (sUI _off);
 
+#ifndef LIBSYNERGY_BUILD
    // ---- UI related setters/getters ----
 
    YM sF32 _uiGetLastPlayedOffset (void);
@@ -146,6 +149,7 @@ YC class StWaveform : public YAC_Object {
    // ---- cue points ----
    YM YAC_Object *_getCuePoints (void);
    YM YAC_Object *_getOrCreateCuePoints (void);
+#endif // LIBSYNERGY_BUILD
 };
 
 

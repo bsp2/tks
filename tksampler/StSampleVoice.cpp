@@ -31,7 +31,7 @@
 // ----          14Jan2024, 15Jan2024, 16Jan2024, 19Jan2024, 28Sep2024, 30Sep2024, 03Oct2024
 // ----          31Oct2024, 03Nov2024, 08Nov2024, 09Nov2024, 11Dec2024, 03Jan2025, 04Jan2025
 // ----          12Jan2025, 09Jan2026, 11Jan2026, 10Apr2026, 08May2026, 09May2026, 14May2026
-// ----          15May2026, 24May2026, 27May2026, 11Jul2026, 12Jul2026
+// ----          15May2026, 24May2026, 27May2026, 11Jul2026, 12Jul2026, 07Sep2026
 // ----
 // ----
 // ----
@@ -48,7 +48,9 @@ extern sF32 stsamplevoice_bipolar_to_scale (const sF32 _t, const sF32 _div, cons
 #define last_sample_l last_sample[0]
 #define last_sample_r last_sample[1]
 
+#ifndef LIBSYNERGY_BUILD
 #define USE_STATS defined
+#endif // LIBSYNERGY_BUILD
 
 
 #ifdef USE_STATS
@@ -1020,7 +1022,9 @@ void StSampleVoice::reallyStartVoice(const StSampleVoiceNoteOnParams *_params,
       anticlick_fadeout_countdown = 0;
       anticlick_granular_smpoffinterpol_countdown = 0;
       // // Dyac_host_printf("xxx reallyStartVoice: sample=%p wf=%p\n", sample, sample->waveform);
+#ifndef LIBSYNERGY_BUILD
       sample->waveform->ui_last_played_offset = 0.0f;
+#endif // LIBSYNERGY_BUILD
       current_delay_countdown = (sUI) ((sample->sample_delay * sample->sample_delay_multiplier * _params->_mixRate) / 1000);
    }
 
@@ -1035,7 +1039,9 @@ void StSampleVoice::reallyStartVoice(const StSampleVoiceNoteOnParams *_params,
       return;
    }
 
+#ifndef LIBSYNERGY_BUILD
    sample->waveform->ui_last_started_voice = (void*)this;
+#endif // LIBSYNERGY_BUILD
 
 #ifndef TKSAMPLER_SKIP_LIVEREC
    if( !(b_override_smpdat_copied && sample->keepInitialOscCopyOverrideBuffer() && (liverec_copy_loop_len > 0)) )
@@ -1843,7 +1849,9 @@ void StSampleVoice::stopVoice(void) {
 
    if(NULL != sample)
    {
+#ifndef LIBSYNERGY_BUILD
       sample->waveform->ui_last_played_offset = -1.0f;
+#endif // LIBSYNERGY_BUILD
    }
 }
 
@@ -1869,7 +1877,9 @@ void StSampleVoice::softStopVoice(void) {
 
       if(NULL != sample)
       {
+#ifndef LIBSYNERGY_BUILD
          sample->waveform->ui_last_played_offset = -1.0f;
+#endif // LIBSYNERGY_BUILD
       }
    }
 }
@@ -11957,6 +11967,7 @@ void StSampleVoice::calcSmpDat(sF32*&smpDat,
 #endif // TKSAMPLER_SKIP_LIVEREC
    }
 
+#ifndef LIBSYNERGY_BUILD
    if((void*)this == sample->waveform->ui_last_started_voice)
    {
       if(b_used && (_curOrigSampleLen == current_orig_sample_len)) // false after softStopVoice() (volrampdown)
@@ -12010,6 +12021,7 @@ void StSampleVoice::calcSmpDat(sF32*&smpDat,
          }
       }
    }
+#endif // LIBSYNERGY_BUILD
 
 #if 0
    {
