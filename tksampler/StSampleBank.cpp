@@ -26,6 +26,7 @@
 // ----          19Jan2010, 21Jan2010, 27Jan2010, 24Mar2013, 23Dec2018, 27Dec2018, 31Dec2018
 // ----          17Jan2019, 23Apr2019, 15Feb2020, 25Feb2020, 08Aug2021, 12Apr2023, 18Nov2023
 // ----          15Aug2024, 28Sep2024, 30Sep2024, 22Oct2024, 12Nov2024, 11Dec2024, 24May2026
+// ----          07Sep2026
 // ----
 // ----
 // ----
@@ -34,7 +35,9 @@
 
 
 StSampleBank::StSampleBank(void) {
+#ifndef LIBSYNERGY_BUILD
    name                         = NULL;
+#endif // LIBSYNERGY_BUILD
    first_sample                 = NULL;
    first_mutex_group            = NULL;
    num_samples                  = 0u;
@@ -51,19 +54,25 @@ StSampleBank::StSampleBank(void) {
    b_perfctl_freeze_noteoff     = YAC_FALSE;
    liverec_last_process_tick_nr = ~0u;
 
+#ifndef LIBSYNERGY_BUILD
    ::memset(tuning_tables, 0, sizeof(tuning_tables));
    ::memset(tuning_tables_meta, 0, sizeof(tuning_tables_meta));
    default_tuning_table_idx = -1;
    forced_tuning_table_idx = -1;
+#endif // LIBSYNERGY_BUILD
 }
 
 StSampleBank::~StSampleBank() {
+#ifndef LIBSYNERGY_BUILD
    YAC_DELETE_SAFE(name);
+#endif // LIBSYNERGY_BUILD
 
    _freeSamples();
    _freeMutexGroups();
+#ifndef LIBSYNERGY_BUILD
    _freeTuningTables();
    _freeTuningTablesMetaData();
+#endif // LIBSYNERGY_BUILD
 }
 
 void StSampleBank::_freeSamples(void) {
@@ -406,6 +415,7 @@ sUI StSampleBank::_getNumMutexGroups(void) {
    return r;
 }
 
+#ifndef LIBSYNERGY_BUILD
 YAC_Object *StSampleBank::_getName(void) {
    return name;
 }
@@ -415,6 +425,7 @@ void StSampleBank::_setName(YAC_Object *_str) {
       name = YAC_New_String();
    name->yacCopy(_str);
 }
+#endif // LIBSYNERGY_BUILD
 
 void StSampleBank::_setMaxVoices(sUI _maxVoices) {
    max_voices = _maxVoices;
@@ -634,6 +645,7 @@ sBool StSampleBank::_getEnablePerfCtlFreezeNoteOff(void) {
    return b_perfctl_freeze_noteoff;
 }
 
+#ifndef LIBSYNERGY_BUILD
 sBool StSampleBank::_setTuningTable(sUI _idx, YAC_Object *_fa) {
    if(_idx < STSAMPLE_MAX_TUNING_TABLES)
    {
@@ -750,3 +762,4 @@ const sF32 *StSampleBank::getCurrentTuningTableOrNull(void) {
    }
    return ret;
 }
+#endif // LIBSYNERGY_BUILD

@@ -24,7 +24,7 @@
 // ----          16Aug2023, 14Sep2023, 10Jan2024, 11Jan2024, 13Jan2024, 14Jan2024, 15Jan2024
 // ----          16Jan2024, 05Aug2024, 28Sep2024, 01Oct2024, 02Oct2024, 03Oct2024, 03Nov2024
 // ----          03Jan2025, 04Jan2025, 09Jan2026, 16Jan2026, 14May2026, 16May2026, 24May2026
-// ----          27May2026, 11Jul2026
+// ----          27May2026, 11Jul2026, 07Sep2026
 // ----
 // ----
 // ----
@@ -155,8 +155,10 @@ struct tksampler_mmdst_t {
    sF32  freq_semi;
    sF32  freq_fine;
    sF32  freq_beat;
+#ifndef LIBSYNERGY_BUILD
    sF32  tuning_tbl_abs;  // 0=no change, 1/16..16/16 => tuning table 1..16
    sF32  tuning_tbl_rel;  // 0..f => tuning table 0..f  (interpolated)
+#endif // LIBSYNERGY_BUILD
    sF32  note_2;          // 0..1 => 0..127.0  (0=disable secondary freq. centered around C-5=60.0)
    sF32  freq_2;          // -127..127 (_not_ scaled)
 
@@ -304,7 +306,9 @@ YC class StSampleVoice : public YAC_Object {
    //  may be overridden by tuning_tables[].
    //  NULL=use sample_player->default_freq_table (fallback)
    const sF32 *freq_table;
+#ifndef LIBSYNERGY_BUILD
    sF32        interpolated_freq_table[128];  // STSAMPLE_MM_DST_TUNING_TABLE_REL
+#endif // LIBSYNERGY_BUILD
 
 #ifndef TKSAMPLER_SKIP_LIVEREC
    // Same format as sample->sample_loops but overrides these

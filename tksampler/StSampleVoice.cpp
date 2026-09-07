@@ -326,6 +326,7 @@ const sF32 *StSampleVoice::getCurrentFreqTable(void) const {
    if(NULL == ret)
       ret = freq_table;
 
+#ifndef LIBSYNERGY_BUILD
    if(NULL == ret/* && NULL != sample*/)
    {
       ret = sample->getCurrentTuningTableOrNull();
@@ -333,6 +334,7 @@ const sF32 *StSampleVoice::getCurrentFreqTable(void) const {
       if(NULL == ret && NULL != sample->parent_samplebank)
          ret = sample->parent_samplebank->getCurrentTuningTableOrNull();
    }
+#endif // LIBSYNERGY_BUILD
 
    if(NULL == ret)
       ret = sample_player->default_freq_table->elements;
@@ -341,6 +343,7 @@ const sF32 *StSampleVoice::getCurrentFreqTable(void) const {
 }
 
 const sF32 *StSampleVoice::getCurrentFreqTableMM(void) const {
+#ifndef LIBSYNERGY_BUILD
    if(sample->forced_tuning_table_idx < 0 &&
       ((NULL == sample->parent_samplebank || sample->parent_samplebank->forced_tuning_table_idx < 0))
       )
@@ -368,6 +371,7 @@ const sF32 *StSampleVoice::getCurrentFreqTableMM(void) const {
          }
       }
    }
+#endif // LIBSYNERGY_BUILD
    return getCurrentFreqTable();
 }
 

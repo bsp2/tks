@@ -25,7 +25,7 @@
 // ---- changed: 26Dec2009, 27Dec2009, 29Dec2009, 02Jan2010, 05Jan2010, 07Jan2010, 15Jan2010
 // ----          19Jan2010, 21Jan2010, 29Apr2010, 24Mar2013, 23Dec2018, 27Dec2018, 31Dec2018
 // ----          17Jan2019, 23Apr2019, 15Feb2020, 25Feb2020, 08Aug2021, 18Nov2023, 15Aug2024
-// ----          28Sep2024, 30Sep2024, 12Nov2024, 10Apr2026, 24May2026
+// ----          28Sep2024, 30Sep2024, 12Nov2024, 10Apr2026, 24May2026, 07Sep2026
 // ----
 // ----
 // ----
@@ -44,7 +44,9 @@ YC class StSampleBank : public YAC_Object {
 
    StSampleMutexGroup *first_mutex_group; // deletable list of mutex groups
 
+#ifndef LIBSYNERGY_BUILD
    YAC_String *name;
+#endif // LIBSYNERGY_BUILD
 
    sUI max_voices; // maximum number of times this samplebank can be played in one generator
 
@@ -62,12 +64,14 @@ YC class StSampleBank : public YAC_Object {
 
    sUI liverec_last_process_tick_nr; // see Replay.process_tick_nr (don't record input buffer more than once)
 
+#ifndef LIBSYNERGY_BUILD
    // NULL=use default (StSamplePlayer) freq table. 128 frequencies (MIDI notes) per table.
    //  (note) sample zone (StSample) may override these
    sF32       *tuning_tables[STSAMPLE_MAX_TUNING_TABLES/*16*/];
    YAC_Object *tuning_tables_meta[STSAMPLE_MAX_TUNING_TABLES/*16*/];  // editor info (SampleTuningTable script objects or NULL)
    sSI         default_tuning_table_idx;  // -1=use default table (StSamplePlayer)
    sSI         forced_tuning_table_idx;       // -1=use default_tuning_table_idx
+#endif // LIBSYNERGY_BUILD
 
   protected:
    sUI num_samples; // optimization
@@ -79,7 +83,9 @@ YC class StSampleBank : public YAC_Object {
    YAC(StSampleBank);
 
   public:
+#ifndef LIBSYNERGY_BUILD
    const sF32 *getCurrentTuningTableOrNull (void);
+#endif // LIBSYNERGY_BUILD
 
   public:
    YM void _freeSamples (void);
@@ -147,6 +153,7 @@ YC class StSampleBank : public YAC_Object {
    YM void  _setEnablePerfCtlFreezeNoteOff (sBool _bEnable);
    YM sBool _getEnablePerfCtlFreezeNoteOff (void);
 
+#ifndef LIBSYNERGY_BUILD
    // Lazy-alloc tuning table and copy MIDI note frequencies from FloatArray 'fa'.
    //  Frees tuning table when 'fa' is null.
    YM sBool _setTuningTable (sUI _idx, YAC_Object *_fa);
@@ -167,6 +174,7 @@ YC class StSampleBank : public YAC_Object {
 
    YM void _freeTuningTables (void);
    YM void _freeTuningTablesMetaData (void);
+#endif // LIBSYNERGY_BUILD
 };
 
 
