@@ -43,10 +43,10 @@ StWaveform::StWaveform(void) {
    loop_len       = 0u;
    base_frequency = 440.0f; // or set 261.63/*c-5*/ ??
    sample_rate    = 44100.0f;
-   sample_name    = NULL;
    ring_offset    = 0u;
 
 #ifndef LIBSYNERGY_BUILD
+   sample_name    = NULL;
    ui_last_played_offset = -1.0f;
    ui_offset             = 0;
    ui_zoom               = 1.0f;
@@ -72,9 +72,9 @@ StWaveform::~StWaveform() {
 void StWaveform::_free(void) {
    freeSampleData();
 
+#ifndef LIBSYNERGY_BUILD
    YAC_DELETE_SAFE(sample_name);
 
-#ifndef LIBSYNERGY_BUILD
    YAC_DELETE_SAFE(ui_pathname);
    YAC_DELETE_SAFE(ui_undo);
 
@@ -182,6 +182,7 @@ void StWaveform::_setSampleData(YAC_Object *_fa, sUI _numChannels) {
    }
 }
 
+#ifndef LIBSYNERGY_BUILD
 sSI StWaveform::_alloc(sSI _numChannels, sSI _numFrames) {
    sSI r = 0;
    if((NULL == sample_data) || !b_own_data)
@@ -194,7 +195,9 @@ sSI StWaveform::_alloc(sSI _numChannels, sSI _numFrames) {
    num_channels = _numChannels;
    return r;
 }
+#endif // LIBSYNERGY_BUILD
 
+#ifndef LIBSYNERGY_BUILD
 YAC_Object *StWaveform::_getName(void) {
    return sample_name;
 }
@@ -206,6 +209,7 @@ void StWaveform::_setName(YAC_Object *_name) {
    }
    sample_name->yacCopy(_name);
 }
+#endif // LIBSYNERGY_BUILD
 
 sUI StWaveform::_getRingOffset(void) {
    return ring_offset;

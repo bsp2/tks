@@ -25,7 +25,7 @@
 // ---- changed: 26Dec2009, 27Dec2009, 29Dec2009, 02Jan2010, 05Jan2010, 07Jan2010, 15Jan2010
 // ----          19Jan2010, 21Jan2010, 11May2010, 05Sep2010, 21Nov2010, 17Feb2011, 22Mar2011
 // ----          04May2013, 26May2013, 01Jun2013, 15Dec2018, 16Dec2018, 01Aug2021, 24Mar2023
-// ----          03Oct2024, 24May2026
+// ----          03Oct2024, 24May2026, 07Sep2026
 // ----
 // ----
 // ----
@@ -49,9 +49,9 @@ YC class StWaveform : public YAC_Object {
    sF32            sample_rate;
    sUI             ring_offset;
 
+#ifndef LIBSYNERGY_BUILD
    YAC_String *sample_name; // for UI
 
-#ifndef LIBSYNERGY_BUILD
    sF32        ui_last_played_offset; // for sampleview
    sF32        ui_offset;
    sF32        ui_zoom;
@@ -101,7 +101,9 @@ YC class StWaveform : public YAC_Object {
    YM void        _setSampleRate    (sF32 _sampleRate);
 
    YM void        _free             (void);
+#ifndef LIBSYNERGY_BUILD
    YM sSI         _alloc            (sSI _numChannels, sSI _numFrames);
+#endif // LIBSYNERGY_BUILD
 
    YM YAC_Object *_getName          (void);
    YM void        _setName          (YAC_Object *);
