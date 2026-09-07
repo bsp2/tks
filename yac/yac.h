@@ -1132,6 +1132,9 @@ public:
 #define YAC_H(a)      YAC_Object*YAC_VCALL yacNewObject(void);const sChar*YAC_VCALL yacClassName(void)
                              // ---- start an interface definition, e.g. YAC_H(MyClass);
 #ifndef YAC
+#ifdef YAC_NO_HOST
+#define YAC(a)
+#else
 #define YAC(a)    YAC_Object * YAC_VCALL yacNewObject         (void);\
    const sChar*  YAC_VCALL yacClassName                     (void);\
    sUI           YAC_VCALL yacMemberGetNum                  (void);\
@@ -1151,6 +1154,7 @@ public:
 	const char ** YAC_VCALL yacConstantGetNames              (void);\
 	const sUI   * YAC_VCALL yacConstantGetTypes              (void);\
 	yacmemptr     YAC_VCALL yacConstantGetValues             (void)
+#endif // YAC_NO_HOST
 #endif // YAC
 
 #define YAC_POOLED_H(a, p) \
