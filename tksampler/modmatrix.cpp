@@ -292,8 +292,10 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
    mmdst.freq_semi      = 0.0f;
    mmdst.freq_fine      = 0.0f;
    mmdst.freq_beat      = 0.0f;
+#ifndef LIBSYNERGY_BUILD
    mmdst.tuning_tbl_abs = 0.0f;
    mmdst.tuning_tbl_rel = -1.0f;
+#endif // LIBSYNERGY_BUILD
    mmdst.note_2         = 0.0f;
    mmdst.freq_2         = 0.0f;
 
@@ -2297,6 +2299,7 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
                Dsignaltap(mmdst.freq_beat);
                break;
 
+#ifndef LIBSYNERGY_BUILD
                case STSAMPLE_MM_DST_TUNING_TBL_ABS:
                if(bAutoAdd)
                   mmdst.tuning_tbl_abs += srcValDef;
@@ -2317,6 +2320,7 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
                Delse_mm_lerp(mmdst.tuning_tbl_rel);
                Dsignaltap(mmdst.tuning_tbl_rel);
                break;
+#endif // LIBSYNERGY_BUILD
 
                case STSAMPLE_MM_DST_NOTE_2:
                if(bAutoAdd)
@@ -4499,6 +4503,7 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
    mmdst.env.pan  = mmsrc.env.pan  * mmdst.env_pan_level;
    mmdst.env.aux  = mmsrc.env.aux  * mmdst.env_aux_level;
 
+#ifndef LIBSYNERGY_BUILD
    // Update interpolated tuning table (MM_DST_TUNING_TBL_REL)
    if(mmdst.tuning_tbl_rel >= 0.0f)
    {
@@ -4528,6 +4533,7 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
       for(sUI i = 0u; i < 128u; i++)
          interpolated_freq_table[i] = tblA[i] + (tblB[i] - tblA[i]) * bAmt;
    }
+#endif // LIBSYNERGY_BUILD
 
    // Update mod sequencers
    for(sUI i = 0u; i< STSAMPLE_NUM_MODSEQ; i++)
