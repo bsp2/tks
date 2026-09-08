@@ -37,7 +37,7 @@
 // ----          27Dec2022, 30Dec2022, 07Apr2023, 12Apr2023, 18Jul2023, 01Sep2023, 08Sep2023
 // ----          19Sep2023, 18Nov2023, 08Jan2024, 10Jan2024, 15Jan2024, 16Jan2024, 26Apr2024
 // ----          30Sep2024, 02Oct2024, 03Jan2025, 04Jan2025, 28May2025, 16Jan2026, 09Apr2026
-// ----          10Apr2026, 23Apr2026, 24Apr2026, 24May2026, 27May2026
+// ----          10Apr2026, 23Apr2026, 24Apr2026, 24May2026, 27May2026, 07Sep2026, 08Sep2026
 // ----
 // ----
 // ----
@@ -105,7 +105,9 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
          sF32 pan;
          sF32 aux;
       } lfo;
+#ifndef TKSAMPLER_SKIP_MODSEQ
       sF32 modseq[STSAMPLE_NUM_MODSEQ];
+#endif // TKSAMPLER_SKIP_MODSEQ
    } mmsrc;
 
    sBool bFreqLFOGlobal = YAC_FALSE;
@@ -212,6 +214,7 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
       mmsrc.lfo.aux = lfo_aux.tick();
    }
 
+#ifndef TKSAMPLER_SKIP_MODSEQ
    // Mod sequencers
    sBool bModSeqGlobal[STSAMPLE_NUM_MODSEQ];
    for(sUI i = 0u; i < STSAMPLE_NUM_MODSEQ; i++)
@@ -241,8 +244,8 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
          bModSeqGlobal[i] = YAC_FALSE;
       }
    }
-
    sample->global_modseq_tick_nr = sample_player->global_tick_nr;
+#endif // TKSAMPLER_SKIP_MODSEQ
    sample->global_lfo_tick_nr = sample_player->global_tick_nr;
 
    mmsrc.env.freq = adsr_freq.adsr ? adsr_freq.tick() : 0.0f;
@@ -402,7 +405,7 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
    adsr_aux.mmdst_sspeed    = 1.0f;
    adsr_aux.mmdst_rspeed    = 1.0f;
 
-
+#ifndef TKSAMPLER_SKIP_MODSEQ
    for(sUI i = 0u; i < STSAMPLE_NUM_MODSEQ; i++)
    {
       modseq[i].mmdst_speed    = 1.0f;
@@ -421,6 +424,7 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
       mmdst.modseq_patch[i]  = sF32(modseq_patch[i]);
       mmdst.retrig_modseq[i] = 0.0f;
    }
+#endif // TKSAMPLER_SKIP_MODSEQ
 
    for(sUI pluginIdx = 0u; pluginIdx < STSAMPLE_NUM_PLUGINS; pluginIdx++)
    {
@@ -1688,6 +1692,7 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
                srcVal = mmsrc.env.aux * mmdst.env_aux_level;
                break;
 
+#ifndef TKSAMPLER_SKIP_MODSEQ
             case STSAMPLE_MM_SRC_MODSEQ1:
                srcVal = mmsrc.modseq[0] * mmdst.modseq_level[0];
                break;
@@ -1753,6 +1758,7 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
                else
                   srcVal = 0.0f;
                break;
+#endif // TKSAMPLER_SKIP_MODSEQ
 
             case STSAMPLE_MM_SRC_REG1:
                srcVal = mmdst_reg[0];
@@ -1884,6 +1890,7 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
                }
                break;
 
+#ifndef TKSAMPLER_SKIP_GLOBAL_REGS
             case STSAMPLE_MM_SRC_GLOBAL_REG1:
                srcVal = sample_player->global_reg_values[0];
                break;
@@ -1915,6 +1922,7 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
             case STSAMPLE_MM_SRC_GLOBAL_REG4_ON:
                srcVal = global_reg_values_on[3];
                break;
+#endif // TKSAMPLER_SKIP_GLOBAL_REGS
          }
 
          if(bSrcValid)
@@ -3230,6 +3238,7 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
                Dsignaltap(mmdst_timestretch_bend);
                break;
 
+#ifndef TKSAMPLER_SKIP_MODSEQ
                case STSAMPLE_MM_DST_MODSEQ1_PATCH:
                // Dyac_host_printf("xxx MODSEQ1_PATCH srcValDef=%f bAutoAdd=%d mmdst.modseq_patch[0]=%f\n", srcValDef, bAutoAdd, mmdst.modseq_patch[0]);
                if(bAutoRep)
@@ -3738,6 +3747,7 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
                   modseq[3].b_mmdst_step = YAC_TRUE;
                }
                break;
+#endif // TKSAMPLER_SKIP_MODSEQ
 
                case STSAMPLE_MM_DST_RETRIG_FREQ_ENV:
                if(bAutoAdd)
@@ -3811,6 +3821,7 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
                Dsignaltap(mmdst.retrig_aux_lfo);
                break;
 
+#ifndef TKSAMPLER_SKIP_MODSEQ
                case STSAMPLE_MM_DST_RETRIG_MODSEQ1:
                if(bAutoAdd)
                   mmdst.retrig_modseq[0] += srcValDef;
@@ -3846,6 +3857,7 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
                Delse_mm_lerp_scl(mmdst.retrig_modseq[3], 1.0f);
                Dsignaltap(mmdst.retrig_modseq[3]);
                break;
+#endif // TKSAMPLER_SKIP_MODSEQ
 
                case STSAMPLE_MM_DST_REG_1_ON:
                // Dyac_host_printf("xxx DST_REG_1_ON: mmdst_reg[0]=%f replay_ticks=%u bAutoAdd=%d bAutoMul=%d srcValDef=%f\n", mmdst_reg[0], replay_ticks, bAutoAdd, bAutoMul, srcValDef);
@@ -4401,6 +4413,7 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
                   Dsignaltap(mmdst_var);
                   break;
 
+#ifndef TKSAMPLER_SKIP_GLOBAL_REGS
                case STSAMPLE_MM_DST_GLOBAL_REG1_INC:
                   if(bAutoRep)
                      sample_player->global_reg_incs[0] = srcValDef;
@@ -4488,6 +4501,7 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
                   Delse_mm_lerp(sample_player->global_reg_decays[3]);
                   Dsignaltap(sample_player->global_reg_decays[3]);
                   break;
+#endif // TKSAMPLER_SKIP_GLOBAL_REGS
             }
          } // if bSrcValid
       } // if mm->b_enable
@@ -4535,11 +4549,13 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
    }
 #endif // LIBSYNERGY_BUILD
 
+#ifndef TKSAMPLER_SKIP_MODSEQ
    // Update mod sequencers
    for(sUI i = 0u; i< STSAMPLE_NUM_MODSEQ; i++)
    {
       mmdst.modseq[i] = mmsrc.modseq[i] * mmdst.modseq_level[i];
    }
+#endif // TKSAMPLER_SKIP_MODSEQ
 
    // 2D Wavetable cycle select
    if(mmdst.b_wt2d_x_valid)

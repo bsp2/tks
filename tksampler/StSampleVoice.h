@@ -134,12 +134,14 @@ class StSampleVoiceNoteOnParams {
    sBool _glide_switch;
    sF32  _glide_speed;
    sF32  _perfctl_poly_pressure;  // -1=use sampleplayer perfctl (channel pressure), 0..127 otherwise
+#ifndef TKSAMPLER_SKIP_MODSEQ
    sUI  _modseq_retrigmask;
    sF32 _modseq_speed   [STSAMPLE_NUM_MODSEQ];
    sF32 _modseq_level   [STSAMPLE_NUM_MODSEQ];
    sF32 _modseq_numsteps[STSAMPLE_NUM_MODSEQ];
    sF32 _modseq_advance [STSAMPLE_NUM_MODSEQ];
    sUI  _modseq_patch   [STSAMPLE_NUM_MODSEQ];  // 0..(STSAMPLE_MAX_MODSEQ_PATCHES-1)
+#endif // TKSAMPLER_SKIP_MODSEQ
 };
 
 
@@ -193,7 +195,9 @@ struct tksampler_mmdst_t {
    sF32  retrig_pan_lfo;
    sF32  retrig_aux_lfo;
 
+#ifndef TKSAMPLER_SKIP_MODSEQ
    sF32  retrig_modseq[STSAMPLE_NUM_MODSEQ];
+#endif // TKSAMPLER_SKIP_MODSEQ
 
    sF32  lfo_freq_level;
    sF32  lfo_vol_level;
@@ -205,9 +209,11 @@ struct tksampler_mmdst_t {
    sF32  env_pan_level;
    sF32  env_aux_level;
 
+#ifndef TKSAMPLER_SKIP_MODSEQ
    sF32  modseq_level[STSAMPLE_NUM_MODSEQ];
    sF32  modseq_patch[STSAMPLE_NUM_MODSEQ];  // 0...STSAMPLE_MAX_MODSEQ_PATCHES-1.  modmatrix amount should be set to 12700%.
    sF32  modseq[STSAMPLE_NUM_MODSEQ];  // final modseq output (scaled by level). after modmatrix processing.
+#endif // TKSAMPLER_SKIP_MODSEQ
 
    // Final output (after mod matrix processing)
    struct {
@@ -485,8 +491,10 @@ YC class StSampleVoice : public YAC_Object {
    StADSRPlayer adsr_pan;
    StADSRPlayer adsr_aux;
 
+#ifndef TKSAMPLER_SKIP_MODSEQ
    StModSeqPlayer modseq[STSAMPLE_NUM_MODSEQ];
    sUI modseq_patch[STSAMPLE_NUM_MODSEQ];  // 0..(STSAMPLE_MAX_MODSEQ_PATCHES-1).
+#endif // TKSAMPLER_SKIP_MODSEQ
 
    sUI  loop_vars[16];
    sSI  mod_jumptoloop; // -1 = no jump. auto-resets to -1.
@@ -823,7 +831,9 @@ YC class StSampleVoice : public YAC_Object {
    sUI handleNextBlock(void);
 
    void startADSRAndLFO(sUI _mask, sBool _bNoteOn);
+#ifndef TKSAMPLER_SKIP_MODSEQ
    void startModSeq(sUI _mask, sBool _bNoteOn);
+#endif // TKSAMPLER_SKIP_MODSEQ
 
    void calcFragmentInterpolPhase(sF32 _phase, sF32 _width);
    sF32 getEffectiveMod(void); // voice+sampleplayer, clipped to 0..1 range
@@ -1463,6 +1473,7 @@ YC class StSampleVoice : public YAC_Object {
     */
    YM void _setWavepathIndex (sSI _int);
 
+#ifndef TKSAMPLER_SKIP_MODSEQ
    /* @method setModSeqRetrigMask,int mask
     */
    YM void _setModSeqRetrigMask(sUI _mask);
@@ -1482,6 +1493,7 @@ YC class StSampleVoice : public YAC_Object {
    /* @method setModSeqAdvance,float advance
     */
    YM void _setModSeqAdvance(sUI _idx, sF32 _advance);
+#endif // TKSAMPLER_SKIP_MODSEQ
 
    /* @method render,FloatArray buf
     */

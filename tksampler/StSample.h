@@ -341,12 +341,14 @@ YC class StSample : public YAC_Object {
 #define STSAMPLE_NUM_MODSEQ          YCI  4
 #define STSAMPLE_MAX_MODSEQ_PATCHES  YCI 16
 
+#ifndef TKSAMPLER_SKIP_MODSEQ
    StModSeqPlayer modseq_global[STSAMPLE_NUM_MODSEQ];
    sUI global_modseq_tick_nr;
 
    StModSeq *modseq[STSAMPLE_NUM_MODSEQ][STSAMPLE_MAX_MODSEQ_PATCHES];
 
    sU8 default_modseq_patches[STSAMPLE_NUM_MODSEQ];  // 0..15
+#endif // TKSAMPLER_SKIP_MODSEQ
 
    sUI num_volramp_steps_in;  // 0=no ramping, >0: fadein new voice in n blocks. default=1
    sUI num_volramp_steps_out; // 0=no ramping, >0: delay next voice re-alloc by n blocks and fadeout. default=1
@@ -464,7 +466,9 @@ YC class StSample : public YAC_Object {
    sBool b_glide_retrig_lfo_vol;
    sBool b_glide_retrig_lfo_pan;
    sBool b_glide_retrig_lfo_aux;
+#ifndef TKSAMPLER_SKIP_MODSEQ
    sBool b_glide_retrig_modseq[STSAMPLE_NUM_MODSEQ];
+#endif // TKSAMPLER_SKIP_MODSEQ
 
 #define STSAMPLE_NUM_MODMATRIX_ENTRIES  YCI  16
 
@@ -631,7 +635,7 @@ YC class StSample : public YAC_Object {
 #define STSAMPLE_MM_SRC_ENV_VOL               YCI  131
 #define STSAMPLE_MM_SRC_ENV_PAN               YCI  132
 #define STSAMPLE_MM_SRC_ENV_AUX               YCI  133
-#define STSAMPLE_MM_SRC_MODSEQ1               YCI  134
+#define STSAMPLE_MM_SRC_MODSEQ1               YCI  134  // if !defined(TKSAMPLER_SKIP_MODSEQ)
 #define STSAMPLE_MM_SRC_MODSEQ2               YCI  135
 #define STSAMPLE_MM_SRC_MODSEQ3               YCI  136
 #define STSAMPLE_MM_SRC_MODSEQ4               YCI  137
@@ -1278,12 +1282,14 @@ YC class StSample : public YAC_Object {
    YM void        _deletePanLFO  (void);
    YM void        _deleteAuxLFO  (void);
 
+#ifndef TKSAMPLER_SKIP_MODSEQ
    YM YAC_Object *_getModSeqByIndexAndPatch (sUI _idx, sUI _patchIdx);
    YM YAC_Object *_getOrCreateModSeqByIndexAndPatch (sUI _idx, sUI _patchIdx);
    YM void        _deleteModSeqByIndexAndPatch (sUI _idx, sUI _patchIdx);
    YM void        _setDefaultModSeqPatch (sUI _idx, sUI _patchIdx);
    YM sUI         _getDefaultModSeqPatch (sUI _idx);
    YM sUI         _findLastUsedModSeqPatch (sUI _idx);
+#endif // TKSAMPLER_SKIP_MODSEQ
 
    YM void        _allocSampleLoops       (void);
    YM YAC_Object *_getOrCreateSampleLoops (void);
@@ -1624,8 +1630,10 @@ YC class StSample : public YAC_Object {
    YM void  _setEnableGlideRetrigLFOAux (sBool _bEnable);
    YM sBool _getEnableGlideRetrigLFOAux (void);
 
+#ifndef TKSAMPLER_SKIP_MODSEQ
    YM void  _setEnableGlideRetrigModSeq(sUI _idx, sBool _bEnable);
    YM sBool _getEnableGlideRetrigModSeq(sUI _idx);
+#endif // TKSAMPLER_SKIP_MODSEQ
 
    YM void  _setMMKeyboardCenter (sF32 _ctr);
    YM sF32  _getMMKeyboardCenter (void);

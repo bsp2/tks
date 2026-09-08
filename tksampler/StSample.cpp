@@ -40,7 +40,7 @@
 // ----          10Jan2024, 13Jan2024, 14Jan2024, 15Jan2024, 16Jan2024, 19Apr2024, 04Aug2024
 // ----          15Aug2024, 28Sep2024, 30Sep2024, 01Oct2024, 03Oct2024, 05Oct2024, 13Oct2024
 // ----          14Oct2024, 08Nov2024, 09Nov2024, 11Dec2024, 03Jan2025, 09Jan2026, 10Apr2026
-// ----          14May2026, 15May2026, 24May2026, 07Sep2026
+// ----          14May2026, 15May2026, 24May2026, 07Sep2026, 08Sep2026
 // ----
 // ----
 // ----
@@ -82,9 +82,11 @@ StSample::StSample(void) {
    lfo_aux  = NULL;
    global_lfo_tick_nr = ~0u;
 
+#ifndef TKSAMPLER_SKIP_MODSEQ
    ::memset((void*)modseq, 0, sizeof(modseq));
    ::memset((void*)default_modseq_patches, 0, sizeof(default_modseq_patches));
    global_modseq_tick_nr = ~0u;
+#endif // TKSAMPLER_SKIP_MODSEQ
 
 #ifdef TKSAMPLER_WAVEPATH
    wavepath_table = NULL;
@@ -277,10 +279,12 @@ void StSample::reinit(void) {
    b_glide_retrig_lfo_pan   = YAC_FALSE;
    b_glide_retrig_lfo_aux   = YAC_FALSE;
 
+#ifndef TKSAMPLER_SKIP_MODSEQ
    for(sUI i = 0u; i < STSAMPLE_NUM_MODSEQ; i++)
    {
       b_glide_retrig_modseq[i] = YAC_FALSE;
    }
+#endif // TKSAMPLER_SKIP_MODSEQ
 
    mm_keyboard_center = 60.0f/*C-5*/;
    mm_keyboard_min    = 24.0f;
@@ -427,6 +431,7 @@ void StSample::free(void) {
    YAC_DELETE_SAFE(wavepath_table);
 #endif // TKSAMPLER_WAVEPATH
 
+#ifndef TKSAMPLER_SKIP_MODSEQ
    for(sUI i = 0u; i < STSAMPLE_NUM_MODSEQ; i++)
    {
       for(sUI j = 0u; j < STSAMPLE_MAX_MODSEQ_PATCHES; j++)
@@ -434,6 +439,7 @@ void StSample::free(void) {
          YAC_DELETE_SAFE(modseq[i][j]);
       }
    }
+#endif // TKSAMPLER_SKIP_MODSEQ
 
    if((NULL != waveform) && b_own_waveform)
    {
@@ -497,6 +503,7 @@ void StSample::setSamplePlayerForGlobalModulation(StSamplePlayer *_samplePlayer)
    lfo_aux_global.sp_mod_speed = &_samplePlayer->mod_lfo_aux_spd;
    lfo_aux_global.sp_mod_level = &_samplePlayer->mod_lfo_aux_lvl;
 
+#ifndef TKSAMPLER_SKIP_MODSEQ
    for(sUI i = 0u; i < STSAMPLE_NUM_MODSEQ; i++)
    {
       modseq_global[i].sp_mod_speed    = &_samplePlayer->mod_modseq[i].speed;
@@ -504,6 +511,7 @@ void StSample::setSamplePlayerForGlobalModulation(StSamplePlayer *_samplePlayer)
       modseq_global[i].sp_mod_numsteps = &_samplePlayer->mod_modseq[i].numsteps;
       modseq_global[i].sp_mod_advance  = &_samplePlayer->mod_modseq[i].advance;
    }
+#endif // TKSAMPLER_SKIP_MODSEQ
 }
 
 #ifndef LIBSYNERGY_BUILD
@@ -1113,6 +1121,7 @@ YAC_Object *StSample::_getOrCreateLFOByIndex(sUI _idx) {
    return NULL;
 }
 
+#ifndef TKSAMPLER_SKIP_MODSEQ
 YAC_Object *StSample::_getModSeqByIndexAndPatch(sUI _idx, sUI _patchIdx) {
    if(_idx < STSAMPLE_NUM_MODSEQ)
    {
@@ -1183,6 +1192,7 @@ sUI StSample::_findLastUsedModSeqPatch(sUI _idx) {
    }
    return 0u;
 }
+#endif // TKSAMPLER_SKIP_MODSEQ
 
 YAC_Object *StSample::_getSampleLoops(void) {
    return sample_loops;
@@ -2425,6 +2435,7 @@ sBool StSample::_getEnableGlideRetrigLFOAux(void) {
    return b_glide_retrig_lfo_aux;
 }
 
+#ifndef TKSAMPLER_SKIP_MODSEQ
 void StSample::_setEnableGlideRetrigModSeq(sUI _idx, sBool _bEnable) {
    b_glide_retrig_modseq[_idx % STSAMPLE_NUM_MODSEQ] = _bEnable;
 }
@@ -2432,6 +2443,7 @@ void StSample::_setEnableGlideRetrigModSeq(sUI _idx, sBool _bEnable) {
 sBool StSample::_getEnableGlideRetrigModSeq(sUI _idx) {
    return b_glide_retrig_modseq[_idx % STSAMPLE_NUM_MODSEQ];
 }
+#endif // TKSAMPLER_SKIP_MODSEQ
 
 void StSample::_setMMKeyboardCenter(sF32 _ctr) {
    mm_keyboard_center = _ctr;

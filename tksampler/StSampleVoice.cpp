@@ -31,7 +31,7 @@
 // ----          14Jan2024, 15Jan2024, 16Jan2024, 19Jan2024, 28Sep2024, 30Sep2024, 03Oct2024
 // ----          31Oct2024, 03Nov2024, 08Nov2024, 09Nov2024, 11Dec2024, 03Jan2025, 04Jan2025
 // ----          12Jan2025, 09Jan2026, 11Jan2026, 10Apr2026, 08May2026, 09May2026, 14May2026
-// ----          15May2026, 24May2026, 27May2026, 11Jul2026, 12Jul2026, 07Sep2026
+// ----          15May2026, 24May2026, 27May2026, 11Jul2026, 12Jul2026, 07Sep2026, 08Sep2026
 // ----
 // ----
 // ----
@@ -496,8 +496,10 @@ void StSampleVoice::_resetVoice(void) {
    perfctl_poly_pressure = -1.0f;
    perfctl_pressure_max = 0.0f;
 
+#ifndef TKSAMPLER_SKIP_MODSEQ
    for(sUI i = 0u; i < STSAMPLE_NUM_MODSEQ; i++)
       modseq_patch[i] = 0u;
+#endif // TKSAMPLER_SKIP_MODSEQ
 
    resetBiquad();
 
@@ -670,6 +672,7 @@ void StSampleVoice::setSamplePlayer(StSamplePlayer *_samplePlayer) {
    adsr_aux.sp_mod_rspeed    = &_samplePlayer->mod_adsr_aux_sspd;
    adsr_aux.sp_mod_sspeed    = &_samplePlayer->mod_adsr_aux_rspd;
 
+#ifndef TKSAMPLER_SKIP_MODSEQ
    for(sUI i = 0u; i < STSAMPLE_NUM_MODSEQ; i++)
    {
       modseq[i].sp_mod_speed    = &_samplePlayer->mod_modseq[i].speed;
@@ -677,6 +680,7 @@ void StSampleVoice::setSamplePlayer(StSamplePlayer *_samplePlayer) {
       modseq[i].sp_mod_numsteps = &_samplePlayer->mod_modseq[i].numsteps;
       modseq[i].sp_mod_advance  = &_samplePlayer->mod_modseq[i].advance;
    }
+#endif // TKSAMPLER_SKIP_MODSEQ
 }
 
 sF32 StSampleVoice::getCurrentGlideNote(void) {
@@ -1009,10 +1013,12 @@ void StSampleVoice::reallyStartVoice(const StSampleVoiceNoteOnParams *_params,
    note         = _params->_note;
    replay_ticks = 0;
 
+#ifndef TKSAMPLER_SKIP_GLOBAL_REGS
    sample_player->incGlobalRegs();
 
    for(sUI i = 0u; i < STSAMPLEPLAYER_NUM_GLOBAL_REGS; i++)
       global_reg_values_on[i] = sample_player->global_reg_values[i];
+#endif // TKSAMPLER_SKIP_GLOBAL_REGS
 
    play_offset_orig_speed = 0.0;
    play_offset_actual     = 0.0;
@@ -1617,6 +1623,7 @@ void StSampleVoice::reallyStartVoice(const StSampleVoiceNoteOnParams *_params,
    if(!b_glide)
       perfctl_pressure_max = 0.0f;
 
+#ifndef TKSAMPLER_SKIP_MODSEQ
    // Start Mod Sequencers
    for(sUI i = 0u; i < STSAMPLE_NUM_MODSEQ; i++)
       modseq_patch[i] = _params->_modseq_patch[i];
@@ -1642,7 +1649,7 @@ void StSampleVoice::reallyStartVoice(const StSampleVoiceNoteOnParams *_params,
       sample->modseq_global[i].mmdst_numsteps = 0.0f;  // relative
       sample->modseq_global[i].mmdst_advance  = 0.0f;  // relative
    }
-
+#endif // TKSAMPLER_SKIP_MODSEQ
 
    // Determine "max" volume according to velocity zone map
    cached_vel_vol = sample->calcVelZoneVolume(_params->_vel);
@@ -2112,6 +2119,8 @@ void StSampleVoice::startVoiceInt(StSample *_sample,
    queued_noteon._perfctl_poly_pressure = -1.0f;
 
    retrigMask = 15u;
+
+#ifndef TKSAMPLER_SKIP_MODSEQ
    if(b_glide)
    {
       if(!_sample->b_glide_retrig_modseq[0])
@@ -2136,6 +2145,7 @@ void StSampleVoice::startVoiceInt(StSample *_sample,
       queued_noteon._modseq_advance[i]  = 0.0f;
       queued_noteon._modseq_patch[i]    = _sample->default_modseq_patches[i];
    }
+#endif // TKSAMPLER_SKIP_MODSEQ
 
    queued_noteon.b_valid = YAC_TRUE;
 
@@ -2263,11 +2273,13 @@ void StSampleVoice::noteOff(sF32 _vel) {
             else
                adsr_aux.noteOff();
 
+#ifndef TKSAMPLER_SKIP_MODSEQ
             for(sUI i = 0u ; i < STSAMPLE_NUM_MODSEQ; i++)
             {
                modseq[i].noteOff();
                sample->modseq_global[i].noteOff();
             }
+#endif // TKSAMPLER_SKIP_MODSEQ
 
             // jump to release loop step
             // Dyac_host_printf("xxx current_loop_idx=%d sample->noteoff_loop_index=%d\n", current_loop_idx, sample->noteoff_loop_index);
@@ -2513,6 +2525,7 @@ void StSampleVoice::calcNextBlockState(sBool _bNext) {
       startADSRAndLFO(0x80, YAC_FALSE/*bNoteOn*/);
    }
 
+#ifndef TKSAMPLER_SKIP_MODSEQ
    for(sUI i = 0u; i < STSAMPLE_NUM_MODSEQ; i++)
    {
       sSI newModSeqPatch = sSI(mmdst.modseq_patch[i]);
@@ -2534,6 +2547,7 @@ void StSampleVoice::calcNextBlockState(sBool _bNext) {
          startModSeq((1u << i), YAC_FALSE/*bNoteOn==bResetMod*/);
       }
    }
+#endif // TKSAMPLER_SKIP_MODSEQ
 
    if(mmdst.b_jumptoloop_valid)
    {
@@ -4224,6 +4238,7 @@ void StSampleVoice::startADSRAndLFO(sUI _mask, sBool _bNoteOn) {
    }
 }
 
+#ifndef TKSAMPLER_SKIP_MODSEQ
 void StSampleVoice::_setModSeqRetrigMask(sUI _mask) {
    // (Re-)trigger mod sequencers:
    //   - 0x01: reset mod seq 1
@@ -4320,6 +4335,7 @@ void StSampleVoice::startModSeq(sUI _mask, sBool _bNoteOn) {
    }
    // Dyac_host_printf("xxx startModSeq: LEAVE\n");
 }
+#endif // TKSAMPLER_SKIP_MODSEQ
 
 void StSampleVoice::_setJumpToLoop(sSI _idx) {
    if(queued_noteon.b_valid)

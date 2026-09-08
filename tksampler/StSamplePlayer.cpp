@@ -33,7 +33,7 @@
 // ----          10Dec2022, 20Dec2022, 05Feb2023, 12Apr2023, 07Sep2023, 08Sep2023, 17Sep2023
 // ----          21Jan2024, 20Sep2024, 28Sep2024, 01Oct2024, 31Oct2024, 15Nov2024, 11Dec2024
 // ----          14Jan2025, 28May2025, 30May2025, 13Jun2025, 16Jan2026, 09Apr2026, 10Apr2026
-// ----          19May2026, 24May2026, 27May2026, 11Jul2026
+// ----          19May2026, 24May2026, 27May2026, 11Jul2026, 08Sep2026
 // ----
 // ----
 // ----
@@ -298,6 +298,7 @@ void StSamplePlayer::resetModulators(void) {
    mod_filter_offset    = 0.0f;
    mod_filter_resonance = 0.0f;
 
+#ifndef TKSAMPLER_SKIP_MODSEQ
    for(sUI i = 0u; i < STSAMPLE_NUM_MODSEQ; i++)
    {
       mod_modseq[i].speed    = 1.0f;
@@ -305,6 +306,7 @@ void StSamplePlayer::resetModulators(void) {
       mod_modseq[i].numsteps = 0.0f;
       mod_modseq[i].advance  = 0.0f;
    }
+#endif // TKSAMPLER_SKIP_MODSEQ
 
 #ifndef TKSAMPLER_SKIP_LIVEREC
    mod_liverec_loop_shift = 0;
@@ -330,9 +332,12 @@ void StSamplePlayer::resetModulators(void) {
 
    global_tick_advance = 0u;
 
+#ifndef TKSAMPLER_SKIP_GLOBAL_REGS
    resetGlobalRegs();
+#endif // TKSAMPLER_SKIP_GLOBAL_REGS
 }
 
+#ifndef TKSAMPLER_SKIP_GLOBAL_REGS
 void StSamplePlayer::resetGlobalRegs(void) {
    for(sUI i = 0u; i < STSAMPLEPLAYER_NUM_GLOBAL_REGS; i++)
    {
@@ -377,6 +382,7 @@ void StSamplePlayer::decayGlobalRegs(void) {
          global_reg_values[i] = 0.0f;
    }
 }
+#endif // TKSAMPLER_SKIP_GLOBAL_REGS
 
 void StSamplePlayer::freeVoices(void) {
 
@@ -2127,8 +2133,8 @@ void StSamplePlayer::_render(YAC_Object *_fa) {
    }
 }
 
-void StSamplePlayer::_renderWithInputs(YAC_Object *_fa, YAC_Object *_paInputs, sBool _bRender, sUI _processTickNr) {
 #ifndef LIBSYNERGY_BUILD
+void StSamplePlayer::_renderWithInputs(YAC_Object *_fa, YAC_Object *_paInputs, sBool _bRender, sUI _processTickNr) {
    // Dyac_host_printf("xxx StSamplePlayer::_renderWithInputs: ENTER\n");
    if(YAC_BCHK(_fa, YAC_CLID_FLOATARRAY))
    {
@@ -2201,13 +2207,8 @@ void StSamplePlayer::_renderWithInputs(YAC_Object *_fa, YAC_Object *_paInputs, s
    {
       Dyac_throw_def(InvalidPointer, "_buf is not a valid FloatArray object");
    }
-#else
-   (void)_fa;
-   (void)_paInputs;
-   (void)_bRender;
-   (void)_processTickNr;
-#endif // LIBSYNERGY_BUILD
 }
+#endif // LIBSYNERGY_BUILD
 
 void StSamplePlayer::renderInt(YAC_FloatArray *buf, const sF32*const*_inputsOrNull) {
 
@@ -2229,7 +2230,9 @@ void StSamplePlayer::renderInt(YAC_FloatArray *buf, const sF32*const*_inputsOrNu
       {
          global_tick_advance++;
          float_block_off -= float_block_size;
+#ifndef TKSAMPLER_SKIP_GLOBAL_REGS
          decayGlobalRegs();
+#endif // TKSAMPLER_SKIP_GLOBAL_REGS
       }
 
       if(global_tick_advance > 0u)

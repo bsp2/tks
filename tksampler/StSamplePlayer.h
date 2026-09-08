@@ -32,7 +32,7 @@
 // ----          20Dec2022, 12Apr2023, 20Aug2023, 07Sep2023, 21Jan2024, 28Sep2024, 01Oct2024
 // ----          03Oct2024, 31Oct2024, 15Nov2024, 14Jan2025, 28May2025, 29May2025, 30May2025
 // ----          13Jun2025, 16Jan2026, 09Apr2026, 19May2026, 24May2026, 27May2026, 11Jul2026
-// ----
+// ----          08Sep2026
 // ----
 // ----
 
@@ -163,12 +163,14 @@ YC class StSamplePlayer : public YAC_Object {
    sF32 mod_filter_offset;     // +
    sF32 mod_filter_resonance;  // +
 
+#ifndef TKSAMPLER_SKIP_MODSEQ
    struct {
       sF32 speed;     // *
       sF32 level;     // +
       sF32 numsteps;  // *
       sF32 advance;   // +
    } mod_modseq[STSAMPLE_NUM_MODSEQ];
+#endif // TKSAMPLER_SKIP_MODSEQ
 
 #ifndef TKSAMPLER_SKIP_LIVEREC
    sSI mod_liverec_loop_shift; // +
@@ -207,9 +209,11 @@ YC class StSamplePlayer : public YAC_Object {
       st_plugin_cache_entry_t *first;
    } plugin_cache;
 
+#ifndef TKSAMPLER_SKIP_GLOBAL_REGS
    sF32 global_reg_values[STSAMPLEPLAYER_NUM_GLOBAL_REGS];
    sF32 global_reg_incs  [STSAMPLEPLAYER_NUM_GLOBAL_REGS];
    sF32 global_reg_decays[STSAMPLEPLAYER_NUM_GLOBAL_REGS];
+#endif // TKSAMPLER_SKIP_GLOBAL_REGS
 
   public:
    StSamplePlayer(void);
@@ -225,10 +229,12 @@ YC class StSamplePlayer : public YAC_Object {
    void lazyCreateVoicePlugins (StSample *_sample, StSampleVoice *_nv);
    void freePluginCache (void);
 
+#ifndef TKSAMPLER_SKIP_GLOBAL_REGS
    void resetGlobalRegs (void);
    void incGlobalReg (sUI _regIdx, sF32 _inc);  // @note-on
    void incGlobalRegs (void);
    void decayGlobalRegs (void);
+#endif // TKSAMPLER_SKIP_GLOBAL_REGS
 
 #ifndef LIBSYNERGY_BUILD
    void addToNoteHistory (sSI _note);
@@ -567,6 +573,7 @@ YC class StSamplePlayer : public YAC_Object {
    YM void _render (YAC_Object *_fa);
 
 
+#ifndef LIBSYNERGY_BUILD
    /* @method renderWithInputs,FloatArray buf,PointerArray paInputs,boolean bRender
       Render currently playing voices to the given (stereo) buffer (add).
 
@@ -576,6 +583,7 @@ YC class StSamplePlayer : public YAC_Object {
       @arg processTickNr Used to limit input processing to one sampleplayer per samplebank
    */
    YM void _renderWithInputs (YAC_Object *_fa, YAC_Object *_paInputs, sBool _bRender, sUI _processTickNr);
+#endif // LIBSYNERGY_BUILD
 
    /* @method updateVol,float v
       Update volume modulation of all active voices
