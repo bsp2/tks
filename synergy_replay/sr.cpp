@@ -27,10 +27,21 @@
 // ---- changed: 13Apr2023, 14Apr2023, 15Apr2023, 20Apr2023, 21Apr2023, 22Apr2023, 23Apr2023
 // ----          11Aug2023, 08Sep2023, 19Sep2023, 22Sep2023, 18Nov2023, 03Oct2024, 07Dec2024
 // ----          04Jan2025, 09Jan2026, 10Apr2026, 09May2026, 15May2026, 17May2026, 18May2026
-// ----          19May2026, 20May2026, 22May2026, 23May2026, 25May2026, 26May2026
+// ----          19May2026, 20May2026, 22May2026, 23May2026, 25May2026, 26May2026, 08Sep2026
 // ----
 // ----
 // ----
+
+// see config_common.mk
+// #define SR_TRACK_SENDS  defined
+// #define SR_TRACK_FX  defined
+// #define SR_VOICE_FX  defined
+// #define SR_STDIO  defined
+// #define SR_SAVE_WF_DAT  defined
+
+#if defined(SR_TRACK_FX) && !defined(SR_TRACK_SENDS)
+#define SR_TRACK_SENDS
+#endif
 
 #include "sr.h"
 
@@ -44,31 +55,6 @@
 #include <yac_host.cpp>
 
 #include "../tksampler/tksampler.h"
-#if 0
-#include "../tksampler/ying_tksampler_StADSR.cpp"
-#include "../tksampler/ying_tksampler_StEnvelope.cpp"
-#include "../tksampler/ying_tksampler_StLFO.cpp"
-#include "../tksampler/ying_tksampler_StLFOPlayer.cpp"
-#include "../tksampler/ying_tksampler_StModSeq.cpp"
-#include "../tksampler/ying_tksampler_StRange.cpp"
-#include "../tksampler/ying_tksampler_StWaveform.cpp"
-#include "../tksampler/ying_tksampler_StSample.cpp"
-#include "../tksampler/ying_tksampler_StSampleBank.cpp"
-#include "../tksampler/ying_tksampler_StSampleVoice.cpp"
-#include "../tksampler/ying_tksampler_StSampleMutexGroup.cpp"
-#include "../tksampler/ying_tksampler_StSamplePlayer.cpp"
-#ifndef LIBSYNERGY_BUILD
-#include "../tksampler/ying_tksampler_StFFT.cpp"
-#include "../tksampler/ying_tksampler_StFFT_BandParams.cpp"
-#endif // LIBSYNERGY_BUILD
-#include "../tksampler/ying_tksampler_StPluginInfo.cpp"
-#include "../tksampler/ying_tksampler_StPluginShared.cpp"
-//#include "../tksampler/ying_tksampler_StPluginSharedMissing.cpp"
-#include "../tksampler/ying_tksampler_StPluginVoice.cpp"
-#include "../tksampler/ying_tksampler_StPluginLibrary.cpp"
-// #include "../tksampler/ying_tksampler.cpp"
-// // sUI exid_InvalidPointer;
-#endif // 0
 
 #ifdef SR_STDIO
 void sr_printf(const char *_fmt, ...) {
@@ -1042,6 +1028,7 @@ public:
       return YAC_TRUE;
    }
 
+#ifndef TKSAMPLER_SKIP_MODSEQ
    sBool loadMSeq(SR_BufferStreamLE &ifs, StModSeq *mseq) {
       mseq->_setPlayMode(ifs.u8());
       mseq->_setStepMode(ifs.u8());
@@ -1099,6 +1086,35 @@ public:
 
       return YAC_TRUE;
    }
+#else
+   sBool loadMSeq_nop(SR_BufferStreamLE &ifs/*, StModSeq *mseq*/) {
+      /*mseq->_setPlayMode*/(ifs.u8());
+      /*mseq->_setStepMode*/(ifs.u8());
+      /*mseq->_setNumSteps*/(ifs.u8());  // play len
+      /*mseq->_setRepeatOffset*/(ifs.u8());
+
+      sUI numSteps = ifs.u8();
+
+      for(sUI stepIdx = 0u; stepIdx < numSteps; stepIdx++)
+      {
+         /*mseq->_setStepValue(stepIdx, */ifs.f32()/*)*/;
+      }
+      for(sUI stepIdx = 0u; stepIdx < numSteps; stepIdx++)
+      {
+         /*mseq->_setStepDuration(stepIdx, */ifs.u8()/*)*/;
+      }
+
+      /*mseq->_setSpeed*/(ifs.f32());
+      /*mseq->_setValueScl*/(ifs.f32());
+      /*mseq->_setValueOff*/(ifs.f32());
+      /*mseq->_setSlewAmt*/(ifs.u8()/*/255.0*/);
+
+      /*sU8 flags = */ifs.u8();
+
+      return YAC_TRUE;
+   }
+#endif // TKSAMPLER_SKIP_MODSEQ
+
 
 #ifdef SR_VOICE_FX
    StPluginShared *newVoicePluginById(const char *_id) {
@@ -1318,17 +1334,26 @@ public:
                sU8 verModSeq = ifs.u8();
                if(verModSeq > 0u)
                {
+#ifndef TKSAMPLER_SKIP_MODSEQ
                   StModSeq *mseq = (StModSeq*)s->_getOrCreateModSeqByIndexAndPatch(mseqIdx, patchIdx);
                   if(!loadMSeq(ifs, mseq))
                   {
                      Derror("[---] SR_Sample::loadZone: failed to load mseqIdx=%u patchIdx=%u (verModSeq=%u)\n", mseqIdx, patchIdx, verModSeq);
                      return YAC_FALSE;
                   }
+#else
+                  loadMSeq_nop(ifs);
+#endif // TKSAMPLER_SKIP_MODSEQ
                }
             }
 
+#ifndef TKSAMPLER_SKIP_MODSEQ
             s->_setDefaultModSeqPatch(mseqIdx, ifs.u8());
             s->_setEnableGlideRetrigModSeq(mseqIdx, ifs.s8());
+#else
+            /*s->_setDefaultModSeqPatch(mseqIdx, */ifs.u8()/*)*/;
+            /*s->_setEnableGlideRetrigModSeq(mseqIdx, */ifs.s8()/*)*/;
+#endif // TKSAMPLER_SKIP_MODSEQ
          }
 
          // Sample Loops
@@ -1885,7 +1910,7 @@ public:
    sU8 vel_max;
    sS8 orig_track_idx;  // 0..127
    StSamplePlayer sample_player;
-#ifdef SR_TRACK_FX
+#ifdef SR_TRACK_SENDS
    YAC_FloatArray mix_buffer;  // view into SR_Project.track_mix_buffers
    struct {
       sUI  out_dest;  // 0=default, or track 1..n
@@ -1897,6 +1922,8 @@ public:
       sF32 pan;      // -1..1
    } outputs[SR_MAX_TRACK_OUTPUTS];
    sUI num_outputs;
+#endif // SR_TRACK_SENDS
+#ifdef SR_TRACK_FX
    struct {
       st_plugin_info_t   *info;
       st_plugin_shared_t *shared;
@@ -1949,8 +1976,10 @@ public:
          voicepressure_max[noteIdx] = 0.0f;
       }
 
-#ifdef SR_TRACK_FX
+#ifdef SR_TRACK_SENDS
       num_outputs = 0u;
+#endif // SR_TRACK_SENDS
+#ifdef SR_TRACK_FX
       ::memset(&plugins, 0, sizeof(plugins));
       num_plugins = 0u;
 #endif // SR_TRACK_FX
@@ -2096,19 +2125,19 @@ public:
 
    // track->process()
    void process(YAC_FloatArray &outBuf
-#ifdef SR_TRACK_FX
+#ifdef SR_TRACK_SENDS
                 , sF32 *trackOutputBuffers
                 , sUI outOffsetInSamples/*in samples*/
-#endif // SR_TRACK_FX
+#endif // SR_TRACK_SENDS
                 ) {
-#ifdef SR_TRACK_FX
+#ifdef SR_TRACK_SENDS
       YAC_FloatArray fxBuf;
       YAC_FloatArray *d = &fxBuf;
       d->elements = mix_buffer.elements + outOffsetInSamples;
       d->num_elements = outBuf.num_elements;
 #else
       YAC_FloatArray *d = &outBuf;
-#endif // SR_TRACK_FX
+#endif // SR_TRACK_SENDS
 
       sample_player._render(d);
 
@@ -2120,9 +2149,9 @@ public:
 //       return;
 // #endif
 
-#ifdef SR_TRACK_FX
       const sUI numFrames = d->num_elements / 2u;
 
+#ifdef SR_TRACK_FX
       for(sUI pluginIdx = 0u; pluginIdx < num_plugins; pluginIdx++)
       {
          st_plugin_info_t  *info  = plugins[pluginIdx].info;
@@ -2157,6 +2186,9 @@ public:
          }
 #endif
 
+#endif // SR_TRACK_FX
+
+#ifdef SR_TRACK_SENDS
       for(sUI outputIdx = 0u; outputIdx < num_outputs; outputIdx++)
       {
          sF32 *out;
@@ -2188,7 +2220,7 @@ public:
             k++;
          }
       } // loop outputs
-#endif // SR_TRACK_FX
+#endif // SR_TRACK_SENDS
    }
 
 };
@@ -2205,9 +2237,9 @@ public:
    sF32 *wf_dat;  // all waveforms
    sUI   wf_sz;
 
-#ifdef SR_TRACK_FX
+#ifdef SR_TRACK_SENDS
    YAC_FloatArray track_mix_buffers;  // <num_tracks> view into SR_Project.track_mix_buffers
-#endif // SR_TRACK_FX
+#endif // SR_TRACK_SENDS
 
 public:
    SR_Project(void) {
@@ -2244,7 +2276,7 @@ public:
 
    sBool allocTrackMixBuffers(void) {
       sBool r = YAC_TRUE;
-#ifdef SR_TRACK_FX
+#ifdef SR_TRACK_SENDS
       if(track_mix_buffers.alloc(SR_MAX_FRAMES_PER_BLOCK * 2u * num_tracks))
       {
          // Dprintf("xxx alloc track_mix_buffers ne=%u\n", track_mix_buffers.num_elements);
@@ -2267,7 +2299,7 @@ public:
          Derror("[---] failed to allocate track_mix_buffers (%u bytes)\n", (SR_MAX_FRAMES_PER_BLOCK * 2u * num_tracks));
          r = YAC_FALSE;
       }
-#endif // SR_TRACK_FX
+#endif // SR_TRACK_SENDS
       return r;
    }
 
@@ -2651,6 +2683,7 @@ public:
                   case 306u: // trk_7_lvl
                   case 307u: // trk_8_lvl
                   {
+#ifdef SR_TRACK_SENDS
                      const sUI origTrackOutputIdx = _rpn - 300u;
                      for(sUI outputIdx = 0u; outputIdx < SR_MAX_TRACK_OUTPUTS; outputIdx++)
                      {
@@ -2666,6 +2699,7 @@ public:
                            Dreplay2("xxx   RPN trk_%u_lvl outputNr=%u/%u port=%u ch=%u v=%u levelTrack=%f levelLane=%f outVol=%f outPan=%f out_dest=%u\n", (origTrackOutputIdx+1u), (outputIdx+1u), SR_MAX_TRACK_OUTPUTS, _port, _ch, _v, track->outputs[outputIdx].level_track, track->outputs[outputIdx].level_lane, outVol, outPan, track->outputs[outputIdx].out_dest);
                         }
                      }
+#endif // SR_TRACK_SENDS
                      break;
                   }
 
@@ -2953,16 +2987,16 @@ public:
    }
 
    void processProcSeq(SR_Project *proj, YAC_FloatArray &outBuf, sS8 _fltOrigTrackIdx
-#ifdef SR_TRACK_FX
+#ifdef SR_TRACK_SENDS
                        , sUI _outOffsetInSamples  // currently 0 (remove?)
-#endif // SR_TRACK_FX
+#endif // SR_TRACK_SENDS
                        ) {
-#ifdef SR_TRACK_FX
+#ifdef SR_TRACK_SENDS
       // Clear track mix buffers
       sF32 *trackBuffers = proj->track_mix_buffers.elements;
       // Dprintf("xxx start of trackBuffers=%p end=%p\n", trackBuffers, trackBuffers+proj->track_mix_buffers.num_elements);
       ::memset((void*)trackBuffers, 0, proj->track_mix_buffers.num_elements * sizeof(sF32));
-#endif // SR_TRACK_FX
+#endif // SR_TRACK_SENDS
 
       for(sUI trackIdx = 0u; trackIdx < proj->num_tracks; trackIdx++)
       {
@@ -2970,10 +3004,10 @@ public:
          if(-1 == _fltOrigTrackIdx || track->orig_track_idx == _fltOrigTrackIdx)
          {
             track->process(outBuf
-#ifdef SR_TRACK_FX
+#ifdef SR_TRACK_SENDS
                            , trackBuffers/*trackOutputBuffers*/
                            , _outOffsetInSamples
-#endif // SR_TRACK_FX
+#endif // SR_TRACK_SENDS
                            );
          }
       }
@@ -2985,13 +3019,13 @@ public:
       YAC_FloatArray frameBuf;
       frameBuf.elements = outBuf.elements;
 
-#ifdef SR_TRACK_FX
+#ifdef SR_TRACK_SENDS
       // Clear track mix buffers
       sF32 *trackBuffers = proj->track_mix_buffers.elements;
       // Dprintf("xxx start of trackBuffers=%p end=%p\n", trackBuffers, trackBuffers+proj->track_mix_buffers.num_elements);
       ::memset((void*)trackBuffers, 0, proj->track_mix_buffers.num_elements * sizeof(sF32));
       sUI outOffsetInSamples = 0u;
-#endif // SR_TRACK_FX
+#endif // SR_TRACK_SENDS
 
       while(framesLeft > 0u)
       {
@@ -3029,10 +3063,10 @@ public:
          {
             SR_Track *track = &proj->tracks[trackIdx];
             track->process(frameBuf
-#ifdef SR_TRACK_FX
+#ifdef SR_TRACK_SENDS
                            , trackBuffers/*trackOutputBuffers*/
                            , outOffsetInSamples
-#endif // SR_TRACK_FX
+#endif // SR_TRACK_SENDS
                            );
          }
 
@@ -3040,10 +3074,10 @@ public:
          tick_frames_left -= numFrames;
          framesLeft -= numFrames;
          frameBuf.elements += frameBuf.num_elements;
-#ifdef SR_TRACK_FX
+#ifdef SR_TRACK_SENDS
          trackBuffers += frameBuf.num_elements;
          outOffsetInSamples += frameBuf.num_elements;
-#endif // SR_TRACK_FX
+#endif // SR_TRACK_SENDS
       }
 
       // Dprintf("xxx trackBuffersOff=%u\n", (sUI)(size_t)(trackBuffers - proj->track_mix_buffers.elements));
@@ -3075,7 +3109,9 @@ sr_proj_t sr_proj_new(void) {
 
 void sr_proj_delete(sr_proj_t _proj) {
    SR_Project *proj = (SR_Project*)_proj;
+#ifdef SR_FX
    proj->freePlugins();
+#endif // SR_FX
    delete proj;
 }
 
@@ -3200,7 +3236,7 @@ extern "C" sr_bool_t sr_proj_load_buffer(sr_proj_t _proj,
                   sF32 outPan  = ifs.s8() / 127.0f;
 
                   Dtrace("[...] output %u/%u dest=%u volTrack=%f volLane=%f pan=%f\n", outputIdx+1u, numOutputs, outDest, outVolTrack, outVolLane, outPan);
-#ifdef SR_TRACK_FX
+#ifdef SR_TRACK_SENDS
                   if(outputIdx < SR_MAX_TRACK_OUTPUTS)
                   {
                      if(outDest > proj->num_tracks)
@@ -3228,14 +3264,14 @@ extern "C" sr_bool_t sr_proj_load_buffer(sr_proj_t _proj,
                      track->track_vol = outVol;
                      track->track_pan = outPan;
                   }
-#endif // SR_TRACK_FX
+#endif // SR_TRACK_SENDS
                }
 
-#ifdef SR_TRACK_FX
+#ifdef SR_TRACK_SENDS
                track->num_outputs = sRANGE(numOutputs, 0u, SR_MAX_TRACK_OUTPUTS);
                track->track_vol = 1.0f;  // (note) vol/pan will be applied per output
                track->track_pan = 0.0f;
-#endif // SR_TRACK_FX
+#endif // SR_TRACK_SENDS
 
                Dtrace("[dbg] sr_proj_load: track %u/%u midi_port=%u midi_ch=%d poly=%u def_prg=%d vol=%f pan=%f nr=(%u..%u) trp=%d vr=(%u..%u) #out=%u\n", trackIdx+1u, proj->num_tracks, track->midi_port, track->midi_ch, track->sample_player.getNumVoices(), track->def_prg, track->track_vol, track->track_pan, track->note_min, track->note_max, track->note_trp, track->vel_min, track->vel_max, numOutputs);
             }
@@ -4095,9 +4131,9 @@ extern "C" void sr_handle_cycle_sample_calc_finished(unsigned int _sampleIdx) {
                   mixBuf.num_elements = numFrames * 2u/*stereo*/;
                   ::memset((void*)mixBuf.elements, 0, mixBuf.num_elements * sizeof(sF32));
                   song->processProcSeq(proj, mixBuf, sample->orig_src_track_idx/*fltOrigTrackIdx*/
-#ifdef SR_TRACK_FX
+#ifdef SR_TRACK_SENDS
                                        , outOffsetInSamples
-#endif // SR_TRACK_FX
+#endif // SR_TRACK_SENDS
                                        );
 
                   // Copy to waveform
