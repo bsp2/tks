@@ -42,6 +42,7 @@
 // ----          15Jan2024, 16Jan2024, 19Apr2024, 04Aug2024, 15Aug2024, 28Sep2024, 30Sep2024
 // ----          02Oct2024, 03Oct2024, 13Oct2024, 09Nov2024, 03Jan2025, 09Jan2026, 16Jan2026
 // ----          26Jan2026, 10Apr2026, 14May2026, 15May2026, 24May2026, 27May2026, 07Sep2026
+// ----          10Sep2026
 // ----
 // ----
 // ----
@@ -71,6 +72,7 @@ typedef struct StSampleMMEntry_s {
 #endif // LIBSYNERGY_BUILD
 } StSampleMMEntry;
 
+#ifndef TKSAMPLER_SKIP_PLUGINS
 struct st_plugin_slot_t {
    StPluginShared        *shared;           // instance
 #ifndef LIBSYNERGY_BUILD
@@ -84,6 +86,7 @@ struct st_plugin_slot_t {
    sF32                   pan;              // -1..1
    sBool                  b_invert_phase;
 };
+#endif // TKSAMPLER_SKIP_PLUGINS
 
 
 /* @class StSample,Object
@@ -203,16 +206,19 @@ YC class StSample : public YAC_Object {
 //#define STSAMPLE_LOOP_VAL_MASK  YCI 0xffffu
 
    sF32 volume;
-   sF32 vol_lfo_amt;
    sF32 pan;
    sF32 pan_env_amt;
-   sF32 pan_lfo_amt;
    sF32 transpose; // trp/finetune +-1 = 1 semitone. sum of ui_transpose_*
    sS8  ui_transpose_oct;    // +-4
    sS8  ui_transpose_semi;   // +-12
    sF32 ui_transpose_cents;  // +-100
    sF32 freq_env_amt;
+
+#ifndef TKSAMPLER_SKIP_LFO
    sF32 freq_lfo_amt;
+   sF32 vol_lfo_amt;
+   sF32 pan_lfo_amt;
+#endif // TKSAMPLER_SKIP_LFO
 
    sF32 beat_frequency;  // -100.100, note-locked detune
 
@@ -321,17 +327,21 @@ YC class StSample : public YAC_Object {
    StADSR *adsr_pan;
    StADSR *adsr_aux;
 
+#ifndef TKSAMPLER_SKIP_LFO
    StLFO *lfo_freq;
    StLFO *lfo_vol;
    StLFO *lfo_pan;
    StLFO *lfo_aux;
+#endif // TKSAMPLER_SKIP_LFO
 
+#ifndef TKSAMPLER_SKIP_GLOBAL_LFOS
    // (note) unlike all other state, the global LFOs link back to the parent sample_player (for modulation)
    StLFOPlayer lfo_freq_global;
    StLFOPlayer lfo_vol_global;
    StLFOPlayer lfo_pan_global;
    StLFOPlayer lfo_aux_global;
    sUI         global_lfo_tick_nr;
+#endif // TKSAMPLER_SKIP_GLOBAL_LFOS
 
    // in TSR (Amiga replay):
    //  0: volume
@@ -424,6 +434,7 @@ YC class StSample : public YAC_Object {
 #define STSAMPLE_FLT_TYPE_BRBP  YCI 26
 
 
+#ifndef TKSAMPLER_SKIP_FILTER
    sBool b_filter;
    sUI   filter_type;         // STSAMPLE_FLT_TYPE_xxx
    sF32  filter_cutoff;       // -1..1
@@ -433,8 +444,11 @@ YC class StSample : public YAC_Object {
    sF32  filter_resonance;    // 0..1
    sF32  filter_aux_env_amount;  // -1..1
    sF32  filter_aux_env_velocity_amount;  // -2..2  (added to aux_env_amount)
+#ifndef TKSAMPLER_SKIP_LFO
    sF32  filter_aux_lfo_amount;  // -1..1
+#endif // TKSAMPLER_SKIP_LFO
    sF32  filter_keyboard_amount; // -1..1
+#endif // TKSAMPLER_SKIP_FILTER
 
 
 #define STSAMPLE_GLIDE_NONE       YCI 0
@@ -462,10 +476,12 @@ YC class StSample : public YAC_Object {
    sBool b_glide_retrig_env_vol;
    sBool b_glide_retrig_env_pan;
    sBool b_glide_retrig_env_aux;
+#ifndef TKSAMPLER_SKIP_LFO
    sBool b_glide_retrig_lfo_freq;
    sBool b_glide_retrig_lfo_vol;
    sBool b_glide_retrig_lfo_pan;
    sBool b_glide_retrig_lfo_aux;
+#endif // TKSAMPLER_SKIP_LFO
 #ifndef TKSAMPLER_SKIP_MODSEQ
    sBool b_glide_retrig_modseq[STSAMPLE_NUM_MODSEQ];
 #endif // TKSAMPLER_SKIP_MODSEQ
@@ -510,10 +526,10 @@ YC class StSample : public YAC_Object {
 #define STSAMPLE_MM_SRC_CONST_M1              YCI    6
 #define STSAMPLE_MM_SRC_CONST_0               YCI    7
 #define STSAMPLE_MM_SRC_CONST_4               YCI    8
-#define STSAMPLE_MM_SRC_CONST_16              YCI    9  
-#define STSAMPLE_MM_SRC_CONST_100             YCI   10  
-#define STSAMPLE_MM_SRC_CONST_127             YCI   11  
-#define STSAMPLE_MM_SRC_CONST_255             YCI   12  
+#define STSAMPLE_MM_SRC_CONST_16              YCI    9
+#define STSAMPLE_MM_SRC_CONST_100             YCI   10
+#define STSAMPLE_MM_SRC_CONST_127             YCI   11
+#define STSAMPLE_MM_SRC_CONST_255             YCI   12
 #define STSAMPLE_MM_SRC_RAND_1_PM             YCI   13
 #define STSAMPLE_MM_SRC_RAND_1_P              YCI   14
 #define STSAMPLE_MM_SRC_RAND_2_PM             YCI   15
@@ -730,11 +746,11 @@ YC class StSample : public YAC_Object {
 #define STSAMPLE_MM_DST_FILTER_OFFSET               YCI   17
 #define STSAMPLE_MM_DST_FILTER_RESONANCE            YCI   18
 #define STSAMPLE_MM_DST_FILTER_AUX_ENV_AMOUNT       YCI   19  // v42+
-#define STSAMPLE_MM_DST_SAMPLE_OFFSET               YCI   20  
-#define STSAMPLE_MM_DST_SAMPLE_SHIFT                YCI   21 
-#define STSAMPLE_MM_DST_SAMPLE_SHIFT_EOL            YCI   22 
+#define STSAMPLE_MM_DST_SAMPLE_OFFSET               YCI   20
+#define STSAMPLE_MM_DST_SAMPLE_SHIFT                YCI   21
+#define STSAMPLE_MM_DST_SAMPLE_SHIFT_EOL            YCI   22
 #define STSAMPLE_MM_DST_LOOP_RESTART                YCI   23  // v7+
-#define STSAMPLE_MM_DST_CYCLE_LEN                   YCI   24 
+#define STSAMPLE_MM_DST_CYCLE_LEN                   YCI   24
 #define STSAMPLE_MM_DST_CYCLE_LEN_EOL               YCI   25  // v26+
 #define STSAMPLE_MM_DST_CYCLE_LEN_SAMPLE_OFFSET     YCI   26  // v17+
 #define STSAMPLE_MM_DST_WT_2D_X_ABS                 YCI   27  // v21+
@@ -742,74 +758,74 @@ YC class StSample : public YAC_Object {
 #define STSAMPLE_MM_DST_WT_2D_Y_ABS                 YCI   29  // v21+
 #define STSAMPLE_MM_DST_WT_2D_Y_REL                 YCI   30  // v21+
 #define STSAMPLE_MM_DST_LOOP_REPEATS_SCALE          YCI   31  // v15+
-#define STSAMPLE_MM_DST_JUMPTOLOOP_REL              YCI   32 
+#define STSAMPLE_MM_DST_JUMPTOLOOP_REL              YCI   32
 #define STSAMPLE_MM_DST_JUMPTOLOOP_ABS127           YCI   33  // v6+   [02Dec2023]: *127 prescaling now done in modmatrix code (modamt should now be 100%)
 #define STSAMPLE_MM_DST_JUMPTOLOOP_ABS              YCI   34  // v34+  [26Apr2024]: re-add unscaled (non-127-scaled) destination
-#define STSAMPLE_MM_DST_FREQ_LFO_SPEED              YCI   35 
-#define STSAMPLE_MM_DST_FREQ_LFO_SPEED_ABS          YCI   36 
-#define STSAMPLE_MM_DST_FREQ_LFO_LEVEL              YCI   37 
+#define STSAMPLE_MM_DST_FREQ_LFO_SPEED              YCI   35
+#define STSAMPLE_MM_DST_FREQ_LFO_SPEED_ABS          YCI   36
+#define STSAMPLE_MM_DST_FREQ_LFO_LEVEL              YCI   37
 #define STSAMPLE_MM_DST_FREQ_LFO_FREQ_AMT           YCI   38  // v4+
-#define STSAMPLE_MM_DST_VOL_LFO_SPEED               YCI   39 
-#define STSAMPLE_MM_DST_VOL_LFO_SPEED_ABS           YCI   40 
-#define STSAMPLE_MM_DST_VOL_LFO_LEVEL               YCI   41 
+#define STSAMPLE_MM_DST_VOL_LFO_SPEED               YCI   39
+#define STSAMPLE_MM_DST_VOL_LFO_SPEED_ABS           YCI   40
+#define STSAMPLE_MM_DST_VOL_LFO_LEVEL               YCI   41
 #define STSAMPLE_MM_DST_VOL_LFO_VOL_AMT             YCI   42  // v4+
-#define STSAMPLE_MM_DST_PAN_LFO_SPEED               YCI   43 
-#define STSAMPLE_MM_DST_PAN_LFO_SPEED_ABS           YCI   44 
-#define STSAMPLE_MM_DST_PAN_LFO_LEVEL               YCI   45 
+#define STSAMPLE_MM_DST_PAN_LFO_SPEED               YCI   43
+#define STSAMPLE_MM_DST_PAN_LFO_SPEED_ABS           YCI   44
+#define STSAMPLE_MM_DST_PAN_LFO_LEVEL               YCI   45
 #define STSAMPLE_MM_DST_PAN_LFO_PAN_AMT             YCI   46  // v4+
-#define STSAMPLE_MM_DST_AUX_LFO_SPEED               YCI   47 
-#define STSAMPLE_MM_DST_AUX_LFO_SPEED_ABS           YCI   48 
-#define STSAMPLE_MM_DST_AUX_LFO_LEVEL               YCI   49 
+#define STSAMPLE_MM_DST_AUX_LFO_SPEED               YCI   47
+#define STSAMPLE_MM_DST_AUX_LFO_SPEED_ABS           YCI   48
+#define STSAMPLE_MM_DST_AUX_LFO_LEVEL               YCI   49
 #define STSAMPLE_MM_DST_AUX_LFO_FLT_AMT             YCI   50  // v4+
-#define STSAMPLE_MM_DST_FREQ_ENV_SPEED              YCI   51 
-#define STSAMPLE_MM_DST_FREQ_ENV_SPEED_ABS          YCI   52 
-#define STSAMPLE_MM_DST_FREQ_ENV_LEVEL              YCI   53 
-#define STSAMPLE_MM_DST_FREQ_ENV_INTENSITY          YCI   54 
-#define STSAMPLE_MM_DST_FREQ_ENV_ATTACK_SPEED       YCI   55 
-#define STSAMPLE_MM_DST_FREQ_ENV_ATTACK_SPEED_ABS   YCI   56 
-#define STSAMPLE_MM_DST_FREQ_ENV_SUSTAIN_SPEED      YCI   57 
-#define STSAMPLE_MM_DST_FREQ_ENV_SUSTAIN_SPEED_ABS  YCI   58 
-#define STSAMPLE_MM_DST_FREQ_ENV_RELEASE_SPEED      YCI   59 
-#define STSAMPLE_MM_DST_FREQ_ENV_RELEASE_SPEED_ABS  YCI   60 
-#define STSAMPLE_MM_DST_VOL_ENV_SPEED               YCI   61 
-#define STSAMPLE_MM_DST_VOL_ENV_SPEED_ABS           YCI   62 
-#define STSAMPLE_MM_DST_VOL_ENV_LEVEL               YCI   63 
-#define STSAMPLE_MM_DST_VOL_ENV_INTENSITY           YCI   64 
-#define STSAMPLE_MM_DST_VOL_ENV_ATTACK_SPEED        YCI   65 
-#define STSAMPLE_MM_DST_VOL_ENV_ATTACK_SPEED_ABS    YCI   66 
-#define STSAMPLE_MM_DST_VOL_ENV_SUSTAIN_SPEED       YCI   67 
-#define STSAMPLE_MM_DST_VOL_ENV_SUSTAIN_SPEED_ABS   YCI   68 
-#define STSAMPLE_MM_DST_VOL_ENV_RELEASE_SPEED       YCI   69 
-#define STSAMPLE_MM_DST_VOL_ENV_RELEASE_SPEED_ABS   YCI   70 
-#define STSAMPLE_MM_DST_PAN_ENV_SPEED               YCI   71 
-#define STSAMPLE_MM_DST_PAN_ENV_SPEED_ABS           YCI   72 
-#define STSAMPLE_MM_DST_PAN_ENV_LEVEL               YCI   73 
-#define STSAMPLE_MM_DST_PAN_ENV_INTENSITY           YCI   74 
-#define STSAMPLE_MM_DST_PAN_ENV_ATTACK_SPEED        YCI   75 
-#define STSAMPLE_MM_DST_PAN_ENV_ATTACK_SPEED_ABS    YCI   76 
-#define STSAMPLE_MM_DST_PAN_ENV_SUSTAIN_SPEED       YCI   77 
-#define STSAMPLE_MM_DST_PAN_ENV_SUSTAIN_SPEED_ABS   YCI   78 
-#define STSAMPLE_MM_DST_PAN_ENV_RELEASE_SPEED       YCI   79 
-#define STSAMPLE_MM_DST_PAN_ENV_RELEASE_SPEED_ABS   YCI   80 
-#define STSAMPLE_MM_DST_AUX_ENV_SPEED               YCI   81 
-#define STSAMPLE_MM_DST_AUX_ENV_SPEED_ABS           YCI   82 
-#define STSAMPLE_MM_DST_AUX_ENV_LEVEL               YCI   83 
-#define STSAMPLE_MM_DST_AUX_ENV_INTENSITY           YCI   84 
-#define STSAMPLE_MM_DST_AUX_ENV_ATTACK_SPEED        YCI   85 
-#define STSAMPLE_MM_DST_AUX_ENV_ATTACK_SPEED_ABS    YCI   86 
-#define STSAMPLE_MM_DST_AUX_ENV_SUSTAIN_SPEED       YCI   87 
-#define STSAMPLE_MM_DST_AUX_ENV_SUSTAIN_SPEED_ABS   YCI   88 
-#define STSAMPLE_MM_DST_AUX_ENV_RELEASE_SPEED       YCI   89 
-#define STSAMPLE_MM_DST_AUX_ENV_RELEASE_SPEED_ABS   YCI   90 
-#define STSAMPLE_MM_DST_MOD_1_AMOUNT                YCI   91 
-#define STSAMPLE_MM_DST_MOD_2_AMOUNT                YCI   92 
-#define STSAMPLE_MM_DST_MOD_3_AMOUNT                YCI   93 
-#define STSAMPLE_MM_DST_MOD_4_AMOUNT                YCI   94 
-#define STSAMPLE_MM_DST_MOD_5_AMOUNT                YCI   95 
-#define STSAMPLE_MM_DST_MOD_6_AMOUNT                YCI   96 
-#define STSAMPLE_MM_DST_MOD_7_AMOUNT                YCI   97 
-#define STSAMPLE_MM_DST_MOD_8_AMOUNT                YCI   98 
-#define STSAMPLE_MM_DST_MOD_9_AMOUNT                YCI   99 
+#define STSAMPLE_MM_DST_FREQ_ENV_SPEED              YCI   51
+#define STSAMPLE_MM_DST_FREQ_ENV_SPEED_ABS          YCI   52
+#define STSAMPLE_MM_DST_FREQ_ENV_LEVEL              YCI   53
+#define STSAMPLE_MM_DST_FREQ_ENV_INTENSITY          YCI   54
+#define STSAMPLE_MM_DST_FREQ_ENV_ATTACK_SPEED       YCI   55
+#define STSAMPLE_MM_DST_FREQ_ENV_ATTACK_SPEED_ABS   YCI   56
+#define STSAMPLE_MM_DST_FREQ_ENV_SUSTAIN_SPEED      YCI   57
+#define STSAMPLE_MM_DST_FREQ_ENV_SUSTAIN_SPEED_ABS  YCI   58
+#define STSAMPLE_MM_DST_FREQ_ENV_RELEASE_SPEED      YCI   59
+#define STSAMPLE_MM_DST_FREQ_ENV_RELEASE_SPEED_ABS  YCI   60
+#define STSAMPLE_MM_DST_VOL_ENV_SPEED               YCI   61
+#define STSAMPLE_MM_DST_VOL_ENV_SPEED_ABS           YCI   62
+#define STSAMPLE_MM_DST_VOL_ENV_LEVEL               YCI   63
+#define STSAMPLE_MM_DST_VOL_ENV_INTENSITY           YCI   64
+#define STSAMPLE_MM_DST_VOL_ENV_ATTACK_SPEED        YCI   65
+#define STSAMPLE_MM_DST_VOL_ENV_ATTACK_SPEED_ABS    YCI   66
+#define STSAMPLE_MM_DST_VOL_ENV_SUSTAIN_SPEED       YCI   67
+#define STSAMPLE_MM_DST_VOL_ENV_SUSTAIN_SPEED_ABS   YCI   68
+#define STSAMPLE_MM_DST_VOL_ENV_RELEASE_SPEED       YCI   69
+#define STSAMPLE_MM_DST_VOL_ENV_RELEASE_SPEED_ABS   YCI   70
+#define STSAMPLE_MM_DST_PAN_ENV_SPEED               YCI   71
+#define STSAMPLE_MM_DST_PAN_ENV_SPEED_ABS           YCI   72
+#define STSAMPLE_MM_DST_PAN_ENV_LEVEL               YCI   73
+#define STSAMPLE_MM_DST_PAN_ENV_INTENSITY           YCI   74
+#define STSAMPLE_MM_DST_PAN_ENV_ATTACK_SPEED        YCI   75
+#define STSAMPLE_MM_DST_PAN_ENV_ATTACK_SPEED_ABS    YCI   76
+#define STSAMPLE_MM_DST_PAN_ENV_SUSTAIN_SPEED       YCI   77
+#define STSAMPLE_MM_DST_PAN_ENV_SUSTAIN_SPEED_ABS   YCI   78
+#define STSAMPLE_MM_DST_PAN_ENV_RELEASE_SPEED       YCI   79
+#define STSAMPLE_MM_DST_PAN_ENV_RELEASE_SPEED_ABS   YCI   80
+#define STSAMPLE_MM_DST_AUX_ENV_SPEED               YCI   81
+#define STSAMPLE_MM_DST_AUX_ENV_SPEED_ABS           YCI   82
+#define STSAMPLE_MM_DST_AUX_ENV_LEVEL               YCI   83
+#define STSAMPLE_MM_DST_AUX_ENV_INTENSITY           YCI   84
+#define STSAMPLE_MM_DST_AUX_ENV_ATTACK_SPEED        YCI   85
+#define STSAMPLE_MM_DST_AUX_ENV_ATTACK_SPEED_ABS    YCI   86
+#define STSAMPLE_MM_DST_AUX_ENV_SUSTAIN_SPEED       YCI   87
+#define STSAMPLE_MM_DST_AUX_ENV_SUSTAIN_SPEED_ABS   YCI   88
+#define STSAMPLE_MM_DST_AUX_ENV_RELEASE_SPEED       YCI   89
+#define STSAMPLE_MM_DST_AUX_ENV_RELEASE_SPEED_ABS   YCI   90
+#define STSAMPLE_MM_DST_MOD_1_AMOUNT                YCI   91
+#define STSAMPLE_MM_DST_MOD_2_AMOUNT                YCI   92
+#define STSAMPLE_MM_DST_MOD_3_AMOUNT                YCI   93
+#define STSAMPLE_MM_DST_MOD_4_AMOUNT                YCI   94
+#define STSAMPLE_MM_DST_MOD_5_AMOUNT                YCI   95
+#define STSAMPLE_MM_DST_MOD_6_AMOUNT                YCI   96
+#define STSAMPLE_MM_DST_MOD_7_AMOUNT                YCI   97
+#define STSAMPLE_MM_DST_MOD_8_AMOUNT                YCI   98
+#define STSAMPLE_MM_DST_MOD_9_AMOUNT                YCI   99
 #define STSAMPLE_MM_DST_MOD_10_AMOUNT               YCI   100
 #define STSAMPLE_MM_DST_MOD_11_AMOUNT               YCI   101
 #define STSAMPLE_MM_DST_MOD_12_AMOUNT               YCI   102
@@ -1001,11 +1017,8 @@ YC class StSample : public YAC_Object {
    sF32  liverec_osc_pre_filter;  // cutoff (0..1), 1=off
    sBool b_liverec_osc_resample;  // 1=maintain constant cycle, resample input
 
-/* /\* #define STSAMPLE_LIVEREC_FRONT_BUFFER_SZ       (128*1024)  // #frames. must match STSAMPLEVOICE_OVERRIDE_SMPDAT_SZ *\/ */
    sF32 *liverec_front_buffer;  // in non-osc liverec copy mode. size must match StSampleVoice::override_smpdat.
    sUI   liverec_front_buffer_sz;  // matches waveform numFrames*numCh after lazy-init
-   /* /\* sUI   liverec_front_buffer_src_offset;  // original frame offset into waveform *\/ */
-   /* /\* sUI   liverec_front_buffer_len;         // last copied len *\/ */
 
    // true=add inputs[liverec_input_idx] to current sample frame (before filter/fx/env)
    // maybe=add inputs and mute regular sample playback while liverecording is active
@@ -1016,6 +1029,7 @@ YC class StSample : public YAC_Object {
    sBool ui_redraw_queued;  // e.g. for live-recording
 
 #define STSAMPLE_NUM_PLUGINS                YCI 4
+#ifndef TKSAMPLER_SKIP_PLUGINS
 #define STSAMPLE_NUM_MODS_PER_PLUGIN        YCI 8
    st_plugin_slot_t plugins[STSAMPLE_NUM_PLUGINS];
    sUI plugin_mask_def; // bit is set when plugin!=null and !b_skip and process_fx_replace!=NULL and plugin is routed through alg
@@ -1028,16 +1042,19 @@ YC class StSample : public YAC_Object {
    sUI plugin_alg_filter_pos;  // 0=pre1, 1=post1, 2=pre2, 3=post2, .., 7=post4
    sUI plugin_alg_outer;  // 0=def (immediately before/after plugin), 1=outer 1, 2=outer 2, 3=outer 3 (enclose entire chain)
    sUI plugin_alg_int;
+#endif // TKSAMPLER_SKIP_PLUGINS
 
    sBool b_enable_fx;  // 0=bypass fx+filter
 
    sSI voice_bus;  // -1=none, 0=self (voice->layer_idx), >0=(other) layer voice bus buffer
 
+#ifndef LIBSYNERGY_BUILD
    sF64 uiSVZoom;  // last seen SampleView zoom/offset
    sF32 uiSVOffset;
    sUI  uiSVZoomYIdx;
 
    sBool ui_b_auxtowav;  // 1=render aux attack/decay spline to waveform when curve is edited (e.g. modular envs via ES-3) (editor hint)
+#endif // LIBSYNERGY_BUILD
 
 #ifndef TKSAMPLER_SKIP_LIVEREC
 #define LIVEREC_OSC_PRE_FILTER_BUFFER_SZ  (16384u)
@@ -1084,6 +1101,7 @@ YC class StSample : public YAC_Object {
    sF32 additive_stereo_spread;
 #endif // TKSAMPLER_SKIP_ADDITIVE
 
+#ifndef TKSAMPLER_SKIP_AA_AI
    // anti-imaging/aliasing filter settings
    sUI  ai_num_poles; // 0=AI off
    sF32 ai_q;
@@ -1091,16 +1109,17 @@ YC class StSample : public YAC_Object {
    sF32 ai_exp_down;  // cRate < 1  (0 disables down filter)
    sF32 ai_lin_oct;   // linear octave range
    sF32 ai_lin_max;   // cutoff at lin_oct (added to exp result)
+#endif // TKSAMPLER_SKIP_AA_AI
 
    sBool b_ui_autoselect;  // 1=autoselect zone when parent Sample(/SampleBank) is selected in editor
 
-#ifndef LIBSYNERGY_BUILD
+#ifndef TKSAMPLER_SKIP_TUNING_TABLES
    // NULL=use default (StSampleBank) freq table. 128 frequencies (MIDI notes) per table.
    sF32       *tuning_tables[STSAMPLE_MAX_TUNING_TABLES/*16*/];
    YAC_Object *tuning_tables_meta[STSAMPLE_MAX_TUNING_TABLES/*16*/];  // editor info (SampleTuningTable script objects or NULL)
    sSI         default_tuning_table_idx;      // -1=use default table (StSamplePlayer)
    sSI         forced_tuning_table_idx;       // -1=use default_tuning_table_idx
-#endif // LIBSYNERGY_BUILD
+#endif // TKSAMPLER_SKIP_TUNING_TABLES
 
    sBool b_free_running_osc;  // see also: StSampleBank::b_realloc (should be 1 when this is enabled)
 
@@ -1110,9 +1129,11 @@ YC class StSample : public YAC_Object {
 
    YAC(StSample);
 
-#ifndef LIBSYNERGY_BUILD
+#ifndef TKSAMPLER_SKIP_TUNING_TABLES
    const sF32 *getCurrentTuningTableOrNull (void);
-#endif // LIBSYNERGY_BUILD
+#endif // TKSAMPLER_SKIP_TUNING_TABLES
+
+   sSI getCurrentInterpolType(void) const;
 
    void setSamplePlayerForGlobalModulation (StSamplePlayer *_samplePlayer);
 
@@ -1170,7 +1191,9 @@ YC class StSample : public YAC_Object {
    sF32 calcMMNoteRel (sF32 _note) const;
    sF32 calcMMNoteAbs (sF32 _note) const;
 
+#ifndef TKSAMPLER_SKIP_WAVETABLE
    sUI getCurrentTimestretchSmpOffInterpolNumFrames (void) const;
+#endif // TKSAMPLER_SKIP_WAVETABLE
 
 #define STSAMPLE_VOICEPLUGIN_DST_DEF  YCI  0   // default (audio-rate) processing (after sample read)
 #define STSAMPLE_VOICEPLUGIN_DST_SR   YCI  1   // sample read rate modulation (before sample read)
@@ -1193,10 +1216,14 @@ YC class StSample : public YAC_Object {
 #define STSAMPLE_VOICEPLUGIN_DST_VM8  YCI 18
 
   protected:
+#ifndef TKSAMPLER_SKIP_PLUGINS
    void updatePluginMask (sUI _pluginIdx);
    void updatePluginAlgInt (void);
    void updateVoicePluginLevels (sUI _pluginIdx);
+#ifndef LIBSYNERGY_BUILD
    void reorderPluginModMatrixEntries (const sUI *_newOrder);
+#endif // LIBSYNERGY_BUILD
+#endif // TKSAMPLER_SKIP_PLUGINS
 
   public:
    YM void reinit (void);
@@ -1263,6 +1290,7 @@ YC class StSample : public YAC_Object {
    YM YAC_Object *_getOrCreatePanADSR  (void);
    YM YAC_Object *_getOrCreateAuxADSR  (void);
 
+#ifndef TKSAMPLER_SKIP_LFO
    YM YAC_Object *_getFreqLFO (void);
    YM YAC_Object *_getVolLFO  (void);
    YM YAC_Object *_getPanLFO  (void);
@@ -1281,6 +1309,7 @@ YC class StSample : public YAC_Object {
    YM void        _deleteVolLFO  (void);
    YM void        _deletePanLFO  (void);
    YM void        _deleteAuxLFO  (void);
+#endif // TKSAMPLER_SKIP_LFO
 
 #ifndef TKSAMPLER_SKIP_MODSEQ
    YM YAC_Object *_getModSeqByIndexAndPatch (sUI _idx, sUI _patchIdx);
@@ -1353,8 +1382,10 @@ YC class StSample : public YAC_Object {
    YM sF32 _getVolume (void);
    YM void _setVolume (sF32 _vol);
 
+#ifndef TKSAMPLER_SKIP_LFO
    YM void _setVolLFOAmt (sF32 _amt);
    YM sF32 _getVolLFOAmt (void);
+#endif // TKSAMPLER_SKIP_LFO
 
    YM sF32 _getVolumeVelocityAmount (void);
    YM void _setVolumeVelocityAmount (sF32 _volVelAmount);
@@ -1380,8 +1411,10 @@ YC class StSample : public YAC_Object {
    YM void _setPanEnvAmt (sF32 _amt);
    YM sF32 _getPanEnvAmt (void);
 
+#ifndef TKSAMPLER_SKIP_LFO
    YM void _setPanLFOAmt (sF32 _amt);
    YM sF32 _getPanLFOAmt (void);
+#endif // TKSAMPLER_SKIP_LFO
 
    YM sF32 _getTranspose (void);
    YM void _setTranspose (sF32 _transpose);
@@ -1417,8 +1450,10 @@ YC class StSample : public YAC_Object {
    YM void _setFreqEnvAmt (sF32 _amt);
    YM sF32 _getFreqEnvAmt (void);
 
+#ifndef TKSAMPLER_SKIP_LFO
    YM void _setFreqLFOAmt (sF32 _amt);
    YM sF32 _getFreqLFOAmt (void);
+#endif // TKSAMPLER_SKIP_LFO
 
    YM sF32 _getDelay (void);
    YM void _setDelay (sF32 _dly);
@@ -1429,6 +1464,7 @@ YC class StSample : public YAC_Object {
    YM sF32 calcVelZoneVolume (sF32 _velocity);
    YM sF32 calcKeyModZoneVolume (sF32 _absFreq, sF32 _absMod);
 
+#ifndef TKSAMPLER_SKIP_WAVETABLE
    YM void setEnableTimestretch (sSI _bEnabled);
    YM sSI  getEnableTimestretch (void);
 
@@ -1475,6 +1511,7 @@ YC class StSample : public YAC_Object {
 
    YM void setTimestretch2DHeight (sUI _h);
    YM sUI  getTimestretch2DHeight (void);
+#endif // TKSAMPLER_SKIP_WAVETABLE
 
    YM void _setEnableTimedLoop (sSI _bEnable);
    YM sSI  _getEnableTimedLoop (void);
@@ -1540,6 +1577,7 @@ YC class StSample : public YAC_Object {
    YM void _setEnableAlt (sSI _bEnable);
    YM sSI  _getEnableAlt (void);
 
+#ifndef TKSAMPLER_SKIP_FILTER
    YM void  _setEnableFilter (sBool _bEnable);
    YM sBool _getEnableFilter (void);
 
@@ -1567,11 +1605,14 @@ YC class StSample : public YAC_Object {
    YM void _setFilterAuxEnvVelocityAmount (sF32 _amount);
    YM sF32 _getFilterAuxEnvVelocityAmount (void);
 
+#ifndef TKSAMPLER_SKIP_LFO
    YM void _setFilterAuxLFOAmount (sF32 _amount);
    YM sF32 _getFilterAuxLFOAmount (void);
+#endif // TKSAMPLER_SKIP_LFO
 
    YM void _setFilterKeyboardAmount (sF32 _amount);
    YM sF32 _getFilterKeyboardAmount (void);
+#endif // TKSAMPLER_SKIP_FILTER
 
    YM void _setGlideType (sUI _type);
    YM sUI  _getGlideType (void);
@@ -1618,6 +1659,7 @@ YC class StSample : public YAC_Object {
    YM void  _setEnableGlideRetrigEnvAux (sBool _bEnable);
    YM sBool _getEnableGlideRetrigEnvAux (void);
 
+#ifndef TKSAMPLER_SKIP_LFO
    YM void  _setEnableGlideRetrigLFOFreq (sBool _bEnable);
    YM sBool _getEnableGlideRetrigLFOFreq (void);
 
@@ -1629,6 +1671,7 @@ YC class StSample : public YAC_Object {
 
    YM void  _setEnableGlideRetrigLFOAux (sBool _bEnable);
    YM sBool _getEnableGlideRetrigLFOAux (void);
+#endif // TKSAMPLER_SKIP_LFO
 
 #ifndef TKSAMPLER_SKIP_MODSEQ
    YM void  _setEnableGlideRetrigModSeq(sUI _idx, sBool _bEnable);
@@ -1762,6 +1805,7 @@ YC class StSample : public YAC_Object {
    YM sF32 _getSumInputXFade (void);
 #endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_PLUGINS
    YM sBool hasPlugins  (void) const;
    YM sBool hasPluginsEnabled (void) const;
    YM sBool areAllPluginSlotsUsed  (void) const;
@@ -1802,14 +1846,20 @@ YC class StSample : public YAC_Object {
    YM void  _setEnableVoicePluginInvertPhase (sUI _pluginIdx, sBool _bInvertPhase);
    YM sBool _getEnableVoicePluginInvertPhase (sUI _pluginIdx);
 
+#ifndef LIBSYNERGY_BUILD
    YM void swapPluginSlots (sUI _pluginIdxA, sUI _pluginIdxB);
    YM void reorderPluginSlots (YAC_Object *_ia);
+#endif // LIBSYNERGY_BUILD
 
+#ifndef LIBSYNERGY_BUILD
    YM void  _uiSetLastPluginRowIdx (sUI _rowIdx);
    YM sUI   _uiGetLastPluginRowIdx (void);
+#endif // LIBSYNERGY_BUILD
 
    YM void  _setEnableFX (sBool _bEnable);
    YM sBool _getEnableFX (void);
+
+#endif // TKSAMPLER_SKIP_PLUGINS
 
    YM void  _setVoiceBus (sSI _voiceBus);
    YM sSI   _getVoiceBus (void);
@@ -1842,10 +1892,10 @@ YC class StSample : public YAC_Object {
    YM void  setVoiceCalibrationEnable (sUI _laneIdx, sBool _bEnable);
    YM sBool getVoiceCalibrationEnable (sUI _laneIdx);
 
+#ifndef TKSAMPLER_SKIP_ADDITIVE
    YM void setTimestretchAdditiveXFade (sF32 _amt);
    YM sF32 getTimestretchAdditiveXFade (void);
 
-#ifndef TKSAMPLER_SKIP_ADDITIVE
    YM void  setAdditiveCfgValid (sUI _cfgIdx, sBool _bEnable);
    YM sBool getAdditiveCfgValid (sUI _cfgIdx);
 
@@ -1900,6 +1950,7 @@ YC class StSample : public YAC_Object {
    YM void exportAdditiveWavetable (YAC_FloatArray *_d, sUI _numCh, sUI _outCycleLen, sF32 _rateFactor, sUI _numWaves);
 #endif // TKSAMPLER_SKIP_ADDITIVE
 
+#ifndef TKSAMPLER_SKIP_AA_AI
    YM void  _setAiNumPoles (sUI _num);
    YM sBool _getAiNumPoles (void);
 
@@ -1917,6 +1968,7 @@ YC class StSample : public YAC_Object {
 
    YM void _setAiLinMax (sF32 _max);
    YM sF32 _getAiLinMax (void);
+#endif // TKSAMPLER_SKIP_AA_AI
 
    YM void _setStartEndFadeNumFrames (sUI _numFrames);
    YM sUI  _getStartEndFadeNumFrames (void);
@@ -1924,7 +1976,7 @@ YC class StSample : public YAC_Object {
    YM void  _uiSetEnableAutoSelect (sBool _bEnable);
    YM sBool _uiGetEnableAutoSelect (void);
 
-#ifndef LIBSYNERGY_BUILD
+#ifndef TKSAMPLER_SKIP_TUNING_TABLES
    // Lazy-alloc tuning table and copy MIDI note frequencies from FloatArray 'fa'.
    //  Frees tuning table when 'fa' is null.
    YM sBool _setTuningTable (sUI _idx, YAC_Object *_fa);
@@ -1945,7 +1997,7 @@ YC class StSample : public YAC_Object {
 
    YM void _freeTuningTables (void);
    YM void _freeTuningTablesMetaData (void);
-#endif // LIBSYNERGY_BUILD
+#endif // TKSAMPLER_SKIP_TUNING_TABLES
 
    YM void  _mmVarSetEnable (sBool _bEnable);
    YM sBool _mmVarGetEnable (void);

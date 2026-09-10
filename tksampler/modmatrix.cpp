@@ -99,21 +99,25 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
          sF32 pan;
          sF32 aux;
       } env;
+#ifndef TKSAMPLER_SKIP_LFO
       struct {
          sF32 freq;
          sF32 vol;
          sF32 pan;
          sF32 aux;
       } lfo;
+#endif // TKSAMPLER_SKIP_LFO
 #ifndef TKSAMPLER_SKIP_MODSEQ
       sF32 modseq[STSAMPLE_NUM_MODSEQ];
 #endif // TKSAMPLER_SKIP_MODSEQ
    } mmsrc;
 
+#ifndef TKSAMPLER_SKIP_LFO
    sBool bFreqLFOGlobal = YAC_FALSE;
    sBool bVolLFOGlobal  = YAC_FALSE;
    sBool bPanLFOGlobal  = YAC_FALSE;
    sBool bAuxLFOGlobal  = YAC_FALSE;
+#endif // TKSAMPLER_SKIP_LFO
 
    sBool bPerfCtlSP = (!b_release || ((NULL == sample->parent_samplebank) || !sample->parent_samplebank->b_perfctl_freeze_noteoff));
    const sF32 *perfCtl =
@@ -122,6 +126,7 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
       : perf_ctl_off
       ;
 
+#ifndef TKSAMPLER_SKIP_LFO
 #ifdef YAC_GCC
    // avoid GCC warning
    mmsrc.lfo.freq = 0.0f;
@@ -131,7 +136,8 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
 #endif // YAC_GCC
 
    // Freq LFO
-   if( (NULL != sample->lfo_freq) && (sample->lfo_freq->b_global) )
+#ifndef TKSAMPLER_SKIP_GLOBAL_LFOS
+   if(NULL != sample->lfo_freq && sample->lfo_freq->b_global)
    {
       if(sample->global_lfo_tick_nr != sample_player->global_tick_nr)
       {
@@ -147,12 +153,14 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
       bFreqLFOGlobal = YAC_TRUE;
    }
    else
+#endif // TKSAMPLER_SKIP_GLOBAL_LFOS
    {
       mmsrc.lfo.freq = lfo_freq.tick();
    }
 
    // Vol LFO
-   if( (NULL != sample->lfo_vol) && (sample->lfo_vol->b_global) )
+#ifndef TKSAMPLER_SKIP_GLOBAL_LFOS
+   if(NULL != sample->lfo_vol && sample->lfo_vol->b_global)
    {
       if(sample->global_lfo_tick_nr != sample_player->global_tick_nr)
       {
@@ -168,12 +176,14 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
       bVolLFOGlobal = YAC_TRUE;
    }
    else
+#endif // TKSAMPLER_SKIP_GLOBAL_LFOS
    {
       mmsrc.lfo.vol = lfo_vol.tick();
    }
 
    // Pan LFO
-   if( (NULL != sample->lfo_pan) && (sample->lfo_pan->b_global) )
+#ifndef TKSAMPLER_SKIP_GLOBAL_LFOS
+   if(NULL != sample->lfo_pan && sample->lfo_pan->b_global)
    {
       if(sample->global_lfo_tick_nr != sample_player->global_tick_nr)
       {
@@ -189,12 +199,14 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
       bPanLFOGlobal = YAC_TRUE;
    }
    else
+#endif // TKSAMPLER_SKIP_GLOBAL_LFOS
    {
       mmsrc.lfo.pan = lfo_pan.tick();
    }
 
    // Aux LFO
-   if( (NULL != sample->lfo_aux) && (sample->lfo_aux->b_global) )
+#ifndef TKSAMPLER_SKIP_GLOBAL_LFOS
+   if(NULL != sample->lfo_aux && sample->lfo_aux->b_global)
    {
       if(sample->global_lfo_tick_nr != sample_player->global_tick_nr)
       {
@@ -210,9 +222,11 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
       bAuxLFOGlobal = YAC_TRUE;
    }
    else
+#endif // TKSAMPLER_SKIP_GLOBAL_LFOS
    {
       mmsrc.lfo.aux = lfo_aux.tick();
    }
+#endif // TKSAMPLER_SKIP_LFO
 
 #ifndef TKSAMPLER_SKIP_MODSEQ
    // Mod sequencers
@@ -246,7 +260,10 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
    }
    sample->global_modseq_tick_nr = sample_player->global_tick_nr;
 #endif // TKSAMPLER_SKIP_MODSEQ
+
+#ifndef TKSAMPLER_SKIP_GLOBAL_LFOS
    sample->global_lfo_tick_nr = sample_player->global_tick_nr;
+#endif // TKSAMPLER_SKIP_GLOBAL_LFOS
 
    mmsrc.env.freq = adsr_freq.adsr ? adsr_freq.tick() : 0.0f;
    mmsrc.env.vol  = adsr_vol.adsr  ? adsr_vol.tick()  : 0.0f;
@@ -295,18 +312,20 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
    mmdst.freq_semi      = 0.0f;
    mmdst.freq_fine      = 0.0f;
    mmdst.freq_beat      = 0.0f;
-#ifndef LIBSYNERGY_BUILD
+#ifndef TKSAMPLER_SKIP_TUNING_TABLES
    mmdst.tuning_tbl_abs = 0.0f;
    mmdst.tuning_tbl_rel = -1.0f;
-#endif // LIBSYNERGY_BUILD
+#endif // TKSAMPLER_SKIP_TUNING_TABLES
    mmdst.note_2         = 0.0f;
    mmdst.freq_2         = 0.0f;
 
+#ifndef TKSAMPLER_SKIP_FILTER
    mmdst.flt_cutoff      = 0.0f;
    mmdst.flt_pan         = 0.0f;
    mmdst.flt_offset      = 0.0f;
    mmdst.flt_res         = 0.0f;
    mmdst.flt_aux_env_amt = 0.0f;
+#endif // TKSAMPLER_SKIP_FILTER
 
    mmdst_sampleoff    = 0.0f;
    mmdst_sampleshift  = 0.0f;
@@ -329,7 +348,9 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
    mmdst.freq_lfo_freq_amt = 1.0f;
    mmdst.vol_lfo_vol_amt   = 1.0f;
    mmdst.pan_lfo_pan_amt   = 1.0f;
+#ifndef TKSAMPLER_SKIP_FILTER
    mmdst.aux_lfo_flt_amt   = 1.0f;
+#endif // TKSAMPLER_SKIP_FILTER
 
    mmdst.lfo_freq_level = 1.0f;  // *
    mmdst.lfo_vol_level  = 1.0f;  // *
@@ -352,8 +373,10 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
    mmdst.retrig_aux_lfo  = 0.0f;
 
    mmdst_glide_speed = 1.0f;
+#ifndef TKSAMPLER_SKIP_WAVETABLE
    mmdst_timestretch = 0.0f;
    mmdst_timestretch_bend = 0.0f;
+#endif // TKSAMPLER_SKIP_WAVETABLE
 
 #ifndef TKSAMPLER_SKIP_LIVEREC
    mmdst.liverec_start    = 0.0f;
@@ -361,8 +384,10 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
    mmdst.liverec_stop     = 0.0f;
 #endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_PLUGINS
    mmdst.plugin_mod_mask = 0u;
    memset((void*)mmdst.plugins, 0, sizeof(mmdst.plugins));
+#endif // TKSAMPLER_SKIP_PLUGINS
 
    mmdst_sync_speed = 0.0f;
    mmdst_sync_slew  = 1.0f;
@@ -370,12 +395,14 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
    mmdst_srr = 0.0f;
    mmdst_br  = 0.0f;
 
+#ifndef TKSAMPLER_SKIP_LFO
    // (todo) speed/intensity modulation should be updated before modmatrix processing
    //         it's currently a tick too late (but probably not noticeable)
    lfo_freq.mmdst_speed = 1.0f;
    lfo_vol.mmdst_speed  = 1.0f;
    lfo_pan.mmdst_speed  = 1.0f;
    lfo_aux.mmdst_speed  = 1.0f;
+#endif // TKSAMPLER_SKIP_LFO
 
    adsr_freq.mmdst_speed     = 1.0f;
    // // adsr_freq.mmdst_level     = 1.0f;  // *
@@ -426,16 +453,18 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
    }
 #endif // TKSAMPLER_SKIP_MODSEQ
 
+#ifndef TKSAMPLER_SKIP_PLUGINS
    for(sUI pluginIdx = 0u; pluginIdx < STSAMPLE_NUM_PLUGINS; pluginIdx++)
    {
       mmdst.plugin_levels[pluginIdx] = 1.0f;
    }
+#endif // TKSAMPLER_SKIP_PLUGINS
 
-#ifndef LIBSYNERGY_BUILD
+#ifndef TKSAMPLER_SKIP_ADDITIVE
    mmdst_additive_cfg           = 0.0f;
    mmdst_additive_stereo_spread = 0.0f;
    mmdst_additive_num_partials  = 0.0f;
-#endif // LIBSYNERGY_BUILD
+#endif // TKSAMPLER_SKIP_ADDITIVE
 
 #ifndef LIBSYNERGY_BUILD
    sUI signalTapIdx = 0u;
@@ -1660,6 +1689,7 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
                }
                break;
 
+#ifndef TKSAMPLER_SKIP_LFO
             case STSAMPLE_MM_SRC_LFO_FREQ:
                srcVal = mmsrc.lfo.freq * mmdst.lfo_freq_level;
                break;
@@ -1675,6 +1705,7 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
             case STSAMPLE_MM_SRC_LFO_AUX:
                srcVal = mmsrc.lfo.aux * mmdst.lfo_aux_level;
                break;
+#endif // TKSAMPLER_SKIP_LFO
 
             case STSAMPLE_MM_SRC_ENV_FREQ:
                srcVal = mmsrc.env.freq * mmdst.env_freq_level;
@@ -2064,7 +2095,7 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
             sBool bAutoMul = ((STSAMPLE_MM_OP_AUTO == mm->op) || (STSAMPLE_MM_OP_MUL == mm->op));
             sBool bAutoRep = ((STSAMPLE_MM_OP_AUTO == mm->op) || (STSAMPLE_MM_OP_REPLACE == mm->op));
 
-#ifndef LIBSYNERGY_BUILD
+#ifndef TKSAMPLER_SKIP_EXP_MM_OPS
 #define Delse_mm_lerp(d)                                                \
          else if(STSAMPLE_MM_OP_BLEND_SRC == mm->op)                    \
             d = (d) + (srcVal - (d)) * mmAmt;                           \
@@ -2234,8 +2265,7 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
          { if(0u == replay_ticks) { d = srcValDef; } }                  \
          else if(STSAMPLE_MM_OP_STEP == mm->op)                         \
             (d) = loc_mm_step(d, srcValDef)
-#endif // LIBSYNERGY_BUILD
-
+#endif // TKSAMPLER_SKIP_EXP_MM_OPS
 
             switch(mm->dst)
             {
@@ -2307,7 +2337,7 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
                Dsignaltap(mmdst.freq_beat);
                break;
 
-#ifndef LIBSYNERGY_BUILD
+#ifndef TKSAMPLER_SKIP_TUNING_TABLES
                case STSAMPLE_MM_DST_TUNING_TBL_ABS:
                if(bAutoAdd)
                   mmdst.tuning_tbl_abs += srcValDef;
@@ -2328,7 +2358,7 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
                Delse_mm_lerp(mmdst.tuning_tbl_rel);
                Dsignaltap(mmdst.tuning_tbl_rel);
                break;
-#endif // LIBSYNERGY_BUILD
+#endif // TKSAMPLER_SKIP_TUNING_TABLES
 
                case STSAMPLE_MM_DST_NOTE_2:
                if(bAutoAdd)
@@ -2375,6 +2405,7 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
                Dsignaltap(mmdst.pan);
                break;
 
+#ifndef TKSAMPLER_SKIP_FILTER
                case STSAMPLE_MM_DST_FILTER_CUTOFF:
                if(bAutoAdd)
                   mmdst.flt_cutoff += srcValDef;
@@ -2419,6 +2450,7 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
                Delse_mm_lerp(mmdst.flt_aux_env_amt);
                Dsignaltap(mmdst.flt_aux_env_amt);
                break;
+#endif // TKSAMPLER_SKIP_FILTER
 
                case STSAMPLE_MM_DST_SAMPLE_OFFSET:
                if(bAutoAdd)
@@ -2486,6 +2518,7 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
                break;
 
                case STSAMPLE_MM_DST_WT_2D_X_ABS:
+#ifndef TKSAMPLER_SKIP_WAVETABLE
                srcValDef = (sample->timestretch_2d_w > 0u) ? (srcValDef / sample->timestretch_2d_w) : 0.0f;
                if(bAutoAdd)
                   mmdst.wt2d_x += srcValDef;
@@ -2494,9 +2527,11 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
                Delse_mm_lerp(mmdst.wt2d_x);
                Dsignaltap(mmdst.wt2d_x);
                mmdst.b_wt2d_x_valid = YAC_TRUE;
+#endif // TKSAMPLER_SKIP_WAVETABLE
                break;
 
                case STSAMPLE_MM_DST_WT_2D_X_REL:
+#ifndef TKSAMPLER_SKIP_WAVETABLE
                if(bAutoAdd)
                   mmdst.wt2d_x += srcValDef;
                else if(bAutoMul)
@@ -2504,9 +2539,11 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
                Delse_mm_lerp(mmdst.wt2d_x);
                Dsignaltap(mmdst.wt2d_x);
                mmdst.b_wt2d_x_valid = YAC_TRUE;
+#endif // TKSAMPLER_SKIP_WAVETABLE
                break;
 
                case STSAMPLE_MM_DST_WT_2D_Y_ABS:
+#ifndef TKSAMPLER_SKIP_WAVETABLE
                srcValDef = (sample->timestretch_2d_h > 0u) ? (srcValDef / sample->timestretch_2d_h) : 0.0f;
                if(bAutoAdd)
                   mmdst.wt2d_y += srcValDef;
@@ -2515,9 +2552,11 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
                Delse_mm_lerp(mmdst.wt2d_y);
                Dsignaltap(mmdst.wt2d_y);
                mmdst.b_wt2d_y_valid = YAC_TRUE;
+#endif // TKSAMPLER_SKIP_WAVETABLE
                break;
 
                case STSAMPLE_MM_DST_WT_2D_Y_REL:
+#ifndef TKSAMPLER_SKIP_WAVETABLE
                if(bAutoAdd)
                   mmdst.wt2d_y += srcValDef;
                else if(bAutoMul)
@@ -2525,6 +2564,7 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
                Delse_mm_lerp(mmdst.wt2d_y);
                Dsignaltap(mmdst.wt2d_y);
                mmdst.b_wt2d_y_valid = YAC_TRUE;
+#endif // TKSAMPLER_SKIP_WAVETABLE
                break;
 
                case STSAMPLE_MM_DST_LOOP_REPEATS_SCALE:
@@ -2581,7 +2621,9 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
                }
                break;
 
+#ifndef TKSAMPLER_SKIP_LFO
                case STSAMPLE_MM_DST_FREQ_LFO_SPEED:
+#ifndef TKSAMPLER_SKIP_GLOBAL_LFOS
                if(bFreqLFOGlobal)
                {
                   if(bAutoMul)
@@ -2592,6 +2634,7 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
                   Dsignaltap(sample->lfo_freq_global.mmdst_speed);
                }
                else
+#endif // TKSAMPLER_SKIP_GLOBAL_LFOS
                {
                   if(bAutoMul)
                      lfo_freq.mmdst_speed *= stsamplevoice_bipolar_to_scale(srcValDef, 8.0f/*div*/, 8.0f/*mul*/);
@@ -2603,6 +2646,7 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
                break;
 
                case STSAMPLE_MM_DST_FREQ_LFO_SPEED_ABS:
+#ifndef TKSAMPLER_SKIP_GLOBAL_LFOS
                if(bFreqLFOGlobal)
                {
                   if(bAutoMul)
@@ -2613,6 +2657,7 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
                   Dsignaltap(sample->lfo_freq_global.mmdst_speed);
                }
                else
+#endif // TKSAMPLER_SKIP_GLOBAL_LFOS
                {
                   if(bAutoMul)
                      lfo_freq.mmdst_speed *= srcValDef;
@@ -2642,6 +2687,7 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
                break;
 
                case STSAMPLE_MM_DST_VOL_LFO_SPEED:
+#ifndef TKSAMPLER_SKIP_GLOBAL_LFOS
                if(bVolLFOGlobal)
                {
                   if(bAutoMul)
@@ -2652,6 +2698,7 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
                   Dsignaltap(sample->lfo_vol_global.mmdst_speed);
                }
                else
+#endif // TKSAMPLER_SKIP_GLOBAL_LFOS
                {
                   if(bAutoMul)
                      lfo_vol.mmdst_speed *= stsamplevoice_bipolar_to_scale(srcValDef, 8.0f/*div*/, 8.0f/*mul*/);
@@ -2663,6 +2710,7 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
                break;
 
                case STSAMPLE_MM_DST_VOL_LFO_SPEED_ABS:
+#ifndef TKSAMPLER_SKIP_GLOBAL_LFOS
                if(bVolLFOGlobal)
                {
                   if(bAutoMul)
@@ -2673,6 +2721,7 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
                   Dsignaltap(sample->lfo_vol_global.mmdst_speed);
                }
                else
+#endif // TKSAMPLER_SKIP_GLOBAL_LFOS
                {
                   if(bAutoMul)
                      lfo_vol.mmdst_speed *= srcValDef;
@@ -2702,6 +2751,7 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
                break;
 
                case STSAMPLE_MM_DST_PAN_LFO_SPEED:
+#ifndef TKSAMPLER_SKIP_GLOBAL_LFOS
                if(bPanLFOGlobal)
                {
                   if(bAutoMul)
@@ -2712,6 +2762,7 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
                   Dsignaltap(sample->lfo_pan_global.mmdst_speed);
                }
                else
+#endif // TKSAMPLER_SKIP_GLOBAL_LFOS
                {
                   if(bAutoMul)
                      lfo_pan.mmdst_speed *= stsamplevoice_bipolar_to_scale(srcValDef, 8.0f/*div*/, 8.0f/*mul*/);
@@ -2723,6 +2774,7 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
                break;
 
                case STSAMPLE_MM_DST_PAN_LFO_SPEED_ABS:
+#ifndef TKSAMPLER_SKIP_GLOBAL_LFOS
                if(bPanLFOGlobal)
                {
                   if(bAutoMul)
@@ -2733,6 +2785,7 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
                   Dsignaltap(sample->lfo_pan_global.mmdst_speed);
                }
                else
+#endif // TKSAMPLER_SKIP_GLOBAL_LFOS
                {
                   if(bAutoMul)
                      lfo_pan.mmdst_speed *= srcValDef;
@@ -2762,6 +2815,7 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
                break;
 
                case STSAMPLE_MM_DST_AUX_LFO_SPEED:
+#ifndef TKSAMPLER_SKIP_GLOBAL_LFOS
                if(bAuxLFOGlobal)
                {
                   if(bAutoMul)
@@ -2772,6 +2826,7 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
                   Dsignaltap(sample->lfo_aux_global.mmdst_speed);
                }
                else
+#endif // TKSAMPLER_SKIP_GLOBAL_LFOS
                {
                   if(bAutoMul)
                      lfo_aux.mmdst_speed *= stsamplevoice_bipolar_to_scale(srcValDef, 8.0f/*div*/, 8.0f/*mul*/);
@@ -2783,6 +2838,7 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
                break;
 
                case STSAMPLE_MM_DST_AUX_LFO_SPEED_ABS:
+#ifndef TKSAMPLER_SKIP_GLOBAL_LFOS
                if(bAuxLFOGlobal)
                {
                   if(bAutoMul)
@@ -2793,6 +2849,7 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
                   Dsignaltap(sample->lfo_aux_global.mmdst_speed);
                }
                else
+#endif // TKSAMPLER_SKIP_GLOBAL_LFOS
                {
                   if(bAutoMul)
                      lfo_aux.mmdst_speed *= srcValDef;
@@ -2812,6 +2869,7 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
                Dsignaltap(mmdst.lfo_aux_level);
                break;
 
+#ifndef TKSAMPLER_SKIP_FILTER
                case STSAMPLE_MM_DST_AUX_LFO_FLT_AMT:
                if(bAutoMul)
                   mmdst.aux_lfo_flt_amt *= srcValDef;
@@ -2820,6 +2878,8 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
                Delse_mm_lerp_scl(mmdst.aux_lfo_flt_amt, 1.0f);
                Dsignaltap(mmdst.aux_lfo_flt_amt);
                break;
+#endif // TKSAMPLER_SKIP_FILTER
+#endif // TKSAMPLER_SKIP_LFO
 
                case STSAMPLE_MM_DST_FREQ_ENV_SPEED:
                if(bAutoMul)
@@ -3221,21 +3281,25 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
                break;
 
                case STSAMPLE_MM_DST_TIMESTRETCH:
+#ifndef TKSAMPLER_SKIP_WAVETABLE
                if(bAutoAdd)
                   mmdst_timestretch += srcValDef;
                else if(bAutoMul)
                   mmdst_timestretch *= srcValDef;
                Delse_mm_lerp(mmdst_timestretch);
                Dsignaltap(mmdst_timestretch);
+#endif // TKSAMPLER_SKIP_WAVETABLE
                break;
 
                case STSAMPLE_MM_DST_TIMESTRETCH_BEND:
+#ifndef TKSAMPLER_SKIP_WAVETABLE
                if(bAutoAdd)
                   mmdst_timestretch_bend += srcValDef;
                else if(bAutoMul)
                   mmdst_timestretch_bend *= srcValDef;
                Delse_mm_lerp(mmdst_timestretch_bend);
                Dsignaltap(mmdst_timestretch_bend);
+#endif // TKSAMPLER_SKIP_WAVETABLE
                break;
 
 #ifndef TKSAMPLER_SKIP_MODSEQ
@@ -3977,6 +4041,7 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
 #endif // TKSAMPLER_SKIP_LIVEREC
                break;
 
+#ifndef TKSAMPLER_SKIP_PLUGINS
                case STSAMPLE_MM_DST_PLUGIN_1_MOD_1:
                if(bAutoAdd)
                   mmdst.plugins[0][0] += srcValDef;
@@ -4332,6 +4397,7 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
                Delse_mm_lerp_bipolar8(mmdst.plugin_levels[3]);
                Dsignaltap(mmdst.plugin_levels[3]);
                break;
+#endif // TKSAMPLER_SKIP_PLUGINS
 
                case STSAMPLE_MM_DST_SYNC_SPEED:
                if(bAutoAdd)
@@ -4370,36 +4436,36 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
                break;
 
                case STSAMPLE_MM_DST_WT_ADDITIVE_CFG:
-#ifndef LIBSYNERGY_BUILD
+#ifndef TKSAMPLER_SKIP_ADDITIVE
                if(bAutoAdd)
                   mmdst_additive_cfg += srcValDef;
                else if(bAutoMul)
                   mmdst_additive_cfg *= srcValDef;
                Delse_mm_lerp(mmdst_additive_cfg);
                Dsignaltap(mmdst_additive_cfg);
-#endif // LIBSYNERGY_BUILD
+#endif // TKSAMPLER_SKIP_ADDITIVE
                break;
 
                case STSAMPLE_MM_DST_WT_ADDITIVE_STEREO_SPREAD:
-#ifndef LIBSYNERGY_BUILD
+#ifndef TKSAMPLER_SKIP_ADDITIVE
                if(bAutoAdd)
                   mmdst_additive_stereo_spread += srcValDef;
                else if(bAutoMul)
                   mmdst_additive_stereo_spread *= srcValDef;
                Delse_mm_lerp(mmdst_additive_stereo_spread);
                Dsignaltap(mmdst_additive_stereo_spread);
-#endif // LIBSYNERGY_BUILD
+#endif // TKSAMPLER_SKIP_ADDITIVE
                break;
 
                case STSAMPLE_MM_DST_WT_ADDITIVE_PARTIALS:
-#ifndef LIBSYNERGY_BUILD
+#ifndef TKSAMPLER_SKIP_ADDITIVE
                   if(bAutoAdd)
                      mmdst_additive_num_partials += srcValDef;
                   else if(bAutoMul)
                      mmdst_additive_num_partials *= srcValDef;
                   Delse_mm_lerp(mmdst_additive_num_partials);
                   Dsignaltap(mmdst_additive_num_partials);
-#endif // LIBSYNERGY_BUILD
+#endif // TKSAMPLER_SKIP_ADDITIVE
                   break;
 
                case STSAMPLE_MM_DST_VARIATION:
@@ -4507,17 +4573,19 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
       } // if mm->b_enable
    } // loop modmatrix entries
 
+#ifndef TKSAMPLER_SKIP_LFO
    mmdst.lfo.freq = mmsrc.lfo.freq * mmdst.lfo_freq_level;
    mmdst.lfo.vol  = mmsrc.lfo.vol  * mmdst.lfo_vol_level;
    mmdst.lfo.pan  = mmsrc.lfo.pan  * mmdst.lfo_pan_level;
    mmdst.lfo.aux  = mmsrc.lfo.aux  * mmdst.lfo_aux_level;
+#endif // TKSAMPLER_SKIP_LFO
 
    mmdst.env.freq = mmsrc.env.freq * mmdst.env_freq_level;
    mmdst.env.vol  = mmsrc.env.vol  * mmdst.env_vol_level;
    mmdst.env.pan  = mmsrc.env.pan  * mmdst.env_pan_level;
    mmdst.env.aux  = mmsrc.env.aux  * mmdst.env_aux_level;
 
-#ifndef LIBSYNERGY_BUILD
+#ifndef TKSAMPLER_SKIP_TUNING_TABLES
    // Update interpolated tuning table (MM_DST_TUNING_TBL_REL)
    if(mmdst.tuning_tbl_rel >= 0.0f)
    {
@@ -4547,7 +4615,7 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
       for(sUI i = 0u; i < 128u; i++)
          interpolated_freq_table[i] = tblA[i] + (tblB[i] - tblA[i]) * bAmt;
    }
-#endif // LIBSYNERGY_BUILD
+#endif // TKSAMPLER_SKIP_TUNING_TABLES
 
 #ifndef TKSAMPLER_SKIP_MODSEQ
    // Update mod sequencers
@@ -4590,6 +4658,7 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
       br_mask = sU16(br);
    }
 
+#ifndef TKSAMPLER_SKIP_PLUGINS
    // Update plugin modulation
    updatePluginModulationFromMM(mmdst,
                                 (sample->plugin_mask_vm  |
@@ -4599,6 +4668,7 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
                                  sample->plugin_mask_am
                                  )
                                 );
+#endif // TKSAMPLER_SKIP_PLUGINS
 
    b_trig_pulse = YAC_FALSE;
    b_release_pulse = YAC_FALSE;

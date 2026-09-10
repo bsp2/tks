@@ -25,7 +25,7 @@
 // ---- changed: 26Dec2009, 27Dec2009, 29Dec2009, 02Jan2010, 05Jan2010, 07Jan2010, 15Jan2010
 // ----          19Jan2010, 21Jan2010, 29Apr2010, 24Mar2013, 23Dec2018, 27Dec2018, 31Dec2018
 // ----          17Jan2019, 23Apr2019, 15Feb2020, 25Feb2020, 08Aug2021, 18Nov2023, 15Aug2024
-// ----          28Sep2024, 30Sep2024, 12Nov2024, 10Apr2026, 24May2026, 07Sep2026
+// ----          28Sep2024, 30Sep2024, 12Nov2024, 10Apr2026, 24May2026, 07Sep2026, 10Sep2026
 // ----
 // ----
 // ----
@@ -64,14 +64,14 @@ YC class StSampleBank : public YAC_Object {
 
    sUI liverec_last_process_tick_nr; // see Replay.process_tick_nr (don't record input buffer more than once)
 
-#ifndef LIBSYNERGY_BUILD
+#ifndef TKSAMPLER_SKIP_TUNING_TABLES
    // NULL=use default (StSamplePlayer) freq table. 128 frequencies (MIDI notes) per table.
    //  (note) sample zone (StSample) may override these
    sF32       *tuning_tables[STSAMPLE_MAX_TUNING_TABLES/*16*/];
    YAC_Object *tuning_tables_meta[STSAMPLE_MAX_TUNING_TABLES/*16*/];  // editor info (SampleTuningTable script objects or NULL)
    sSI         default_tuning_table_idx;  // -1=use default table (StSamplePlayer)
    sSI         forced_tuning_table_idx;       // -1=use default_tuning_table_idx
-#endif // LIBSYNERGY_BUILD
+#endif // TKSAMPLER_SKIP_TUNING_TABLES
 
   protected:
    sUI num_samples; // optimization

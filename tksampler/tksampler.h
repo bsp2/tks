@@ -26,7 +26,7 @@
 // ----          19Jan2010, 21Jan2010, 21Feb2010, 01Mar2010, 29Apr2010, 02May2010, 07Jul2010
 // ----          18Jul2010, 04Sep2010, 05Mar2011, 10Mar2011, 14Mar2011, 20Mar2011, 22Mar2011
 // ----          21Jul2019, 15Feb2020, 16May2020, 04Oct2021, 28Oct2021, 12Apr2023, 28Sep2024
-// ----          11Dec2024, 24May2026
+// ----          11Dec2024, 24May2026, 10Sep2026
 // ----
 // ----
 // ----
@@ -62,7 +62,9 @@ Dyac_std_exid_decl;
 #include "StRange.h"
 #include "StWaveform.h"
 #include "StSampleMutexGroup.h"
+#if !defined(TKSAMPLER_SKIP_AA_AI) || !defined(TKSAMPLER_SKIP_FILTER)
 #include "StSampleVoiceBiquad.h"
+#endif
 #include "StSample.h"
 #include "StSampleBank.h"
 #include "StSampleVoice.h"

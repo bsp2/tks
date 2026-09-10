@@ -76,11 +76,16 @@ StSample::StSample(void) {
    adsr_pan  = NULL;
    adsr_aux = NULL;
 
+#ifndef TKSAMPLER_SKIP_LFO
    lfo_freq = NULL;
    lfo_vol  = NULL;
    lfo_pan  = NULL;
    lfo_aux  = NULL;
+#endif // TKSAMPLER_SKIP_LFO
+
+#ifndef TKSAMPLER_SKIP_GLOBAL_LFOS
    global_lfo_tick_nr = ~0u;
+#endif // TKSAMPLER_SKIP_GLOBAL_LFOS
 
 #ifndef TKSAMPLER_SKIP_MODSEQ
    ::memset((void*)modseq, 0, sizeof(modseq));
@@ -92,10 +97,13 @@ StSample::StSample(void) {
    wavepath_table = NULL;
 #endif // TKSAMPLER_WAVEPATH
 
+#ifndef TKSAMPLER_SKIP_WAVETABLE
    timestretch_smpoff_interpol_mode = STSAMPLE_TIMESTRETCH_SMPOFF_INTERPOL_MID;
+#endif // TKSAMPLER_SKIP_WAVETABLE
 
    parent_samplebank = NULL;
 
+#ifndef TKSAMPLER_SKIP_PLUGINS
    ::memset(plugins, 0, sizeof(plugins));
    for(sUI pluginIdx = 0u; pluginIdx < STSAMPLE_NUM_PLUGINS; pluginIdx++)
    {
@@ -116,6 +124,7 @@ StSample::StSample(void) {
    plugin_alg_filter_pos = 0u;  // pre1 ("*1")
    plugin_alg_outer      = 0u;
    plugin_alg_int        = 0u;
+#endif // TKSAMPLER_SKIP_PLUGINS
 
 #ifndef TKSAMPLER_SKIP_LIVEREC
    liverec_front_buffer = NULL;
@@ -129,12 +138,12 @@ StSample::StSample(void) {
 
    b_ui_autoselect = YAC_TRUE;
 
-#ifndef LIBSYNERGY_BUILD
+#ifndef TKSAMPLER_SKIP_TUNING_TABLES
    ::memset(tuning_tables, 0, sizeof(tuning_tables));
    ::memset(tuning_tables_meta, 0, sizeof(tuning_tables_meta));
    default_tuning_table_idx = -1;
    forced_tuning_table_idx = -1;
-#endif // LIBSYNERGY_BUILD
+#endif // TKSAMPLER_SKIP_TUNING_TABLES
 
    b_mmvar_enable         = YAC_FALSE;
    mmvar_num              = 2u;
@@ -182,16 +191,19 @@ void StSample::reinit(void) {
    timedloop_base     = STSAMPLE_DEFAULT_TIMEDLOOP_BASE;
 
    volume             = 0.0f;
-   vol_lfo_amt        = 1.0f;
    pan                = 0.0f;
    pan_env_amt        = 1.0f;
-   pan_lfo_amt        = 1.0f;
    transpose          = 0.0f;
    ui_transpose_oct   = 0;
    ui_transpose_semi  = 0;
    ui_transpose_cents = 0.0f;
    freq_env_amt       = 1.0f;
+
+#ifndef TKSAMPLER_SKIP_LFO
    freq_lfo_amt       = 1.0f;
+   vol_lfo_amt        = 1.0f;
+   pan_lfo_amt        = 1.0f;
+#endif // TKSAMPLER_SKIP_LFO
 
    beat_frequency = 0.0f;
 
@@ -205,6 +217,7 @@ void StSample::reinit(void) {
    sampleoffset_rel                      = 0.0f;
    b_initial_sampleoffset_zc             = YAC_FALSE;  // (note) true for samples created in UI (newZone())
 
+#ifndef TKSAMPLER_SKIP_WAVETABLE
    b_timestretch                  = YAC_FALSE;
    b_timestretch_additive         = YAC_FALSE;
    b_timestretch_xfade            = YAC_FALSE;
@@ -219,13 +232,13 @@ void StSample::reinit(void) {
    timestretch_bend               = 0.0f;
    timestretch_2d_w               = 0u;
    timestretch_2d_h               = 0u;
+   timestretch_startphase_rand_amount = 0.0f;
+#endif // TKSAMPLER_SKIP_WAVETABLE
 
 #ifdef TKSAMPLER_WAVEPATH
    b_wavepath                     = YAC_FALSE;
    wavepath_idx                   = 0;
 #endif // TKSAMPLER_WAVEPATH
-
-   timestretch_startphase_rand_amount = 0.0f;
 
    num_volramp_steps_in  = 1;
    num_volramp_steps_out = 4;
@@ -247,6 +260,7 @@ void StSample::reinit(void) {
    alt.hdr      = NULL;
    alt.num      = 0u;
 
+#ifndef TKSAMPLER_SKIP_FILTER
    b_filter                       = YAC_TRUE;
    filter_type                    = STSAMPLE_FLT_TYPE_NONE;
    // filter_cutoff                  = 0.503937007874f;  // 64 in range 0..127
@@ -257,8 +271,11 @@ void StSample::reinit(void) {
    filter_resonance               = 0.0f;
    filter_aux_env_amount          = 0.0f;
    filter_aux_env_velocity_amount = 0.0f;
+#ifndef TKSAMPLER_SKIP_LFO
    filter_aux_lfo_amount          = 0.0f;
+#endif // TKSAMPLER_SKIP_LFO
    filter_keyboard_amount         = 0.5f;
+#endif // TKSAMPLER_SKIP_FILTER
 
    glide_type          = STSAMPLE_GLIDE_NONE;
    glide_speed_time_up = glide_speed_time_down =  1.0f / 90.0f;    // 90ms
@@ -274,10 +291,12 @@ void StSample::reinit(void) {
    b_glide_retrig_env_vol   = YAC_FALSE;
    b_glide_retrig_env_pan   = YAC_FALSE;
    b_glide_retrig_env_aux   = YAC_FALSE;
+#ifndef TKSAMPLER_SKIP_LFO
    b_glide_retrig_lfo_freq  = YAC_FALSE;
    b_glide_retrig_lfo_vol   = YAC_FALSE;
    b_glide_retrig_lfo_pan   = YAC_FALSE;
    b_glide_retrig_lfo_aux   = YAC_FALSE;
+#endif // TKSAMPLER_SKIP_LFO
 
 #ifndef TKSAMPLER_SKIP_MODSEQ
    for(sUI i = 0u; i < STSAMPLE_NUM_MODSEQ; i++)
@@ -395,12 +414,14 @@ void StSample::reinit(void) {
    b_partial_phase_0      = YAC_TRUE;
 #endif // TKSAMPLER_SKIP_ADDITIVE
 
+#ifndef TKSAMPLER_SKIP_AA_AI
    ai_num_poles = 0u;
    ai_q         = 0.5f;
    ai_exp_up    = 1.0f;
    ai_exp_down  = 0.2f;
    ai_lin_oct   = 3.0f;
    ai_lin_max   = 0.0f;
+#endif // TKSAMPLER_SKIP_AA_AI
 
    b_free_running_osc = YAC_FALSE;
 }
@@ -420,10 +441,12 @@ void StSample::free(void) {
    YAC_DELETE_SAFE(adsr_vol);
    YAC_DELETE_SAFE(adsr_pan);
    YAC_DELETE_SAFE(adsr_aux);
+#ifndef TKSAMPLER_SKIP_LFO
    YAC_DELETE_SAFE(lfo_freq);
    YAC_DELETE_SAFE(lfo_vol);
    YAC_DELETE_SAFE(lfo_pan);
    YAC_DELETE_SAFE(lfo_aux);
+#endif // TKSAMPLER_SKIP_LFO
    YAC_DELETE_SAFE(key_range);
    YAC_DELETE_SAFE(vel_range);
    YAC_DELETE_SAFE(mod_range);
@@ -453,12 +476,14 @@ void StSample::free(void) {
    YAC_DELETE_ARRAY_SAFE(liverec_osc_pre_filter_buffer);
 #endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_PLUGINS
    freePlugins();
+#endif // TKSAMPLER_SKIP_PLUGINS
 
-#ifndef LIBSYNERGY_BUILD
+#ifndef TKSAMPLER_SKIP_TUNING_TABLES
    _freeTuningTables();
    _freeTuningTablesMetaData();
-#endif // LIBSYNERGY_BUILD
+#endif // TKSAMPLER_SKIP_TUNING_TABLES
 }
 
 #ifndef TKSAMPLER_SKIP_LIVEREC
@@ -491,6 +516,8 @@ void StSample::_setNext(YAC_Object *_next) {
 
 void StSample::setSamplePlayerForGlobalModulation(StSamplePlayer *_samplePlayer) {
    // called by StSampleVoice::prepareToPlayer()
+
+#ifndef TKSAMPLER_SKIP_GLOBAL_LFOS
    lfo_freq_global.sp_mod_speed = &_samplePlayer->mod_lfo_freq_spd;
    lfo_freq_global.sp_mod_level = &_samplePlayer->mod_lfo_freq_lvl;
 
@@ -502,6 +529,7 @@ void StSample::setSamplePlayerForGlobalModulation(StSamplePlayer *_samplePlayer)
 
    lfo_aux_global.sp_mod_speed = &_samplePlayer->mod_lfo_aux_spd;
    lfo_aux_global.sp_mod_level = &_samplePlayer->mod_lfo_aux_lvl;
+#endif // TKSAMPLER_SKIP_GLOBAL_LFOS
 
 #ifndef TKSAMPLER_SKIP_MODSEQ
    for(sUI i = 0u; i < STSAMPLE_NUM_MODSEQ; i++)
@@ -1015,6 +1043,7 @@ YAC_Object *StSample::_getAuxADSR(void) {
    return adsr_aux;
 }
 
+#ifndef TKSAMPLER_SKIP_LFO
 YAC_Object *StSample::_getOrCreateFreqLFO(void) {
    if(NULL == lfo_freq)
    {
@@ -1120,6 +1149,7 @@ YAC_Object *StSample::_getOrCreateLFOByIndex(sUI _idx) {
    }
    return NULL;
 }
+#endif // TKSAMPLER_SKIP_LFO
 
 #ifndef TKSAMPLER_SKIP_MODSEQ
 YAC_Object *StSample::_getModSeqByIndexAndPatch(sUI _idx, sUI _patchIdx) {
@@ -1496,6 +1526,7 @@ void StSample::_setVolume(sF32 _vol) {
    volume = _vol;
 }
 
+#ifndef TKSAMPLER_SKIP_LFO
 void StSample::_setVolLFOAmt(sF32 _amt) {
    vol_lfo_amt = _amt;
 }
@@ -1503,6 +1534,7 @@ void StSample::_setVolLFOAmt(sF32 _amt) {
 sF32 StSample::_getVolLFOAmt(void) {
    return vol_lfo_amt;
 }
+#endif // TKSAMPLER_SKIP_LFO
 
 sF32 StSample::_getPan(void) {
    return pan;
@@ -1520,6 +1552,7 @@ sF32 StSample::_getPanEnvAmt(void) {
    return pan_env_amt;
 }
 
+#ifndef TKSAMPLER_SKIP_LFO
 void StSample::_setPanLFOAmt(sF32 _amt) {
    pan_lfo_amt = _amt;
 }
@@ -1527,6 +1560,7 @@ void StSample::_setPanLFOAmt(sF32 _amt) {
 sF32 StSample::_getPanLFOAmt(void) {
    return pan_lfo_amt;
 }
+#endif // TKSAMPLER_SKIP_LFO
 
 sF32 StSample::_getVolumeVelocityAmount(void) {
    return volume_velocity_amount;
@@ -1675,6 +1709,7 @@ sF32 StSample::_getFreqEnvAmt(void) {
    return freq_env_amt;
 }
 
+#ifndef TKSAMPLER_SKIP_LFO
 void StSample::_setFreqLFOAmt(sF32 _amt) {
    freq_lfo_amt = _amt;
 }
@@ -1682,6 +1717,7 @@ void StSample::_setFreqLFOAmt(sF32 _amt) {
 sF32 StSample::_getFreqLFOAmt(void) {
    return freq_lfo_amt;
 }
+#endif // TKSAMPLER_SKIP_LFO
 
 sF32 StSample::_getDelay (void) {
    return sample_delay;
@@ -1771,6 +1807,7 @@ sF32 StSample::calcKeyModZoneVolume(sF32 _freq, sF32 _mod) {
    return v;
 }
 
+#ifndef TKSAMPLER_SKIP_WAVETABLE
 void StSample::setEnableTimestretch(sSI _bEnabled) {
    b_timestretch = _bEnabled;
 }
@@ -1837,14 +1874,6 @@ sSI StSample::getEnableAbsoluteTimestretch(void) {
    return b_absolute_timestretch;
 }
 
-void StSample::setTimestretchAdditiveXFade(sF32 _amt) {
-   timestretch_additive_xfade = _amt;
-}
-
-sF32 StSample::getTimestretchAdditiveXFade(void) {
-   return timestretch_additive_xfade;
-}
-
 void StSample::setTimestretchInterpolType(sSI _type) {
    timestretch_interpol_type = _type;
 }
@@ -1900,6 +1929,17 @@ void StSample::setTimestretch2DHeight(sUI _h) {
 sUI StSample::getTimestretch2DHeight(void) {
    return timestretch_2d_h;
 }
+#endif // TKSAMPLER_SKIP_WAVETABLE
+
+#ifndef TKSAMPLER_SKIP_ADDITIVE
+void StSample::setTimestretchAdditiveXFade(sF32 _amt) {
+   timestretch_additive_xfade = _amt;
+}
+
+sF32 StSample::getTimestretchAdditiveXFade(void) {
+   return timestretch_additive_xfade;
+}
+#endif // TKSAMPLER_SKIP_ADDITIVE
 
 void StSample::_setEnableTimedLoop(sSI _bEnabled) {
    b_timedloop = _bEnabled;
@@ -2175,6 +2215,7 @@ StSample *StSample::getNextAltRandSample(void) {
    return NULL;
 }
 
+#ifndef TKSAMPLER_SKIP_FILTER
 void StSample::_setEnableFilter(sBool _bEnable) {
    b_filter = _bEnable;
 }
@@ -2247,6 +2288,7 @@ sF32 StSample::_getFilterAuxEnvVelocityAmount(void) {
    return filter_aux_env_velocity_amount;
 }
 
+#ifndef TKSAMPLER_SKIP_LFO
 void StSample::_setFilterAuxLFOAmount(sF32 _amount) {
    filter_aux_lfo_amount = _amount;
 }
@@ -2254,6 +2296,7 @@ void StSample::_setFilterAuxLFOAmount(sF32 _amount) {
 sF32 StSample::_getFilterAuxLFOAmount(void) {
    return filter_aux_lfo_amount;
 }
+#endif // TKSAMPLER_SKIP_LFO
 
 void StSample::_setFilterKeyboardAmount(sF32 _amount) {
    filter_keyboard_amount = _amount;
@@ -2262,6 +2305,7 @@ void StSample::_setFilterKeyboardAmount(sF32 _amount) {
 sF32 StSample::_getFilterKeyboardAmount(void) {
    return filter_keyboard_amount;
 }
+#endif // TKSAMPLER_SKIP_FILTER
 
 void StSample::_setGlideType(sUI _type) {
    glide_type = _type;
@@ -2403,7 +2447,8 @@ sBool StSample::_getEnableGlideRetrigEnvAux(void) {
    return b_glide_retrig_env_aux;
 }
 
-void  StSample::_setEnableGlideRetrigLFOFreq(sBool _bEnable) {
+#ifndef TKSAMPLER_SKIP_LFO
+void StSample::_setEnableGlideRetrigLFOFreq(sBool _bEnable) {
    b_glide_retrig_lfo_freq = _bEnable;
 }
 
@@ -2434,6 +2479,7 @@ void  StSample::_setEnableGlideRetrigLFOAux(sBool _bEnable) {
 sBool StSample::_getEnableGlideRetrigLFOAux(void) {
    return b_glide_retrig_lfo_aux;
 }
+#endif // TKSAMPLER_SKIP_LFO
 
 #ifndef TKSAMPLER_SKIP_MODSEQ
 void StSample::_setEnableGlideRetrigModSeq(sUI _idx, sBool _bEnable) {
@@ -4466,7 +4512,7 @@ void StSample::liveRecAdjustOscLoopSizeRing(void) {
                }
                ringOff = ringOff % liverec_ring_size;
 #endif
-               
+
                // remember for StSample::liveRecCopyRingToOverride()
                liverec_last_osc_ring_frame_offset = ringOff;
 
@@ -4858,7 +4904,7 @@ void StSample::liveRecAdjustOscLoopSizeRing(void) {
                                  idxMax2 = i + 1;
                               }
                            }
-                              
+
                            if(fMax2 > 0.0f)
                            {
                               zcFirst = idxMax1;
@@ -4936,7 +4982,7 @@ void StSample::liveRecAdjustOscLoopSizeRing(void) {
                                  idxMax2 = i;
                               }
                            }
-                              
+
                            if(fMax2 > 0.0f)
                            {
                               // Find zero crossing after 2nd peak
@@ -5196,6 +5242,7 @@ sF32 StSample::_getSumInputXFade(void) {
 }
 #endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_PLUGINS
 void StSample::_setVoicePluginShared(sUI _pluginIdx, YAC_Object *_pluginShared) {
    if(_pluginIdx < STSAMPLE_NUM_PLUGINS)
    {
@@ -5454,6 +5501,7 @@ void StSample::_setVoicePluginAlgOuter(sUI _num) {
 sUI StSample::_getVoicePluginAlgOuter(void) {
    return plugin_alg_outer;
 }
+#endif // TKSAMPLER_SKIP_PLUGINS
 
 sF32 StSample::calcMMNoteRel(sF32 _note) const {
    // MM_SRC_KEYBOARD_P/M/PM
@@ -5480,6 +5528,7 @@ sF32 StSample::calcMMNoteAbs(sF32 _note) const {
    return mmNote;
 }
 
+#ifndef TKSAMPLER_SKIP_WAVETABLE
 sUI StSample::getCurrentTimestretchSmpOffInterpolNumFrames(void) const {
    // # of sample-frames to interpolate when modulating sample offset in granular mode
    switch(timestretch_smpoff_interpol_mode)
@@ -5493,7 +5542,11 @@ sUI StSample::getCurrentTimestretchSmpOffInterpolNumFrames(void) const {
    }
    return 0u;
 }
+#endif // TKSAMPLER_SKIP_WAVETABLE
 
+#ifndef TKSAMPLER_SKIP_PLUGINS
+
+#ifndef LIBSYNERGY_BUILD
 void StSample::reorderPluginModMatrixEntries(const sUI *_newOrder) {
    StSampleMMEntry *mm = modmatrix;
    sUI revOrder[STSAMPLE_NUM_PLUGINS/*4*/];
@@ -5570,6 +5623,7 @@ void StSample::_uiSetLastPluginRowIdx(sUI _rowIdx) {
 sUI StSample::_uiGetLastPluginRowIdx(void) {
    return ui_last_plugin_row_idx;
 }
+#endif // LIBSYNERGY_BUILD
 
 sBool StSample::hasPlugins(void) const {
    // called by StSampleVoice::renderBlockNormal()
@@ -5631,6 +5685,8 @@ void StSample::_setEnableFX(sBool _bEnable) {
 sBool StSample::_getEnableFX(void) {
    return b_enable_fx;
 }
+
+#endif // TKSAMPLER_SKIP_PLUGINS
 
 void StSample::_setVoiceBus(sSI _voiceBus) {
    voice_bus = _voiceBus;
@@ -6422,7 +6478,7 @@ void StSample::exportAdditiveWavetable(YAC_FloatArray *_d, sUI _numCh, sUI _outC
             for(sUI partialIdx = 0u; partialIdx < 256u; partialIdx++)
             {
                // partialPhases16Fade[partialIdx] = partialPhases16Cur[partialIdx] + (partialSpeeds16[partialIdx] * _outCycleLen);  // prec. issue
-               partialPhases16Fade[partialIdx] = 
+               partialPhases16Fade[partialIdx] =
                   partialPhases16Cur[partialIdx] +
                   sU16( partial_speeds->elements[j + partialIdx] * _outCycleLen * rateFactor )
                   ;
@@ -6517,8 +6573,8 @@ void StSample::exportAdditiveWavetable(YAC_FloatArray *_d, sUI _numCh, sUI _outC
             for(sUI partialIdx = 0u; partialIdx < 256u; partialIdx++)
             {
                // partialPhases16Fade[partialIdx] = sU16(partialPhases16Fade[partialIdx] - (partialSpeeds16[partialIdx] * 32));
-               // 
-               partialPhases16Fade[partialIdx] = sU16(partialPhases16Fade[partialIdx] - 
+               //
+               partialPhases16Fade[partialIdx] = sU16(partialPhases16Fade[partialIdx] -
                                                       sUI(partial_speeds->elements[j + partialIdx] * 32.0f * rateFactor)
                                                       )
                                                       ;
@@ -6576,6 +6632,7 @@ void StSample::exportAdditiveWavetable(YAC_FloatArray *_d, sUI _numCh, sUI _outC
 }
 #endif // TKSAMPLER_SKIP_ADDITIVE
 
+#ifndef TKSAMPLER_SKIP_AA_AI
 void StSample::_setAiNumPoles(sUI _numPoles) {
    ai_num_poles = _numPoles;
 }
@@ -6623,6 +6680,7 @@ void StSample::_setAiLinMax(sF32 _max) {
 sF32 StSample::_getAiLinMax(void) {
    return ai_lin_max;
 }
+#endif // TKSAMPLER_SKIP_AA_AI
 
 void StSample::_setStartEndFadeNumFrames(sUI _numFrames) {
    if(_numFrames > 32768u)
@@ -6642,7 +6700,7 @@ sBool StSample::_uiGetEnableAutoSelect(void) {
    return b_ui_autoselect;
 }
 
-#ifndef LIBSYNERGY_BUILD
+#ifndef TKSAMPLER_SKIP_TUNING_TABLES
 sBool StSample::_setTuningTable(sUI _idx, YAC_Object *_fa) {
    if(_idx < STSAMPLE_MAX_TUNING_TABLES)
    {
@@ -6762,7 +6820,33 @@ const sF32 *StSample::getCurrentTuningTableOrNull(void) {
    }
    return ret;
 }
-#endif // LIBSYNERGY_BUILD
+#endif // TKSAMPLER_SKIP_TUNING_TABLES
+
+sSI StSample::getCurrentInterpolType(void) const {
+   return
+#ifndef TKSAMPLER_SKIP_IPOL_LANCZOS
+      ((STSAMPLE_INTERPOL_LANCZOS4  == interpol_type) ||
+       (STSAMPLE_INTERPOL_LANCZOS8  == interpol_type) ||
+       (STSAMPLE_INTERPOL_LANCZOS16 == interpol_type) ||
+       (STSAMPLE_INTERPOL_LANCZOS32 == interpol_type) ||
+       (STSAMPLE_INTERPOL_LANCZOS64 == interpol_type)
+       )
+      ? STSAMPLE_INTERPOL_LINEAR
+      :
+#endif // TKSAMPLER_SKIP_IPOL_LANCZOS
+#ifndef TKSAMPLER_SKIP_IPOL_VSR
+      ((STSAMPLE_INTERPOL_VSR4  == interpol_type) ||
+       (STSAMPLE_INTERPOL_VSR8  == interpol_type) ||
+       (STSAMPLE_INTERPOL_VSR16 == interpol_type) ||
+       (STSAMPLE_INTERPOL_VSR32 == interpol_type) ||
+       (STSAMPLE_INTERPOL_VSR64 == interpol_type)
+       )
+      ? STSAMPLE_INTERPOL_LINEAR
+      :
+#endif // TKSAMPLER_SKIP_IPOL_LANCZOS
+      interpol_type
+      ;
+}
 
 void StSample::_mmVarSetEnable(sBool _bEnable) {
    b_mmvar_enable = _bEnable;

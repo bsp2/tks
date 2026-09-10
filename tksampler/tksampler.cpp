@@ -71,7 +71,9 @@ void YAC_CALL YAC_Init(YAC_Host *_host) {
 
    YAC_Init_tksampler(_host);
 
+#ifndef TKSAMPLER_SKIP_IPOL_LANCZOS
    StSampleVoice::InitLanczosTables();
+#endif // TKSAMPLER_SKIP_IPOL_LANCZOS
 #ifndef LIBSYNERGY_BUILD
    StSampleVoice::InitAdditiveTables();
 #endif // LIBSYNERGY_BUILD

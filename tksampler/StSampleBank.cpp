@@ -26,7 +26,7 @@
 // ----          19Jan2010, 21Jan2010, 27Jan2010, 24Mar2013, 23Dec2018, 27Dec2018, 31Dec2018
 // ----          17Jan2019, 23Apr2019, 15Feb2020, 25Feb2020, 08Aug2021, 12Apr2023, 18Nov2023
 // ----          15Aug2024, 28Sep2024, 30Sep2024, 22Oct2024, 12Nov2024, 11Dec2024, 24May2026
-// ----          07Sep2026
+// ----          07Sep2026, 10Sep2026
 // ----
 // ----
 // ----
@@ -645,7 +645,7 @@ sBool StSampleBank::_getEnablePerfCtlFreezeNoteOff(void) {
    return b_perfctl_freeze_noteoff;
 }
 
-#ifndef LIBSYNERGY_BUILD
+#ifndef TKSAMPLER_SKIP_TUNING_TABLES
 sBool StSampleBank::_setTuningTable(sUI _idx, YAC_Object *_fa) {
    if(_idx < STSAMPLE_MAX_TUNING_TABLES)
    {
@@ -762,4 +762,4 @@ const sF32 *StSampleBank::getCurrentTuningTableOrNull(void) {
    }
    return ret;
 }
-#endif // LIBSYNERGY_BUILD
+#endif // TKSAMPLER_SKIP_TUNING_TABLES

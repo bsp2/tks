@@ -33,7 +33,7 @@
 // ----          10Dec2022, 20Dec2022, 05Feb2023, 12Apr2023, 07Sep2023, 08Sep2023, 17Sep2023
 // ----          21Jan2024, 20Sep2024, 28Sep2024, 01Oct2024, 31Oct2024, 15Nov2024, 11Dec2024
 // ----          14Jan2025, 28May2025, 30May2025, 13Jun2025, 16Jan2026, 09Apr2026, 10Apr2026
-// ----          19May2026, 24May2026, 27May2026, 11Jul2026, 08Sep2026
+// ----          19May2026, 24May2026, 27May2026, 11Jul2026, 08Sep2026, 10Sep2026
 // ----
 // ----
 // ----
@@ -128,7 +128,9 @@ StSamplePlayer::StSamplePlayer(void) {
    mtx_process_tick_nr = NULL;
 #endif // LIBSYNERGY_BUILD
 
+#ifndef TKSAMPLER_SKIP_PLUGINS
    plugin_cache.first = NULL;
+#endif // TKSAMPLER_SKIP_PLUGINS
 
    if(!b_voice_bus_null_buffer_init)
    {
@@ -141,9 +143,12 @@ StSamplePlayer::StSamplePlayer(void) {
 
 StSamplePlayer::~StSamplePlayer() {
    freeVoices();
+#ifndef TKSAMPLER_SKIP_PLUGINS
    freePluginCache();
+#endif // TKSAMPLER_SKIP_PLUGINS
 }
 
+#ifndef TKSAMPLER_SKIP_PLUGINS
 void StSamplePlayer::freePluginCache(void) {
    st_plugin_cache_entry_t *c = plugin_cache.first;
    while(NULL != c)
@@ -233,6 +238,7 @@ st_plugin_cache_entry_t *StSamplePlayer::findOrCreatePluginCacheEntry(st_plugin_
    // Failed
    return NULL;
 }
+#endif // TKSAMPLER_SKIP_PLUGINS
 
 void StSamplePlayer::resetModulators(void) {
    mod_vol                   = 1.0f;
@@ -240,14 +246,17 @@ void StSamplePlayer::resetModulators(void) {
    mod_mod                   = 0.0f;
    mod_freq                  = 0.0f;
    mod_freq2                 = 0.0f;
+#ifndef TKSAMPLER_SKIP_WAVETABLE
    mod_timestretch           = 0.0f;
    mod_timestretch_bend      = 0.0f;
+#endif // TKSAMPLER_SKIP_WAVETABLE
    mod_sampleoff             = 0.0f;
    mod_cyclelen              = 1.0f;
    mod_sampleshift           = 0.0f;
    mod_sampleshift_endofloop = 0.0f;
    mod_altvolume             = 1.0f;
 
+#ifndef TKSAMPLER_SKIP_LFO
    mod_lfo_freq_amt          = 1.0f;
    mod_lfo_vol_amt           = 1.0f;
    mod_lfo_pan_amt           = 1.0f;
@@ -264,6 +273,7 @@ void StSamplePlayer::resetModulators(void) {
 
    mod_lfo_aux_spd           = 1.0f;
    mod_lfo_aux_lvl           = 0.0f;
+#endif // TKSAMPLER_SKIP_LFO
 
    mod_adsr_freq_spd         = 1.0f;
    mod_adsr_freq_lvl         = 0.0f;
@@ -1183,7 +1193,9 @@ StSampleVoice *StSamplePlayer::allocSampleVoice(StSample *_sample, sSI _note) {
 
       // Dyac_host_printf("xxx end allocSampleVoice nv=0x%p\n", nv);
 
+#ifndef TKSAMPLER_SKIP_PLUGINS
       lazyCreateVoicePlugins(_sample, nv);
+#endif // TKSAMPLER_SKIP_PLUGINS
 
       nv->b_realloc = YAC_FALSE;
       nv->prepareToPlay(_sample, next_voice_key, next_voice_alloc_idx++);
@@ -1227,6 +1239,7 @@ StSampleVoice *StSamplePlayer::allocSampleVoiceGlide(StSample *_sample, sSI _not
    return nv;
 }
 
+#ifndef TKSAMPLER_SKIP_PLUGINS
 void StSamplePlayer::lazyCreateVoicePlugins(StSample *_sample, StSampleVoice *_nv) {
    // Lazy-instantiate voice plugins
    for(sUI pluginIdx = 0u; pluginIdx < STSAMPLE_NUM_PLUGINS; pluginIdx++)
@@ -1278,6 +1291,7 @@ void StSamplePlayer::lazyCreateVoicePlugins(StSample *_sample, StSampleVoice *_n
       }
    }
 }
+#endif // TKSAMPLER_SKIP_PLUGINS
 
 sF32 StSamplePlayer::getDefaultMixRate(void) {
    return default_mixrate;
@@ -1525,7 +1539,9 @@ sSI StSamplePlayer::startSample(YAC_Object *_sample, YAC_Object *_freqTableOrNul
             // Dyac_host_printf("[~~~] StSamplePlayer::startSample: realloc v=%p\n", v);
             if(NULL != v)
             {
+#ifndef TKSAMPLER_SKIP_PLUGINS
                lazyCreateVoicePlugins(sample, v);  // should already exist
+#endif // TKSAMPLER_SKIP_PLUGINS
                v->b_realloc = YAC_TRUE;
                v->prepareToPlay(sample, next_voice_key, next_voice_alloc_idx++);
             }
@@ -1747,7 +1763,9 @@ sSI StSamplePlayer::startSampleBank(YAC_Object *_sampleBank, YAC_Object *_freqTa
                         // Dyac_host_printf("[~~~] StSamplePlayer::startSampleBank: realloc v=%p\n", v);
                         if(NULL != v)
                         {
+#ifndef TKSAMPLER_SKIP_PLUGINS
                            lazyCreateVoicePlugins(c, v);  // should already exist
+#endif // TKSAMPLER_SKIP_PLUGINS
                            v->b_realloc = c->b_free_running_osc;
                            v->prepareToPlay(c, next_voice_key, next_voice_alloc_idx++);
                         }
@@ -2084,6 +2102,7 @@ void StSamplePlayer::stopVoicesBySample(YAC_Object *_sample) {
    }
 }
 
+#ifndef TKSAMPLER_SKIP_LFO
 void StSamplePlayer::stopLFOVolBySample(YAC_Object *_sample) {
    Dbeginloopvoicesbysample;
    v->lfo_vol.stopLFO();
@@ -2101,6 +2120,7 @@ void StSamplePlayer::stopLFOFreqBySample(YAC_Object *_sample) {
    v->lfo_freq.stopLFO();
    Dendloopvoicesbysample;
 }
+#endif // TKSAMPLER_SKIP_LFO
 
 void StSamplePlayer::stopADSRVolBySample(YAC_Object *_sample) {
    Dbeginloopvoicesbysample;
@@ -2376,6 +2396,7 @@ void StSamplePlayer::updateModByKey(sSI _key, sF32 _v) {
    Dendloopvoicesbykey;
 }
 
+#ifndef TKSAMPLER_SKIP_WAVETABLE
 void StSamplePlayer::updateTimestretch(sF32 _v) {
    mod_timestretch = _v;
 }
@@ -2395,6 +2416,17 @@ void StSamplePlayer::updateTimestretchBendByKey(sSI _key, sF32 _v) {
    v->_setTimestretchBend(_v);
    Dendloopvoicesbykey;
 }
+#endif // TKSAMPLER_SKIP_WAVETABLE
+
+void StSamplePlayer::updateCycleLen(sF32 _v) {
+   mod_cyclelen = _v;
+}
+
+void StSamplePlayer::updateCycleLenByKey(sSI _key, sF32 _v) {
+   Dbeginloopvoicesbykey;
+   v->_setCycleLen(_v);
+   Dendloopvoicesbykey;
+}
 
 void StSamplePlayer::updateSampleOff(sF32 _v) {
    mod_sampleoff = _v;
@@ -2409,16 +2441,6 @@ void StSamplePlayer::updateSampleOffByKey(sSI _key, sF32 _v) {
 void StSamplePlayer::setInitialSampleOffsetMsByKey(sSI _key, sF32 _ms) {
    Dbeginloopvoicesbykey;
    v->_setSampleOffMs(_ms);
-   Dendloopvoicesbykey;
-}
-
-void StSamplePlayer::updateCycleLen(sF32 _v) {
-   mod_cyclelen = _v;
-}
-
-void StSamplePlayer::updateCycleLenByKey(sSI _key, sF32 _v) {
-   Dbeginloopvoicesbykey;
-   v->_setCycleLen(_v);
    Dendloopvoicesbykey;
 }
 
@@ -2470,6 +2492,7 @@ void StSamplePlayer::updateRetrigMaskByKey(sSI _key, sUI _mask) {
    Dendloopvoicesbykey;
 }
 
+#ifndef TKSAMPLER_SKIP_LFO
 void StSamplePlayer::updateLFOFreqSpd(sF32 _spd) {
    // // Dbeginloopallvoices;
    // // v->_setLFOFreqSpd(_spd);
@@ -2613,6 +2636,7 @@ void StSamplePlayer::updateLFOAuxFltAmtByKey(sSI _key, sF32 _amt) {
    v->_setLFOAuxFltAmt(_amt);
    Dendloopvoicesbykey;
 }
+#endif // TKSAMPLER_SKIP_LFO
 
 void StSamplePlayer::updateADSRFreqSpd(sF32 _spd) {
    // // Dbeginloopallvoices;
@@ -3039,6 +3063,7 @@ void StSamplePlayer::updateFltResByKey(sSI _key, sF32 _f) {
    Dendloopvoicesbykey;
 }
 
+#ifndef TKSAMPLER_SKIP_LFO
 void StSamplePlayer::resetLFOFreqPhase(void) {
    Dbeginloopallvoices;
    v->_resetLFOFreqPhase();
@@ -3086,6 +3111,7 @@ void StSamplePlayer::resetLFOAuxPhaseByKey(sSI _key) {
    v->_resetLFOAuxPhase();
    Dendloopvoicesbykey;
 }
+#endif // TKSAMPLER_SKIP_LFO
 
 void StSamplePlayer::updatePerfCtl(sUI _idx, sF32 _val) {
    if(_idx < STSAMPLEPLAYER_NUM_PERFCTL)
@@ -3422,6 +3448,7 @@ sBool StSamplePlayer::uiCheckResetAnyRedrawFlag(void) {
    return r;
 }
 
+#ifndef TKSAMPLER_SKIP_PLUGINS
 void StSamplePlayer::unloadVoicePlugins(void) {
    resetVoices();
 
@@ -3437,6 +3464,7 @@ void StSamplePlayer::unloadVoicePlugins(void) {
    freePluginCache();
 }
 
+#ifndef LIBSYNERGY_BUILD
 void StSamplePlayer::handleReorderVoicePlugins(YAC_Object *_sb, YAC_Object *_ia) {
    if(YAC_CHK(_sb, clid_StSampleBank))
    {
@@ -3463,6 +3491,9 @@ void StSamplePlayer::handleReorderVoicePlugins(YAC_Object *_sb, YAC_Object *_ia)
       }
    }
 }
+#endif // LIBSYNERGY_BUILD
+
+#endif // TKSAMPLER_SKIP_PLUGINS
 
 void StSamplePlayer::setLastStartedSampleBankHint(YAC_Object *_sb) {
    if(YAC_CHK(_sb, clid_StSampleBank))

@@ -24,7 +24,7 @@
 // ----          16Aug2023, 14Sep2023, 10Jan2024, 11Jan2024, 13Jan2024, 14Jan2024, 15Jan2024
 // ----          16Jan2024, 05Aug2024, 28Sep2024, 01Oct2024, 02Oct2024, 03Oct2024, 03Nov2024
 // ----          03Jan2025, 04Jan2025, 09Jan2026, 16Jan2026, 14May2026, 16May2026, 24May2026
-// ----          27May2026, 11Jul2026, 07Sep2026
+// ----          27May2026, 11Jul2026, 07Sep2026, 10Sep2026
 // ----
 // ----
 // ----
@@ -79,8 +79,10 @@ class StSampleVoiceNoteOnParams {
    sF32 _pan2;        // randomization
    sF32 _freq;
    sF32 _freq2;       // randomization
+#ifndef TKSAMPLER_SKIP_WAVETABLE
    sF32 _timestretch;
    sF32 _timestretch_bend;
+#endif // TKSAMPLER_SKIP_WAVETABLE
    sF32 _sampleoff;
    sF32 _sampleoff_ms;  // for audio-track like samples (remote profile RPNs 98+99, see ModSample)
    sF32 _sampleoff2;  // randomization
@@ -127,10 +129,12 @@ class StSampleVoiceNoteOnParams {
    sF32 _aauxspd;
    sF32 _sauxspd;
    sF32 _rauxspd;
+#ifndef TKSAMPLER_SKIP_FILTER
    sF32 _filter_cutoff;
    sF32 _filter_pan;
    sF32 _filter_offset;
    sF32 _filter_resonance;
+#endif // TKSAMPLER_SKIP_FILTER
    sBool _glide_switch;
    sF32  _glide_speed;
    sF32  _perfctl_poly_pressure;  // -1=use sampleplayer perfctl (channel pressure), 0..127 otherwise
@@ -157,18 +161,20 @@ struct tksampler_mmdst_t {
    sF32  freq_semi;
    sF32  freq_fine;
    sF32  freq_beat;
-#ifndef LIBSYNERGY_BUILD
+#ifndef TKSAMPLER_SKIP_TUNING_TABLES
    sF32  tuning_tbl_abs;  // 0=no change, 1/16..16/16 => tuning table 1..16
    sF32  tuning_tbl_rel;  // 0..f => tuning table 0..f  (interpolated)
-#endif // LIBSYNERGY_BUILD
+#endif // TKSAMPLER_SKIP_TUNING_TABLES
    sF32  note_2;          // 0..1 => 0..127.0  (0=disable secondary freq. centered around C-5=60.0)
    sF32  freq_2;          // -127..127 (_not_ scaled)
 
+#ifndef TKSAMPLER_SKIP_FILTER
    sF32  flt_cutoff;
    sF32  flt_pan;
    sF32  flt_offset;
    sF32  flt_res;
    sF32  flt_aux_env_amt;  // added to base sample->filter_aux_env_amount
+#endif // TKSAMPLER_SKIP_FILTER
 
    sF32  jumptoloop;
    sBool b_jumptoloop_valid;
@@ -183,7 +189,9 @@ struct tksampler_mmdst_t {
    sF32  freq_lfo_freq_amt;
    sF32  vol_lfo_vol_amt;
    sF32  pan_lfo_pan_amt;
+#ifndef TKSAMPLER_SKIP_FILTER
    sF32  aux_lfo_flt_amt;
+#endif // TKSAMPLER_SKIP_FILTER
 
    sF32  retrig_freq_env;
    sF32  retrig_vol_env;
@@ -236,9 +244,11 @@ struct tksampler_mmdst_t {
    sF32 liverec_stop;      // >= 0.5: stop live recording
 #endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_PLUGINS
    sUI  plugin_mod_mask;  // one bit per plugin modulation target (8 bits per plugin, 8*4=32 bits total). 1=plugin modulation changed
    sF32 plugins[STSAMPLE_NUM_PLUGINS][STSAMPLE_NUM_MODS_PER_PLUGIN];
    sF32 plugin_levels[STSAMPLE_NUM_PLUGINS];  // *
+#endif // TKSAMPLER_SKIP_PLUGINS
 };
 
 
@@ -312,9 +322,9 @@ YC class StSampleVoice : public YAC_Object {
    //  may be overridden by tuning_tables[].
    //  NULL=use sample_player->default_freq_table (fallback)
    const sF32 *freq_table;
-#ifndef LIBSYNERGY_BUILD
+#ifndef TKSAMPLER_SKIP_TUNING_TABLES
    sF32        interpolated_freq_table[128];  // STSAMPLE_MM_DST_TUNING_TABLE_REL
-#endif // LIBSYNERGY_BUILD
+#endif // TKSAMPLER_SKIP_TUNING_TABLES
 
 #ifndef TKSAMPLER_SKIP_LIVEREC
    // Same format as sample->sample_loops but overrides these
@@ -389,11 +399,13 @@ YC class StSampleVoice : public YAC_Object {
 
    sSI  num_sample_loops;
 
+#ifndef TKSAMPLER_SKIP_WAVETABLE
    sF32 mod_timestretch;
    sF32 mmdst_timestretch;
    sF32 mod_timestretch_bend;
    sF32 mmdst_timestretch_bend;  // added to sample->timestretch_bend
    sF32 current_ts_offset;
+#endif // TKSAMPLER_SKIP_WAVETABLE
    sF32 mod_sampleoff;      // offset, 0..1 (==samplelen)
    sF32 mod_sampleoff2;     // offset from randomization and velocity (0..1)
    sF32 mmdst_sampleoff;    // from modmatrix
@@ -476,6 +488,7 @@ YC class StSampleVoice : public YAC_Object {
    sF32 last_sample_looprestart_l;
    sF32 last_sample_looprestart_r;
 
+#ifndef TKSAMPLER_SKIP_LFO
    StLFOPlayer lfo_freq;
    StLFOPlayer lfo_vol;
    StLFOPlayer lfo_pan;
@@ -484,7 +497,10 @@ YC class StSampleVoice : public YAC_Object {
    sF32 mod_lfo_freq_amt;
    sF32 mod_lfo_vol_amt;
    sF32 mod_lfo_pan_amt;
+#ifndef TKSAMPLER_SKIP_FILTER
    sF32 mod_lfo_aux_flt_amt;
+#endif // TKSAMPLER_SKIP_FILTER
+#endif // TKSAMPLER_SKIP_LFO
 
    StADSRPlayer adsr_freq;
    StADSRPlayer adsr_vol;
@@ -510,15 +526,12 @@ YC class StSampleVoice : public YAC_Object {
    sF32 current_aux_lfo;
    sF32 next_aux_lfo;
 
+#ifndef TKSAMPLER_SKIP_FILTER
    sSI  filter_type;  // copied during note on
    sF32 mod_filter_cutoff;
    sF32 mod_filter_pan;
    sF32 mod_filter_offset;
    sF32 mod_filter_resonance;
-
-   sBool mod_glide_switch;
-   sF32  mod_glide_speed;
-   sF32  mmdst_glide_speed;
 
    // (note) LPF cutoff calculation seems off (maxfreq cuts off too many highs)
    StSampleVoiceBiquad biquad_a_1[2/*channels*/];
@@ -526,10 +539,17 @@ YC class StSampleVoice : public YAC_Object {
 
    StSampleVoiceBiquad2 biquad_b_1[2/*channels*/];
    StSampleVoiceBiquad2 biquad_b_2[2/*channels*/];   // for dual-filter configuration (LP+HP)
+#endif // TKSAMPLER_SKIP_FILTER
 
+   sBool mod_glide_switch;
+   sF32  mod_glide_speed;
+   sF32  mmdst_glide_speed;
+
+#ifndef TKSAMPLER_SKIP_AA_AI
    StSampleVoiceBiquad2 biquad_ai[STSAMPLEVOICE_AI_MAX_POLES];  // anti-alias/imaging filter (LP)
    sF32 ai_fc;
    sUI ai_num_poles;
+#endif // TKSAMPLER_SKIP_AA_AI
 
    sF32 glide_src_note;  // modified in STSAMPLE_GLIDE_FREQ mode, constant in TIME mode
    sF32 glide_src_note_orig;
@@ -556,6 +576,7 @@ YC class StSampleVoice : public YAC_Object {
 
    sBool b_fwd;  // for PINGPONG play mode
 
+#ifndef TKSAMPLER_SKIP_IPOL_LANCZOS
    // windowed sinc tables
 #define LANCZOS_TSZ_A2   4096
 #define LANCZOS_TSZ_A4   8192
@@ -567,9 +588,12 @@ YC class StSampleVoice : public YAC_Object {
    static sF32 lanczos_tbl_a8 [LANCZOS_TSZ_A8  + 1];
    static sF32 lanczos_tbl_a16[LANCZOS_TSZ_A16 + 1];
    static sF32 lanczos_tbl_a32[LANCZOS_TSZ_A32 + 1];
+#endif // TKSAMPLER_SKIP_IPOL_LANCZOS
 
+#ifndef TKSAMPLER_SKIP_PLUGINS
    st_plugin_cache_entry_t *plugin_cache_entries[STSAMPLE_NUM_PLUGINS];
    sF32 plugin_levels[STSAMPLE_NUM_PLUGINS][2];  // valid after mod matrix
+#endif // TKSAMPLER_SKIP_PLUGINS
 
    sF32   voice_bus_buffer_self[STSAMPLEVOICE_MAX_VOICE_BUS_FRAMES * 2u];
    sF32  *voice_bus_buffers_self[STSAMPLEVOICE_MAX_LAYERS];  // ptrs to interleaved stereo buffers (voice_bus_buffer_self or null_buf)
@@ -603,9 +627,11 @@ YC class StSampleVoice : public YAC_Object {
    sF32  mmdst_additive_num_partials;
 #endif // TKSAMPLER_SKIP_ADDITIVE
 
+#ifndef TKSAMPLER_SKIP_PLUGINS
    // optimization hint (no sample playback, (osc) voice plugins only, e.g. FM Stack)
    //  updated in reallyStartVoice()
    sBool b_voiceplugin_osc_hint;
+#endif // TKSAMPLER_SKIP_PLUGINS
 
    sF64 modmatrix_slewed_src_values[STSAMPLE_NUM_MODMATRIX_ENTRIES];
 
@@ -622,7 +648,9 @@ YC class StSampleVoice : public YAC_Object {
    // Get current interpolated glide note
    sF32 getCurrentGlideNote (void);
 
+#ifndef TKSAMPLER_SKIP_IPOL_LANCZOS
    static void InitLanczosTables (void);
+#endif // TKSAMPLER_SKIP_IPOL_LANCZOS
    static void InitAdditiveTables (void);
    static void InitMMCurveLUT (void);
 
@@ -686,6 +714,7 @@ YC class StSampleVoice : public YAC_Object {
 
   protected:
 
+#ifndef TKSAMPLER_SKIP_PLUGINS
    void updatePluginModulationInitial (const sUI _pluginMask);
    void updatePluginModulationFromMM (tksampler_mmdst_t &mmdst, const sUI _pluginMask);
 
@@ -705,8 +734,11 @@ YC class StSampleVoice : public YAC_Object {
 
    // dst=AM/VB1..8
    void processPluginsAM (sF32 *_pluginAmp);
+#endif // TKSAMPLER_SKIP_PLUGINS
 
+#ifndef TKSAMPLER_SKIP_WAVETABLE
    sBool updateWt2dOffset (void);
+#endif // TKSAMPLER_SKIP_WAVETABLE
 
 #ifndef TKSAMPLER_SKIP_ADDITIVE
    void renderBlockAdditive (sF32 *     buf,
@@ -727,6 +759,7 @@ YC class StSampleVoice : public YAC_Object {
                              );
 #endif // TKSAMPLER_SKIP_ADDITIVE
 
+#ifndef TKSAMPLER_SKIP_WAVETABLE
    void renderBlockTimestretch (sF32 *     buf,
                                 sUI        blkSz,
                                 sF32 *     smpDat,
@@ -743,6 +776,7 @@ YC class StSampleVoice : public YAC_Object {
                                 , const sF32**_inputsOrNull/*sz=STSAMPLE_MAX_INPUTS*/
 #endif // TKSAMPLER_SKIP_LIVEREC
                                 );
+#endif // TKSAMPLER_SKIP_WAVETABLE
 
    sUI  renderBlockNormal (sF32 *     buf,
                            sUI        blkSz,
@@ -790,6 +824,7 @@ YC class StSampleVoice : public YAC_Object {
 #endif // TKSAMPLER_SKIP_LIVEREC
                               );
 
+#ifndef TKSAMPLER_SKIP_PLUGINS
    // - infinite sample loop <= 32 frames
    // - no volume ramp up or down
    // - no filter
@@ -802,6 +837,7 @@ YC class StSampleVoice : public YAC_Object {
                                         const sF32 sVolL,
                                         const sF32 sVolR
                                         );
+#endif // TKSAMPLER_SKIP_PLUGINS
 
    sF32 current_cyclelen; // calc'd at block start
    void calcCurrentCycleLen (sF32 &ts);
@@ -835,9 +871,11 @@ YC class StSampleVoice : public YAC_Object {
    void startModSeq(sUI _mask, sBool _bNoteOn);
 #endif // TKSAMPLER_SKIP_MODSEQ
 
-   void calcFragmentInterpolPhase(sF32 _phase, sF32 _width);
    sF32 getEffectiveMod(void); // voice+sampleplayer, clipped to 0..1 range
+#if !defined(TKSAMPLER_SKIP_WAVETABLE) && !defined(TKSAMPLER_SKIP_FRAGMENT_IPOL)
+   void calcFragmentInterpolPhase(sF32 _phase, sF32 _width);
    void applyFragmentInterpol(void);
+#endif // TKSAMPLER_SKIP_FRAGMENT_IPOL
 
    YAC_IntArray *getCurrentSampleLoops(void) const;
 
@@ -915,11 +953,15 @@ YC class StSampleVoice : public YAC_Object {
                             const sF32 _cRate
                             );
 
+#ifndef TKSAMPLER_SKIP_AA_AI
    sF32 readSample1IntAI (const sF32 *smpDat, sSI _off) /*const*/;  // mono
+#endif // TKSAMPLER_SKIP_AA_AI
    sF32 readSample1IntRaw (const sF32 *smpDat, sSI _off) /*const*/;  // mono
    sF32 readSample1IntWrap (const sF32 *smpDat, sSI _off) const;  // mono
 
+#ifndef TKSAMPLER_SKIP_AA_AI
    sF32 readSample2IntAI (const sF32 *smpDat, sSI _off) /*const*/;  // stereo
+#endif // TKSAMPLER_SKIP_AA_AI
    sF32 readSample2IntRaw (const sF32 *smpDat, sSI _off) /*const*/;  // stereo
    sF32 readSample2IntWrap (const sF32 *smpDat, sSI _off) const;  // stereo
 
@@ -949,7 +991,11 @@ YC class StSampleVoice : public YAC_Object {
                     sSI _off
                     ) /*const*/;  // stereo
 
+#ifndef LIBSYNERGY_BUILD
+#ifndef TKSAMPLER_SKIP_PLUGINS
    void handleReorderVoicePlugins (const sUI *_ia);
+#endif // TKSAMPLER_SKIP_PLUGINS
+#endif // LIBSYNERGY_BUILD
 
    void resetBiquad (void);
 
@@ -1113,6 +1159,7 @@ YC class StSampleVoice : public YAC_Object {
    YM sF32 _getMod (void);
 
 
+#ifndef TKSAMPLER_SKIP_WAVETABLE
    /* @method setTimestretch,float ts
       Set timestretch modulation
 
@@ -1139,6 +1186,7 @@ YC class StSampleVoice : public YAC_Object {
       Return timestretch phase bend modulation
    */
    YM sF32 _getTimestretchBend (void);
+#endif // TKSAMPLER_SKIP_WAVETABLE
 
 
    /* @method setSampleOff,float so
@@ -1170,7 +1218,6 @@ YC class StSampleVoice : public YAC_Object {
 
    /* @method setCycleLen,float so
       Set granular cycle length modulation
-
    */
    YM void _setCycleLen (sF32 _cl);
 
@@ -1183,7 +1230,6 @@ YC class StSampleVoice : public YAC_Object {
 
    /* @method setSampleShift,float sh
       Set sample shift modulation
-
    */
    YM void _setSampleShift (sF32 _sh);
 
@@ -1196,7 +1242,6 @@ YC class StSampleVoice : public YAC_Object {
 
    /* @method setSampleShiftEndOfLoop,float sh
       Set sample shift modulation (queued until end of loop)
-
    */
    YM void _setSampleShiftEndOfLoop (sF32 _sh);
 
@@ -1209,7 +1254,6 @@ YC class StSampleVoice : public YAC_Object {
 
    /* @method setAltVolume,float av
       Set alternative volume modulation
-
    */
    YM void _setAltVolume (sF32 _av);
 
@@ -1222,7 +1266,6 @@ YC class StSampleVoice : public YAC_Object {
 
    /* @method retrigEnvLFO,int mask
       Retrigger envelopes/LFOs
-
    */
    YM void _setRetrigMask (sUI _mask);
 

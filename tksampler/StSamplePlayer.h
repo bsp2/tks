@@ -105,8 +105,10 @@ YC class StSamplePlayer : public YAC_Object {
    sF32 mod_freq;   // e.g. pitch randomization
    sF32 mod_freq2;  // e.g. pitch bend
    sF32 mod_mod;
+#ifndef TKSAMPLER_SKIP_WAVETABLE
    sF32 mod_timestretch;
    sF32 mod_timestretch_bend;
+#endif // TKSAMPLER_SKIP_WAVETABLE
    sF32 mod_sampleoff;
    sF32 mod_cyclelen;
    sF32 mod_sampleshift;
@@ -204,10 +206,12 @@ YC class StSamplePlayer : public YAC_Object {
    YAC_MutexHandle mtx_process_tick_nr;
 #endif // LIBSYNERGY_BUILD
 
+#ifndef TKSAMPLER_SKIP_PLUGINS
    // (todo) optimize cache search
    struct {
       st_plugin_cache_entry_t *first;
    } plugin_cache;
+#endif // TKSAMPLER_SKIP_PLUGINS
 
 #ifndef TKSAMPLER_SKIP_GLOBAL_REGS
    sF32 global_reg_values[STSAMPLEPLAYER_NUM_GLOBAL_REGS];
@@ -225,9 +229,11 @@ YC class StSamplePlayer : public YAC_Object {
 
    void sortVoices (void);
 
+#ifndef TKSAMPLER_SKIP_PLUGINS
    st_plugin_cache_entry_t *findOrCreatePluginCacheEntry (st_plugin_info_t *_info, sUI _voiceIdx);
    void lazyCreateVoicePlugins (StSample *_sample, StSampleVoice *_nv);
    void freePluginCache (void);
+#endif // TKSAMPLER_SKIP_PLUGINS
 
 #ifndef TKSAMPLER_SKIP_GLOBAL_REGS
    void resetGlobalRegs (void);
@@ -613,7 +619,6 @@ YC class StSamplePlayer : public YAC_Object {
    YM void updateFreq2ByKey (sSI _voiceKey, sF32 _v);
 
 
-
    /* @method updateMod,float v
       Update modulation of all active voices
    */
@@ -621,6 +626,7 @@ YC class StSamplePlayer : public YAC_Object {
    YM void updateModByKey (sSI _voiceKey, sF32 _v);
 
 
+#ifndef TKSAMPLER_SKIP_WAVETABLE
    /* @method updateTimestretch,float v
       Update timestretch modulation of all active voices
    */
@@ -633,15 +639,7 @@ YC class StSamplePlayer : public YAC_Object {
    */
    YM void updateTimestretchBend (sF32 _v);
    YM void updateTimestretchBendByKey (sSI _voiceKey, sF32 _v);
-
-
-
-   /* @method updateSampleOff,float v
-      Update sample offset modulation of all active voices
-   */
-   YM void updateSampleOff (sF32 _v);
-   YM void updateSampleOffByKey (sSI _voiceKey, sF32 _v);
-   YM void setInitialSampleOffsetMsByKey (sSI _voiceKey, sF32 _ms);
+#endif // TKSAMPLER_SKIP_WAVETABLE
 
 
    /* @method updateCycleLen,float v
@@ -650,6 +648,13 @@ YC class StSamplePlayer : public YAC_Object {
    YM void updateCycleLen (sF32 _v);
    YM void updateCycleLenByKey (sSI _voiceKey, sF32 _v);
 
+
+   /* @method updateSampleOff,float v
+      Update sample offset modulation of all active voices
+   */
+   YM void updateSampleOff (sF32 _v);
+   YM void updateSampleOffByKey (sSI _voiceKey, sF32 _v);
+   YM void setInitialSampleOffsetMsByKey (sSI _voiceKey, sF32 _ms);
 
 
    /* @method updateSampleShift,float v
@@ -1102,11 +1107,15 @@ YC class StSamplePlayer : public YAC_Object {
    // Iterate all samples/zones and check for redraw (live rec)
    YM sBool uiCheckResetAnyRedrawFlag (void);
 
+#ifndef TKSAMPLER_SKIP_PLUGINS
    // Stop voices and unload voice plugin instances
    YM void unloadVoicePlugins (void);
 
+#ifndef LIBSYNERGY_BUILD
    // Called when all plugin slots are reordered (and they are all in use)
    YM void handleReorderVoicePlugins (YAC_Object *_sb, YAC_Object *_ia);
+#endif // LIBSYNERGY_BUILD
+#endif // TKSAMPLER_SKIP_PLUGINS
 
    // Set last_started_samplebank hint (for live-recording)
    YM void setLastStartedSampleBankHint (YAC_Object *_sb);
