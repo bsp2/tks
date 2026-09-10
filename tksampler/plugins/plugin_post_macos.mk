@@ -10,7 +10,7 @@
 
 .PHONY: bin
 bin: $(ALL_OBJ)
-	$(CPP) -dynamiclib -o "$(TARGET).dylib" $(ALL_OBJ) $(EXTRALIBS)
+	$(CPP) -dynamiclib -o "$(TARGET).dylib" $(LDFLAGS) $(ALL_OBJ) $(EXTRALIBS)
 #$(LDFLAGS)
 ifneq ($(DEBUG),y)
 	$(STRIP) "$(TARGET).dylib"

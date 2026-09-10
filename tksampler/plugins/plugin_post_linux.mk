@@ -10,7 +10,7 @@
 
 .PHONY: bin
 bin: $(ALL_OBJ)
-	$(CPP) -shared -o "$(TARGET).so" -Wl,-soname,$(TARGET).so $(ALL_OBJ) $(EXTRALIBS)
+	$(CPP) -shared -o "$(TARGET).so" -Wl,-soname,$(TARGET).so $(LDFLAGS) $(ALL_OBJ) $(EXTRALIBS)
 ifneq ($(DEBUG),y)
 	$(STRIP) "$(TARGET).so"
 endif
