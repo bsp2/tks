@@ -405,7 +405,11 @@ int main(int argc, char**argv) {
 #ifndef SR_BATCH_RENDER
          if(0)
 #else
+#ifndef SR_PORTAUDIO
+         if(1)
+#else
          if(argc >= 2)
+#endif // SR_PORTAUDIO
 #endif // SR_BATCH_RENDER
          {
             loc_batch_render(proj, song);

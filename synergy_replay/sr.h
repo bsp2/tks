@@ -132,7 +132,7 @@ typedef void *sr_proj_t;
 typedef void *sr_song_t;
 typedef int sr_bool_t;
 
-#if defined(SR_TRACK_FX) || defined(SR_VOICE_FX)
+#if (defined(SR_TRACK_FX) || defined(SR_VOICE_FX)) && !defined(TKSAMPLER_SKIP_PLUGINS)
 #define SR_FX  defined
 #endif
 

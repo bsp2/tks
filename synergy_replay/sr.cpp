@@ -28,6 +28,7 @@
 // ----          11Aug2023, 08Sep2023, 19Sep2023, 22Sep2023, 18Nov2023, 03Oct2024, 07Dec2024
 // ----          04Jan2025, 09Jan2026, 10Apr2026, 09May2026, 15May2026, 17May2026, 18May2026
 // ----          19May2026, 20May2026, 22May2026, 23May2026, 25May2026, 26May2026, 08Sep2026
+// ----          10Sep2026
 // ----
 // ----
 // ----
@@ -275,7 +276,9 @@ static void loc_sr_init_freq_table(void) {
 }
 
 void sr_init(void) {
+#ifndef TKSAMPLER_SKIP_IPOL_LANCZOS
    StSampleVoice::InitLanczosTables();
+#endif // TKSAMPLER_SKIP_IPOL_LANCZOS
 #ifndef LIBSYNERGY_BUILD
    // (note) not used in synergy_replay
    StSampleVoice::InitAdditiveTables();
@@ -584,25 +587,25 @@ public:
 
       StADSR *adsr;
       StEnvelope *env;
-      // BezierEditState *beState;
+      // // BezierEditState *beState;
       TKS_Envelope *beData;
-      // StRange *range;
-      // StLFO *lfo;
+      // // StRange *range;
+      // // StLFO *lfo;
 
-      // // Key range
-      // range = (StRange*)s->_getOrCreateKeyRange();
-      // range->_setLo(0.0f);
-      // range->_setHi(127.0f);
+      // // // Key range
+      // // range = (StRange*)s->_getOrCreateKeyRange();
+      // // range->_setLo(0.0f);
+      // // range->_setHi(127.0f);
 
-      // // Velocity range
-      // range = (StRange*)s->_getOrCreateVelRange();
-      // range->_setLo(0.0f);
-      // range->_setHi(1.01f);
+      // // // Velocity range
+      // // range = (StRange*)s->_getOrCreateVelRange();
+      // // range->_setLo(0.0f);
+      // // range->_setHi(1.01f);
 
-      // // Mod range
-      // range = (StRange*)s->_getOrCreateModRange();
-      // range->_setLo(0.0f);
-      // range->_setHi(1.01f);
+      // // // Mod range
+      // // range = (StRange*)s->_getOrCreateModRange();
+      // // range->_setLo(0.0f);
+      // // range->_setHi(1.01f);
 
       // ## Freq ADSR
       adsr = (StADSR*)s->_getOrCreateFreqADSR();
@@ -963,6 +966,7 @@ public:
       return s;
    }
 
+#ifndef TKSAMPLER_SKIP_LFO
    sBool loadLFO(SR_BufferStreamLE &ifs, StLFO *lfo) {
       lfo->_setTimebase(ifs.f32());
       sU8 type = ifs.u8();
@@ -1027,6 +1031,40 @@ public:
 
       return YAC_TRUE;
    }
+#else
+   sBool loadLFO_nop(SR_BufferStreamLE &ifs) {
+      /*lfo->_setTimebase*/(ifs.f32());
+      sU8 type = ifs.u8();
+      // lfo->_setType(type);
+      /*lfo->_setPhase(*/ifs.u8()/*/255.0f)*/;
+      // // Dprintf("xxx lfo->_getPhase()=%f\n", lfo->_getPhase());
+      /*lfo->_setFreq*/(ifs.f32());
+      if(STLFO_TYPE_PULSE == type)
+         /*lfo->_setPulseWidth(*/ifs.u8()/*/255.0f)*/;
+      /*lfo->_setDelay*/(ifs.f32());
+      /*lfo->_setFadeInTime*/(ifs.f32());
+      /*lfo->_setStartLevel*/(ifs.f32());
+      /*lfo->_setFadedLevel*/(ifs.f32());
+      /*lfo->_setFadedSpeedFactor*/(ifs.f32());
+      /*lfo->_setDcOffset*/(ifs.f32());
+      if(STLFO_TYPE_NOISE == type)
+      {
+         /*lfo->_setNoiseMinAmp*/(ifs.f32());
+         /*lfo->_setNoiseMaxAmp*/(ifs.f32());
+         /*lfo->_setNoiseMinSpeed*/(ifs.f32());
+         /*lfo->_setNoiseMaxSpeed*/(ifs.f32());
+      }
+      /*sU8 flags = */ifs.u8();
+      /*lfo->_setEnableNoiseInterpol( (flags >> 0) & 1u );*/
+      /*lfo->_setEnableModDelay     ( (flags >> 1) & 1u );*/
+      /*lfo->_setEnableOneShot      ( (flags >> 2) & 1u );*/
+      /*lfo->_setEnableGlobal       ( (flags >> 3) & 1u );*/
+      /*lfo->_setEnableReset        ( (flags >> 4) & 1u );*/
+
+      return YAC_TRUE;
+   }
+#endif // TKSAMPLER_SKIP_LFO
+
 
 #ifndef TKSAMPLER_SKIP_MODSEQ
    sBool loadMSeq(SR_BufferStreamLE &ifs, StModSeq *mseq) {
@@ -1116,7 +1154,7 @@ public:
 #endif // TKSAMPLER_SKIP_MODSEQ
 
 
-#ifdef SR_VOICE_FX
+#if defined(SR_VOICE_FX) && !defined(TKSAMPLER_SKIP_PLUGINS)
    StPluginShared *newVoicePluginById(const char *_id) {
       StPluginShared *shared = NULL;
       SR_PluginDef *pluginDef = sr_find_plugin_def_by_id(_id);
@@ -1149,11 +1187,10 @@ public:
       if(ver >= 1)
       {
          StADSR *adsr;
-         // StEnvelope *env;
-         // BezierEditState *beState;
-         // TKS_Envelope *beData;
          StRange *range;
+#ifndef TKSAMPLER_SKIP_LFO
          StLFO *lfo;
+#endif // TKSAMPLER_SKIP_LFO
 
          s->_setPlayMode(ifs.u8());
          s->_setSampleRateRatio(ifs.f32());
@@ -1267,63 +1304,94 @@ public:
          Dtrace("[dbg] SR_Sample::loadZone: load freq LFO io_offset=%u\n", ifs.io_offset);
          sU8 verLFO = ifs.u8();
          Dtrace("[dbg] SR_Sample::loadZone: freq verLFO=%u\n", verLFO);
+#ifndef TKSAMPLER_SKIP_LFO
          lfo = (StLFO*)s->_getOrCreateFreqLFO();
+#endif // TKSAMPLER_SKIP_LFO
          if(verLFO > 0u)
          {
+#ifndef TKSAMPLER_SKIP_LFO
             if(!loadLFO(ifs, lfo))
+#else
+            if(!loadLFO_nop(ifs))
+#endif // TKSAMPLER_SKIP_LFO
             {
                Derror("[---] SR_Sample::loadZone: failed to load freq LFO\n");
                return YAC_FALSE;
             }
          }
+#ifndef TKSAMPLER_SKIP_LFO
          else
             lfo->_setType(STLFO_TYPE_NONE);
-
+#endif // TKSAMPLER_SKIP_LFO
 
          // Volume LFO
          verLFO = ifs.u8();
          Dtrace("[dbg] SR_Sample::loadZone: volume verLFO=%u\n", verLFO);
+#ifndef TKSAMPLER_SKIP_LFO
          lfo = (StLFO*)s->_getOrCreateVolLFO();
+#endif // TKSAMPLER_SKIP_LFO
          if(verLFO > 0u)
          {
+#ifndef TKSAMPLER_SKIP_LFO
             if(!loadLFO(ifs, lfo))
+#else
+            if(!loadLFO_nop(ifs))
+#endif // TKSAMPLER_SKIP_LFO
             {
                Derror("[---] SR_Sample::loadZone: failed to load volume LFO\n");
                return YAC_FALSE;
             }
          }
+#ifndef TKSAMPLER_SKIP_LFO
          else
             lfo->_setType(STLFO_TYPE_NONE);
+#endif // TKSAMPLER_SKIP_LFO
 
          // Pan LFO
          verLFO = ifs.u8();
          Dtrace("[dbg] SR_Sample::loadZone: pan verLFO=%u\n", verLFO);
+#ifndef TKSAMPLER_SKIP_LFO
          lfo = (StLFO*)s->_getOrCreatePanLFO();
+#endif // TKSAMPLER_SKIP_LFO
          if(verLFO > 0u)
          {
+#ifndef TKSAMPLER_SKIP_LFO
             if(!loadLFO(ifs, lfo))
+#else
+            if(!loadLFO_nop(ifs))
+#endif // TKSAMPLER_SKIP_LFO
             {
                Derror("[---] SR_Sample::loadZone: failed to load pan LFO\n");
                return YAC_FALSE;
             }
          }
+#ifndef TKSAMPLER_SKIP_LFO
          else
             lfo->_setType(STLFO_TYPE_NONE);
+#endif // TKSAMPLER_SKIP_LFO
 
          // Aux LFO
          verLFO = ifs.u8();
          Dtrace("[dbg] SR_Sample::loadZone: aux verLFO=%u\n", verLFO);
+#ifndef TKSAMPLER_SKIP_LFO
          lfo = (StLFO*)s->_getOrCreateAuxLFO();
+#endif // TKSAMPLER_SKIP_LFO
          if(verLFO > 0u)
          {
+#ifndef TKSAMPLER_SKIP_LFO
             if(!loadLFO(ifs, lfo))
+#else
+            if(!loadLFO_nop(ifs))
+#endif // TKSAMPLER_SKIP_LFO
             {
                Derror("[---] SR_Sample::loadZone: failed to load aux LFO\n");
                return YAC_FALSE;
             }
          }
+#ifndef TKSAMPLER_SKIP_LFO
          else
             lfo->_setType(STLFO_TYPE_NONE);
+#endif // TKSAMPLER_SKIP_LFO
 
          // ModSeq
          for(sUI mseqIdx = 0u; mseqIdx < STSAMPLE_NUM_MODSEQ; mseqIdx++)
@@ -1446,14 +1514,27 @@ public:
 
          s->_setMaxVoices(ifs.u8() + 1u);
          s->_setVolume(ifs.f32());
+#ifndef TKSAMPLER_SKIP_LFO
          s->_setVolLFOAmt(ifs.f32());
+#else
+         /*s->_setVolLFOAmt*/(ifs.f32());
+#endif // TKSAMPLER_SKIP_LFO
          s->_setVolumeVelocityAmount(ifs.f32());
+#ifndef TKSAMPLER_SKIP_LFO
          Dtrace("[dbg] SR_Sample::loadZone: poly=%u vol=%f volLFOAmt=%f volVelAmt=%f\n",
                  s->_getMaxVoices(),
                  s->_getVolume(),
                  s->_getVolLFOAmt(),
                  s->_getVolumeVelocityAmount()
                  );
+#else
+         Dtrace("[dbg] SR_Sample::loadZone: poly=%u vol=%f volVelAmt=%f\n",
+                 s->_getMaxVoices(),
+                 s->_getVolume(),
+                 s->_getVolumeVelocityAmount()
+                 );
+#endif // TKSAMPLER_SKIP_LFO
+
          s->_setSampleOffsetVelocityAmount(ifs.f32());
          s->_setEnableInvertSampleOffsetVelocityAmount(ifs.s8());
          s->_setSampleOffsetRandAmount(ifs.f32());
@@ -1470,12 +1551,20 @@ public:
 
          s->_setPan(ifs.f32());
          s->_setPanEnvAmt(ifs.f32());
+#ifndef TKSAMPLER_SKIP_LFO
          s->_setPanLFOAmt(ifs.f32());
          Dtrace("[dbg] SR_Sample::loadZone: pan=%f panEnvAmt=%f panLFOAmt=%f\n",
                  s->_getPan(),
                  s->_getPanEnvAmt(),
                  s->_getPanLFOAmt()
                  );
+#else
+         /*s->_setPanLFOAmt*/(ifs.f32());
+         Dtrace("[dbg] SR_Sample::loadZone: pan=%f panEnvAmt=%f\n",
+                 s->_getPan(),
+                 s->_getPanEnvAmt()
+                 );
+#endif // TKSAMPLER_SKIP_LFO
 
          s->_setUiTransposeOct(ifs.s8());
          s->_setUiTransposeSemi(ifs.s8());
@@ -1489,16 +1578,29 @@ public:
                  );
 
          s->_setFreqEnvAmt(ifs.f32());
+#ifndef TKSAMPLER_SKIP_LFO
          s->_setFreqLFOAmt(ifs.f32());
+#else
+         /*s->_setFreqLFOAmt*/(ifs.f32());
+#endif // TKSAMPLER_SKIP_LFO
          s->_setDelay(ifs.f32());
          s->_setDelayMultiplier(ifs.f32());
+#ifndef TKSAMPLER_SKIP_LFO
          Dtrace("[dbg] SR_Sample::loadZone: freqEnvAmt=%f freqLFOAmt=%f delay=%f delayMul=%f\n",
                  s->_getFreqEnvAmt(),
                  s->_getFreqLFOAmt(),
                  s->_getDelay(),
                  s->_getDelayMultiplier()
                  );
+#else
+         Dtrace("[dbg] SR_Sample::loadZone: freqEnvAmt=%f delay=%f delayMul=%f\n",
+                 s->_getFreqEnvAmt(),
+                 s->_getDelay(),
+                 s->_getDelayMultiplier()
+                 );
+#endif // TKSAMPLER_SKIP_LFO
 
+#ifndef TKSAMPLER_SKIP_WAVETABLE
          s->setEnableTimestretch(ifs.s8());
          Dtrace("[dbg] SR_Sample::loadZone: enableWT=%d\n", s->getEnableTimestretch());
          if(s->getEnableTimestretch())
@@ -1517,6 +1619,25 @@ public:
             s->setTimestretch2DWidth(ifs.u8());
             s->setTimestretch2DHeight(ifs.u8());
          }
+#else
+         if(/*s->setEnableTimestretch*/(ifs.s8()))
+         {
+            /*s->setEnableTimestretchXFade*/(ifs.s8());
+            /*s->setTimestretch*/(ifs.f32());
+            /*s->setTimestretchGranularity*/(ifs.f32());
+            /*s->setTimestretchGranularityAmount*/(ifs.f32());
+            /*s->setEnableStaticCyclelen*/(ifs.s8());
+            /*s->setEnableAbsoluteTimestretch*/(ifs.s8());
+            /*s->setTimestretchInterpolType*/(ifs.s8());
+            /*s->setTimestretchGrainWindowType*/(ifs.s8());
+            /*s->setTimestretchSmpOffInterpolMode*/(ifs.u8());  // v86+
+            /*s->setTimestretchBend*/(ifs.f32());
+            /*s->setTimestretchStartPhaseRandAmount*/(ifs.f32());
+            /*s->setTimestretch2DWidth*/(ifs.u8());
+            /*s->setTimestretch2DHeight*/(ifs.u8());
+         }
+#endif // TKSAMPLER_SKIP_WAVETABLE
+
 
          s->_setEnableTimedLoop(ifs.u8());
          s->_setEnableTimedLoopFade(ifs.u8());
@@ -1553,6 +1674,7 @@ public:
                  s->_getInterpolOrder()
                  );
 
+#ifndef TKSAMPLER_SKIP_AA_AI
          s->_setAiNumPoles(ifs.s8());
          s->_setAiExpUp(ifs.f32());
          s->_setAiExpDown(ifs.f32());
@@ -1567,6 +1689,14 @@ public:
                  s->_getAiLinOct(),
                  s->_getAiLinMax()
                  );
+#else
+         /*s->_setAiNumPoles*/(ifs.s8());
+         /*s->_setAiExpUp*/(ifs.f32());
+         /*s->_setAiExpDown*/(ifs.f32());
+         /*s->_setAiQ*/(ifs.f32());
+         /*s->_setAiLinOct*/(ifs.f32());
+         /*s->_setAiLinMax*/(ifs.f32());
+#endif // TKSAMPLER_SKIP_AA_AI
 
          s->_setBitReductionPreAmp(ifs.f32());
          s->_setBitReduction(ifs.u8());
@@ -1598,6 +1728,7 @@ public:
                  s->_getEnableAlt()
                  );
 
+#ifndef TKSAMPLER_SKIP_FILTER
          sU8 filterType = ifs.u8();
          if(filterType > 0u)
          {
@@ -1619,19 +1750,58 @@ public:
                    );
             s->_setFilterAuxEnvAmount(ifs.s8()/127.0f);
             s->_setFilterAuxEnvVelocityAmount(ifs.s8()/63.0f);
+#ifndef TKSAMPLER_SKIP_LFO
             s->_setFilterAuxLFOAmount(ifs.s8()/127.0f);
+#else
+            /*s->_setFilterAuxLFOAmount(*/ifs.s8()/*/127.0f)*/;
+#endif // TKSAMPLER_SKIP_LFO
             s->_setFilterKeyboardAmount(ifs.s8()/127.0f);
+#ifndef TKSAMPLER_SKIP_LFO
             Dtrace("[dbg] SR_Sample::loadZone: filter envAmt=%f envVelAmt=%f lfoAmt=%f kbdAmt=%f\n",
                    s->_getFilterAuxEnvAmount(),
                    s->_getFilterAuxEnvVelocityAmount(),
                    s->_getFilterAuxLFOAmount(),
                    s->_getFilterKeyboardAmount()
                    );
+#else
+            Dtrace("[dbg] SR_Sample::loadZone: filter envAmt=%f envVelAmt=%f kbdAmt=%f\n",
+                   s->_getFilterAuxEnvAmount(),
+                   s->_getFilterAuxEnvVelocityAmount(),
+                   s->_getFilterKeyboardAmount()
+                   );
+#endif // TKSAMPLER_SKIP_LFO
          }
          else
          {
             s->_setEnableFilter(YAC_FALSE);
          }
+#else
+         // No filter
+         sU8 filterType = ifs.u8();
+         if(filterType > 0u)
+         {
+            /*s->_setEnableFilter(YAC_TRUE);*/
+            /*s->_setFilterType(filterType);*/
+            /*s->_setFilterCutOff(*/ifs.s8()/*/127.0f)*/;
+            /*s->_setFilterPan(*/ifs.s8()/*/127.0f)*/;
+            /*s->_setFilterOffset(*/ifs.s8()/*/127.0f)*/;
+            /*s->_setFilterEQGain(*/ifs.f32()/*)*/;
+            /*s->_setFilterResonance(*/ifs.u8()/*/255.0f)*/;
+            /*s->_setFilterAuxEnvAmount(*/ifs.s8()/*/127.0f)*/;
+            /*s->_setFilterAuxEnvVelocityAmount(*/ifs.s8()/*/63.0f)*/;
+#ifndef TKSAMPLER_SKIP_LFO
+            /*s->_setFilterAuxLFOAmount(*/ifs.s8()/*/127.0f)*/;
+#else
+            /*s->_setFilterAuxLFOAmount(*/ifs.s8()/*/127.0f)*/;
+#endif // TKSAMPLER_SKIP_LFO
+            /*s->_setFilterKeyboardAmount(*/ifs.s8()/*/127.0f)*/;
+         }
+         else
+         {
+            /*s->_setEnableFilter(YAC_FALSE);*/
+         }
+#endif // TKSAMPLER_SKIP_FILTER
+
 
          s->_setGlideType(ifs.s8());
          s->_setGlideSpeedTimeUp(ifs.f32());
@@ -1649,17 +1819,27 @@ public:
          s->_setEnableGlideRetrigEnvVol  ( (glideFXFlags >>  2) & 1u );
          s->_setEnableGlideRetrigEnvPan  ( (glideFXFlags >>  3) & 1u );
          s->_setEnableGlideRetrigEnvAux  ( (glideFXFlags >>  4) & 1u );
+#ifndef TKSAMPLER_SKIP_LFO
          s->_setEnableGlideRetrigLFOFreq ( (glideFXFlags >>  5) & 1u );
          s->_setEnableGlideRetrigLFOVol  ( (glideFXFlags >>  6) & 1u );
          s->_setEnableGlideRetrigLFOPan  ( (glideFXFlags >>  7) & 1u );
          s->_setEnableGlideRetrigLFOAux  ( (glideFXFlags >>  8) & 1u );
+#endif // TKSAMPLER_SKIP_LFO
+#ifndef TKSAMPLER_SKIP_PLUGINS
          s->_setEnableFX                 ( (glideFXFlags >>  9) & 1u );
+#endif // TKSAMPLER_SKIP_PLUGINS
          s->_setEnableFreeRunningOsc     ( (glideFXFlags >> 10) & 1u );
          s->_setVoiceBus(ifs.s8());
+#ifndef TKSAMPLER_SKIP_PLUGINS
          Dtrace("[dbg] SR_Sample::loadZone: fx=%d voiceBus=%d\n",
                  s->_getEnableFX(),
                  s->_getVoiceBus()
                  );
+#else
+         Dtrace("[dbg] SR_Sample::loadZone: voiceBus=%d\n",
+                 s->_getVoiceBus()
+                 );
+#endif // TKSAMPLER_SKIP_PLUGINS
 
          // Voice Calibration tables
          for(sUI vcalLaneIdx = 0u; vcalLaneIdx < 6u; vcalLaneIdx++)
@@ -1685,7 +1865,7 @@ public:
                (void)ifs.readString(pluginId, 128-1/*gcc 14.2 issue*/);
                // Dprintf("[trc] SR_Sample::loadZone: read plugin id=\"%s\"\n", pluginId);
 
-#ifdef SR_VOICE_FX
+#if defined(SR_VOICE_FX) && !defined(TKSAMPLER_SKIP_PLUGINS)
                StPluginShared *shared = newVoicePluginById(pluginId);
                if(NULL != shared)
 #endif // SR_VOICE_FX
@@ -1695,7 +1875,7 @@ public:
                   // Param values
                   for(sUI paramIdx = 0u; paramIdx < numParams; paramIdx++)
                   {
-#ifdef SR_VOICE_FX
+#if defined(SR_VOICE_FX) && !defined(TKSAMPLER_SKIP_PLUGINS)
                      shared->setParamValue(paramIdx, ifs.f32());
 #else
                      (void)ifs.f32();
@@ -1703,7 +1883,7 @@ public:
                   }
 
                   // Install plugin
-#ifdef SR_VOICE_FX
+#if defined(SR_VOICE_FX) && !defined(TKSAMPLER_SKIP_PLUGINS)
                   YAC_ValueObject vo;
                   vo.initObject(shared, YAC_TRUE/*deleteme*/);
                   s->_setVoicePluginShared(pluginIdx, &vo);
@@ -1712,6 +1892,7 @@ public:
                   s->_setEnableVoicePlugin(pluginIdx, YAC_TRUE);
 #endif // SR_VOICE_FX
 
+#if !defined(TKSAMPLER_SKIP_PLUGINS) && defined(SR_VOICE_FX)
                   // Pre-Filter flag
                   s->_setEnableVoicePluginPreFilter(pluginIdx, ifs.s8());
 
@@ -1729,8 +1910,18 @@ public:
                          s->_getVoicePluginLevel(pluginIdx),
                          s->_getVoicePluginPan(pluginIdx)
                          );
+#else
+                  // Pre-Filter flag
+                  /*s->_setEnableVoicePluginPreFilter(pluginIdx, */ifs.s8()/*)*/;
+
+                  // Level (-f..+f) + phase invert (baked in)
+                  /*s->_setVoicePluginLevel(pluginIdx, */ifs.f32()/*)*/;
+
+                  // Pan (-1..1)
+                  /*s->_setVoicePluginPan(pluginIdx, */ifs.s8()/* / 127.0f)*/;
+#endif // TKSAMPLER_SKIP_PLUGINS
                }
-#ifdef SR_VOICE_FX
+#if defined(SR_VOICE_FX) && !defined(TKSAMPLER_SKIP_PLUGINS)
                else
                {
                   Derror("[---] SR_Sample::loadZone: failed to create shared plugin instance (plugin id=\"%s\")\n", pluginId);
@@ -1923,7 +2114,7 @@ public:
    } outputs[SR_MAX_TRACK_OUTPUTS];
    sUI num_outputs;
 #endif // SR_TRACK_SENDS
-#ifdef SR_TRACK_FX
+#if defined(SR_TRACK_FX) && !defined(TKSAMPLER_SKIP_PLUGINS)
    struct {
       st_plugin_info_t   *info;
       st_plugin_shared_t *shared;
@@ -1979,7 +2170,7 @@ public:
 #ifdef SR_TRACK_SENDS
       num_outputs = 0u;
 #endif // SR_TRACK_SENDS
-#ifdef SR_TRACK_FX
+#if defined(SR_TRACK_FX) && !defined(TKSAMPLER_SKIP_PLUGINS)
       ::memset(&plugins, 0, sizeof(plugins));
       num_plugins = 0u;
 #endif // SR_TRACK_FX
@@ -1996,7 +2187,7 @@ public:
       // Voice plugins: free shared instances
       sample_player.unloadVoicePlugins();
 
-#ifdef SR_TRACK_FX
+#if defined(SR_TRACK_FX) && !defined(TKSAMPLER_SKIP_PLUGINS)
       // Track plugins
       for(sUI pluginIdx = 0u; pluginIdx < num_plugins; pluginIdx++)
       {
@@ -2031,7 +2222,7 @@ public:
 #endif // SR_TRACK_FX
    }
 
-#ifdef SR_TRACK_FX
+#if defined(SR_TRACK_FX) && !defined(TKSAMPLER_SKIP_PLUGINS)
    st_plugin_voice_t *addPluginById(const char *_id) {
       st_plugin_voice_t *voice = NULL;
       if(num_plugins < SR_MAX_TRACK_PLUGINS)
@@ -2151,7 +2342,7 @@ public:
 
       const sUI numFrames = d->num_elements / 2u;
 
-#ifdef SR_TRACK_FX
+#if defined(SR_TRACK_FX) && !defined(TKSAMPLER_SKIP_PLUGINS)
       for(sUI pluginIdx = 0u; pluginIdx < num_plugins; pluginIdx++)
       {
          st_plugin_info_t  *info  = plugins[pluginIdx].info;
@@ -2263,7 +2454,7 @@ public:
          track->freePlugins();
       }
 
-#ifdef SR_VOICE_FX
+#if defined(SR_VOICE_FX) && !defined(TKSAMPLER_SKIP_PLUGINS)
       // Voice plugins: free voice instances (+other sample data)
       for(sUI smpIdx = 0u; smpIdx < num_samples; smpIdx++)
       {
@@ -3194,7 +3385,7 @@ extern "C" sr_bool_t sr_proj_load_buffer(sr_proj_t _proj,
                      char pluginId[128];
                      (void)ifs.readString(pluginId, 128-1/*gcc 14.2 issue*/);
                      Dtrace("[trc] read plugin id=\"%s\"\n", pluginId);
-#ifdef SR_TRACK_FX
+#if defined(SR_TRACK_FX) && !defined(TKSAMPLER_SKIP_PLUGINS)
                      st_plugin_voice_t *voice = track->addPluginById(pluginId);
                      if(NULL == voice)
                         return YAC_FALSE;
@@ -3204,7 +3395,7 @@ extern "C" sr_bool_t sr_proj_load_buffer(sr_proj_t _proj,
                      for(sUI paramIdx = 0u; paramIdx < numParams; paramIdx++)
                      {
                         sF32 paramVal = ifs.f32();
-#ifdef SR_TRACK_FX
+#if defined(SR_TRACK_FX) && !defined(TKSAMPLER_SKIP_PLUGINS)
                         if(NULL != shared)
                         {
                            if(paramIdx < shared->info->num_params)
