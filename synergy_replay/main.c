@@ -364,7 +364,7 @@ int main(int argc, char**argv) {
          if(!bOk)
             return 20;
 
-#if 1
+#if defined(SR_PROCEDURAL) || defined(SR_PROCEDURAL_TRACKS)
          // Calc procedural samples
          {
             Dinfov("[...] synthesizing procedural samples: begin\n");
@@ -380,7 +380,7 @@ int main(int argc, char**argv) {
             Dinfo("[...] cycle: synthesized %4.2fk samples\n", (wfSz / 1024.0f));
 #endif // SR_PROFILE
          }
-#endif
+#endif // SR_PROCEDURAL*
 
 #ifdef SR_PORTAUDIO
          // Render (soft) realtime audio

@@ -4167,6 +4167,7 @@ extern "C" unsigned int sr_song_get_ppq(sr_song_t _song) {
 static SR_Project *loc_cycle_sr_proj;
 static SR_Song    *loc_cycle_sr_song;
 
+#if defined(SR_PROCEDURAL) || defined(SR_PROCEDURAL_TRACKS)
 extern "C" void sr_handle_cycle_sample_calc_finished(unsigned int _sampleIdx) {
    // (note) called by 'cycleInitFxn' after finishing procedural sample waveform rendering
    // (note) see also: Eureka Sample::renderSourceTrack()
@@ -4177,6 +4178,7 @@ extern "C" void sr_handle_cycle_sample_calc_finished(unsigned int _sampleIdx) {
    Dinfov("[dbg] sr_handle_cycle_sample_calc_finished: sampleIdx=%u\n", _sampleIdx);
    // // Dprintf("[dbg] sr_handle_cycle_sample_calc_finished: sampleIdx=%u bpm=%f ppq=%u\n", _sampleIdx, song->bpm, song->ppq);
 
+#ifdef SR_PROCEDURAL_TRACKS
    if(_sampleIdx < proj->num_samples)
    {
       SR_Sample *sample = &proj->samples[_sampleIdx];
@@ -4404,9 +4406,12 @@ extern "C" void sr_handle_cycle_sample_calc_finished(unsigned int _sampleIdx) {
       // Should not be reachable
       Derror("[!!!] sr_handle_cycle_sample_calc_finished: invalid sampleIdx=%u (num=%u)\n", _sampleIdx, loc_cycle_sr_proj->num_samples);
    }
+#endif // SR_PROCEDURAL_TRACKS
 }
+#endif // SR_PROCEDURAL
 
 extern "C" void sr_calc_cycle_waveforms(sr_proj_t _proj, sr_song_t _song, sr_cycle_calc_waveform_fxn_t _cycleCalcWaveformFxn) {
+#if defined(SR_PROCEDURAL) || defined(SR_PROCEDURAL_TRACKS)
    SR_Project *proj = (SR_Project*)_proj;
    SR_Song *song = (SR_Song*)_song;
    loc_cycle_sr_proj = proj;
@@ -4414,6 +4419,7 @@ extern "C" void sr_calc_cycle_waveforms(sr_proj_t _proj, sr_song_t _song, sr_cyc
    _cycleCalcWaveformFxn(proj->wf_dat);
    loc_cycle_sr_proj = NULL;
    loc_cycle_sr_song = NULL;
+#endif // SR_PROCEDURAL*
 }
 
 extern "C" void sr_midi_program_change(sr_proj_t _proj, unsigned char _port, unsigned char _ch, unsigned char _program) {

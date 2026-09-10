@@ -1,3 +1,7 @@
+
+# define in parent makefile and include auto-generated <project.mk>
+# SR_CUSTOM_MK := y
+
 #
 # MIN_FEATURES: 'y'=remove xfade,ext.interpolation modes,anti-aliasing/imaging filters,global LFOs
 # FILTERS     : enable basic lpf / bpf / brf / hpf / peq / lsh / hsh
@@ -13,11 +17,10 @@ LFO         :=y
 MODSEQ      :=n
 FILTERS     :=y
 PLUGINS     :=y
+PROCEDURAL  :=y
 AUDIO       :=y
 
 # -------------------------------------------------------------------------------------------
-EXTRAFLAGS=
-
 EXTRAFLAGS+= -DYAC_NO_HOST
 EXTRAFLAGS+= -DYAC_CUST_EVENT
 EXTRAFLAGS+= -DYAC_CUST_NUMBEROBJECTS
@@ -27,6 +30,8 @@ EXTRAFLAGS+= -DYAC_CUST_POINTERARRAY
 EXTRAFLAGS+= -DYAC_SKIP_OBJECT_METHODS
 
 EXTRAFLAGS+= -DLIBSYNERGY_BUILD
+
+ifneq ($(SR_CUSTOM_MK),y)
 EXTRAFLAGS+= -DTKSAMPLER_SKIP_TUNING_TABLES
 
 ifneq ($(WAVETABLES),y)
@@ -68,7 +73,19 @@ endif
 
 ifneq ($(PLUGINS),y)
 EXTRAFLAGS+= -DTKSAMPLER_SKIP_PLUGINS
+else
+EXTRAFLAGS+= -DSR_TRACK_SENDS
+EXTRAFLAGS+= -DSR_TRACK_FX
+EXTRAFLAGS+= -DSR_VOICE_FX
 endif
+
+ifeq ($(PROCEDURAL),y)
+EXTRAFLAGS+= -DSR_PROCEDURAL
+EXTRAFLAGS+= -DSR_PROCEDURAL_TRACKS
+endif
+
+endif  # SR_CUSTOM_MK
+
 
 EXTRAFLAGS+= -DSR_STDIO -DHAVE_VSNPRINTF
 EXTRAFLAGS+= -DSR_MIX_RATE=48000.0f -DSR_VOLUME=0.94f
@@ -84,12 +101,6 @@ ifeq ($(AUDIO),y)
 EXTRAFLAGS+= -DSR_PORTAUDIO
 # (note) when SR_PORTAUDIO_DEVIDX is undefined, Pa_GetDefaultOutputDevice() is used instead
 #EXTRAFLAGS+= -DSR_PORTAUDIO_DEVIDX=5
-endif
-
-ifeq ($(PLUGINS),y)
-EXTRAFLAGS+= -DSR_TRACK_SENDS
-EXTRAFLAGS+= -DSR_TRACK_FX
-EXTRAFLAGS+= -DSR_VOICE_FX
 endif
 
 EXTRAFLAGS+= -DSR_PROFILE
