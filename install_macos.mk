@@ -258,10 +258,16 @@ ifeq ($(RELEASE),y)
 
 ifeq ($(OPT_SIZE),y)
 #OPTFLAGS += -Os
-OPTFLAGS += -Oz
+OPTFLAGS+= -Oz
 else
 OPTFLAGS += -O3
 endif
+
+ifeq ($(OPT_LTO),y)
+OPTFLAGS+= -flto
+LDFLAGS += -flto
+endif
+
 #OPTFLAGS += -O2
 #OPTFLAGS += -O2 -fsanitize=undefined
 #OPTFLAGS +=

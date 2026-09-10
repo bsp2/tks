@@ -281,6 +281,10 @@ endif
 else
 OPTFLAGS += -O3
 endif
+ifeq ($(OPT_LTO),y)
+OPTFLAGS+= -flto
+LDFLAGS += -flto
+endif
 # for Raspberry Pi or Poky Linux builds
 ifeq ($(BUILD_ARM),y)
 ifeq ($(BUILD_64),n)
