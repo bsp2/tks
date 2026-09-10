@@ -5243,8 +5243,10 @@ class Sample {
          // Step values+durations
          ofs.i8 = STMODSEQ_MAX_STEPS;
          int stepIdx = 0;
+         boolean bStepAll0 = true;
          loop(STMODSEQ_MAX_STEPS)
          {
+            bStepAll0 = bStepAll0 && (0.0f == mseq.getStepValue(stepIdx));
             ofs.f32 = mseq.getStepValue(stepIdx++);
          }
          stepIdx = 0;
@@ -5261,6 +5263,8 @@ class Sample {
 
          // Value offset
          ofs.f32 = mseq.valueOff;
+
+         bStepAll0 = bStepAll0 && (0.0f == mseq.valueOff);
 
          // Slew amount (v2+)
          ofs.i8 = mseq.slewAmt * 255;
@@ -5292,7 +5296,8 @@ class Sample {
 
          ofs.i8 = flags;
 
-         current_project.b_export_syn_modseq = true;
+         if(!bStepAll0)
+            current_project.b_export_syn_modseq = true;
       }
       else
       {
@@ -5537,6 +5542,8 @@ class Sample {
 
       // Alg (v3+)
       ofs.i8 = s.voicePluginAlg;
+      if(0 != s.voicePluginAlg)
+         current_project.b_export_syn_plugins_only = false;  // plugin opt won't work
 
       // Alg Filter Pos (v3+)
       ofs.i8 = s.voicePluginAlgFilterPos;
@@ -5555,7 +5562,7 @@ class Sample {
          boolean bEnable = s.getEnableVoicePlugin(pluginIdx);
 
          StPluginShared pluginShared <= s.getVoicePluginShared(pluginIdx);
-         if( (null != pluginShared) && bEnable )
+         if(bEnable && null != pluginShared)
          {
             // Ver / enable flag
             ofs.i8 = 1;
@@ -5563,6 +5570,9 @@ class Sample {
             current_project.b_export_syn_voice_fx = true;
 
             StPluginInfo pluginInfo <= pluginShared.info;
+
+            if(0 == pluginIdx && (0 == (pluginInfo.flags & (1 << 1)/*ST_PLUGIN_FLAG_OSC*/)))
+               current_project.b_export_syn_plugins_only = false;  // plugin opt won't work
 
             Global.Debug("Sample::exportSamplePlugins: pluginIdx="+pluginIdx+" pluginId=\""+pluginInfo.id+"\" #params="+pluginInfo.numParams+" preFilter="+s.getEnableVoicePluginPreFilter(pluginIdx)+" invPhase="+s.getEnableVoicePluginInvertPhase(pluginIdx)+" level="+s.getVoicePluginLevel(pluginIdx)+" pan="+s.getVoicePluginPan(pluginIdx));
 
@@ -5596,6 +5606,9 @@ class Sample {
          {
             // Ver / enable flag
             ofs.i8 = 0;
+
+            if(0 == pluginIdx)
+               current_project.b_export_syn_plugins_only = false;  // plugin opt won't work
          }
 
          // Next plugin slot
@@ -5929,6 +5942,11 @@ class Sample {
          int idx = 0;
          loop(loops.numElements)
          {
+            if(1 == (idx % 3))  // len ?
+            {
+               if(loops.get(idx) > 32)  // see StSampleVoice::renderFragmentOptVoicePluginOsc() / b_voiceplugin_osc_hint
+                  current_project.b_export_syn_plugins_only = false;  // plugin opt won't work
+            }
             ofs.i32 = loops.get(idx++);
          }
       }
@@ -6255,9 +6273,13 @@ class Sample {
 
       // Volume Ramp Up
       ofs.f32 = s.volumeRampStepsMillisecIn;
+      if(s.volumeRampStepsMillisecIn > 0.0f)
+         current_project.b_export_syn_plugins_only = false;  // plugin opt won't work
 
       // Volume Ramp Down
       ofs.f32 = s.volumeRampStepsMillisecOut;
+      if(s.volumeRampStepsMillisecOut > 0.0f)
+         current_project.b_export_syn_plugins_only = false;  // plugin opt won't work
 
       // EnableFreezeSampleOffWhenQuiet
       ofs.i8 = s.enableFreezeSampleOffWhenQuiet;
@@ -6341,6 +6363,8 @@ class Sample {
       {
          // Filter Enable (v36+)
          ofs.i8 = s.enableFilter;
+         if(s.enableFilter || STSAMPLE_FLT_TYPE_NONE != s.filterType)
+            current_project.b_export_syn_plugins_only = false;  // plugin opt won't work
 
          // Filter Type (v5+)
          ofs.i8 = s.filterType;
@@ -6514,6 +6538,8 @@ class Sample {
          // Enable FX
          if(s.enableFX)
             glideFXFlags |= (1 << 9);
+         else
+            current_project.b_export_syn_plugins_only = false;
 
          // Free running oscillator mode (v85+)
          if(s.enableFreeRunningOsc)
@@ -7227,6 +7253,8 @@ class Sample {
 
       if(b_procedural && !_bForceStaticSamples)
          current_project.b_export_syn_procedural = true;
+      else
+         current_project.b_export_syn_plugins_only = false;
 
       // .l waveform num frames
       ofs.i32 = waveform.numFrames;
