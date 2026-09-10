@@ -52,9 +52,16 @@
 #include "sr.h"
 
 // ------------------------------------ config
-#define SONGNAME "demo_2-r-sr"
 
-extern void cycle_calc_waveform_demo_2_r_sr (float *_wfAddr);
+#ifdef DEMO_3
+#define SONGNAME "demo_3_fm-a"
+#define CYCLE_CALC_FXN cycle_calc_waveform_demo_3_fm_a
+#else
+#define SONGNAME "demo_2-r-sr"
+#define CYCLE_CALC_FXN cycle_calc_waveform_demo_2_r_sr
+#endif // DEMO_3
+
+extern void CYCLE_CALC_FXN (float *_wfAddr);
 
 // when defined, add code to render song to mem buffer (+optionally write to file)
 //  (note) if SR_SAVE_SONG_WF_DAT is not defined, no file will be written
@@ -290,7 +297,8 @@ static void loc_batch_render(sr_proj_t proj, sr_song_t song) {
 
 // ------------------------------------ loc_register_plugins
 #ifdef SR_FX
-static void loc_register_plugins(void) {
+#ifndef DEMO_3
+static void loc_register_plugins_demo_2(void) {
    sr_register_plugin(&amp_init);
    sr_register_plugin(&biquad_lpf_1_init);
    sr_register_plugin(&biquad_lpf_2_init);
@@ -319,6 +327,11 @@ static void loc_register_plugins(void) {
    sr_register_plugin(&fm_stack_init_medresh);
    sr_register_plugin(&fm_stack_init_hires);
 }
+#else
+static void loc_register_plugins_demo_3(void) {
+   sr_register_plugin(&fm_stack_init_medres);
+}
+#endif // DEMO_3
 #endif // SR_FX
 
 // ------------------------------------ main
@@ -336,7 +349,11 @@ int main(int argc, char**argv) {
    sr_set_volume(SR_VOLUME);
 
 #ifdef SR_FX
-   loc_register_plugins();
+#ifdef DEMO_3
+   loc_register_plugins_demo_3();
+#else
+   loc_register_plugins_demo_2();
+#endif // DEMO_3
 #endif // SR_FX
 
    sr_proj_t proj = sr_proj_new();
@@ -372,7 +389,7 @@ int main(int argc, char**argv) {
 #ifdef SR_PROFILE
             unsigned int t = loc_profile_ms_get();
 #endif // SR_PROFILE
-            sr_calc_cycle_waveforms(proj, song, &cycle_calc_waveform_demo_2_r_sr);
+            sr_calc_cycle_waveforms(proj, song, &CYCLE_CALC_FXN);
 #ifdef SR_PROFILE
             t = loc_profile_ms_get() - t;
             Dinfo("[...] cycle: synthesized %4.2fk samples in %u ms\n", (wfSz / 1024.0f), t);
