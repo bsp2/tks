@@ -269,7 +269,15 @@ LDFLAGS += $(MFLAGS) --sysroot=$(CROSS_ROOT)
 OPTFLAGS += -O3
 else
 ifeq ($(OPT_SIZE),y)
-OPTFLAGS += -Os
+OPTFLAGS+= -fno-exceptions -fno-unwind-tables
+ifeq ("${BUILD_CLANG}","y")
+OPTFLAGS+= -Oz
+OPTFLAGS+= -ffunction-sections -fdata-sections
+LDFLAGS+= -Wl,--gc-sections
+else
+OPTFLAGS+= -Os
+LDFLAGS+= -dead_strip
+endif
 else
 OPTFLAGS += -O3
 endif
