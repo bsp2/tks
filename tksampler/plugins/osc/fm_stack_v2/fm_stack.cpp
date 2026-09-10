@@ -315,6 +315,7 @@ extern void save_env_shapes (void);
 #define MGRP_DST_OUT               28
 #define MGRP_DST_NUM               29
 
+#ifndef STFX_SKIP_MAIN_INIT
 static const char *loc_mgrp_dst_names[MGRP_DST_NUM] = {
    "-",            //  0: MGRP_DST_NONE
    "Level",        //  1: MGRP_DST_OP_LEVEL
@@ -346,6 +347,7 @@ static const char *loc_mgrp_dst_names[MGRP_DST_NUM] = {
    "WS AB Mix",    // 27: MGRP_DST_WS_AB_MIX
    "Out",          // 28: MGRP_DST_OUT
 };
+#endif // !STFX_SKIP_MAIN_INIT
 
 // 8 variations follow
 #define PARAM_VAR_BASE             32
@@ -422,6 +424,7 @@ static const char *loc_mgrp_dst_names[MGRP_DST_NUM] = {
 
 
 
+#ifndef STFX_SKIP_MAIN_INIT
 static const char *loc_param_names[NUM_PARAMS] = {
    "MG1-Variation",  //   0: PARAM_MGRP1_VAR
    "MG2-Level",      //   1: PARAM_MGRP2_LEVEL
@@ -743,7 +746,9 @@ static const char *loc_param_names[NUM_PARAMS] = {
    "<resvd_279>",     // 287: <resvd_279>
 
 };
+#endif // !STFX_SKIP_MAIN_INIT
 
+#ifndef STFX_SKIP_MAIN_INIT
 static float loc_param_resets[NUM_PARAMS] = {
    0.0f,             //   0: PARAM_MGRP1_VAR
    0.5f,             //   1: PARAM_MGRP2_LEVEL
@@ -1064,6 +1069,7 @@ static float loc_param_resets[NUM_PARAMS] = {
    0.0f,             // 286: <resvd_278>
    0.0f,             // 287: <resvd_279>
 };
+#endif // !STFX_SKIP_MAIN_INIT
 
 #define MOD_MGRP1_VAR            0
 #define MOD_MGRP1_AMT            0  // alias for  MOD_MGRP1_VAR (base for mod groups 2..8)
@@ -1075,6 +1081,7 @@ static float loc_param_resets[NUM_PARAMS] = {
 #define MOD_MGRP7_PITCH          6
 #define MOD_MGRP8_WS_AB          7
 #define NUM_MODS                 8
+#ifndef STFX_SKIP_MAIN_INIT
 static const char *loc_mod_names[NUM_MODS] = {
    "MG1-Variation",  // 0: MOD_MGRP1_VAR
    "MG2-Level",      // 1: MOD_MGRP2_LEVEL
@@ -1085,7 +1092,9 @@ static const char *loc_mod_names[NUM_MODS] = {
    "MG7",            // 6: MOD_MGRP7
    "MG8",            // 7: MOD_MGRP8
 };
+#endif // !STFX_SKIP_MAIN_INIT
 
+#ifndef STFX_SKIP_MAIN_INIT
 static const char *loc_wave_names[NUM_WAVES] = {
    "  0: zero",       //   0
    "  1: sin",        //   1
@@ -1391,6 +1400,7 @@ static const char *loc_wave_names[NUM_WAVES] = {
    "301: hermite:19", // 301
    "302: hermite:20", // 302
 };
+#endif // !STFX_SKIP_MAIN_INIT
 
 // -------------------------------------------------
 
@@ -4118,13 +4128,16 @@ static void loc_prepare(st_plugin_voice_t *_voice,
 
 } /* end prepare */
 
+#ifndef STFX_SKIP_MAIN_INIT
 static const char *ST_PLUGIN_API loc_get_param_name(st_plugin_info_t *_info,
                                                     unsigned int      _paramIdx
                                                     ) {
    (void)_info;
    return loc_param_names[_paramIdx];
 }
+#endif // !STFX_SKIP_MAIN_INIT
 
+#ifndef STFX_SKIP_MAIN_INIT
 static unsigned int loc_copy_chars(char *_d, const unsigned int _dSize, const char *_s) {
    unsigned int r = 0u;
    if(NULL != _d)
@@ -4176,7 +4189,9 @@ static unsigned int loc_copy_chars(char *_d, const unsigned int _dSize, const ch
    }
    return r;
 }
+#endif // !STFX_SKIP_MAIN_INIT
 
+#ifndef STFX_SKIP_MAIN_INIT
 static unsigned int ST_PLUGIN_API loc_query_dynamic_param_name(st_plugin_shared_t *_shared,
                                                                const unsigned int  _paramIdx,
                                                                char               *_retBuf,
@@ -4204,6 +4219,7 @@ static unsigned int ST_PLUGIN_API loc_query_dynamic_param_name(st_plugin_shared_
       return loc_copy_chars(_retBuf, _retBufSize, loc_param_names[_paramIdx]);
    }
 }
+#endif // !STFX_SKIP_MAIN_INIT
 
 static unsigned int loc_copy_floats(float              *_d,
                                     const unsigned int  _dSize,
@@ -4229,12 +4245,14 @@ static unsigned int loc_copy_floats(float              *_d,
    return r;
 }
 
+#ifndef STFX_SKIP_MAIN_INIT
 static float ST_PLUGIN_API loc_get_param_reset(st_plugin_info_t *_info,
                                                unsigned int      _paramIdx
                                                ) {
    (void)_info;
    return loc_param_resets[_paramIdx];
 }
+#endif // !STFX_SKIP_MAIN_INIT
 
 static float ST_PLUGIN_API loc_get_param_value(st_plugin_shared_t *_shared,
                                                unsigned int        _paramIdx
@@ -4251,13 +4269,16 @@ static void ST_PLUGIN_API loc_set_param_value(st_plugin_shared_t *_shared,
    shared->params[_paramIdx] = _value;
 }
 
+#ifndef STFX_SKIP_MAIN_INIT
 static const char *ST_PLUGIN_API loc_get_mod_name(st_plugin_info_t *_info,
                                                   unsigned int      _modIdx
                                                   ) {
    (void)_info;
    return loc_mod_names[_modIdx];
 }
+#endif // !STFX_SKIP_MAIN_INIT
 
+#ifndef STFX_SKIP_MAIN_INIT
 static unsigned int ST_PLUGIN_API loc_query_dynamic_mod_name(st_plugin_shared_t *_shared,
                                                              const unsigned int  _modIdx,
                                                              char               *_retBuf,
@@ -4281,7 +4302,9 @@ static unsigned int ST_PLUGIN_API loc_query_dynamic_mod_name(st_plugin_shared_t 
       }
    }
 }
+#endif // !STFX_SKIP_MAIN_INIT
 
+#ifndef STFX_SKIP_MAIN_INIT
 static unsigned int ST_PLUGIN_API loc_query_dynamic_param_preset_values(st_plugin_shared_t *_shared,
                                                                         const unsigned int  _paramIdx,
                                                                         float              *_retValues,
@@ -4311,7 +4334,9 @@ static unsigned int ST_PLUGIN_API loc_query_dynamic_param_preset_values(st_plugi
    }
    return r;
 }
+#endif // !STFX_SKIP_MAIN_INIT
 
+#ifndef STFX_SKIP_MAIN_INIT
 static unsigned int ST_PLUGIN_API loc_query_dynamic_param_preset_name(st_plugin_shared_t *_shared,
                                                                       const unsigned int  _paramIdx,
                                                                       const unsigned int  _presetIdx,
@@ -4331,6 +4356,7 @@ static unsigned int ST_PLUGIN_API loc_query_dynamic_param_preset_name(st_plugin_
    }
    return r;
 }
+#endif // !STFX_SKIP_MAIN_INIT
 
 static void ST_PLUGIN_API loc_set_sample_rate(st_plugin_voice_t *_voice,
                                               float              _sampleRate
@@ -4509,7 +4535,9 @@ static st_plugin_shared_t *ST_PLUGIN_API loc_shared_new(st_plugin_info_t *_info)
    {
       memset((void*)ret, 0, sizeof(*ret));
       ret->base.info  = _info;
+#ifndef STFX_SKIP_MAIN_INIT
       memcpy((void*)ret->params, (void*)loc_param_resets, NUM_PARAMS * sizeof(float));
+#endif // !STFX_SKIP_MAIN_INIT
    }
    return &ret->base;
 }
@@ -4609,15 +4637,19 @@ st_plugin_info_t *FMSTACK_INIT(void) {
       ret->base.shared_delete                     = &loc_shared_delete;
       ret->base.voice_new                         = &loc_voice_new;
       ret->base.voice_delete                      = &loc_voice_delete;
+#ifndef STFX_SKIP_MAIN_INIT
       ret->base.get_param_name                    = &loc_get_param_name;
       ret->base.query_dynamic_param_name          = &loc_query_dynamic_param_name;
       ret->base.query_dynamic_param_preset_values = &loc_query_dynamic_param_preset_values;
       ret->base.query_dynamic_param_preset_name   = &loc_query_dynamic_param_preset_name;
       ret->base.get_param_reset                   = &loc_get_param_reset;
+#endif // !STFX_SKIP_MAIN_INIT
       ret->base.get_param_value                   = &loc_get_param_value;
       ret->base.set_param_value                   = &loc_set_param_value;
+#ifndef STFX_SKIP_MAIN_INIT
       ret->base.get_mod_name                      = &loc_get_mod_name;
       ret->base.query_dynamic_mod_name            = &loc_query_dynamic_mod_name;
+#endif // !STFX_SKIP_MAIN_INIT
       ret->base.set_sample_rate                   = &loc_set_sample_rate;
       ret->base.note_on                           = &loc_note_on;
       ret->base.note_off                          = &loc_note_off;
@@ -5285,6 +5317,7 @@ st_plugin_info_t *FMSTACK_INIT(void) {
 
       loc_calc_lut_modfm_exp();
 
+#ifndef STFX_SKIP_MAIN_INIT
       // Replicate variation param names and resets
       {
          const char**sNames = &loc_param_names[PARAM_VAR_BASE];
@@ -5305,6 +5338,7 @@ st_plugin_info_t *FMSTACK_INIT(void) {
             dResets += NUM_PARAMS_PER_VAR;
          }
       }
+#endif // !STFX_SKIP_MAIN_INIT
    }
 
    return &ret->base;
