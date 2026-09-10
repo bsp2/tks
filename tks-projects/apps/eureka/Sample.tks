@@ -37,7 +37,7 @@
 // ----          20May2025, 28May2025, 05Jun2025, 12Jun2025, 13Jun2025, 14Jun2025, 22Dec2025
 // ----          09Jan2026, 13Jan2026, 16Jan2026, 14Feb2026, 09Apr2026, 10Apr2026, 12Apr2026
 // ----          16Apr2026, 19Apr2026, 23Apr2026, 09May2026, 17May2026, 18May2026, 20May2026
-// ----          22May2026, 10Jul2026, 11Jul2026, 07Sep2026
+// ----          22May2026, 10Jul2026, 11Jul2026, 07Sep2026, 10Sep2026
 // ----
 // ----
 // ----
@@ -5152,6 +5152,10 @@ class Sample {
 
          // Flags
          ofs.i8 = flags;
+
+         current_project.b_export_syn_lfo = true;
+         if(lfo.enableGlobal)
+            current_project.b_export_syn_global_lfos = true;
       }
       else
       {
@@ -5287,6 +5291,8 @@ class Sample {
             flags |= (2 << 5);
 
          ofs.i8 = flags;
+
+         current_project.b_export_syn_modseq = true;
       }
       else
       {
@@ -5308,7 +5314,11 @@ class Sample {
       }
 
       // Op
-      ofs.i8 = s.getMMOp(mmIdx);
+      int op = s.getMMOp(mmIdx);
+      ofs.i8 = op;
+
+      if(STSAMPLE_MM_OP_BLEND_SRC <= op <= STSAMPLE_MM_OP_TRI_NR)
+         current_project.b_export_syn_exp_mm_ops = true;
 
       if(_bEditor)
       {
@@ -5331,7 +5341,10 @@ class Sample {
       ofs.i8 = s.getMMSlewReset(mmIdx);
 
       // Source
-      ofs.i8 = s.getMMSrc(mmIdx);
+      int src = s.getMMSrc(mmIdx);
+      ofs.i8 = src;
+      if(STSAMPLE_MM_SRC_GLOBAL_REG1 <= src <= STSAMPLE_MM_SRC_GLOBAL_REG4_ON)
+         current_project.b_export_syn_global_regs = true;
 
       // Curve (v25+)
       ofs.f32 = s.getMMCurve(mmIdx);
@@ -5347,7 +5360,8 @@ class Sample {
       ofs.f32 = amt;
 
       // Destination
-      ofs.i8 = s.getMMDst(mmIdx);
+      int dst = s.getMMDst(mmIdx);
+      ofs.i8 = dst;
    }
 
    // <save.png>
@@ -5546,6 +5560,8 @@ class Sample {
             // Ver / enable flag
             ofs.i8 = 1;
 
+            current_project.b_export_syn_voice_fx = true;
+
             StPluginInfo pluginInfo <= pluginShared.info;
 
             Global.Debug("Sample::exportSamplePlugins: pluginIdx="+pluginIdx+" pluginId=\""+pluginInfo.id+"\" #params="+pluginInfo.numParams+" preFilter="+s.getEnableVoicePluginPreFilter(pluginIdx)+" invPhase="+s.getEnableVoicePluginInvertPhase(pluginIdx)+" level="+s.getVoicePluginLevel(pluginIdx)+" pan="+s.getVoicePluginPan(pluginIdx));
@@ -5625,6 +5641,8 @@ class Sample {
             {
                // Default flag (1=use parent freq table)
                ofs.i8 = 1;
+
+               current_project.b_export_syn_tuning_tables = true;
             }
 
             if(_bEditor)
@@ -5663,6 +5681,10 @@ class Sample {
 
       // Play Mode (v28+)
       ofs.i8 = s.playMode;
+
+      current_project.b_export_syn_play_xfade |=
+         (STSAMPLE_PLAY_MODE_XFADE_ALL <= s.playMode <= STSAMPLE_PLAY_MODE_XFADE_16384)
+         ;
 
       // Sample Rate Ratio (v21+)
       ofs.f32 = s.sampleRateRatio;
@@ -5932,7 +5954,10 @@ class Sample {
          ofs.f32 = s.getMMKeyboardMax();
 
          // ModMatrix variations (v81+)
-         ofs.i8  = s.mmVarGetEnable();                  // v81+
+         boolean bVar = s.mmVarGetEnable();
+         if(bVar)
+            current_project.b_export_syn_mm_var = true;
+         ofs.i8  = bVar;                                // v81+
          ofs.i8  = s.mmVarGetNum();                     // v81+
          ofs.i8  = s.mmVarGetEnableSmooth();            // v81+
          ofs.i8  = s.mmVarGetEditIdx();                 // v81+
@@ -6057,6 +6082,7 @@ class Sample {
       ofs.f32 = s.volume;
 
       // Volume LFO Amt (v19+)
+      //  (todo) SYN: save only when LFO is enabled
       ofs.f32 = s.volLFOAmt;
 
       // Volume Velocity Amount
@@ -6084,6 +6110,7 @@ class Sample {
       ofs.f32 = s.panEnvAmt;
 
       // Pan LFO Amt (v16+)
+      //  (todo) SYN: save only when LFO is enabled
       ofs.f32 = s.panLFOAmt;
 
       // Transpose Oct
@@ -6102,6 +6129,7 @@ class Sample {
       ofs.f32 = s.freqEnvAmt;
 
       // Freq LFO Amt (v16+)
+      //  (todo) SYN: save only when LFO is enabled
       ofs.f32 = s.freqLFOAmt;
 
       // Delay (ms)
@@ -6112,12 +6140,16 @@ class Sample {
 
       // Enable Timestretch
       ofs.i8 = s.enableTimestretch;
+      if(s.enableTimestretch)
+         current_project.b_export_syn_wavetable = true;
 
       if(_bEditor || s.enableTimestretch)
       {
          if(_bEditor)/// || s.enableTimestretchAdditive)
          {
             // Enable Timestretch Additive (v49+)
+            if(s.enableTimestretchAdditive)
+               current_project.b_export_syn_additive = true;
             ofs.i8 = s.enableTimestretchAdditive;
 
             // Timestretch Additive Cycle X-Fade (v80+)
@@ -6186,6 +6218,8 @@ class Sample {
 
          // Timestretch Interpolation Type
          ofs.i8 = s.timestretchInterpolType;
+         if(STSAMPLE_TIMESTRETCH_INTERPOL_LINEAR != s.timestretchInterpolType)
+            current_project.b_export_syn_fragment_ipol = true;
 
          // Timestretch Grain Window Type (v35+)
          ofs.i8 = s.timestretchGrainWindowType;
@@ -6239,26 +6273,37 @@ class Sample {
 
       // Interpolation Type
       ofs.i8 = s.interpolType;
+      if(STSAMPLE_INTERPOL_VSR2 <= s.interpolType <= STSAMPLE_INTERPOL_VSR64)
+         current_project.b_export_syn_ipol_vsr = true;
+      else if(STSAMPLE_INTERPOL_LANCZOS4 <= s.interpolType <= STSAMPLE_INTERPOL_LANCZOS64)
+         current_project.b_export_syn_ipol_lancsoz = true;
 
       // Interpolation Order (v71+)
       ofs.i8 = s.interpolOrder;
 
       // AI Num Poles (v71+)
       ofs.i8 = s.aiNumPoles;
+      if(s.aiNumPoles > 0)
+         current_project.b_export_syn_aa_ai = true;
 
       // AI Exp Up (v71+)
+      // (todo) SYN: save only when aiNumPoles > 0
       ofs.f32 = s.aiExpUp;
 
       // AI Exp Down (v71+)
+      // (todo) SYN: save only when aiNumPoles > 0
       ofs.f32 = s.aiExpDown;
 
       // AI Q (v72+)
+      // (todo) SYN: save only when aiNumPoles > 0
       ofs.f32 = s.aiQ;
 
       // AI Linear Num Octaves (v73+)
+      // (todo) SYN: save only when aiNumPoles > 0
       ofs.f32 = s.aiLinOct;
 
       // AI Linear Max Cutoff (v73+)
+      // (todo) SYN: save only when aiNumPoles > 0
       ofs.f32 = s.aiLinMax;
 
       // // 8bit mode (< v55+)
@@ -6334,6 +6379,8 @@ class Sample {
 
          if(s.enableFilter && (STSAMPLE_FLT_TYPE_NONE != s.filterType))
          {
+            current_project.b_export_syn_filter = true;
+
             // Filter CutOff (v5+)
             ofs.i8 = s.filterCutOff * 127;
 
@@ -6477,6 +6524,8 @@ class Sample {
 
       if(_bEditor)
       {
+         current_project.b_export_syn_liverec = true;
+
          // LiveRec Enable (v26+)
          ofs.i8 = s.liveRecEnable;
 
@@ -6625,6 +6674,8 @@ class Sample {
 
                // Frequency table (128 MIDI notes)
                Utils.WriteFloatArray(ofs, faFreq);
+
+               current_project.b_export_syn_tuning_tables = true;
             }
             else
             {
@@ -6909,6 +6960,8 @@ class Sample {
                ofs.offset = seqOff;
                ofs.i32 = seqOffEnd - seqOff - 4/*sizeof(i32)*/;
                ofs.offset = seqOffEnd;
+
+               current_project.b_export_syn_procedural_track = true;
             }
             else
             {
@@ -7171,6 +7224,9 @@ class Sample {
 
       // .b procedural flag
       ofs.i8 = b_procedural && !_bForceStaticSamples;
+
+      if(b_procedural && !_bForceStaticSamples)
+         current_project.b_export_syn_procedural = true;
 
       // .l waveform num frames
       ofs.i32 = waveform.numFrames;
