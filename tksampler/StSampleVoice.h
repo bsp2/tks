@@ -677,7 +677,9 @@ YC class StSampleVoice : public YAC_Object {
    void lazyAllocOverrideSmpDat (sUI _sz);
 #endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_PLUGINS_ONLY
    void adjustPlayOffsetToNextZeroCrossing (const sF32 *_smpDat);
+#endif // !TKSAMPLER_PLUGINS_ONLY
 
   public:
    static sF32 BitReduce (sF32 f, const sF32 _brPreAmp, const sU16 _brMask);
@@ -927,9 +929,10 @@ YC class StSampleVoice : public YAC_Object {
                           sBool _bAllowCOffReset
                           );
 
-   void calcTSWindowSin (sUI _len);
-   void calcTSWindowTri (sUI _len);
+   // // void calcTSWindowSin (sUI _len);
+   // // void calcTSWindowTri (sUI _len);
 
+#ifndef TKSAMPLER_PLUGINS_ONLY
    void readWindowedCycleSample (const sF32 *smpDat,
 #ifndef TKSAMPLER_SKIP_LIVEREC
                                  const sF32 *smpDatLRX,
@@ -990,6 +993,7 @@ YC class StSampleVoice : public YAC_Object {
 #endif // TKSAMPLER_SKIP_LIVEREC
                     sSI _off
                     ) /*const*/;  // stereo
+#endif // !TKSAMPLER_PLUGINS_ONLY
 
 #ifndef LIBSYNERGY_BUILD
 #ifndef TKSAMPLER_SKIP_PLUGINS
