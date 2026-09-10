@@ -72,3 +72,29 @@ Features:
 
 
 See [here](http://miditracker.org/eureka/readme.html#features) for more information.
+
+# Build options
+
+The following preprocessor defines can be used for reducing the size of the (standalone) Synergy replay (see [config_common.mk](../synergy_replay/config_common.mk):
+
+- `-DLIBSYNERGY_BUILD`              (compile for standalone synergy_replay.
+                                     disable modmatrix signal taps.
+                                     )
+- `-DTKSAMPLER_SKIP_TUNING_TABLES`  (disable tuning tables)
+- `-DTKSAMPLER_SKIP_WAVETABLE`      (disable wavetable synthesis)
+- `-DTKSAMPLER_SKIP_FRAGMENT_IPOL`  (always use LINEAR wavetable interpolation)
+- `-DTKSAMPLER_SKIP_ADDITIVE`       (disable additive wavetable synthesis)
+- `-DTKSAMPLER_SKIP_LIVEREC`        (disable live recording)
+- `-DTKSAMPLER_SKIP_PLAY_XFADE`     (skip sample cross-fading play modes)
+- `-DTKSAMPLER_SKIP_IPOL_VSR`       (always use LINEAR sample interpolation)
+- `-DTKSAMPLER_SKIP_IPOL_LANCZOS`   (always use LINEAR sample interpolation)
+- `-DTKSAMPLER_SKIP_AA_AI`          (skip anti-aliasing / anti-imaging filter)
+- `-DTKSAMPLER_SKIP_FILTER`         (skip filters)
+- `-DTKSAMPLER_SKIP_EXP_MM_OPS`     (disable *experimental* modmatrix ops)
+- `-DTKSAMPLER_SKIP_GLOBAL_REGS`    (disable global reg modmatrix sources + destinations)
+- `-DTKSAMPLER_SKIP_LFO`            (disable LFOs)
+- `-DTKSAMPLER_SKIP_GLOBAL_LFOS`    (disable global LFOs)
+- `-DTKSAMPLER_SKIP_MODSEQ`         (disable modulation sequencers 1..4)
+
+deprecated:
+- `-DTKSAMPLER_WAVEPATH`            (enable non-linear wavetable paths)
