@@ -2142,7 +2142,7 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
                (d) = 0.0f;                                              \
          }                                                              \
          else if(STSAMPLE_MM_OP_STEP == mm->op)                         \
-            (d) = ((d) != 0.0f) ? (sSI(srcValDef * (d) + ((srcValDef >= 0.0f) ? 0.5f : -0.5f)) / (d)) : 0.0f
+            (d) = loc_mm_step(d, srcValDef)
 
 #define Delse_mm_lerp_bipolar8(d)                                       \
          else if(STSAMPLE_MM_OP_BLEND_SRC == mm->op)                    \
@@ -2190,7 +2190,7 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
                (d) = 0.0f;                                              \
          }                                                              \
          else if(STSAMPLE_MM_OP_STEP == mm->op)                         \
-            (d) = ((d) != 0.0f) ? (sSI(srcValDef * (d) + ((srcValDef >= 0.0f) ? 0.5f : -0.5f)) / (d)) : 0.0f
+            (d) = loc_mm_step(d, srcValDef)
 
 #define Delse_mm_lerp_scl(d, s)                                         \
          else if(STSAMPLE_MM_OP_BLEND_SRC == mm->op)                    \
@@ -2238,7 +2238,7 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
                (d) = 0.0f;                                              \
          }                                                              \
          else if(STSAMPLE_MM_OP_STEP == mm->op)                         \
-            (d) = ((d) != 0.0f) ? (sSI(srcValDef * (d) + ((srcValDef >= 0.0f) ? 0.5f : -0.5f)) / (d)) : 0.0f
+            (d) = loc_mm_step(d, srcValDef)
 
 #else
             // synergy_replay (remove blend,compare,modulo,triangle ops)
