@@ -87,6 +87,7 @@ The following preprocessor defines can be used for reducing the size of the (sta
 - `-DTKSAMPLER_SKIP_RANGE_KEY`      (skip sample zone key ranges)
 - `-DTKSAMPLER_SKIP_RANGE_VEL`      (skip sample zone velocity ranges)
 - `-DTKSAMPLER_SKIP_RANGE_MOD`      (skip sample zone modulation ranges)
+- `-DTKSAMPLER_SKIP_GLIDE`          (skip sample mono + poly glide)
 - `-DTKSAMPLER_SKIP_WAVETABLE`      (disable wavetable synthesis)
 - `-DTKSAMPLER_SKIP_FRAGMENT_IPOL`  (always use LINEAR wavetable interpolation)
 - `-DTKSAMPLER_SKIP_ADDITIVE`       (disable additive wavetable synthesis)
