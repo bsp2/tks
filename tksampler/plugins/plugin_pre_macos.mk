@@ -15,6 +15,11 @@ CFLAGS   += -DSTFX_SKIP_NAMES_AND_RESETS
 CPPFLAGS += -DSTFX_SKIP_NAMES_AND_RESETS
 endif
 
+ifneq (${CYCLE_SKIP_UI},)
+CFLAGS   += -DCYCLE_SKIP_UI
+CPPFLAGS += -DCYCLE_SKIP_UI
+endif
+
 CFLAGS+= -Wno-unused-variable -Wno-unused-function
 CPPFLAGS+= -Wno-unused-variable -Wno-unused-function
 EXTRALIBS+=
