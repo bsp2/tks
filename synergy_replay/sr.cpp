@@ -1440,7 +1440,11 @@ public:
 
 #ifndef TKSAMPLER_SKIP_MODSEQ
             s->_setDefaultModSeqPatch(mseqIdx, ifs.u8());
+#ifndef TKSAMPLER_SKIP_GLIDE
             s->_setEnableGlideRetrigModSeq(mseqIdx, ifs.s8());
+#else
+            /*s->_setEnableGlideRetrigModSeq(mseqIdx, */ifs.s8()/*)*/;
+#endif // TKSAMPLER_SKIP_GLIDE
 #else
             /*s->_setDefaultModSeqPatch(mseqIdx, */ifs.u8()/*)*/;
             /*s->_setEnableGlideRetrigModSeq(mseqIdx, */ifs.s8()/*)*/;
@@ -1832,8 +1836,9 @@ public:
          }
 #endif // TKSAMPLER_SKIP_FILTER
 
-
-         s->_setGlideType(ifs.s8());
+         sS8 glideType = ifs.s8();
+#ifndef TKSAMPLER_SKIP_GLIDE
+         s->_setGlideType(glideType);
          s->_setGlideSpeedTimeUp(ifs.f32());
          s->_setGlideSpeedTimeDown(ifs.f32());
          s->_setGlideSpeedFreqUp(ifs.f32());
@@ -1843,7 +1848,19 @@ public:
          s->_setEnableGlideGlissando(ifs.s8());
          s->_setGlideMinTime(ifs.u16());
          s->_setGlideMaxTime(ifs.u16());
+#else
+         /*s->_setGlideSpeedTimeUp*/(ifs.f32());
+         /*s->_setGlideSpeedTimeDown*/(ifs.f32());
+         /*s->_setGlideSpeedFreqUp*/(ifs.f32());
+         /*s->_setGlideSpeedFreqDown*/(ifs.f32());
+         /*s->_setEnableGlideRelease*/(ifs.s8());
+         /*s->_setGlideMaxNoteDist*/(ifs.s8());
+         /*s->_setEnableGlideGlissando*/(ifs.s8());
+         /*s->_setGlideMinTime*/(ifs.u16());
+         /*s->_setGlideMaxTime*/(ifs.u16());
+#endif // TKSAMPLER_SKIP_GLIDE
          sU16 glideFXFlags = ifs.u16();
+#ifndef TKSAMPLER_SKIP_GLIDE
          s->_setEnableGlideRetrigSample  ( (glideFXFlags >>  0) & 1u );
          s->_setEnableGlideRetrigEnvFreq ( (glideFXFlags >>  1) & 1u );
          s->_setEnableGlideRetrigEnvVol  ( (glideFXFlags >>  2) & 1u );
@@ -1855,6 +1872,7 @@ public:
          s->_setEnableGlideRetrigLFOPan  ( (glideFXFlags >>  7) & 1u );
          s->_setEnableGlideRetrigLFOAux  ( (glideFXFlags >>  8) & 1u );
 #endif // TKSAMPLER_SKIP_LFO
+#endif // TKSAMPLER_SKIP_GLIDE
 #ifndef TKSAMPLER_SKIP_PLUGINS
          s->_setEnableFX                 ( (glideFXFlags >>  9) & 1u );
 #endif // TKSAMPLER_SKIP_PLUGINS
@@ -2772,7 +2790,9 @@ public:
                      break;
 
                   case 65u: // portamento pedal
+#ifndef TKSAMPLER_SKIP_GLIDE
                      sp->updateGlideSwitch(_v >= 64);
+#endif // TKSAMPLER_SKIP_GLIDE
                      break;
 
                   case 66u: // sostenuto (todo)
