@@ -127,6 +127,7 @@ ZIP       = zip
 7Z        = 7zz
 UPX       = upx
 MD5SUM    = md5sum
+m         = $(MAKE) -f makefile.macos
 
 
 # 

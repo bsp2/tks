@@ -131,7 +131,7 @@ TKS       = $(TKS_PREFIX)/tks
 ZIP       = zip
 UPX       = upx
 MD5SUM    = md5sum
-
+m         = $(MAKE) -f makefile.linux
 
 # 
 # Number of parallel targets to make

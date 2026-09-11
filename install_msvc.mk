@@ -297,6 +297,8 @@ TKS       = "$(TKS_PREFIX)/tks"
 ZIP       = zip
 7Z        = 7z
 MD5SUM    = md5sum
+m         = $(MAKE) -f makefile.msvc
+
 #
 # UPX binary [optional]
 #  (Note: UPX303w crashes without -q option during parallel build (-j 4))
