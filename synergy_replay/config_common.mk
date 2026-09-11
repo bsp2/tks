@@ -11,10 +11,12 @@
 # PLUGINS     : enable voice + track fx
 # AUDIO       : enable portaudio output
 #
-MIN_FEATURES?=y
+MIN_FEATURES?=n
 WAVETABLES  ?=y
 LFO         ?=y
-MODSEQ      ?=n
+MODSEQ      ?=y
+MUTEX       ?=y
+RANGE       ?=y
 FILTERS     ?=y
 PLUGINS     ?=y
 PROCEDURAL  ?=y
@@ -70,6 +72,17 @@ endif
 
 ifneq ($(MODSEQ),y)
 EXTRAFLAGS+= -DTKSAMPLER_SKIP_MODSEQ
+endif
+
+ifneq ($(MUTEX),y)
+EXTRAFLAGS+= -DTKSAMPLER_SKIP_MUTEX_GROUPS
+endif
+
+ifneq ($(RANGE),y)
+EXTRAFLAGS+= -DTKSAMPLER_SKIP_RANGE
+EXTRAFLAGS+= -DTKSAMPLER_SKIP_RANGE_KEY
+EXTRAFLAGS+= -DTKSAMPLER_SKIP_RANGE_VEL
+EXTRAFLAGS+= -DTKSAMPLER_SKIP_RANGE_MOD
 endif
 
 ifneq ($(PLUGINS),y)
