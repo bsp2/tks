@@ -1662,6 +1662,7 @@ public:
 #endif // TKSAMPLER_SKIP_WAVETABLE
 
 
+#ifndef TKSAMPLER_SKIP_TIMED_LOOP
          s->_setEnableTimedLoop(ifs.u8());
          s->_setEnableTimedLoopFade(ifs.u8());
          s->_setTimedLoopBase(ifs.f32());
@@ -1672,6 +1673,12 @@ public:
                  s->_getTimedLoopBase(),
                  s->_getEnableOneShotLoopStep()
                  );
+#else
+         /*s->_setEnableTimedLoop*/(ifs.u8());
+         /*s->_setEnableTimedLoopFade*/(ifs.u8());
+         /*s->_setTimedLoopBase*/(ifs.f32());
+         /*s->_setEnableOneShotLoopStep*/(ifs.s8());
+#endif // TKSAMPLER_SKIP_TIMED_LOOP
 
          s->_setVolumeRampStepsMillisecIn(ifs.f32());
          s->_setVolumeRampStepsMillisecOut(ifs.f32());
