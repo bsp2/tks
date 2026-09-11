@@ -28,7 +28,7 @@
 // ----          11Aug2023, 08Sep2023, 19Sep2023, 22Sep2023, 18Nov2023, 03Oct2024, 07Dec2024
 // ----          04Jan2025, 09Jan2026, 10Apr2026, 09May2026, 15May2026, 17May2026, 18May2026
 // ----          19May2026, 20May2026, 22May2026, 23May2026, 25May2026, 26May2026, 08Sep2026
-// ----          10Sep2026
+// ----          10Sep2026, 11Sep2026
 // ----
 // ----
 // ----
@@ -570,12 +570,14 @@ public:
    }
 
    void init(void) {
+#ifndef TKSAMPLER_SKIP_MUTEX_GROUPS
       YAC_ValueObject vo;
       for(sUI i = 0u; i < 4u/*A..D*/; i++)
       {
          vo.initObject(YAC_NEW(StSampleMutexGroup), YAC_TRUE/*deleteme*/);
          sample_bank._addMutexGroup(&vo);
       }
+#endif // TKSAMPLER_SKIP_MUTEX_GROUPS
    }
 
    void initZone(StSample *s) {
@@ -714,6 +716,7 @@ public:
       (void)beData;
    }
 
+#ifndef TKSAMPLER_SKIP_RANGE_KEY
    sBool loadRangeKey(SR_BufferStreamLE &ifs, StRange *range) {
       range->_setLo(ifs.s8());
       range->_setHi(ifs.s8());
@@ -721,7 +724,17 @@ public:
       range->_setFadeOut(ifs.s8());
       return YAC_TRUE;
    }
+#else
+   sBool loadRangeKey_nop(SR_BufferStreamLE &ifs) {
+      /*range->_setLo*/(ifs.s8());
+      /*range->_setHi*/(ifs.s8());
+      /*range->_setFadeIn*/(ifs.s8());
+      /*range->_setFadeOut*/(ifs.s8());
+      return YAC_TRUE;
+   }
+#endif // TKSAMPLER_SKIP_RANGE
 
+#if !defined(TKSAMPLER_SKIP_RANGE_VEL) || !defined(TKSAMPLER_SKIP_RANGE_MOD)
    sBool loadRangeVelMod(SR_BufferStreamLE &ifs, StRange *range) {
       range->_setLo(ifs.s8()/127.0f);
       range->_setHi(ifs.s8()/127.0f);
@@ -730,6 +743,16 @@ public:
       range->_setEnableNoteOnFilter(ifs.s8());
       return YAC_TRUE;
    }
+#else
+   sBool loadRangeVelMod_nop(SR_BufferStreamLE &ifs) {
+      /*range->_setLo(*/ifs.s8()/* /127.0f)*/;
+      /*range->_setHi(*/ifs.s8()/* /127.0f)*/;
+      /*range->_setFadeIn(*/ifs.s8()/* /127.0)*/;
+      /*range->_setFadeOut(*/ifs.s8()/* /127.0)*/;
+      /*range->_setEnableNoteOnFilter*/(ifs.s8());
+      return YAC_TRUE;
+   }
+#endif // TKSAMPLER_SKIP_RANGE_VEL|MOD
 
    sBool loadEnv(SR_BufferStreamLE &ifs, StEnvelope *env, sU8 ver) {
       if(ver >= 2u)
@@ -1199,12 +1222,17 @@ public:
          char zoneName[1024-1];
          ifs.readString(zoneName, 1024-1/*gcc 14.2 issue*/);
          sS8 mtxGrpIdx = ifs.s8();
+#ifndef TKSAMPLER_SKIP_MUTEX_GROUPS
          StSampleMutexGroup *mtxGrp = (StSampleMutexGroup*)sample_bank._getMutexGroupByIdx(mtxGrpIdx);
          Dtrace("[dbg] SR_Sample::loadZone: ioOff=%u name=\"%s\" mtxGrp=%d (%p)\n", startOff, zoneName, mtxGrpIdx, mtxGrp);
          s->_setMutexGroup(mtxGrp);
+#else
+         (void)mtxGrpIdx;
+#endif // TKSAMPLER_SKIP_MUTEX_GROUPS
 
          // Key range
          sU8 verRange = ifs.u8();
+#ifndef TKSAMPLER_SKIP_RANGE_KEY
          range = (StRange*)s->_getOrCreateKeyRange();
          range->_setEnableHighInclusive(YAC_TRUE);
          if(verRange > 0)
@@ -1221,9 +1249,17 @@ public:
             range->_setHi(127.0f);
          }
          Dtrace("[...] SR_Sample::loadZone: key range lo=%f hi=%f fadeIn=%f fadeOut=%f noteOnFilter=%d highInclusive=%d\n", range->_getLo(), range->_getHi(), range->_getFadeIn(), range->_getFadeOut(), range->_getEnableNoteOnFilter(), range->_getEnableHighInclusive());
+#else
+         if(!loadRangeKey_nop(ifs))
+         {
+            Derror("[---] SR_Sample::loadZone: failed to load key range<nop> (verRange=%u)\n", verRange);
+            return YAC_FALSE;
+         }
+#endif // TKSAMPLER_SKIP_RANGE_KEY
 
          // Velocity range
          verRange = ifs.u8();
+#ifndef TKSAMPLER_SKIP_RANGE_VEL
          range = (StRange*)s->_getOrCreateVelRange();
          if(verRange > 0)
          {
@@ -1239,9 +1275,18 @@ public:
             range->_setHi(1.01f);
          }
          Dtrace("[...] SR_Sample::loadZone: vel range lo=%f hi=%f fadeIn=%f fadeOut=%f noteOnFilter=%d highInclusive=%d\n", range->_getLo(), range->_getHi(), range->_getFadeIn(), range->_getFadeOut(), range->_getEnableNoteOnFilter(), range->_getEnableHighInclusive());
+#else
+         if(!loadRangeVelMod_nop(ifs))
+         {
+            Derror("[---] SR_Sample::loadZone: failed to load velocity range<nop> (verRange=%u)\n", verRange);
+            return YAC_FALSE;
+         }
+#endif // TKSAMPLER_SKIP_RANGE_VEL
+
 
          // Mod range
          verRange = ifs.u8();
+#ifndef TKSAMPLER_SKIP_RANGE_MOD
          range = (StRange*)s->_getOrCreateModRange();
          if(verRange > 0)
          {
@@ -1258,6 +1303,13 @@ public:
             range->_setEnableHighInclusive(YAC_FALSE);
          }
          Dtrace("[...] SR_Sample::loadZone: mod range lo=%f hi=%f fadeIn=%f fadeOut=%f noteOnFilter=%d highInclusive=%d\n", range->_getLo(), range->_getHi(), range->_getFadeIn(), range->_getFadeOut(), range->_getEnableNoteOnFilter(), range->_getEnableHighInclusive());
+#else
+         if(!loadRangeVelMod_nop(ifs))
+         {
+            Derror("[---] SR_Sample::loadZone: failed to load mod range<nop> (verRange=%u)\n", verRange);
+            return YAC_FALSE;
+         }
+#endif // TKSAMPLER_SKIP_RANGE_MOD
 
          // Freq ADSR
          Dtrace("[dbg] SR_Sample::loadZone: freq adsr io_offset=%u\n", ifs.io_offset);
