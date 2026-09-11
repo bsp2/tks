@@ -11,14 +11,14 @@
 # PLUGINS     : enable voice + track fx
 # AUDIO       : enable portaudio output
 #
-MIN_FEATURES:=y
-WAVETABLES  :=y
-LFO         :=y
-MODSEQ      :=n
-FILTERS     :=y
-PLUGINS     :=y
-PROCEDURAL  :=y
-AUDIO       :=y
+MIN_FEATURES?=y
+WAVETABLES  ?=y
+LFO         ?=y
+MODSEQ      ?=n
+FILTERS     ?=y
+PLUGINS     ?=y
+PROCEDURAL  ?=y
+AUDIO       ?=y
 
 # -------------------------------------------------------------------------------------------
 EXTRAFLAGS+= -DYAC_NO_HOST
@@ -28,6 +28,7 @@ EXTRAFLAGS+= -DYAC_CUST_LISTNODE
 EXTRAFLAGS+= -DYAC_CUST_TREENODE
 EXTRAFLAGS+= -DYAC_CUST_POINTERARRAY
 EXTRAFLAGS+= -DYAC_SKIP_OBJECT_METHODS
+EXTRAFLAGS+= -DTKS_ENVELOPE_MINIMAL
 
 EXTRAFLAGS+= -DLIBSYNERGY_BUILD
 
