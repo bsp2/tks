@@ -32,7 +32,7 @@
 // ----          20Dec2022, 12Apr2023, 20Aug2023, 07Sep2023, 21Jan2024, 28Sep2024, 01Oct2024
 // ----          03Oct2024, 31Oct2024, 15Nov2024, 14Jan2025, 28May2025, 29May2025, 30May2025
 // ----          13Jun2025, 16Jan2026, 09Apr2026, 19May2026, 24May2026, 27May2026, 11Jul2026
-// ----          08Sep2026
+// ----          08Sep2026, 11Sep2026
 // ----
 // ----
 
@@ -98,7 +98,9 @@ YC class StSamplePlayer : public YAC_Object {
    sUI next_voice_key;        // monotonically increasing each time a voice is allocated or reallocated
    sUI next_voice_alloc_idx;  // monotonically increasing each time a voice is allocated (_not_ reallocated). used for e.g. voice calibration tables
 
+#ifndef TKSAMPLER_SKIP_GLIDE
    sBool b_glide_switch;
+#endif // TKSAMPLER_SKIP_GLIDE
 
    sF32 mod_vol;  // all voices modifiers
    sF32 mod_pan;
@@ -253,7 +255,9 @@ YC class StSamplePlayer : public YAC_Object {
 
    StSampleVoice *findBestMatchVoice (sUI _polyMode, sBool _bFadedOnly, sBool _bSoftStoppedOnly, sBool _bReleaseOnly, sBool _bForce);
    StSampleVoice *allocSampleVoice (StSample *_sample, sSI _note);
+#ifndef TKSAMPLER_SKIP_GLIDE
    StSampleVoice *allocSampleVoiceGlide (StSample *_sample, sSI _note);
+#endif // TKSAMPLER_SKIP_GLIDE
 
    void renderInt (YAC_FloatArray *buf, const sF32*const*_inputsOrNull);
 
@@ -541,6 +545,7 @@ YC class StSamplePlayer : public YAC_Object {
 #endif // LIBSYNERGY_BUILD
 
 
+#ifndef TKSAMPLER_SKIP_GLIDE
    /* @method findPreviousGlideNoteByKey,int key:int historyIdx:int
       Return -1 or glide_prev_note for first gliding voice that is assigned the given voicekey.
 
@@ -557,6 +562,7 @@ YC class StSamplePlayer : public YAC_Object {
       @return true if one or more voice histories have changed
    */
    YM sBool _removeFromGlideNoteHistory (sSI _note, sBool _bLastOnly);
+#endif // TKSAMPLER_SKIP_GLIDE
 
 
    /* @method initStartedVoicesByKey,int key
@@ -966,6 +972,7 @@ YC class StSamplePlayer : public YAC_Object {
    YM void updateRAuxSpdByKey (sSI _voiceKey, sF32 _spd);
 
 
+#ifndef TKSAMPLER_SKIP_GLIDE
    /* @method updateGlideSwitch,boolean bEnable
       Update glide switch of all active voices
    */
@@ -978,6 +985,7 @@ YC class StSamplePlayer : public YAC_Object {
    */
    YM void updateGlideSpeed (sF32 _speed);
    YM void updateGlideSpeedByKey (sSI _voiceKey, sF32 _speed);
+#endif // TKSAMPLER_SKIP_GLIDE
 
 
    /* @method updateFltCutOff,float f

@@ -24,7 +24,7 @@
 // ----          16Aug2023, 14Sep2023, 10Jan2024, 11Jan2024, 13Jan2024, 14Jan2024, 15Jan2024
 // ----          16Jan2024, 05Aug2024, 28Sep2024, 01Oct2024, 02Oct2024, 03Oct2024, 03Nov2024
 // ----          03Jan2025, 04Jan2025, 09Jan2026, 16Jan2026, 14May2026, 16May2026, 24May2026
-// ----          27May2026, 11Jul2026, 07Sep2026, 10Sep2026
+// ----          27May2026, 11Jul2026, 07Sep2026, 10Sep2026, 11Sep2026
 // ----
 // ----
 // ----
@@ -135,8 +135,10 @@ class StSampleVoiceNoteOnParams {
    sF32 _filter_offset;
    sF32 _filter_resonance;
 #endif // TKSAMPLER_SKIP_FILTER
+#ifndef TKSAMPLER_SKIP_GLIDE
    sBool _glide_switch;
    sF32  _glide_speed;
+#endif // TKSAMPLER_SKIP_GLIDE
    sF32  _perfctl_poly_pressure;  // -1=use sampleplayer perfctl (channel pressure), 0..127 otherwise
 #ifndef TKSAMPLER_SKIP_MODSEQ
    sUI  _modseq_retrigmask;
@@ -351,7 +353,9 @@ YC class StSampleVoice : public YAC_Object {
    sBool b_release;    // 1=voice is in release phase (after note-off)
    sBool b_release_pulse;  // 1 for 1 tick when release phase (note off) is started
    sBool b_alloc;      // 1=voice has just been allocated (valid for current tick)
+#ifndef TKSAMPLER_SKIP_GLIDE
    sBool b_glide;      // 1=voice has been allocated via allocSampleVoiceGlide() (=> apply retrig flags in initStartedVoicesByKey())
+#endif // TKSAMPLER_SKIP_GLIDE
    sBool b_allow_smpoff;  // [03Nov2024] workaround for glide+smpoff modmatrix mod (becomes 0 when note is released)
    sBool b_realloc;    // 1=(mono-)voice has been re-allocated and uses free-running osc (skip smpoff) (see StSample::b_free_running_osc)
 
@@ -543,9 +547,11 @@ YC class StSampleVoice : public YAC_Object {
    StSampleVoiceBiquad2 biquad_b_2[2/*channels*/];   // for dual-filter configuration (LP+HP)
 #endif // TKSAMPLER_SKIP_FILTER
 
+#ifndef TKSAMPLER_SKIP_GLIDE
    sBool mod_glide_switch;
    sF32  mod_glide_speed;
    sF32  mmdst_glide_speed;
+#endif // TKSAMPLER_SKIP_GLIDE
 
 #ifndef TKSAMPLER_SKIP_AA_AI
    StSampleVoiceBiquad2 biquad_ai[STSAMPLEVOICE_AI_MAX_POLES];  // anti-alias/imaging filter (LP)
@@ -553,12 +559,14 @@ YC class StSampleVoice : public YAC_Object {
    sUI ai_num_poles;
 #endif // TKSAMPLER_SKIP_AA_AI
 
+#ifndef TKSAMPLER_SKIP_GLIDE
    sF32 glide_src_note;  // modified in STSAMPLE_GLIDE_FREQ mode, constant in TIME mode
    sF32 glide_src_note_orig;
    sF32 glide_time;      // 0..1, increases @1000Hz rate in STSAMPLE_GLIDE_TIME mode
 #define GLIDE_NOTE_HISTORY_SZ 16
    sSI  glide_note_history[GLIDE_NOTE_HISTORY_SZ];  // -1=none. set to prev 'note' when allocating/re-using gliding voice
    sSI  glide_note_history_idx;  // initially -1, 0=first ..GLIDE_NOTE_HISTORY_SZ-1 (LIFO)
+#endif // TKSAMPLER_SKIP_GLIDE
 
    sF32 noteon_rand_pm[4];
    sF32 noteon_rand_p[4];
@@ -647,8 +655,10 @@ YC class StSampleVoice : public YAC_Object {
    static sF32 FracSmooth (sF32 _s, sU8 _order);
 
   public:
+#ifndef TKSAMPLER_SKIP_GLIDE
    // Get current interpolated glide note
    sF32 getCurrentGlideNote (void);
+#endif // TKSAMPLER_SKIP_GLIDE
 
 #ifndef TKSAMPLER_SKIP_IPOL_LANCZOS
    static void InitLanczosTables (void);
@@ -657,13 +667,17 @@ YC class StSampleVoice : public YAC_Object {
    static void InitMMCurveLUT (void);
 
   public:
+#ifndef TKSAMPLER_SKIP_GLIDE
    void clearGlideNoteHistory (void);
    void addToGlideNoteHistory (sSI _note);
    sBool removeFromGlideNoteHistory (sSI _note, sBool _bLastOnly);
+#endif // TKSAMPLER_SKIP_GLIDE
 
   protected:
+#ifndef TKSAMPLER_SKIP_GLIDE
    sBool isInstantGlide (void) const;
    void tickGlide (void);  // called in handleNextBlock()
+#endif // TKSAMPLER_SKIP_GLIDE
 
    // allow modmatrix override
    const sF32 *getCurrentFreqTableMM (void) const;
@@ -1605,6 +1619,7 @@ YC class StSampleVoice : public YAC_Object {
    YM void _setFilterResonance (sF32 _f);
 
 
+#ifndef TKSAMPLER_SKIP_GLIDE
    /* @method setGlideSwitch,boolean bEnable
       Set glide switch
     */
@@ -1615,6 +1630,7 @@ YC class StSampleVoice : public YAC_Object {
       Set glide speed
     */
    YM void _setGlideSpeed (sF32 _speed);
+#endif // TKSAMPLER_SKIP_GLIDE
 
 
    /* @method resetLFOFreqPhase

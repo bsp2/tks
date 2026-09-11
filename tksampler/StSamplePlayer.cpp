@@ -114,7 +114,9 @@ StSamplePlayer::StSamplePlayer(void) {
    next_voice_key = 1u;
    next_voice_alloc_idx = 0u;
 
+#ifndef TKSAMPLER_SKIP_GLIDE
    b_glide_switch = YAC_TRUE;
+#endif // TKSAMPLER_SKIP_GLIDE
 
    float_block_off = 0.0f;
    float_block_size = STSAMPLEVOICE_BLOCK_LEN * default_mixrate;
@@ -1211,6 +1213,7 @@ StSampleVoice *StSamplePlayer::allocSampleVoice(StSample *_sample, sSI _note) {
    return nv;
 }
 
+#ifndef TKSAMPLER_SKIP_GLIDE
 StSampleVoice *StSamplePlayer::allocSampleVoiceGlide(StSample *_sample, sSI _note) {
 
    StSampleVoice *nv = NULL;
@@ -1241,6 +1244,7 @@ StSampleVoice *StSamplePlayer::allocSampleVoiceGlide(StSample *_sample, sSI _not
    // Return allocated voice
    return nv;
 }
+#endif // TKSAMPLER_SKIP_GLIDE
 
 #ifndef TKSAMPLER_SKIP_PLUGINS
 void StSamplePlayer::lazyCreateVoicePlugins(StSample *_sample, StSampleVoice *_nv) {
@@ -1501,6 +1505,7 @@ sSI StSamplePlayer::startSample(YAC_Object *_sample, YAC_Object *_freqTableOrNul
       {
          StSampleVoice *v = NULL;
 
+#ifndef TKSAMPLER_SKIP_GLIDE
          // // if(STSAMPLE_GLIDE_NONE != sample->glide_type && (b_glide_switch ^ sample->b_glide_invert))
          if(STSAMPLE_GLIDE_NONE != sample->glide_type && b_glide_switch)
          {
@@ -1533,6 +1538,7 @@ sSI StSamplePlayer::startSample(YAC_Object *_sample, YAC_Object *_freqTableOrNul
                v->b_used = YAC_TRUE;  // was set to FALSE by softStopVoice()
             }
          }
+#endif // TKSAMPLER_SKIP_GLIDE
 
          if(sample->b_free_running_osc)
          {
@@ -1656,7 +1662,9 @@ sSI StSamplePlayer::startSampleBank(YAC_Object *_sampleBank, YAC_Object *_freqTa
 
                if(c->filterNoteOn(_note, _vel, _mod))
                {
+#ifndef TKSAMPLER_SKIP_GLIDE
                   sBool bGlide = (STSAMPLE_GLIDE_NONE != c->glide_type);
+#endif // TKSAMPLER_SKIP_GLIDE
 
                   // Dyac_host_printf("xxx c=%p c->alt.num=%u\n", c, c->alt.num);
                   if(c->alt.b_enable && c->alt.num > 0u)
@@ -1664,7 +1672,11 @@ sSI StSamplePlayer::startSampleBank(YAC_Object *_sampleBank, YAC_Object *_freqTa
                      // Alt group header
                      StSample *a = NULL;
 
-                     if(bGlide || sb->b_realloc)
+                     if(
+#ifndef TKSAMPLER_SKIP_GLIDE
+                        bGlide ||
+#endif // TKSAMPLER_SKIP_GLIDE
+                        sb->b_realloc)
                      {
                         // Find zone in current alt-glide group that is already playing
                         n = c;
@@ -1722,6 +1734,7 @@ sSI StSamplePlayer::startSampleBank(YAC_Object *_sampleBank, YAC_Object *_freqTa
 
                   StSampleVoice *v = NULL;
 
+#ifndef TKSAMPLER_SKIP_GLIDE
                   if(bGlide)
                   {
                      // Find voice that is still playing and has nearest distance to new note
@@ -1755,6 +1768,7 @@ sSI StSamplePlayer::startSampleBank(YAC_Object *_sampleBank, YAC_Object *_freqTa
                         v->b_used = YAC_TRUE;  // was set to FALSE by softStopVoice()
                      }
                   }
+#endif // TKSAMPLER_SKIP_GLIDE
 
                   if(NULL == v)
                   {
@@ -1781,6 +1795,7 @@ sSI StSamplePlayer::startSampleBank(YAC_Object *_sampleBank, YAC_Object *_freqTa
                         // Dyac_host_printf("xxx allocSampleVoice returned v=%p\n", v);
                      }
 
+#ifndef TKSAMPLER_SKIP_GLIDE
                      if(NULL != v)
                      {
                         v->glide_src_note = v->glide_src_note_orig = sF32(_note);
@@ -1788,6 +1803,7 @@ sSI StSamplePlayer::startSampleBank(YAC_Object *_sampleBank, YAC_Object *_freqTa
                         v->b_glide = YAC_FALSE;
                         v->clearGlideNoteHistory();
                      }
+#endif // TKSAMPLER_SKIP_GLIDE
                   }
 
                   if(NULL != v)
@@ -1812,7 +1828,9 @@ sSI StSamplePlayer::startSampleBank(YAC_Object *_sampleBank, YAC_Object *_freqTa
                      v->startVoiceInt(c, NULL/*freqTable=default*/, default_mixrate, _note, _vel, _mod, _vol, _pan, _freq);
                      // Dyac_host_printf("xxx    v->queued_noteon.b_valid=%d\n", v->queued_noteon.b_valid);
 
+#ifndef TKSAMPLER_SKIP_GLIDE
                      if(!v->b_glide)
+#endif // TKSAMPLER_SKIP_GLIDE
                      {
                         // Set initial freq/vol/pan/smpoff randomization
                         v->_setFreq2(freq2);
@@ -1943,6 +1961,7 @@ StSampleVoice *StSamplePlayer::findVoiceByKeyAndSample(sSI _key, StSample *_s) {
    return NULL;
 }
 
+#ifndef TKSAMPLER_SKIP_GLIDE
 sSI StSamplePlayer::_findPreviousGlideNoteByKeyAndHistoryIdx(sSI _key, sSI _historyIdx) {
 
    if(_historyIdx >= 0)
@@ -1969,7 +1988,9 @@ sSI StSamplePlayer::_findPreviousGlideNoteByKeyAndHistoryIdx(sSI _key, sSI _hist
 
    return -1;
 }
+#endif // TKSAMPLER_SKIP_GLIDE
 
+#ifndef TKSAMPLER_SKIP_GLIDE
 sBool StSamplePlayer::_removeFromGlideNoteHistory(sSI _note, sBool _bLastOnly) {
    sBool bChanged = YAC_FALSE;
    for(sUI i = 0u; i < num_voices; i++)
@@ -1983,6 +2004,7 @@ sBool StSamplePlayer::_removeFromGlideNoteHistory(sSI _note, sBool _bLastOnly) {
 
    return bChanged;
 }
+#endif // TKSAMPLER_SKIP_GLIDE
 
 void StSamplePlayer::_initStartedVoicesByKey(sSI _key) {
    sUI voiceKey = (sUI) _key;
@@ -2989,6 +3011,7 @@ void StSamplePlayer::updateRAuxSpdByKey(sSI _key, sF32 _spd) {
    Dendloopvoicesbykey;
 }
 
+#ifndef TKSAMPLER_SKIP_GLIDE
 void StSamplePlayer::updateGlideSwitch(sBool _bEnable) {
    Dbeginloopallvoices;
    v->_setGlideSwitch(_bEnable);
@@ -3013,6 +3036,7 @@ void StSamplePlayer::updateGlideSpeedByKey(sSI _key, sF32 _speed) {
    v->_setGlideSpeed(_speed);
    Dendloopvoicesbykey;
 }
+#endif // TKSAMPLER_SKIP_GLIDE
 
 void StSamplePlayer::updateFltCutOff(sF32 _f) {
    // // Dbeginloopallvoices;

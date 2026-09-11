@@ -389,7 +389,9 @@ void StSampleVoice::_resetVoice(void) {
    b_release                   = YAC_TRUE;
    b_release_pulse             = YAC_FALSE;
    b_alloc                     = YAC_FALSE;
+#ifndef TKSAMPLER_SKIP_GLIDE
    b_glide                     = YAC_FALSE;
+#endif // TKSAMPLER_SKIP_GLIDE
    b_allow_smpoff              = YAC_TRUE;
    b_realloc                   = YAC_FALSE;
    replay_ticks                = 0;
@@ -507,9 +509,11 @@ void StSampleVoice::_resetVoice(void) {
    resetBiquad();
 #endif // TKSAMPLER_SKIP_FILTER
 
+#ifndef TKSAMPLER_SKIP_GLIDE
    mod_glide_switch = YAC_TRUE;
    mod_glide_speed  = 1.0f;
    mmdst_glide_speed = 1.0f;
+#endif // TKSAMPLER_SKIP_GLIDE
 
    perfctl_poly_pressure = -1.0f;
    perfctl_pressure_max = 0.0f;
@@ -519,9 +523,11 @@ void StSampleVoice::_resetVoice(void) {
       modseq_patch[i] = 0u;
 #endif // TKSAMPLER_SKIP_MODSEQ
 
+#ifndef TKSAMPLER_SKIP_GLIDE
    glide_src_note = glide_src_note_orig = 60.0f;
    glide_time = 0.0f;
    clearGlideNoteHistory();
+#endif // TKSAMPLER_SKIP_GLIDE
 
    active_note_idx = 0;
 
@@ -577,6 +583,7 @@ void StSampleVoice::_resetVoice(void) {
    mmvar_last_seen_var_idx = 0u;  // UI / editor
 }
 
+#ifndef TKSAMPLER_SKIP_GLIDE
 void StSampleVoice::clearGlideNoteHistory(void) {
    for(sUI idx = 0u; idx < GLIDE_NOTE_HISTORY_SZ; idx++)
       glide_note_history[idx] = -1;
@@ -646,6 +653,7 @@ sBool StSampleVoice::removeFromGlideNoteHistory(sSI _note, sBool _bLastOnly) {
 
    return bChanged;
 }
+#endif // TKSAMPLER_SKIP_GLIDE
 
 void StSampleVoice::setSamplePlayer(StSamplePlayer *_samplePlayer) {
    sample_player = _samplePlayer;
@@ -703,6 +711,7 @@ void StSampleVoice::setSamplePlayer(StSamplePlayer *_samplePlayer) {
 #endif // TKSAMPLER_SKIP_MODSEQ
 }
 
+#ifndef TKSAMPLER_SKIP_GLIDE
 sF32 StSampleVoice::getCurrentGlideNote(void) {
    sF32 r;
    sF32 t;
@@ -762,7 +771,9 @@ sF32 StSampleVoice::getCurrentGlideNote(void) {
 
    return r;
 }
+#endif // TKSAMPLER_SKIP_GLIDE
 
+#ifndef TKSAMPLER_SKIP_GLIDE
 sBool StSampleVoice::isInstantGlide(void) const {
    sBool r = YAC_FALSE;
 
@@ -793,7 +804,9 @@ sBool StSampleVoice::isInstantGlide(void) const {
 
    return r;
 }
+#endif // TKSAMPLER_SKIP_GLIDE
 
+#ifndef TKSAMPLER_SKIP_GLIDE
 void StSampleVoice::tickGlide(void) {
 
    switch(sample->glide_type)
@@ -967,6 +980,7 @@ void StSampleVoice::tickGlide(void) {
          break;
    }
 }
+#endif // TKSAMPLER_SKIP_GLIDE
 
 #ifndef TKSAMPLER_SKIP_FILTER
 void StSampleVoice::resetBiquad(void) {
@@ -1049,7 +1063,9 @@ void StSampleVoice::reallyStartVoice(const StSampleVoiceNoteOnParams *_params,
    smpoff_mask = sample->smpoff_mask;
    br_mask     = sample->br_mask;
 
+#ifndef TKSAMPLER_SKIP_GLIDE
    if(!b_glide || sample->b_glide_retrig_sample)
+#endif // TKSAMPLER_SKIP_GLIDE
    {
       anticlick_fadeout_countdown = 0;
       anticlick_granular_smpoffinterpol_countdown = 0;
@@ -1231,7 +1247,9 @@ void StSampleVoice::reallyStartVoice(const StSampleVoiceNoteOnParams *_params,
 #endif // TKSAMPLER_SKIP_LIVEREC
 
 
+#ifndef TKSAMPLER_SKIP_GLIDE
    if(!b_glide || sample->b_glide_retrig_sample)
+#endif // TKSAMPLER_SKIP_GLIDE
    {
       current_orig_sample_len = current_sample_len = sample->sample_len;  // should be 0 (== sample_loops only)
       // Dyac_host_printf("xxx reallyStartVoice: sample->sample_len=%u\n", sample->sample_len);
@@ -1242,7 +1260,9 @@ void StSampleVoice::reallyStartVoice(const StSampleVoiceNoteOnParams *_params,
    }
 
    // Set initial controllers/params
+#ifndef TKSAMPLER_SKIP_GLIDE
    if(!b_glide)
+#endif // TKSAMPLER_SKIP_GLIDE
    {
       mod_vol                  = _params->_vol;
       mod_vol2                 = _params->_vol2;
@@ -1297,7 +1317,9 @@ void StSampleVoice::reallyStartVoice(const StSampleVoiceNoteOnParams *_params,
       // // memset((void*)modmatrix_slewed_src_values, 0, sizeof(sF64) * STSAMPLE_NUM_MODMATRIX_ENTRIES);
    }
 
+#ifndef TKSAMPLER_SKIP_GLIDE
    if(!b_glide || sample->b_glide_retrig_sample)
+#endif // TKSAMPLER_SKIP_GLIDE
    {
       if(sample->sampleoffset_rand_amount > 0.0f)
       {
@@ -1314,7 +1336,9 @@ void StSampleVoice::reallyStartVoice(const StSampleVoiceNoteOnParams *_params,
       }
    }
 
+#ifndef TKSAMPLER_SKIP_GLIDE
    if(!b_glide)
+#endif // TKSAMPLER_SKIP_GLIDE
    {
       mod_cyclelen       = _params->_cyclelen;
       mmdst_cyclelen     = 1.0f;
@@ -1337,7 +1361,9 @@ void StSampleVoice::reallyStartVoice(const StSampleVoiceNoteOnParams *_params,
       last_sample_looprestart_r = 0.0f;
    }
 
+#ifndef TKSAMPLER_SKIP_GLIDE
    if(!b_glide || sample->b_glide_retrig_sample)
+#endif // TKSAMPLER_SKIP_GLIDE
    {
       wavepath_idx = queued_wavepath_idx = next_wavepath_idx = _params->_wavepathidx;
 
@@ -1386,7 +1412,9 @@ void StSampleVoice::reallyStartVoice(const StSampleVoiceNoteOnParams *_params,
    }
 #endif // TKSAMPLER_SKIP_LIVEREC
 
+#ifndef TKSAMPLER_SKIP_GLIDE
    if(!b_glide || sample->b_glide_retrig_sample)
+#endif // TKSAMPLER_SKIP_GLIDE
    {
       // Handle loop-only replay
       //
@@ -1558,10 +1586,16 @@ void StSampleVoice::reallyStartVoice(const StSampleVoiceNoteOnParams *_params,
 
 
    // Start ADSR envelopes and LFOs
-   startADSRAndLFO(retrigMask, true/*bNoteOn/bResetMod*/ && !b_glide);
+   startADSRAndLFO(retrigMask, true/*bNoteOn/bResetMod*/
+#ifndef TKSAMPLER_SKIP_GLIDE
+                   && !b_glide
+#endif // TKSAMPLER_SKIP_GLIDE
+                   );
    // Dyac_host_printf("xxx reallystartvoice: after startadsr adsr_vol.current_env=%p elements=%p\n", adsr_vol.current_env, adsr_vol.current_env->elements);
 
+#ifndef TKSAMPLER_SKIP_GLIDE
    if(!b_glide)
+#endif // TKSAMPLER_SKIP_GLIDE
    {
 #ifndef TKSAMPLER_SKIP_LFO
       lfo_freq.mod_speed = _params->_lfofreqspd;
@@ -1644,26 +1678,40 @@ void StSampleVoice::reallyStartVoice(const StSampleVoiceNoteOnParams *_params,
    }
 
 #ifndef TKSAMPLER_SKIP_FILTER
+#ifndef TKSAMPLER_SKIP_GLIDE
    if(!b_glide)
+#endif // TKSAMPLER_SKIP_GLIDE
+   {
       filter_type          = sample->filter_type;
+   }
    mod_filter_cutoff    = _params->_filter_cutoff;
    mod_filter_pan       = _params->_filter_pan;
    mod_filter_offset    = _params->_filter_offset;
    mod_filter_resonance = _params->_filter_resonance;
+#ifndef TKSAMPLER_SKIP_GLIDE
    if(!b_glide)
+#endif // TKSAMPLER_SKIP_GLIDE
+   {
       resetBiquad();
+   }
 #endif // TKSAMPLER_SKIP_FILTER
 
+#ifndef TKSAMPLER_SKIP_GLIDE
    mod_glide_switch = _params->_glide_switch;
    mod_glide_speed  = _params->_glide_speed;
    mmdst_glide_speed = 1.0f;
+#endif // TKSAMPLER_SKIP_GLIDE
 
    perfctl_poly_pressure = _params->_perfctl_poly_pressure;
    ::memcpy((void*)perf_ctl_on,  (void*)sample_player->perf_ctl, sizeof(perf_ctl_on));
    ::memcpy((void*)perf_ctl_off, (void*)sample_player->perf_ctl, sizeof(perf_ctl_off));  // copy in case option is changed in editor while sample is playing
 
+#ifndef TKSAMPLER_SKIP_GLIDE
    if(!b_glide)
+#endif // TKSAMPLER_SKIP_GLIDE
+   {
       perfctl_pressure_max = 0.0f;
+   }
 
 #ifndef TKSAMPLER_SKIP_MODSEQ
    // Start Mod Sequencers
@@ -1671,7 +1719,11 @@ void StSampleVoice::reallyStartVoice(const StSampleVoiceNoteOnParams *_params,
       modseq_patch[i] = _params->_modseq_patch[i];
 
    retrigMask = _params->_modseq_retrigmask;
-   startModSeq(retrigMask, true/*bNoteOn/bResetMod*/ && !b_glide);
+   startModSeq(retrigMask, true/*bNoteOn/bResetMod*/
+#ifndef TKSAMPLER_SKIP_GLIDE
+               && !b_glide
+#endif // TKSAMPLER_SKIP_GLIDE
+               );
 
    for(sUI i = 0u; i < STSAMPLE_NUM_MODSEQ; i++)
    {
@@ -1706,7 +1758,9 @@ void StSampleVoice::reallyStartVoice(const StSampleVoiceNoteOnParams *_params,
 
    // Dyac_host_printf("xxx reallystartvoice: 2 startadsr adsr_vol.current_env=%p elements=%p\n", adsr_vol.current_env, adsr_vol.current_env->elements);
 
+#ifndef TKSAMPLER_SKIP_GLIDE
    if(!b_glide || sample->b_glide_retrig_sample)
+#endif // TKSAMPLER_SKIP_GLIDE
    {
       // (block-based) volume ramping
       volramp_fadeout_countdown = -1;
@@ -1721,12 +1775,14 @@ void StSampleVoice::reallyStartVoice(const StSampleVoiceNoteOnParams *_params,
          volramp_fade_vol = 1.0f;
       }
    }
+#ifndef TKSAMPLER_SKIP_GLIDE
    else if(b_glide)
    {
       volramp_fadeout_countdown = -1;
       volramp_fadein_countdown = -1;
       volramp_fade_vol = 1.0f;
    }
+#endif // TKSAMPLER_SKIP_GLIDE
 
    // Dyac_host_printf("xxx volramp_fadein_countdown=%d\n", volramp_fadein_countdown);
    // Dyac_host_printf("xxx volramp_fadeout_countdown=%d\n", volramp_fadeout_countdown);
@@ -1785,7 +1841,10 @@ void StSampleVoice::reallyStartVoice(const StSampleVoiceNoteOnParams *_params,
          if(NULL != pce->voice->info->note_on)
          {
             pce->voice->info->note_on(pce->voice,
-                                      b_glide ? sample->b_glide_retrig_sample ? -1 : 1 : 0,
+#ifndef TKSAMPLER_SKIP_GLIDE
+                                      b_glide ? sample->b_glide_retrig_sample ? -1 : 1 :
+#endif // TKSAMPLER_SKIP_GLIDE
+                                      0,
                                       (sU8)note,
                                       _params->_vel
                                       );
@@ -1797,7 +1856,9 @@ void StSampleVoice::reallyStartVoice(const StSampleVoiceNoteOnParams *_params,
 
    // Dyac_host_printf("xxx reallystartvoice: 3 startadsr adsr_vol.current_env=%p elements=%p\n", adsr_vol.current_env, adsr_vol.current_env->elements);
 
+#ifndef TKSAMPLER_SKIP_GLIDE
    if(!b_glide)  // [09Jan2024] fix glide clicks due to "cached_vel_vol" (velocity) changes
+#endif // TKSAMPLER_SKIP_GLIDE
    {
       calcNextBlockState(YAC_FALSE/*bNext*/); // Calc initial state
    }
@@ -1808,7 +1869,9 @@ void StSampleVoice::reallyStartVoice(const StSampleVoiceNoteOnParams *_params,
 
    // Dyac_host_printf("xxx reallystartvoice: 5 startadsr adsr_vol.current_env=%p elements=%p\n", adsr_vol.current_env, adsr_vol.current_env->elements);
 
+#ifndef TKSAMPLER_SKIP_GLIDE
    if(!b_glide || sample->b_glide_retrig_sample)
+#endif // TKSAMPLER_SKIP_GLIDE
    {
 #ifndef TKSAMPLER_SKIP_TIMED_LOOP
       if((sample->b_timedloop && sample->b_timedloop_fade))///// || b_restartfadein)
@@ -2009,7 +2072,12 @@ void StSampleVoice::initStartedVoice(void) {
    {
       b_restartfadein = YAC_FALSE;
 
-      if(b_playing && !b_glide && (sample->num_volramp_steps_out > 0)) // fadeout current sample?
+      if(b_playing
+#ifndef TKSAMPLER_SKIP_GLIDE
+         && !b_glide
+#endif // TKSAMPLER_SKIP_GLIDE
+         && (sample->num_volramp_steps_out > 0)
+         ) // fadeout current sample?
       {
          // Delay actual note-on until sample has been faded out
          // TODO: make ctl. modification attempts block until new sample has really been started?
@@ -2092,6 +2160,7 @@ void StSampleVoice::startVoiceInt(StSample *_sample,
    queued_noteon._altvolume              = 1.0f;
 
    sU8 retrigMask = 255u;  // start all env+LFOs
+#ifndef TKSAMPLER_SKIP_GLIDE
    if(b_glide)
    {
       if(!_sample->b_glide_retrig_env_freq)
@@ -2125,6 +2194,7 @@ void StSampleVoice::startVoiceInt(StSample *_sample,
       // [07Sep2023] fix slide from glide_src_note init val=60(C-5) after voice reset (replay start)
       glide_src_note = glide_src_note_orig = sF32(_note);
    }
+#endif // TKSAMPLER_SKIP_GLIDE
    queued_noteon._retrigmask            = retrigMask;
    queued_noteon._lfofreqspd            = 1.0f;
    queued_noteon._lfofreqlvl            = 1.0f;
@@ -2172,13 +2242,16 @@ void StSampleVoice::startVoiceInt(StSample *_sample,
    queued_noteon._filter_offset         = 0.0f;
    queued_noteon._filter_resonance      = 0.0f;
 #endif // TKSAMPLER_SKIP_FILTER
+#ifndef TKSAMPLER_SKIP_GLIDE
    queued_noteon._glide_switch          = YAC_TRUE;
    queued_noteon._glide_speed           = 1.0f;
+#endif // TKSAMPLER_SKIP_GLIDE
    queued_noteon._perfctl_poly_pressure = -1.0f;
 
    retrigMask = 15u;
 
 #ifndef TKSAMPLER_SKIP_MODSEQ
+#ifndef TKSAMPLER_SKIP_GLIDE
    if(b_glide)
    {
       if(!_sample->b_glide_retrig_modseq[0])
@@ -2193,6 +2266,7 @@ void StSampleVoice::startVoiceInt(StSample *_sample,
       if(!_sample->b_glide_retrig_modseq[3])
          retrigMask &= ~8u;
    }
+#endif // TKSAMPLER_SKIP_GLIDE
    queued_noteon._modseq_retrigmask  = retrigMask; // start all mod sequencers
 
    for(sUI i = 0u; i < STSAMPLE_NUM_MODSEQ; i++)
@@ -2268,8 +2342,15 @@ void StSampleVoice::noteOff(sF32 _vel) {
 
    release_velocity = _vel;
 
-   b_allow_smpoff = !(b_glide || b_realloc);  // [03Nov2024]
+   b_allow_smpoff = !(
+#ifndef TKSAMPLER_SKIP_GLIDE
+      b_glide ||
+#endif // TKSAMPLER_SKIP_GLIDE
+      b_realloc
+                      );  // [03Nov2024]
+#ifndef TKSAMPLER_SKIP_GLIDE
    b_glide = YAC_FALSE;
+#endif // TKSAMPLER_SKIP_GLIDE
 
    if( (current_delay_countdown > 0) || (NULL == sample) )
    {
@@ -2462,7 +2543,11 @@ void StSampleVoice::calcNextBlockState(sBool _bNext) {
    // Calc new state
    ////printf("xxx sample.vol=%f cached_vel_vol=%f mod_vol=%f sp.vol=%f\n", sample->volume, cached_vel_vol, mod_vol, sample_player->mod_vol);
 
+#ifndef TKSAMPLER_SKIP_GLIDE
    next_freq = getCurrentGlideNote();
+#else
+   next_freq = sF32(note);
+#endif // TKSAMPLER_SKIP_GLIDE
    next_freq = next_freq + sample->transpose + mod_freq + mod_freq2 + sample_player->mod_freq + sample_player->mod_freq2;
    // printf("xxx next_freq=%f\n", next_freq);
    if(NULL != sample->parent_samplebank)
@@ -12357,7 +12442,9 @@ sUI StSampleVoice::handleNextBlock(void) {
       // Determine new "next_" values (envelopes, modulation, zones)
       calcNextBlockState(YAC_TRUE/*bNext*/);
 
+#ifndef TKSAMPLER_SKIP_GLIDE
       tickGlide();
+#endif // TKSAMPLER_SKIP_GLIDE
 
       // replay_ticks inc moved to calcNextBlockState() to fix register init
       // // replay_ticks++;
@@ -12973,6 +13060,7 @@ void StSampleVoice::_setFilterResonance(sF32 _f) {
 }
 #endif // TKSAMPLER_SKIP_FILTER
 
+#ifndef TKSAMPLER_SKIP_GLIDE
 void StSampleVoice::_setGlideSwitch(sBool _bEnable) {
    if(queued_noteon.b_valid)
    {
@@ -12998,6 +13086,7 @@ void StSampleVoice::_setGlideSpeed(sF32 _speed) {
       mod_glide_speed = _speed;
    }
 }
+#endif // TKSAMPLER_SKIP_GLIDE
 
 #ifndef TKSAMPLER_SKIP_LFO
 void StSampleVoice::_resetLFOFreqPhase(void) {

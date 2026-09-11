@@ -38,6 +38,7 @@
 // ----          19Sep2023, 18Nov2023, 08Jan2024, 10Jan2024, 15Jan2024, 16Jan2024, 26Apr2024
 // ----          30Sep2024, 02Oct2024, 03Jan2025, 04Jan2025, 28May2025, 16Jan2026, 09Apr2026
 // ----          10Apr2026, 23Apr2026, 24Apr2026, 24May2026, 27May2026, 07Sep2026, 08Sep2026
+// ----          11Sep2026
 // ----
 // ----
 // ----
@@ -372,7 +373,9 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
    mmdst.retrig_pan_lfo  = 0.0f;
    mmdst.retrig_aux_lfo  = 0.0f;
 
+#ifndef TKSAMPLER_SKIP_GLIDE
    mmdst_glide_speed = 1.0f;
+#endif // TKSAMPLER_SKIP_GLIDE
 #ifndef TKSAMPLER_SKIP_WAVETABLE
    mmdst_timestretch = 0.0f;
    mmdst_timestretch_bend = 0.0f;
@@ -1870,6 +1873,7 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
                break;
             }
 
+#ifndef TKSAMPLER_SKIP_GLIDE
             case STSAMPLE_MM_SRC_GLIDE_TIME:
                // yac_host->printf("xxx MM_SRC_GLIDE_TIME: glide_time=%f\n", glide_time);
                srcVal = glide_time;  // 0..1
@@ -1891,6 +1895,7 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
                   srcVal = 2.0f - srcVal;
                srcVal = 1.0f - srcVal;
                break;
+#endif // TKSAMPLER_SKIP_GLIDE
 
             case STSAMPLE_MM_SRC_VOICE_BUS_1:
             case STSAMPLE_MM_SRC_VOICE_BUS_1_ABS:
@@ -3271,6 +3276,7 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
                }
                break;
 
+#ifndef TKSAMPLER_SKIP_GLIDE
                case STSAMPLE_MM_DST_GLIDE_SPEED:
                if(bAutoMul)
                   mmdst_glide_speed *= stsamplevoice_bipolar_to_scale(srcValDef, 8.0f/*div*/, 8.0f/*mul*/);
@@ -3279,6 +3285,7 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
                Delse_mm_lerp_bipolar8(mmdst_glide_speed);
                Dsignaltap(mmdst_glide_speed);
                break;
+#endif // TKSAMPLER_SKIP_GLIDE
 
                case STSAMPLE_MM_DST_TIMESTRETCH:
 #ifndef TKSAMPLER_SKIP_WAVETABLE
