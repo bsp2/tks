@@ -762,44 +762,6 @@ public:
          // v1: pre-calced deltatime/value array
          //      (todo) remove and use bezier control points instead
          TKS_Envelope *beData = (TKS_Envelope*)env->_getData();
-#if 0
-         // (note) superceded by cubic spline data
-         sUI numElements = ifs.u32();
-         Dtrace("[...] SR_Sample::loadEnv: #elements=%u io_offset=%u\n", numElements, ifs.io_offset);
-         sUI numEv = (numElements / 2u);
-         sSI ct16 = 0;
-         sSI cv16 = 0;
-         beData->own_data     = (numElements > 0u);
-         beData->max_elements = numElements;
-         beData->num_elements = numElements;
-         beData->elements     = (numElements > 0u) ? new(std::nothrow)sF32[numElements] : NULL;
-         if(numEv > 0u && (NULL == beData->elements))
-         {
-            Derror("[---] SR_Sample::loadEnv: failed to allocate events (%u elements)\n", numElements);
-            return YAC_FALSE;
-         }
-         sF32 *d = beData->elements;
-         // sF32 tAbs = 0.0f;
-         for(sUI i = 0u; i < numEv; i++)
-         {
-            // Delta time
-            ct16 += ifs.s16();
-            *d++ = ct16 / 32768.0f;
-
-            // Value
-            cv16 += ifs.s16();
-            *d++ = cv16 / 8192.0f;
-
-            // tAbs += d[-2];
-
-            // if(xxxFirst)
-            // {
-            //    Dprintf("xxx bezier precalc ev[%u] dt=%f v=%f\n", i, d[-2], d[-1]);
-            // }
-         }
-
-         // Dprintf("xxx bezier precalc tAbs=%f\n", tAbs);
-#endif
 
          // v2: bezier control points
 #define SR_CURVE_SZ 1024
@@ -1250,10 +1212,13 @@ public:
          }
          Dtrace("[...] SR_Sample::loadZone: key range lo=%f hi=%f fadeIn=%f fadeOut=%f noteOnFilter=%d highInclusive=%d\n", range->_getLo(), range->_getHi(), range->_getFadeIn(), range->_getFadeOut(), range->_getEnableNoteOnFilter(), range->_getEnableHighInclusive());
 #else
-         if(!loadRangeKey_nop(ifs))
+         if(verRange > 0)
          {
-            Derror("[---] SR_Sample::loadZone: failed to load key range<nop> (verRange=%u)\n", verRange);
-            return YAC_FALSE;
+            if(!loadRangeKey_nop(ifs))
+            {
+               Derror("[---] SR_Sample::loadZone: failed to load key range<nop> (verRange=%u)\n", verRange);
+               return YAC_FALSE;
+            }
          }
 #endif // TKSAMPLER_SKIP_RANGE_KEY
 
@@ -1276,10 +1241,13 @@ public:
          }
          Dtrace("[...] SR_Sample::loadZone: vel range lo=%f hi=%f fadeIn=%f fadeOut=%f noteOnFilter=%d highInclusive=%d\n", range->_getLo(), range->_getHi(), range->_getFadeIn(), range->_getFadeOut(), range->_getEnableNoteOnFilter(), range->_getEnableHighInclusive());
 #else
-         if(!loadRangeVelMod_nop(ifs))
+         if(verRange > 0)
          {
-            Derror("[---] SR_Sample::loadZone: failed to load velocity range<nop> (verRange=%u)\n", verRange);
-            return YAC_FALSE;
+            if(!loadRangeVelMod_nop(ifs))
+            {
+               Derror("[---] SR_Sample::loadZone: failed to load velocity range<nop> (verRange=%u)\n", verRange);
+               return YAC_FALSE;
+            }
          }
 #endif // TKSAMPLER_SKIP_RANGE_VEL
 
@@ -1304,10 +1272,13 @@ public:
          }
          Dtrace("[...] SR_Sample::loadZone: mod range lo=%f hi=%f fadeIn=%f fadeOut=%f noteOnFilter=%d highInclusive=%d\n", range->_getLo(), range->_getHi(), range->_getFadeIn(), range->_getFadeOut(), range->_getEnableNoteOnFilter(), range->_getEnableHighInclusive());
 #else
-         if(!loadRangeVelMod_nop(ifs))
+         if(verRange > 0)
          {
-            Derror("[---] SR_Sample::loadZone: failed to load mod range<nop> (verRange=%u)\n", verRange);
-            return YAC_FALSE;
+            if(!loadRangeVelMod_nop(ifs))
+            {
+               Derror("[---] SR_Sample::loadZone: failed to load mod range<nop> (verRange=%u)\n", verRange);
+               return YAC_FALSE;
+            }
          }
 #endif // TKSAMPLER_SKIP_RANGE_MOD
 
