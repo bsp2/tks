@@ -396,7 +396,6 @@ void StSampleVoice::_resetVoice(void) {
    voice_key                   = 0;
    last_voice_key              = 0;
    voice_alloc_idx             = 0u;
-   b_fading_out                = YAC_FALSE;
    queued_noteon.b_valid       = 0;
    volramp_fade_vol            = 1.0f;
    volramp_fadein_countdown    = -1;
@@ -422,9 +421,11 @@ void StSampleVoice::_resetVoice(void) {
    current_clipend_off   = 0u;
    current_smpdat_shift  = 0;
    samples_until_end_of_loopstep = 0;
+#ifndef TKSAMPLER_SKIP_TIMED_LOOP
    fadein_countdown      = 0;
    fadeout_countdown     = 0;
    b_fading_out          = YAC_FALSE;
+#endif // TKSAMPLER_SKIP_TIMED_LOOP
 #ifndef TKSAMPLER_SKIP_WAVETABLE
    current_ts_offset     = 0.0f;
 #endif // TKSAMPLER_SKIP_WAVETABLE
@@ -1361,11 +1362,13 @@ void StSampleVoice::reallyStartVoice(const StSampleVoiceNoteOnParams *_params,
          num_sample_loops = 0;
       }
 
+#ifndef TKSAMPLER_SKIP_TIMED_LOOP
       b_timedloop = YAC_FALSE;
       fadein_countdown = -1;
       fadeout_countdown = -1;
-
       b_fading_out = YAC_FALSE;
+#endif // TKSAMPLER_SKIP_TIMED_LOOP
+
       b_zero = YAC_FALSE;
    }
 
@@ -1390,8 +1393,11 @@ void StSampleVoice::reallyStartVoice(const StSampleVoiceNoteOnParams *_params,
       if(0 == current_sample_len)
       {
          sF32 *dummy;
+
+#ifndef TKSAMPLER_SKIP_TIMED_LOOP
          b_timedloop = sample->b_timedloop && (num_sample_loops > 0);
          timedloop_base = sample->timedloop_base;
+#endif // TKSAMPLER_SKIP_TIMED_LOOP
 
          if(!handleEndOfLoop(&current_play_offset,
                              &dummy/*smpDat*/,
@@ -1804,11 +1810,13 @@ void StSampleVoice::reallyStartVoice(const StSampleVoiceNoteOnParams *_params,
 
    if(!b_glide || sample->b_glide_retrig_sample)
    {
+#ifndef TKSAMPLER_SKIP_TIMED_LOOP
       if((sample->b_timedloop && sample->b_timedloop_fade))///// || b_restartfadein)
       {
          // Fadein first "n" samples to avoid clicks
          fadein_countdown = VOLRAMP_NUMSTEPS;
       }
+#endif // TKSAMPLER_SKIP_TIMED_LOOP
    }
 
    ////printf("xxx reallyStartVoice: cvol=%f nvol=%f\n", current_vol, next_vol);
@@ -2341,9 +2349,16 @@ void StSampleVoice::noteOff(sF32 _vel) {
             {
                current_loop_idx = sample->noteoff_loop_index;
 
-               if(sample->b_timedloop || (current_loop_countdown > 0))
+               if(
+#ifndef TKSAMPLER_SKIP_TIMED_LOOP
+                  sample->b_timedloop ||
+#endif // TKSAMPLER_SKIP_TIMED_LOOP
+                  (current_loop_countdown > 0))
+               {
                   current_loop_idx--;  // inc'd in handleEndOfLoop()
+               }
 
+#ifndef TKSAMPLER_SKIP_TIMED_LOOP
                // // if(!b_timedloop && sample->b_timedloop)
                if(sample->b_timedloop)
                {
@@ -2352,7 +2367,9 @@ void StSampleVoice::noteOff(sF32 _vel) {
                   b_fading_out = YAC_FALSE;
                   b_timedloop = YAC_TRUE;
                }
-               else if(sample->b_noteoff_immediate_loop_jump)  //  || b_timedloop
+               else
+#endif // TKSAMPLER_SKIP_TIMED_LOOP
+               if(sample->b_noteoff_immediate_loop_jump)  //  || b_timedloop
                {
                   // may cause clicks, especially with "single-cycle" waveforms
                   current_loop_countdown = 1;
@@ -4502,6 +4519,7 @@ void StSampleVoice::handleEndOfLoopOver(const sF32  *_smpDatCur,
 
    nextLoopIdx = current_loop_idx;
 
+#ifndef TKSAMPLER_SKIP_TIMED_LOOP
    if(1 == b_timedloop)
    {
       // Timeout loop mode
@@ -4518,6 +4536,7 @@ void StSampleVoice::handleEndOfLoopOver(const sF32  *_smpDatCur,
       }
    }
    else
+#endif // TKSAMPLER_SKIP_TIMED_LOOP
    {
       if(-1 != mod_jumptoloop)
          nextLoopIdx = mod_jumptoloop;
@@ -4677,6 +4696,7 @@ sBool StSampleVoice::handleEndOfLoop(sF64 *cOff,
       mod_sampleshift_endofloop = -1.0f;
    }
 
+#ifndef TKSAMPLER_SKIP_TIMED_LOOP
    if(1 == b_timedloop)
    {
       // Timeout loop mode
@@ -4703,6 +4723,7 @@ sBool StSampleVoice::handleEndOfLoop(sF64 *cOff,
       }
    }
    else
+#endif // TKSAMPLER_SKIP_TIMED_LOOP
    {
       // Normal loop mode (loop cycle boundary)
       if(bCycleLenEOL)
@@ -4876,9 +4897,7 @@ sBool StSampleVoice::handleEndOfLoop(sF64 *cOff,
          b_zero = YAC_FALSE;
       }
 
-
    } // else if b_timedloop
-
 
    // Dyac_host_printf("xxx 2 handleEndOfLoop: bNextStep=%d cOff=%f current_sample_len=%u\n", bNextStep, *cOff, current_sample_len);
 
@@ -4945,6 +4964,7 @@ sBool StSampleVoice::handleEndOfLoop(sF64 *cOff,
 
             ////printf("xxx playnextloop idx=%d\n", current_loop_idx);
 
+#ifndef TKSAMPLER_SKIP_LOOP_OPS
             while(times & StSample::LOOP_OP_MASK)
             {
                if(StSample::LOOP_OP_SET == (times & StSample::LOOP_OP_MASK))
@@ -5021,6 +5041,7 @@ sBool StSampleVoice::handleEndOfLoop(sF64 *cOff,
                   return 0;
                }
             } // while parse loop ops
+#endif // TKSAMPLER_SKIP_LOOP_OPS
 
             // Found a non-op loop entry
             if(sample->ui_sync_first_loop_index)
@@ -5083,6 +5104,7 @@ sBool StSampleVoice::handleEndOfLoop(sF64 *cOff,
                ////Dyac_host_printf("xxx *cOff=%f current_sample_len=%d\n", *cOff, current_sample_len);
 
 
+#ifndef TKSAMPLER_SKIP_TIMED_LOOP
                if(b_timedloop)
                {
                   if(0 == times)
@@ -5132,6 +5154,7 @@ sBool StSampleVoice::handleEndOfLoop(sF64 *cOff,
                   }
                }
                else
+#endif // TKSAMPLER_SKIP_TIMED_LOOP
                {
                   if(bCycleLenEOL)
                   {
@@ -9796,6 +9819,7 @@ sUI StSampleVoice::renderFragmentGeneric(sF32 *&    buf,
 
       ////printf("xxx fadein=%d fadeout=%d\n", fadein_countdown, fadeout_countdown);
 
+#ifndef TKSAMPLER_SKIP_TIMED_LOOP
       if(fadein_countdown > 0)
       {
          fadein_countdown--;
@@ -9811,6 +9835,7 @@ sUI StSampleVoice::renderFragmentGeneric(sF32 *&    buf,
          fadeVol = 0.0f;
       }
       else
+#endif // TKSAMPLER_SKIP_TIMED_LOOP
       {
          fadeVol = 1.0f;
       }
@@ -11073,6 +11098,7 @@ sUI StSampleVoice::renderFragmentGeneric(sF32 *&    buf,
       }
       else
       {
+#ifndef TKSAMPLER_SKIP_TIMED_LOOP
          if(sample->b_timedloop)
          {
             samples_until_end_of_loopstep--;
@@ -11190,9 +11216,11 @@ sUI StSampleVoice::renderFragmentGeneric(sF32 *&    buf,
 
          }
          else
+#endif // TKSAMPLER_SKIP_TIMED_LOOP
          {
             // Pitch-dependent/cycle-boundary loop mode
 
+#ifndef TKSAMPLER_SKIP_TIMED_LOOP
             // Fade end of sample to avoid clicks?
             //  only allowed for one-shot samples (workaround for DC offset'd waveforms!)
             if(sample->b_timedloop_fade && !num_sample_loops)
@@ -11208,6 +11236,7 @@ sUI StSampleVoice::renderFragmentGeneric(sF32 *&    buf,
                   }
                }
             }
+#endif // TKSAMPLER_SKIP_TIMED_LOOP
 
             if( ((sUI)cOff) >= current_sample_len )
             {
@@ -11630,7 +11659,9 @@ sUI StSampleVoice::renderBlockNormal(sF32 *     buf,
          // special case 1:
          //  (todo) move most of these checks to reallyStartVoice()
          if(
+#ifndef TKSAMPLER_SKIP_TIMED_LOOP
             (0 == sample->b_timedloop)&&  // total loop time is pitch dependent
+#endif // TKSAMPLER_SKIP_TIMED_LOOP
             (cRate >= 0.0f)   &&  // forward play
             (sRate == 0.0f)   &&  // no freq/rate interpolation
             (sVolL == 0.0f)   &&  // no vol. interpolation
@@ -11926,9 +11957,9 @@ sUI StSampleVoice::renderBlock(sF32 *buf, sUI blkSz, sF32 a, sF32 b, sF32 _volSc
 #ifndef TKSAMPLER_SKIP_WAVETABLE
    if(sample->b_timestretch)
    {
+#ifndef TKSAMPLER_SKIP_ADDITIVE
       if(sample->b_timestretch_additive && (NULL != sample->partial_speeds) && (NULL != sample->partial_speeds) )
       {
-#ifndef TKSAMPLER_SKIP_ADDITIVE
          renderBlockAdditive(buf, blkSz, smpDat,
 #ifndef TKSAMPLER_SKIP_LIVEREC
                              smpDatLRX,
@@ -11938,9 +11969,9 @@ sUI StSampleVoice::renderBlock(sF32 *buf, sUI blkSz, sF32 a, sF32 b, sF32 _volSc
                              , _inputsOrNull
 #endif // TKSAMPLER_SKIP_LIVEREC
                              );
-#endif // TKSAMPLER_SKIP_ADDITIVE
       }
       else
+#endif // TKSAMPLER_SKIP_ADDITIVE
       {
          // Dyac_host_printf("xxx call renderBlockTimestretch a=%f b=%f cVol=(%f; %f) sVol=(%f; %f)\n", a, b, cVolL, cVolR, sVolL, sVolR);
          renderBlockTimestretch(buf, blkSz, smpDat,
@@ -12603,6 +12634,7 @@ void StSampleVoice::_PrintDebugStats(void) {
 #endif // USE_STATS
 }
 
+#ifndef TKSAMPLER_SKIP_TIMED_LOOP
 void StSampleVoice::_setTimedLoopBase(sF32 _base) {
    sF32 oldBase = timedloop_base;
 
@@ -12610,7 +12642,6 @@ void StSampleVoice::_setTimedLoopBase(sF32 _base) {
 
    if(b_timedloop)
    {
-
       // // if(samples_until_end_of_loopstep)
       {
          // // samples_until_end_of_loopstep = (sSI) (current_loop_countdown * mix_rate / timedloop_base);
@@ -12641,6 +12672,7 @@ void StSampleVoice::_setTimedLoopBase(sF32 _base) {
 sF32 StSampleVoice::_getTimedLoopBase(void) {
    return timedloop_base;
 }
+#endif // TKSAMPLER_SKIP_TIMED_LOOP
 
 #ifndef TKSAMPLER_SKIP_LIVEREC
 YAC_Object *StSampleVoice::_getOverrideSampleLoops(void) {

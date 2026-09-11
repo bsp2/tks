@@ -62,10 +62,12 @@ StSample::StSample(void) {
    name        = NULL;
 #endif // LIBSYNERGY_BUILD
 
+#ifndef TKSAMPLER_SKIP_ADDITIVE
    partial_magnitudes = NULL;
    partial_speeds     = NULL;
    partial_phases     = NULL;
    num_partials       = 32.0f;
+#endif // TKSAMPLER_SKIP_ADDITIVE
 
 #ifndef TKSAMPLER_SKIP_RANGE_KEY
    key_range = NULL;
@@ -195,10 +197,12 @@ void StSample::reinit(void) {
 
    startend_fade_num_frames = 0u;
 
+#ifndef TKSAMPLER_SKIP_TIMED_LOOP
    b_timedloop        = YAC_FALSE;
    b_timedloop_fade   = 1;
    b_oneshot_loopstep = 0;
    timedloop_base     = STSAMPLE_DEFAULT_TIMEDLOOP_BASE;
+#endif // TKSAMPLER_SKIP_TIMED_LOOP
 
    volume             = 0.0f;
    pan                = 0.0f;
@@ -2005,6 +2009,7 @@ sF32 StSample::getTimestretchAdditiveXFade(void) {
 }
 #endif // TKSAMPLER_SKIP_ADDITIVE
 
+#ifndef TKSAMPLER_SKIP_TIMED_LOOP
 void StSample::_setEnableTimedLoop(sSI _bEnabled) {
    b_timedloop = _bEnabled;
 }
@@ -2043,6 +2048,7 @@ void StSample::_setEnableOneShotLoopStep(sSI _bEnabled) {
 sSI StSample::_getEnableOneShotLoopStep(void) {
    return b_oneshot_loopstep;
 }
+#endif // TKSAMPLER_SKIP_TIMED_LOOP
 
 void StSample::_setVolumeRampStepsMillisecIn(sF32 _millisec) {
    sF32 sec = _millisec * 0.001f;

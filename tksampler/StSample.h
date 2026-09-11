@@ -117,12 +117,14 @@ YC class StSample : public YAC_Object {
    YAC_String         *name;
 #endif // LIBSYNERGY_BUILD
 
+#ifndef TKSAMPLER_SKIP_ADDITIVE
    YAC_FloatArray     *partial_magnitudes;
    YAC_FloatArray     *partial_speeds;
    YAC_FloatArray     *partial_phases;
    sF32                num_partials;
    sF32                partial_cyclelen_reset;  // typically equals cyclelen but may differ. <8=free run
    sBool               b_partial_phase_0;
+#endif // TKSAMPLER_SKIP_ADDITIVE
 
 #ifndef TKSAMPLER_SKIP_RANGE
 
@@ -330,10 +332,12 @@ YC class StSample : public YAC_Object {
 #define STSAMPLE_TIMESTRETCH_GRAIN_WINDOW_SINE    YCI 1
 #define STSAMPLE_TIMESTRETCH_GRAIN_WINDOW_TRI     YCI 2
 
+#ifndef TKSAMPLER_SKIP_TIMED_LOOP
    sBool b_timedloop;        // 1= pitch independent number of repeats (volramping), 0=loop at cycle boundaries(pitch dependent)
    sBool b_timedloop_fade;   // 1=fade in/out when switching waveforms / loop steps, 0=toggle hard (perc.) (TODO) rename this to b_fade ?
    sBool b_oneshot_loopstep; // 1= auto-insert silence after oneshot replay of (timed) loopstep
    sF32  timedloop_base;     // multiply loop repeatcount by 1sec/timedloop_base. requires b_loopms=1. Default is 1000.0f (=> 1millisec)
+#endif // TKSAMPLER_SKIP_TIMED_LOOP
 
    StADSR *adsr_freq;   // Owned by sample instance
    StADSR *adsr_vol;
@@ -1535,6 +1539,7 @@ YC class StSample : public YAC_Object {
    YM sUI  getTimestretch2DHeight (void);
 #endif // TKSAMPLER_SKIP_WAVETABLE
 
+#ifndef TKSAMPLER_SKIP_TIMED_LOOP
    YM void _setEnableTimedLoop (sSI _bEnable);
    YM sSI  _getEnableTimedLoop (void);
    YM void _setEnableTimedLoopFade (sSI _bEnable);
@@ -1543,6 +1548,7 @@ YC class StSample : public YAC_Object {
    YM sF32 _getTimedLoopBase   (void);
    YM void _setEnableOneShotLoopStep (sSI _bEnable);
    YM sSI  _getEnableOneShotLoopStep (void);
+#endif // TKSAMPLER_SKIP_TIMED_LOOP
 
    YM void _setVolumeRampStepsMillisecIn (sF32 _millisec);
    YM sF32 _getVolumeRampStepsMillisecIn (void);

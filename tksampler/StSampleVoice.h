@@ -385,16 +385,18 @@ YC class StSampleVoice : public YAC_Object {
    sUI  current_clipend_off;  // in "clip sampleend to loopend" mode. 0=initial (no clipping)
    sUI  current_smpdat_shift;   // in frames. used for clipping crossfade start when smpDat was shifted.
    sSI samples_until_end_of_loopstep; // if loopms=1
+#ifndef STFX_SKIP_NAMES_AND_RESETS
    sBool b_timedloop; // sample->b_timedloop + sample_len must be 0 + sample_loops must be available
                       //  (note) this is reset to 0 to make handleEndOfLoop() correctly handle endless repeat
    sF32 timedloop_base; // multiply loop repeatcount by 1sec/timedloop_base. requires b_loopms=1. Default is 1000.0f (=> 1millisec)
+   sSI fadein_countdown; // used if b_timedloop=1, fadein new loop
+   sSI fadeout_countdown; // used if b_timedloop=1, fadeout current loop
+   sBool b_fading_out;
+#endif // !STFX_SKIP_NAMES_AND_RESETS
    sBool b_queued_delayed_loop;
    sF64 coff_clang_workaround;
 
-   sSI fadein_countdown; // used if b_timedloop=1, fadein new loop
-   sSI fadeout_countdown; // used if b_timedloop=1, fadeout current loop
    sBool b_zero;
-   sBool b_fading_out;
    sBool b_restartfadein; // true after voice restart to avoid clicks
 
    sSI  num_sample_loops;
