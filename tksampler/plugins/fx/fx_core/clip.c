@@ -1,14 +1,14 @@
 // ----
 // ---- file   : clip.cpp
 // ---- author : Bastian Spiegel <bs@tkscript.de>
-// ---- legal  : (c) 2020-2024 by Bastian Spiegel. 
-// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See 
+// ---- legal  : (c) 2020-2026 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
 // ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
 // ----
 // ---- info   : clipping amplifier
 // ----
 // ---- created: 31May2020
-// ---- changed: 08Jun2020, 21Jan2024
+// ---- changed: 08Jun2020, 21Jan2024, 11Sep2026
 // ----
 // ----
 // ----
@@ -27,6 +27,7 @@
 #define PARAM_MAX      4
 #define PARAM_NORM     5
 #define NUM_PARAMS     6
+#ifndef STFX_SKIP_NAMES_AND_RESETS
 static const char *loc_param_names[NUM_PARAMS] = {
    "Dry / Wet",
    "Drive",
@@ -43,18 +44,21 @@ static float loc_param_resets[NUM_PARAMS] = {
    1.0f,  // MAX
    0.0f,  // NORMALIZE
 };
+#endif // !STFX_SKIP_NAMES_AND_RESETS
 
 #define MOD_DRYWET  0
 #define MOD_OFFSET  1
 #define MOD_DRIVE   2
 #define MOD_RANGE   3
 #define NUM_MODS    4
+#ifndef STFX_SKIP_NAMES_AND_RESETS
 static const char *loc_mod_names[NUM_MODS] = {
    "Dry / Wet",
    "Offset",
    "Drive",
    "Range",
 };
+#endif // !STFX_SKIP_NAMES_AND_RESETS
 
 typedef struct clip_info_s {
    st_plugin_info_t base;
@@ -85,6 +89,7 @@ typedef struct clip_voice_s {
 } clip_voice_t;
 
 
+#ifndef STFX_SKIP_NAMES_AND_RESETS
 static const char *ST_PLUGIN_API loc_get_param_name(st_plugin_info_t *_info,
                                                     unsigned int      _paramIdx
                                                     ) {
@@ -98,6 +103,7 @@ static float ST_PLUGIN_API loc_get_param_reset(st_plugin_info_t *_info,
    (void)_info;
    return loc_param_resets[_paramIdx];
 }
+#endif // !STFX_SKIP_NAMES_AND_RESETS
 
 static float ST_PLUGIN_API loc_get_param_value(st_plugin_shared_t *_shared,
                                                unsigned int        _paramIdx
@@ -114,12 +120,14 @@ static void ST_PLUGIN_API loc_set_param_value(st_plugin_shared_t *_shared,
    shared->params[_paramIdx] = _value;
 }
 
+#ifndef STFX_SKIP_NAMES_AND_RESETS
 static const char *ST_PLUGIN_API loc_get_mod_name(st_plugin_info_t *_info,
                                                   unsigned int      _modIdx
                                                   ) {
    (void)_info;
    return loc_mod_names[_modIdx];
 }
+#endif // !STFX_SKIP_NAMES_AND_RESETS
 
 static void ST_PLUGIN_API loc_note_on(st_plugin_voice_t  *_voice,
                                       int                 _bGlide,
@@ -234,7 +242,7 @@ static void ST_PLUGIN_API loc_prepare_block(st_plugin_voice_t *_voice,
 static void ST_PLUGIN_API loc_process_replace(st_plugin_voice_t  *_voice,
                                               int                 _bMonoIn,
                                               const float        *_samplesIn,
-                                              float              *_samplesOut, 
+                                              float              *_samplesOut,
                                               unsigned int        _numFrames
                                               ) {
    // Ring modulate at (modulated) note frequency
@@ -320,7 +328,9 @@ static st_plugin_shared_t *ST_PLUGIN_API loc_shared_new(st_plugin_info_t *_info)
    {
       memset((void*)ret, 0, sizeof(*ret));
       ret->base.info  = _info;
+#ifndef STFX_SKIP_NAMES_AND_RESETS
       memcpy((void*)ret->params, (void*)loc_param_resets, NUM_PARAMS * sizeof(float));
+#endif // !STFX_SKIP_NAMES_AND_RESETS
    }
    return &ret->base;
 }
@@ -371,11 +381,15 @@ st_plugin_info_t *clip_init(void) {
       ret->base.shared_delete      = &loc_shared_delete;
       ret->base.voice_new          = &loc_voice_new;
       ret->base.voice_delete       = &loc_voice_delete;
+#ifndef STFX_SKIP_NAMES_AND_RESETS
       ret->base.get_param_name     = &loc_get_param_name;
       ret->base.get_param_reset    = &loc_get_param_reset;
+#endif // !STFX_SKIP_NAMES_AND_RESETS
       ret->base.get_param_value    = &loc_get_param_value;
       ret->base.set_param_value    = &loc_set_param_value;
+#ifndef STFX_SKIP_NAMES_AND_RESETS
       ret->base.get_mod_name       = &loc_get_mod_name;
+#endif // !STFX_SKIP_NAMES_AND_RESETS
       ret->base.note_on            = &loc_note_on;
       ret->base.set_mod_value      = &loc_set_mod_value;
       ret->base.prepare_block      = &loc_prepare_block;
