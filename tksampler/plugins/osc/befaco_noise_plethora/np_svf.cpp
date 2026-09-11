@@ -23,7 +23,7 @@
 // ----           (adapted from https://github.com/hemmer/Befaco for 'stfx' plugin API by bsp)
 // ----
 // ---- created: 05Dec2021
-// ---- changed: 06Dec2021, 21Jan2024, 14Jan2025
+// ---- changed: 06Dec2021, 21Jan2024, 14Jan2025, 11Sep2026
 // ----
 // ----
 // ----
@@ -49,6 +49,7 @@
 #define PARAM_FREQ_2    6
 #define PARAM_RESO_2    7
 #define NUM_PARAMS      8
+#ifndef STFX_SKIP_NAMES_AND_RESETS
 static const char *loc_param_names[NUM_PARAMS] = {
    "Mode 1",
    "Poles 1",
@@ -69,18 +70,21 @@ static float loc_param_resets[NUM_PARAMS] = {
    1.0f,  // Freq 2
    0.0f,  // Reso 2
 };
+#endif // !STFX_SKIP_NAMES_AND_RESETS
 
 #define MOD_FREQ_1   0
 #define MOD_RESO_1   1
 #define MOD_FREQ_2   2
 #define MOD_RESO_2   3
 #define NUM_MODS     4
+#ifndef STFX_SKIP_NAMES_AND_RESETS
 static const char *loc_mod_names[NUM_MODS] = {
    "Freq 1",
    "Reso 1",
    "Freq 2",
    "Reso 2",
 };
+#endif // !STFX_SKIP_NAMES_AND_RESETS
 
 typedef struct np_svf_info_s {
    st_plugin_info_t base;
@@ -118,6 +122,7 @@ typedef struct np_svf_voice_s {
 
 } np_svf_voice_t;
 
+#ifndef STFX_SKIP_NAMES_AND_RESETS
 static const char *ST_PLUGIN_API loc_get_param_name(st_plugin_info_t *_info,
                                                     unsigned int      _paramIdx
                                                     ) {
@@ -131,6 +136,7 @@ static float ST_PLUGIN_API loc_get_param_reset(st_plugin_info_t *_info,
    (void)_info;
    return loc_param_resets[_paramIdx];
 }
+#endif // !STFX_SKIP_NAMES_AND_RESETS
 
 static float ST_PLUGIN_API loc_get_param_value(st_plugin_shared_t *_shared,
                                                unsigned int        _paramIdx
@@ -147,14 +153,16 @@ static void ST_PLUGIN_API loc_set_param_value(st_plugin_shared_t *_shared,
    shared->params[_paramIdx] = _value;
 }
 
+#ifndef STFX_SKIP_NAMES_AND_RESETS
 static const char *ST_PLUGIN_API loc_get_mod_name(st_plugin_info_t *_info,
                                                   unsigned int      _modIdx
                                                   ) {
    (void)_info;
    return loc_mod_names[_modIdx];
 }
+#endif // !STFX_SKIP_NAMES_AND_RESETS
 
-#ifndef CYCLE_SKIP_UI
+#ifndef STFX_SKIP_NAMES_AND_RESETS
 static unsigned int ST_PLUGIN_API loc_query_dynamic_param_preset_values(st_plugin_shared_t *_shared,
                                                                         const unsigned int  _paramIdx,
                                                                         float              *_retValues,
@@ -185,9 +193,9 @@ static unsigned int ST_PLUGIN_API loc_query_dynamic_param_preset_values(st_plugi
    }
    return 0u;
 }
-#endif // CYCLE_SKIP_UI
+#endif // !STFX_SKIP_NAMES_AND_RESETS
 
-#ifndef CYCLE_SKIP_UI
+#ifndef STFX_SKIP_NAMES_AND_RESETS
 static unsigned int ST_PLUGIN_API loc_query_dynamic_param_preset_name(st_plugin_shared_t *_shared,
                                                                       const unsigned int  _paramIdx,
                                                                       const unsigned int  _presetIdx,
@@ -220,7 +228,7 @@ static unsigned int ST_PLUGIN_API loc_query_dynamic_param_preset_name(st_plugin_
    }
    return 0u;
 }
-#endif // CYCLE_SKIP_UI
+#endif // !STFX_SKIP_NAMES_AND_RESETS
 
 static void ST_PLUGIN_API loc_note_on(st_plugin_voice_t  *_voice,
                                       int                 _bGlide,
@@ -502,7 +510,9 @@ static st_plugin_shared_t *ST_PLUGIN_API loc_shared_new(st_plugin_info_t *_info)
    {
       memset((void*)ret, 0, sizeof(*ret));
       ret->base.info  = _info;
+#ifndef STFX_SKIP_NAMES_AND_RESETS
       memcpy((void*)ret->params, (void*)loc_param_resets, NUM_PARAMS * sizeof(float));
+#endif // !STFX_SKIP_NAMES_AND_RESETS
    }
    return &ret->base;
 }
@@ -588,13 +598,17 @@ st_plugin_info_t *np_svf_init(void) {
       ret->base.shared_delete                       = &loc_shared_delete;
       ret->base.voice_new                           = &loc_voice_new;
       ret->base.voice_delete                        = &loc_voice_delete;
+#ifndef STFX_SKIP_NAMES_AND_RESETS
       ret->base.get_param_name                      = &loc_get_param_name;
       ret->base.get_param_reset                     = &loc_get_param_reset;
       ret->base.query_dynamic_param_preset_values   = &loc_query_dynamic_param_preset_values;
       ret->base.query_dynamic_param_preset_name     = &loc_query_dynamic_param_preset_name;
+#endif // !STFX_SKIP_NAMES_AND_RESETS
       ret->base.get_param_value                     = &loc_get_param_value;
       ret->base.set_param_value                     = &loc_set_param_value;
+#ifndef STFX_SKIP_NAMES_AND_RESETS
       ret->base.get_mod_name                        = &loc_get_mod_name;
+#endif // !STFX_SKIP_NAMES_AND_RESETS
       ret->base.note_on                             = &loc_note_on;
       ret->base.set_mod_value                       = &loc_set_mod_value;
       ret->base.prepare_block                       = &loc_prepare_block;

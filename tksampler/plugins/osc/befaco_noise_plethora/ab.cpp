@@ -10,20 +10,20 @@
 //            it under the terms of the GNU General Public License as published by
 //            the Free Software Foundation, either version 3 of the License, or
 //            (at your option) any later version.
-//        
+//
 //            This program is distributed in the hope that it will be useful,
 //            but WITHOUT ANY WARRANTY; without even the implied warranty of
 //            MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 //            GNU General Public License for more details.
-//        
+//
 //            You should have received a copy of the GNU General Public License
-//            along with this program.  If not, see <https://www.gnu.org/licenses/>. 
+//            along with this program.  If not, see <https://www.gnu.org/licenses/>.
 // ----
 // ---- info   : Befaco Noise Plethora osc (section A/B)
 // ----           (adapted from https://github.com/hemmer/Befaco for 'stfx' plugin API by bsp)
 // ----
 // ---- created: 05Dec2021
-// ---- changed: 21Jan2024
+// ---- changed: 21Jan2024, 11Sep2026
 // ----
 // ----
 // ----
@@ -37,7 +37,7 @@
 
 #include "noise-plethora/random.h"
 #include "noise-plethora/plugins/NoisePlethoraPlugin.hpp"
-#include "noise-plethora/plugins/ProgramSelector.hpp" 
+#include "noise-plethora/plugins/ProgramSelector.hpp"
 
 #define NUM_BANKS     ( 3u)
 #define NUM_PROGRAMS  (10u)  // per bank
@@ -47,11 +47,12 @@
 #define PARAM_X         2
 #define PARAM_Y         3
 #define NUM_PARAMS      4
+#ifndef STFX_SKIP_NAMES_AND_RESETS
 static const char *loc_param_names[NUM_PARAMS] = {
    "Bank",
    "Program",
    "X",
-   "Y",  
+   "Y",
 };
 static float loc_param_resets[NUM_PARAMS] = {
    0.0f,  // BANK (0..1 => 0..2 (A/B/C)
@@ -59,18 +60,21 @@ static float loc_param_resets[NUM_PARAMS] = {
    0.0f,  // CV X
    0.0f,  // CV Y
 };
+#endif // !STFX_SKIP_NAMES_AND_RESETS
 
 #define MOD_BANK     0
 #define MOD_PROGRAM  1
 #define MOD_X        2
 #define MOD_Y        3
 #define NUM_MODS     4
+#ifndef STFX_SKIP_NAMES_AND_RESETS
 static const char *loc_mod_names[NUM_MODS] = {
    "Bank",
    "Program",
    "X",
    "Y",
 };
+#endif // !STFX_SKIP_NAMES_AND_RESETS
 
 typedef struct noiseplethora_ab_info_s {
    st_plugin_info_t base;
@@ -96,6 +100,7 @@ typedef struct noiseplethora_ab_voice_s {
 
 float teensy_sample_rate;  // used by noise-plethora/teensy/
 
+#ifndef STFX_SKIP_NAMES_AND_RESETS
 static const char *ST_PLUGIN_API loc_get_param_name(st_plugin_info_t *_info,
                                                     unsigned int      _paramIdx
                                                     ) {
@@ -109,6 +114,7 @@ static float ST_PLUGIN_API loc_get_param_reset(st_plugin_info_t *_info,
    (void)_info;
    return loc_param_resets[_paramIdx];
 }
+#endif // !STFX_SKIP_NAMES_AND_RESETS
 
 static float ST_PLUGIN_API loc_get_param_value(st_plugin_shared_t *_shared,
                                                unsigned int        _paramIdx
@@ -125,12 +131,14 @@ static void ST_PLUGIN_API loc_set_param_value(st_plugin_shared_t *_shared,
    shared->params[_paramIdx] = _value;
 }
 
+#ifndef STFX_SKIP_NAMES_AND_RESETS
 static const char *ST_PLUGIN_API loc_get_mod_name(st_plugin_info_t *_info,
                                                   unsigned int      _modIdx
                                                   ) {
    (void)_info;
    return loc_mod_names[_modIdx];
 }
+#endif // !STFX_SKIP_NAMES_AND_RESETS
 
 static void ST_PLUGIN_API loc_set_sample_rate(st_plugin_voice_t *_voice,
                                               float              _sampleRate
@@ -216,7 +224,7 @@ static void ST_PLUGIN_API loc_prepare_block(st_plugin_voice_t *_voice,
 static void ST_PLUGIN_API loc_process_replace(st_plugin_voice_t  *_voice,
                                               int                 _bMonoIn,
                                               const float        *_samplesIn,
-                                              float              *_samplesOut, 
+                                              float              *_samplesOut,
                                               unsigned int        _numFrames
                                               ) {
    (void)_bMonoIn;
@@ -258,7 +266,9 @@ static st_plugin_shared_t *ST_PLUGIN_API loc_shared_new(st_plugin_info_t *_info)
    {
       memset((void*)ret, 0, sizeof(*ret));
       ret->base.info  = _info;
+#ifndef STFX_SKIP_NAMES_AND_RESETS
       memcpy((void*)ret->params, (void*)loc_param_resets, NUM_PARAMS * sizeof(float));
+#endif // !STFX_SKIP_NAMES_AND_RESETS
    }
    return &ret->base;
 }
@@ -307,7 +317,7 @@ static void ST_PLUGIN_API loc_voice_delete(st_plugin_voice_t *_voice) {
       {
          voice->np_algorithm[bankIdx][programIdx].~shared_ptr<NoisePlethoraPlugin>();
       }
-   }   
+   }
 
    free((void*)_voice);
 }
@@ -338,11 +348,15 @@ st_plugin_info_t *noiseplethora_ab_init(void) {
       ret->base.shared_delete    = &loc_shared_delete;
       ret->base.voice_new        = &loc_voice_new;
       ret->base.voice_delete     = &loc_voice_delete;
+#ifndef STFX_SKIP_NAMES_AND_RESETS
       ret->base.get_param_name   = &loc_get_param_name;
       ret->base.get_param_reset  = &loc_get_param_reset;
+#endif // !STFX_SKIP_NAMES_AND_RESETS
       ret->base.get_param_value  = &loc_get_param_value;
       ret->base.set_param_value  = &loc_set_param_value;
+#ifndef STFX_SKIP_NAMES_AND_RESETS
       ret->base.get_mod_name     = &loc_get_mod_name;
+#endif // !STFX_SKIP_NAMES_AND_RESETS
       ret->base.set_sample_rate  = &loc_set_sample_rate;
       ret->base.note_on          = &loc_note_on;
       ret->base.set_mod_value    = &loc_set_mod_value;

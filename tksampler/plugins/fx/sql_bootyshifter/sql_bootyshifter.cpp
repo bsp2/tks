@@ -4,17 +4,17 @@
 // ---- legal  : (c) 2018-2020 by squinkylabs
 // ----
 // Copyright (c) 2018 squinkylabs
-// 
+//
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
 // in the Software without restriction, including without limitation the rights
 // to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 // copies of the Software, and to permit persons to whom the Software is
 // furnished to do so, subject to the following conditions:
-// 
+//
 // The above copyright notice and this permission notice shall be included in all
 // copies or substantial portions of the Software.
-// 
+//
 // THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 // IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 // FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -27,7 +27,7 @@
 // ----           (adapted for 'stfx' plugin API by bsp)
 // ----
 // ---- created: 07Jun2020
-// ---- changed: 08Jun2020, 21Jan2024
+// ---- changed: 08Jun2020, 21Jan2024, 11Sep2026
 // ----
 // ----
 // ----
@@ -43,25 +43,29 @@
 #define PARAM_FREQ      1
 #define PARAM_RANGE     2
 #define NUM_PARAMS      3
+#ifndef STFX_SKIP_NAMES_AND_RESETS
 static const char *loc_param_names[NUM_PARAMS] = {
    "Dry / Wet",
    "Freq",
    "Range"
-   
+
 };
 static float loc_param_resets[NUM_PARAMS] = {
    1.0f,  // DRYWET
    0.5f,  // FREQ
    0.5f,  // RANGE (0=5Hz, 0.2=50Hz, 0.4=500Hz, 0.6=5kHz, 1=exp)
 };
+#endif // !STFX_SKIP_NAMES_AND_RESETS
 
 #define MOD_DRYWET  0
 #define MOD_FREQ    1
 #define NUM_MODS    2
+#ifndef STFX_SKIP_NAMES_AND_RESETS
 static const char *loc_mod_names[NUM_MODS] = {
    "Dry / Wet",
    "Freq"
 };
+#endif // !STFX_SKIP_NAMES_AND_RESETS
 
 typedef struct sql_bootyshifter_info_s {
    st_plugin_info_t base;
@@ -85,6 +89,7 @@ typedef struct sql_bootyshifter_voice_s {
 } sql_bootyshifter_voice_t;
 
 
+#ifndef STFX_SKIP_NAMES_AND_RESETS
 static const char *ST_PLUGIN_API loc_get_param_name(st_plugin_info_t *_info,
                                                     unsigned int      _paramIdx
                                                     ) {
@@ -98,6 +103,7 @@ static float ST_PLUGIN_API loc_get_param_reset(st_plugin_info_t *_info,
    (void)_info;
    return loc_param_resets[_paramIdx];
 }
+#endif // !STFX_SKIP_NAMES_AND_RESETS
 
 static float ST_PLUGIN_API loc_get_param_value(st_plugin_shared_t *_shared,
                                                unsigned int        _paramIdx
@@ -114,12 +120,14 @@ static void ST_PLUGIN_API loc_set_param_value(st_plugin_shared_t *_shared,
    shared->params[_paramIdx] = _value;
 }
 
+#ifndef STFX_SKIP_NAMES_AND_RESETS
 static const char *ST_PLUGIN_API loc_get_mod_name(st_plugin_info_t *_info,
                                                   unsigned int      _modIdx
                                                   ) {
    (void)_info;
    return loc_mod_names[_modIdx];
 }
+#endif // !STFX_SKIP_NAMES_AND_RESETS
 
 static void ST_PLUGIN_API loc_set_sample_rate(st_plugin_voice_t *_voice,
                                               float              _sampleRate
@@ -203,7 +211,7 @@ static void ST_PLUGIN_API loc_prepare_block(st_plugin_voice_t *_voice,
 static void ST_PLUGIN_API loc_process_replace(st_plugin_voice_t  *_voice,
                                               int                 _bMonoIn,
                                               const float        *_samplesIn,
-                                              float              *_samplesOut, 
+                                              float              *_samplesOut,
                                               unsigned int        _numFrames
                                               ) {
    // Ring modulate at (modulated) note frequency
@@ -258,7 +266,9 @@ static st_plugin_shared_t *ST_PLUGIN_API loc_shared_new(st_plugin_info_t *_info)
    {
       memset((void*)ret, 0, sizeof(*ret));
       ret->base.info  = _info;
+#ifndef STFX_SKIP_NAMES_AND_RESETS
       memcpy((void*)ret->params, (void*)loc_param_resets, NUM_PARAMS * sizeof(float));
+#endif // !STFX_SKIP_NAMES_AND_RESETS
    }
    return &ret->base;
 }
@@ -310,11 +320,15 @@ st_plugin_info_t *sql_bootyshifter_init(void) {
       ret->base.shared_delete    = &loc_shared_delete;
       ret->base.voice_new        = &loc_voice_new;
       ret->base.voice_delete     = &loc_voice_delete;
+#ifndef STFX_SKIP_NAMES_AND_RESETS
       ret->base.get_param_name   = &loc_get_param_name;
       ret->base.get_param_reset  = &loc_get_param_reset;
+#endif // !STFX_SKIP_NAMES_AND_RESETS
       ret->base.get_param_value  = &loc_get_param_value;
       ret->base.set_param_value  = &loc_set_param_value;
+#ifndef STFX_SKIP_NAMES_AND_RESETS
       ret->base.get_mod_name     = &loc_get_mod_name;
+#endif // !STFX_SKIP_NAMES_AND_RESETS
       ret->base.set_sample_rate  = &loc_set_sample_rate;
       ret->base.note_on          = &loc_note_on;
       ret->base.set_mod_value    = &loc_set_mod_value;

@@ -10,20 +10,20 @@
 //            it under the terms of the GNU General Public License as published by
 //            the Free Software Foundation, either version 3 of the License, or
 //            (at your option) any later version.
-//        
+//
 //            This program is distributed in the hope that it will be useful,
 //            but WITHOUT ANY WARRANTY; without even the implied warranty of
 //            MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 //            GNU General Public License for more details.
-//        
+//
 //            You should have received a copy of the GNU General Public License
-//            along with this program.  If not, see <https://www.gnu.org/licenses/>. 
+//            along with this program.  If not, see <https://www.gnu.org/licenses/>.
 // ----
 // ---- info   : Befaco Noise Plethora osc (section C / white noise)
 // ----           (adapted from https://github.com/hemmer/Befaco for 'stfx' plugin API by bsp)
 // ----
 // ---- created: 05Dec2021
-// ---- changed: 21Jan2024
+// ---- changed: 21Jan2024, 11Sep2026
 // ----
 // ----
 // ----
@@ -45,6 +45,7 @@
 #define PARAM_RESO_1    3
 #define PARAM_DENSITY   4   // lp,hp,bp
 #define NUM_PARAMS      5
+#ifndef STFX_SKIP_NAMES_AND_RESETS
 static const char *loc_param_names[NUM_PARAMS] = {
    "Mode",
    "Poles",
@@ -59,16 +60,19 @@ static float loc_param_resets[NUM_PARAMS] = {
    0.0f,  // Reso 1
    0.5f,  // Density
 };
+#endif // !STFX_SKIP_NAMES_AND_RESETS
 
 #define MOD_FREQ_1   0
 #define MOD_RESO_1   1
 #define MOD_DENSITY  2
 #define NUM_MODS     3
+#ifndef STFX_SKIP_NAMES_AND_RESETS
 static const char *loc_mod_names[NUM_MODS] = {
    "Freq",
    "Reso",
    "Density",
 };
+#endif // !STFX_SKIP_NAMES_AND_RESETS
 
 typedef struct noiseplethora_cgrit_info_s {
    st_plugin_info_t base;
@@ -77,7 +81,7 @@ typedef struct noiseplethora_cgrit_info_s {
 typedef struct noiseplethora_cgrit_shared_s {
    st_plugin_shared_t base;
    float params[NUM_PARAMS];
-   
+
 } noiseplethora_cgrit_shared_t;
 
 typedef struct noiseplethora_cgrit_voice_s {
@@ -97,6 +101,7 @@ typedef struct noiseplethora_cgrit_voice_s {
    StateVariableFilter2ndOrder *svf_1b;
 } noiseplethora_cgrit_voice_t;
 
+#ifndef STFX_SKIP_NAMES_AND_RESETS
 static const char *ST_PLUGIN_API loc_get_param_name(st_plugin_info_t *_info,
                                                     unsigned int      _paramIdx
                                                     ) {
@@ -110,6 +115,7 @@ static float ST_PLUGIN_API loc_get_param_reset(st_plugin_info_t *_info,
    (void)_info;
    return loc_param_resets[_paramIdx];
 }
+#endif // !STFX_SKIP_NAMES_AND_RESETS
 
 static float ST_PLUGIN_API loc_get_param_value(st_plugin_shared_t *_shared,
                                                unsigned int        _paramIdx
@@ -126,12 +132,14 @@ static void ST_PLUGIN_API loc_set_param_value(st_plugin_shared_t *_shared,
    shared->params[_paramIdx] = _value;
 }
 
+#ifndef STFX_SKIP_NAMES_AND_RESETS
 static const char *ST_PLUGIN_API loc_get_mod_name(st_plugin_info_t *_info,
                                                   unsigned int      _modIdx
                                                   ) {
    (void)_info;
    return loc_mod_names[_modIdx];
 }
+#endif // !STFX_SKIP_NAMES_AND_RESETS
 
 static void ST_PLUGIN_API loc_set_sample_rate(st_plugin_voice_t *_voice,
                                               float              _sampleRate
@@ -223,7 +231,7 @@ static void ST_PLUGIN_API loc_prepare_block(st_plugin_voice_t *_voice,
 static void ST_PLUGIN_API loc_process_replace(st_plugin_voice_t  *_voice,
                                               int                 _bMonoIn,
                                               const float        *_samplesIn,
-                                              float              *_samplesOut, 
+                                              float              *_samplesOut,
                                               unsigned int        _numFrames
                                               ) {
    (void)_bMonoIn;
@@ -240,7 +248,7 @@ static void ST_PLUGIN_API loc_process_replace(st_plugin_voice_t  *_voice,
       float out = voice->grit_noise->process(1.0f / voice->sample_rate);
 
 #if 1
-      // Filter 1        
+      // Filter 1
       if(shared->params[PARAM_POLES_1] >= 0.5f)
       {
          // 4pole
@@ -281,7 +289,9 @@ static st_plugin_shared_t *ST_PLUGIN_API loc_shared_new(st_plugin_info_t *_info)
    {
       memset((void*)ret, 0, sizeof(*ret));
       ret->base.info  = _info;
+#ifndef STFX_SKIP_NAMES_AND_RESETS
       memcpy((void*)ret->params, (void*)loc_param_resets, NUM_PARAMS * sizeof(float));
+#endif // !STFX_SKIP_NAMES_AND_RESETS
    }
    return &ret->base;
 }
@@ -347,11 +357,15 @@ st_plugin_info_t *noiseplethora_cgrit_init(void) {
       ret->base.shared_delete    = &loc_shared_delete;
       ret->base.voice_new        = &loc_voice_new;
       ret->base.voice_delete     = &loc_voice_delete;
+#ifndef STFX_SKIP_NAMES_AND_RESETS
       ret->base.get_param_name   = &loc_get_param_name;
       ret->base.get_param_reset  = &loc_get_param_reset;
+#endif // !STFX_SKIP_NAMES_AND_RESETS
       ret->base.get_param_value  = &loc_get_param_value;
       ret->base.set_param_value  = &loc_set_param_value;
+#ifndef STFX_SKIP_NAMES_AND_RESETS
       ret->base.get_mod_name     = &loc_get_mod_name;
+#endif // !STFX_SKIP_NAMES_AND_RESETS
       ret->base.set_sample_rate  = &loc_set_sample_rate;
       ret->base.note_on          = &loc_note_on;
       ret->base.set_mod_value    = &loc_set_mod_value;
