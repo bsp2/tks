@@ -1,7 +1,7 @@
 #
-# Common plugin makefile for Linux / GCC target
+# Common makefile for Linux / GCC target
 #
-#  Also see plugin_common.mk, plugin_common_gcc.mk
+#  See also: build_common.mk, build_common_gcc.mk
 #
 #
 
@@ -9,7 +9,7 @@ ifneq ("$(STATIC_TARGET)","")
 CLEAN_RULES+= clean_static_target
 endif
 
-include ${TKS_ROOT}/plugin_common.mk
+include ${TKS_ROOT}/build_common.mk
 
 #
 # Determine TARGET filename if only PLUGIN name is known
@@ -26,7 +26,7 @@ EXTRALIBS += -L$(CROSS_ROOT)/usr/lib -lm
 
 
 #
-# Install plugin
+# Install target
 #  (Note: cannot depend on "bin" target since this would overwrite the UPX compressed file..)
 #
 install: $(INSTALL_RULES)
@@ -34,7 +34,7 @@ install: $(INSTALL_RULES)
 	@echo "[...] $(TARGET) installed to \"$(TKS_SITE_PREFIX)/plugins/\".";
 
 
-include ${TKS_ROOT}/plugin_common_gcc.mk
+include ${TKS_ROOT}/build_common_gcc.mk
 
 
 #

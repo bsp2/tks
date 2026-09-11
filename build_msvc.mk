@@ -1,13 +1,15 @@
 #
-# Common plugin makefile for "msvc" / win32 target
+# Common makefile include for "msvc" / Windows target
 #
-#  Also see plugin_common.mk
+#  See also: build_common.mk
+#
+#
 
 ifneq ("$(STATIC_TARGET)","")
 CLEAN_RULES+= clean_static_target
 endif
 
-include ${TKS_ROOT}/plugin_common.mk
+include ${TKS_ROOT}/build_common.mk
 
 #
 # Determine TARGET filename if only PLUGIN name is known
@@ -26,7 +28,7 @@ CFLAGS += $(EXTRAFLAGS_C)
 
 
 #
-# Build plugin library
+# Build target
 #
 ifneq ("$(STATIC_TARGET)","")
 .PHONY: static_target

@@ -259,6 +259,7 @@ ifeq ($(RELEASE),y)
 ifeq ($(OPT_SIZE),y)
 #OPTFLAGS += -Os
 OPTFLAGS+= -Oz
+LDFLAGS+= -Wl,-no_compact_unwind
 else
 OPTFLAGS += -O3
 endif

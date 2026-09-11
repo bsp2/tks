@@ -1,7 +1,7 @@
 #
-# Common plugin makefile for macOS / GCC target
+# Common makefile include for macOS / GCC / Clang targets
 #
-#  Also see plugin_common.mk, plugin_common_gcc.mk
+#  See also: build_common.mk
 #
 #
 
@@ -9,7 +9,7 @@ ifneq ("$(STATIC_TARGET)","")
 CLEAN_RULES+= clean_static_target
 endif
 
-include ${TKS_ROOT}/plugin_common.mk
+include ${TKS_ROOT}/build_common.mk
 
 #
 # Determine TARGET filename if only PLUGIN name is known

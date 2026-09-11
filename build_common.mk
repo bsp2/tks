@@ -1,16 +1,12 @@
 #
+# Common makefile include for all build targets on all platforms
 #
-# Common makefile include for all plugin targets on all platforms
-#  
-# This file is included by the platform-specific plugin_xyz.mk include files.
-#
+# This file is included by the platform-specific build_xyz.mk include files.
 #
 
 
-
 #
-#
-# In order to extend existing targets, add 
+# In order to extend existing targets, add
 # your targets to the
 #
 #       HELP_RULES - extends "help" target
@@ -21,14 +17,11 @@
 #      CLEAN_RULES - extends "clean" target
 #  REALCLEAN_RULES - extends "realclean" target
 #
-# variables  
-#
+# variables
 #
 
 #
-#
 # You also need to set the following vars before including this makefile:
-#
 #
 
 #
@@ -77,7 +70,7 @@ help: $(HELP_RULES)
 # Compress plugin library (**deprecated**)
 #
 .PHONY: upx
-upx:	bin $(UPX_RULES) 
+upx:	bin $(UPX_RULES)
 	$(UPX) -9 $(TARGET)
 
 

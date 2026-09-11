@@ -1,5 +1,8 @@
 #
-# Plugin targets for all (Linux-like) GCC based platforms
+# Common makefile include for all (Linux-like) GCC based platforms
+#
+#  See also: build_common.mk, build_linux.mk
+#
 #
 
 CPPFLAGS += -I${TKS_ROOT}/yac
@@ -10,7 +13,7 @@ CFLAGS += -I${TKS_ROOT}/yac
 
 
 #
-# Build plugin library
+# Build target
 #
 ifneq ("$(STATIC_TARGET)","")
 .PHONY: static_target

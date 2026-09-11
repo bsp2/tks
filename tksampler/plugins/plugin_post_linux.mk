@@ -2,10 +2,10 @@
 #include $(TKS_ROOT)/install_linux.mk
 
 .cpp.o:
-	$(CPP) $(CPPFLAGS) $(OPTFLAGS) $(DBGFLAGS) -fPIC -c $< -o $@ 
+	$(CPP) $(CPPFLAGS) $(OPTFLAGS) $(DBGFLAGS) -fPIC -c $< -o $@
 
 .c.o:
-	$(CC) $(CFLAGS) $(OPTFLAGS) $(DBGFLAGS) -fPIC -c $< -o $@ 
+	$(CC) $(CFLAGS) $(OPTFLAGS) $(DBGFLAGS) -fPIC -c $< -o $@
 
 
 .PHONY: bin
@@ -23,4 +23,3 @@ install:
 .PHONY: clean
 clean:
 	$(RM) $(ALL_OBJ) "$(TARGET).dll" "$(TARGET).map" "$(TARGET).lib" "$(TARGET).exp" "$(TARGET).so"
-
