@@ -7,7 +7,7 @@ Standalone "C" replay for exported Synergy / Eureka / Cycle projects.
 - native-code procedural samples and wavetables (exported from 'Eureka' / 'Cycle')
 - application-controlled MIDI note, program change, and modulation events ((poly-)pressure, pitchbend, CC, RPN)
 - multiple instances
-- typical arm64 code-size (gzip'd): ~163k (demo project, 25 synth+fx plugins) / ~38k (sampler only) / ~52k (FM only)
+- typical arm64 code-size (gzip'd): ~162k (demo project, 25 synth+fx plugins) / ~38k (sampler only) / ~52k (FM only)
 - MIT license
 
 see [replay](http://miditracker.org/replay.html) for further information.
