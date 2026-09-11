@@ -87,8 +87,10 @@ void StADSRPlayer::visitEnv(StEnvelope *_stEnv) {
          current_env->current_index = env->current_index;
          current_env->abs_time      = env->abs_time;
          current_env->delta_time    = env->delta_time;
+#ifndef LIBSYNERGY_BUILD
          current_env->env_fun       = env->env_fun;
          current_env->b_shreset     = env->b_shreset;
+#endif // LIBSYNERGY_BUILD
          current_env_intensity      = _stEnv->intensity;
 
          // Dyac_host_printf("xxx StADSRPlayer::visitEnv: 1 num_elements=%u\n", current_env->num_elements);
@@ -486,12 +488,10 @@ sF32 StADSRPlayer::tick(void) {
                   if(current_env->num_elements)
                   {
                      // Have release envelope
-                     // // // r = current_env->get();
                      t = current_env->yacEnvGetValue();
                      t = loc_powxy(t, orig_st_env->exponent);
                      if(t < min_level)
                         t = min_level;
-                     ////printf("xxx release cenv val=%f\n", r);
                      r = t * cIntensity + (default_level * (1.0f - cIntensity));
 
                      switch(adsr->stage_op)

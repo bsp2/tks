@@ -64,7 +64,6 @@ YAC_Object *StEnvelope::_getOrCreateData(void) {
 #else
       data = YAC_NEW(TKS_Envelope);
 #endif // LIBSYNERGY_BUILD
-      data->env_fun = TKS_Envelope::TKS_ENVELOPE_LINEAR;
    }
    return data;
 }
