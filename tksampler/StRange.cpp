@@ -23,10 +23,12 @@
 // ----
 // ---- created: 23Sep2009
 // ---- changed: 21Jan2010, 23Dec2018, 05Jan2019, 06Jan2019, 05Mar2019, 12Apr2023, 03Oct2024
-// ----          24May2026
+// ----          24May2026, 11Sep2026
 // ----
 // ----
 // ----
+
+#ifndef TKSAMPLER_SKIP_RANGE
 
 #include "tksampler.h"
 
@@ -147,3 +149,5 @@ sBool StRange::filterNoteOn(sF32 _val) {
       return (_val >= lo) && (b_high_inclusive ? (_val <= hi) : (_val < hi));
    return YAC_TRUE;
 }
+
+#endif // TKSAMPLER_SKIP_RANGE

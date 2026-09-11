@@ -26,6 +26,7 @@
 // ----          19Jan2010, 21Jan2010, 29Apr2010, 24Mar2013, 23Dec2018, 27Dec2018, 31Dec2018
 // ----          17Jan2019, 23Apr2019, 15Feb2020, 25Feb2020, 08Aug2021, 18Nov2023, 15Aug2024
 // ----          28Sep2024, 30Sep2024, 12Nov2024, 10Apr2026, 24May2026, 07Sep2026, 10Sep2026
+// ----          11Sep2026
 // ----
 // ----
 // ----
@@ -42,7 +43,9 @@ YC class StSampleBank : public YAC_Object {
   public:
    StSample *first_sample;  // deletable, single-linked list of samples
 
+#ifndef TKSAMPLER_SKIP_MUTEX_GROUPS
    StSampleMutexGroup *first_mutex_group; // deletable list of mutex groups
+#endif // TKSAMPLER_SKIP_MUTEX_GROUPS
 
 #ifndef LIBSYNERGY_BUILD
    YAC_String *name;
@@ -83,13 +86,12 @@ YC class StSampleBank : public YAC_Object {
    YAC(StSampleBank);
 
   public:
-#ifndef LIBSYNERGY_BUILD
+#ifndef TKSAMPLER_SKIP_TUNING_TABLES
    const sF32 *getCurrentTuningTableOrNull (void);
-#endif // LIBSYNERGY_BUILD
+#endif // TKSAMPLER_SKIP_TUNING_TABLES
 
   public:
    YM void _freeSamples (void);
-   YM void _freeMutexGroups (void);
 
    YM YAC_Object *_getFirstSample (void);
    YM void        _unlinkFirstSample (YAC_Value *_r);
@@ -102,12 +104,15 @@ YC class StSampleBank : public YAC_Object {
    YM void        _setEnableSkipRange (sBool _bEnable);
    YM void        _swapSamples    (sUI _idxLeft);
 
+#ifndef TKSAMPLER_SKIP_MUTEX_GROUPS
+   YM void        _freeMutexGroups            (void);
    YM YAC_Object *_getFirstMutexGroup         (void);
    YM YAC_Object *_getMutexGroupByIdx         (sUI _idx);
    YM void        _addMutexGroup              (YAC_Object *_mtxgrp);
    YM void        _removeMutexGroup           (YAC_Object *_mtxgrp);
    YM sSI         _getMutexGroupIndexByObject (YAC_Object *_mtxgrp);
    YM sUI         _getNumMutexGroups          (void);
+#endif // TKSAMPLER_SKIP_MUTEX_GROUPS
 
    YM YAC_Object *_getName (void);
    YM void        _setName (YAC_Object *_str);
@@ -153,7 +158,7 @@ YC class StSampleBank : public YAC_Object {
    YM void  _setEnablePerfCtlFreezeNoteOff (sBool _bEnable);
    YM sBool _getEnablePerfCtlFreezeNoteOff (void);
 
-#ifndef LIBSYNERGY_BUILD
+#ifndef TKSAMPLER_SKIP_TUNING_TABLES
    // Lazy-alloc tuning table and copy MIDI note frequencies from FloatArray 'fa'.
    //  Frees tuning table when 'fa' is null.
    YM sBool _setTuningTable (sUI _idx, YAC_Object *_fa);
@@ -174,7 +179,7 @@ YC class StSampleBank : public YAC_Object {
 
    YM void _freeTuningTables (void);
    YM void _freeTuningTablesMetaData (void);
-#endif // LIBSYNERGY_BUILD
+#endif // TKSAMPLER_SKIP_TUNING_TABLES
 };
 
 

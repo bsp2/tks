@@ -42,7 +42,7 @@
 // ----          15Jan2024, 16Jan2024, 19Apr2024, 04Aug2024, 15Aug2024, 28Sep2024, 30Sep2024
 // ----          02Oct2024, 03Oct2024, 13Oct2024, 09Nov2024, 03Jan2025, 09Jan2026, 16Jan2026
 // ----          26Jan2026, 10Apr2026, 14May2026, 15May2026, 24May2026, 27May2026, 07Sep2026
-// ----          10Sep2026
+// ----          10Sep2026, 11Sep2026
 // ----
 // ----
 // ----
@@ -110,7 +110,9 @@ YC class StSample : public YAC_Object {
    StWaveform         *waveform;
    sBool               b_own_waveform;
    sF32                sample_rate_ratio;
+#ifndef TKSAMPLER_SKIP_MUTEX_GROUPS
    StSampleMutexGroup *mutex_group;
+#endif // TKSAMPLER_SKIP_MUTEX_GROUPS
 #ifndef LIBSYNERGY_BUILD
    YAC_String         *name;
 #endif // LIBSYNERGY_BUILD
@@ -122,11 +124,22 @@ YC class StSample : public YAC_Object {
    sF32                partial_cyclelen_reset;  // typically equals cyclelen but may differ. <8=free run
    sBool               b_partial_phase_0;
 
+#ifndef TKSAMPLER_SKIP_RANGE
+
+#ifndef TKSAMPLER_SKIP_RANGE_KEY
    StRange *key_range; // Owned by sample instance
+#endif // TKSAMPLER_SKIP_RANGE_KEY
+
+#ifndef TKSAMPLER_SKIP_RANGE_VEL
    StRange *vel_range;
+#endif // TKSAMPLER_SKIP_RANGE_VEL
+
+#ifndef TKSAMPLER_SKIP_RANGE_MOD
    StRange *mod_range;
+#endif // TKSAMPLER_SKIP_RANGE_MOD
 
    sBool b_skip_range;  // 1=ignore key/vel/mod ranges, 0=enable(when present).  used by editor when solo'ing zones.
+#endif // TKSAMPLER_SKIP_RANGE
 
    sUI max_voices; // max voices per SamplePlayer instance. 0=only apply samplebank voice limiter
 
@@ -1269,16 +1282,25 @@ YC class StSample : public YAC_Object {
    YM sBool       _verifySampleAreas (void);
 #endif // LIBSYNERGY_BUILD
 
+#ifndef TKSAMPLER_SKIP_MUTEX_GROUPS
    YM YAC_Object *_getMutexGroup (void);
    YM void        _setMutexGroup (YAC_Object *_mtxGrp); // set ref
+#endif // TKSAMPLER_SKIP_MUTEX_GROUPS
 
+#ifndef TKSAMPLER_SKIP_RANGE
+#ifndef TKSAMPLER_SKIP_RANGE_KEY
    YM YAC_Object *_getKeyRange (void);
-   YM YAC_Object *_getVelRange (void);
-   YM YAC_Object *_getModRange (void);
-
    YM YAC_Object *_getOrCreateKeyRange (void);
+#endif // TKSAMPLER_SKIP_RANGE_KEY
+#ifndef TKSAMPLER_SKIP_RANGE_VEL
+   YM YAC_Object *_getVelRange (void);
    YM YAC_Object *_getOrCreateVelRange (void);
+#endif // TKSAMPLER_SKIP_RANGE_VEL
+#ifndef TKSAMPLER_SKIP_RANGE_MOD
+   YM YAC_Object *_getModRange (void);
    YM YAC_Object *_getOrCreateModRange (void);
+#endif // TKSAMPLER_SKIP_RANGE_MOD
+#endif // TKSAMPLER_SKIP_RANGE
 
    YM YAC_Object *_getFreqADSR (void);
    YM YAC_Object *_getVolADSR  (void);
@@ -1571,8 +1593,10 @@ YC class StSample : public YAC_Object {
    YM void        _setWavepathIndex         (sSI _idx);
    YM sSI         _getWavepathIndex         (void);
 
+#ifndef LIBSYNERGY_BUILD
    // For editor, true=ignore ranges
    YM void _setEnableSkipRange (sSI _bEnable);
+#endif // LIBSYNERGY_BUILD
 
    YM void _setEnableAlt (sSI _bEnable);
    YM sSI  _getEnableAlt (void);

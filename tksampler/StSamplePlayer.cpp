@@ -33,7 +33,7 @@
 // ----          10Dec2022, 20Dec2022, 05Feb2023, 12Apr2023, 07Sep2023, 08Sep2023, 17Sep2023
 // ----          21Jan2024, 20Sep2024, 28Sep2024, 01Oct2024, 31Oct2024, 15Nov2024, 11Dec2024
 // ----          14Jan2025, 28May2025, 30May2025, 13Jun2025, 16Jan2026, 09Apr2026, 10Apr2026
-// ----          19May2026, 24May2026, 27May2026, 11Jul2026, 08Sep2026, 10Sep2026
+// ----          19May2026, 24May2026, 27May2026, 11Jul2026, 08Sep2026, 10Sep2026, 11Sep2026
 // ----
 // ----
 // ----
@@ -44,7 +44,9 @@
 #include "StWaveform.h"
 #include "StADSR.h"
 #include "StRange.h"
+#ifndef TKSAMPLER_SKIP_MUTEX_GROUPS
 #include "StSampleMutexGroup.h"
+#endif // TKSAMPLER_SKIP_MUTEX_GROUPS
 #include "StSample.h"
 #include "StSampleBank.h"
 
@@ -1056,6 +1058,7 @@ StSampleVoice *StSamplePlayer::allocSampleVoice(StSample *_sample, sSI _note) {
       applyMaxVoicesConstraint(_sample, 0u/*any voice_key*/);
    }
 
+#ifndef TKSAMPLER_SKIP_MUTEX_GROUPS
    // Check whether there are active voices that belong to the same mutex group as _sample
    if(NULL != _sample->mutex_group)
    {
@@ -1073,7 +1076,7 @@ StSampleVoice *StSamplePlayer::allocSampleVoice(StSample *_sample, sSI _note) {
          }
       }
    }
-
+#endif // TKSAMPLER_SKIP_MUTEX_GROUPS
 
    // Find first inactive voice
    //  (todo) remove this ? voice keys usually remain set so that voices can be retriggered

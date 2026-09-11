@@ -12371,7 +12371,11 @@ void StSampleVoice::renderInt(YAC_Object *_buf, sF32 _volScale
 
          if(NULL != sample)
          {
-            if(-1 != sample->voice_bus && !sample->b_skip_range/*solo*/)
+            if(-1 != sample->voice_bus
+#ifndef LIBSYNERGY_BUILD
+               && !sample->b_skip_range/*solo*/
+#endif // LIBSYNERGY_BUILD
+               )
             {
                // Redirect output to voice bus
                if(0 == sample->voice_bus)

@@ -26,7 +26,7 @@
 // ----          19Jan2010, 21Jan2010, 27Jan2010, 24Mar2013, 23Dec2018, 27Dec2018, 31Dec2018
 // ----          17Jan2019, 23Apr2019, 15Feb2020, 25Feb2020, 08Aug2021, 12Apr2023, 18Nov2023
 // ----          15Aug2024, 28Sep2024, 30Sep2024, 22Oct2024, 12Nov2024, 11Dec2024, 24May2026
-// ----          07Sep2026, 10Sep2026
+// ----          07Sep2026, 10Sep2026, 11Sep2026
 // ----
 // ----
 // ----
@@ -39,7 +39,9 @@ StSampleBank::StSampleBank(void) {
    name                         = NULL;
 #endif // LIBSYNERGY_BUILD
    first_sample                 = NULL;
+#ifndef TKSAMPLER_SKIP_MUTEX_GROUPS
    first_mutex_group            = NULL;
+#endif // TKSAMPLER_SKIP_MUTEX_GROUPS
    num_samples                  = 0u;
    max_voices                   = 16u;
    transpose                    = 0.0f;
@@ -68,11 +70,14 @@ StSampleBank::~StSampleBank() {
 #endif // LIBSYNERGY_BUILD
 
    _freeSamples();
+#ifndef TKSAMPLER_SKIP_MUTEX_GROUPS
    _freeMutexGroups();
-#ifndef LIBSYNERGY_BUILD
+#endif // TKSAMPLER_SKIP_MUTEX_GROUPS
+
+#ifndef TKSAMPLER_SKIP_TUNING_TABLES
    _freeTuningTables();
    _freeTuningTablesMetaData();
-#endif // LIBSYNERGY_BUILD
+#endif // TKSAMPLER_SKIP_TUNING_TABLES
 }
 
 void StSampleBank::_freeSamples(void) {
@@ -87,20 +92,6 @@ void StSampleBank::_freeSamples(void) {
       }
       first_sample = NULL;
       num_samples = 0u;
-   }
-}
-
-void StSampleBank::_freeMutexGroups(void) {
-   if(NULL != first_mutex_group)
-   {
-      StSampleMutexGroup *c = first_mutex_group;
-      while(NULL != c)
-      {
-         StSampleMutexGroup *n = c->next;
-         YAC_DELETE(c);
-         c = n;
-      }
-      first_mutex_group = NULL;
    }
 }
 
@@ -266,6 +257,7 @@ void StSampleBank::_removeSample(YAC_Object *_sample) {
    }
 }
 
+#ifndef LIBSYNERGY_BUILD
 void StSampleBank::_setEnableSkipRange(sBool _bEnable) {
    StSample *s = first_sample;
    while(NULL != s)
@@ -274,6 +266,7 @@ void StSampleBank::_setEnableSkipRange(sBool _bEnable) {
       s = s->next;
    }
 }
+#endif // LIBSYNERGY_BUILD
 
 void StSampleBank::_swapSamples(sUI _idxLeft) {
    if( (_idxLeft < num_samples) && ((_idxLeft + 1u) < num_samples) )
@@ -312,6 +305,21 @@ void StSampleBank::_swapSamples(sUI _idxLeft) {
             }
          }
       }
+   }
+}
+
+#ifndef TKSAMPLER_SKIP_MUTEX_GROUPS
+void StSampleBank::_freeMutexGroups(void) {
+   if(NULL != first_mutex_group)
+   {
+      StSampleMutexGroup *c = first_mutex_group;
+      while(NULL != c)
+      {
+         StSampleMutexGroup *n = c->next;
+         YAC_DELETE(c);
+         c = n;
+      }
+      first_mutex_group = NULL;
    }
 }
 
@@ -414,6 +422,7 @@ sUI StSampleBank::_getNumMutexGroups(void) {
    }
    return r;
 }
+#endif // TKSAMPLER_SKIP_MUTEX_GROUPS
 
 #ifndef LIBSYNERGY_BUILD
 YAC_Object *StSampleBank::_getName(void) {
@@ -538,6 +547,8 @@ void StSampleBank::updateAltGroups(void) {
          {
             sBool bMatch = YAC_TRUE;
 
+#ifndef TKSAMPLER_SKIP_RANGE
+#ifndef TKSAMPLER_SKIP_RANGE_KEY
             if(NULL != curAltHdr->key_range)
             {
                if(NULL != s->key_range)
@@ -548,7 +559,9 @@ void StSampleBank::updateAltGroups(void) {
                   // Dyac_host_printf("xxx match key=%d\n", bMatch);
                }
             }
+#endif // TKSAMPLER_SKIP_RANGE_KEY
 
+#ifndef TKSAMPLER_SKIP_RANGE_VEL
             if(NULL != curAltHdr->vel_range)
             {
                if(NULL != s->vel_range)
@@ -559,7 +572,9 @@ void StSampleBank::updateAltGroups(void) {
                   // Dyac_host_printf("xxx match vel=%d\n", bMatch);
                }
             }
+#endif // TKSAMPLER_SKIP_RANGE_VEL
 
+#ifndef TKSAMPLER_SKIP_RANGE_MOD
             if(NULL != curAltHdr->mod_range)
             {
                if(NULL != s->mod_range)
@@ -576,6 +591,8 @@ void StSampleBank::updateAltGroups(void) {
                   //                  );
                }
             }
+#endif // TKSAMPLER_SKIP_RANGE_MOD
+#endif // TKSAMPLER_SKIP_RANGE
 
             if(bMatch)
             {

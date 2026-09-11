@@ -40,7 +40,7 @@
 // ----          10Jan2024, 13Jan2024, 14Jan2024, 15Jan2024, 16Jan2024, 19Apr2024, 04Aug2024
 // ----          15Aug2024, 28Sep2024, 30Sep2024, 01Oct2024, 03Oct2024, 05Oct2024, 13Oct2024
 // ----          14Oct2024, 08Nov2024, 09Nov2024, 11Dec2024, 03Jan2025, 09Jan2026, 10Apr2026
-// ----          14May2026, 15May2026, 24May2026, 07Sep2026, 08Sep2026
+// ----          14May2026, 15May2026, 24May2026, 07Sep2026, 08Sep2026, 11Sep2026
 // ----
 // ----
 // ----
@@ -55,7 +55,9 @@ StSample::StSample(void) {
 
    next        = NULL;
    waveform    = NULL;
+#ifndef TKSAMPLER_SKIP_MUTEX_GROUPS
    mutex_group = NULL;
+#endif // TKSAMPLER_SKIP_MUTEX_GROUPS
 #ifndef LIBSYNERGY_BUILD
    name        = NULL;
 #endif // LIBSYNERGY_BUILD
@@ -65,9 +67,15 @@ StSample::StSample(void) {
    partial_phases     = NULL;
    num_partials       = 32.0f;
 
+#ifndef TKSAMPLER_SKIP_RANGE_KEY
    key_range = NULL;
+#endif // TKSAMPLER_SKIP_RANGE_KEY
+#ifndef TKSAMPLER_SKIP_RANGE_VEL
    vel_range = NULL;
+#endif // TKSAMPLER_SKIP_RANGE_VEL
+#ifndef TKSAMPLER_SKIP_RANGE_MOD
    mod_range = NULL;
+#endif // TKSAMPLER_SKIP_RANGE_MOD
 
    sample_loops  = NULL;
 
@@ -161,7 +169,9 @@ void StSample::reinit(void) {
 
    sample_rate_ratio = 1.0f;
 
+#ifndef LIBSYNERGY_BUILD
    b_skip_range = YAC_FALSE;
+#endif // LIBSYNERGY_BUILD
 
    max_voices = STSAMPLE_DEFAULT_MAXVOICES;
 
@@ -447,9 +457,17 @@ void StSample::free(void) {
    YAC_DELETE_SAFE(lfo_pan);
    YAC_DELETE_SAFE(lfo_aux);
 #endif // TKSAMPLER_SKIP_LFO
+#ifndef TKSAMPLER_SKIP_RANGE
+#ifndef TKSAMPLER_SKIP_RANGE_KEY
    YAC_DELETE_SAFE(key_range);
+#endif // TKSAMPLER_SKIP_RANGE_KEY
+#ifndef TKSAMPLER_SKIP_RANGE_VEL
    YAC_DELETE_SAFE(vel_range);
+#endif // TKSAMPLER_SKIP_RANGE_VEL
+#ifndef TKSAMPLER_SKIP_RANGE_MOD
    YAC_DELETE_SAFE(mod_range);
+#endif // TKSAMPLER_SKIP_RANGE_MOD
+#endif // TKSAMPLER_SKIP_RANGE
 #ifdef TKSAMPLER_WAVEPATH
    YAC_DELETE_SAFE(wavepath_table);
 #endif // TKSAMPLER_WAVEPATH
@@ -935,6 +953,7 @@ sBool StSample::_verifySampleAreas(void) {
 #endif // LIBSYNERGY_BUILD
 
 
+#ifndef TKSAMPLER_SKIP_MUTEX_GROUPS
 YAC_Object *StSample::_getMutexGroup(void) {
    return mutex_group;
 }
@@ -949,6 +968,7 @@ void StSample::_setMutexGroup(YAC_Object *_mtxGrp) {
       mutex_group = NULL;
    }
 }
+#endif // TKSAMPLER_SKIP_MUTEX_GROUPS
 
 void StSample::_setMaxVoices(sUI _maxVoices) {
    max_voices = _maxVoices;
@@ -958,6 +978,8 @@ sUI StSample::_getMaxVoices(void) {
    return max_voices;
 }
 
+#ifndef TKSAMPLER_SKIP_RANGE
+#ifndef TKSAMPLER_SKIP_RANGE_KEY
 YAC_Object *StSample::_getOrCreateKeyRange(void) {
    if(NULL == key_range)
    {
@@ -967,6 +989,12 @@ YAC_Object *StSample::_getOrCreateKeyRange(void) {
    return key_range;
 }
 
+YAC_Object *StSample::_getKeyRange(void) {
+   return key_range;
+}
+#endif // TKSAMPLER_SKIP_RANGE_KEY
+
+#ifndef TKSAMPLER_SKIP_RANGE_VEL
 YAC_Object *StSample::_getOrCreateVelRange(void) {
    if(NULL == vel_range)
    {
@@ -975,6 +1003,12 @@ YAC_Object *StSample::_getOrCreateVelRange(void) {
    return vel_range;
 }
 
+YAC_Object *StSample::_getVelRange(void) {
+   return vel_range;
+}
+#endif // TKSAMPLER_SKIP_RANGE_VEL
+
+#ifndef TKSAMPLER_SKIP_RANGE_MOD
 YAC_Object *StSample::_getOrCreateModRange(void) {
    if(NULL == mod_range)
    {
@@ -983,17 +1017,12 @@ YAC_Object *StSample::_getOrCreateModRange(void) {
    return mod_range;
 }
 
-YAC_Object *StSample::_getKeyRange(void) {
-   return key_range;
-}
-
-YAC_Object *StSample::_getVelRange(void) {
-   return vel_range;
-}
-
 YAC_Object *StSample::_getModRange(void) {
    return mod_range;
 }
+#endif // TKSAMPLER_SKIP_RANGE_MOD
+
+#endif // TKSAMPLER_SKIP_RANGE
 
 YAC_Object *StSample::_getOrCreateFreqADSR(void) {
    if(NULL == adsr_freq)
@@ -1740,27 +1769,38 @@ sBool StSample::filterNoteOn(sSI _note, sF32 _vel, sF32 _mod) {
 
    // Dyac_host_printf("xxx filterNoteOn: note=%d vel=%f mod=%f b_skip_range=%d\n", _note, _vel, _mod, b_skip_range);
 
+#ifndef TKSAMPLER_SKIP_RANGE
+#ifndef LIBSYNERGY_BUILD
    if(!b_skip_range)
+#endif // LIBSYNERGY_BUILD
    {
+#ifndef TKSAMPLER_SKIP_RANGE_KEY
       if(NULL != key_range)
       {
          r = r && key_range->filterNoteOn((sF32)_note);
          // Dyac_host_printf("xxx filterNoteOn: after key_range r=%d\n", r);
       }
+#endif // TKSAMPLER_SKIP_RANGE_KEY
 
+#ifndef TKSAMPLER_SKIP_RANGE_VEL
       if(r && (NULL != vel_range))
       {
          r = r && vel_range->filterNoteOn(_vel);
          // Dyac_host_printf("xxx filterNoteOn: after vel_range r=%d\n", r);
          // Dyac_host_printf("xxx filterNoteOn: vel_range lo=%f hi=%f\n", vel_range->lo, vel_range->hi);
       }
+#endif // TKSAMPLER_SKIP_RANGE_VEL
 
+#ifndef TKSAMPLER_SKIP_RANGE_MOD
       if(r && (NULL != mod_range))
       {
          r = r && mod_range->filterNoteOn(_mod);
          // Dyac_host_printf("xxx filterNoteOn: after mod_range r=%d\n", r);
       }
+#endif // TKSAMPLER_SKIP_RANGE_MOD
    }
+#endif // TKSAMPLER_SKIP_RANGE
+
    return r;
 }
 
@@ -1770,10 +1810,18 @@ sF32 StSample::calcVelZoneVolume(sF32 _vel) {
    v = (1.0f - volume_velocity_amount) + (_vel * volume_velocity_amount);
    ////printf("xxx v=%f vel_range=%p\n", v, vel_range);
 
-   if(vel_range && !b_skip_range)
+#ifndef TKSAMPLER_SKIP_RANGE
+#ifndef TKSAMPLER_SKIP_RANGE_VEL
+   if(vel_range
+#ifndef LIBSYNERGY_BUILD
+      && !b_skip_range
+#endif // LIBSYNERGY_BUILD
+      )
    {
       v = v * vel_range->calcAmount(_vel);
    }
+#endif // TKSAMPLER_SKIP_RANGE_VEL
+#endif // TKSAMPLER_SKIP_RANGE
 
    if(v > 1.0f)
    {
@@ -1790,19 +1838,35 @@ sF32 StSample::calcVelZoneVolume(sF32 _vel) {
 sF32 StSample::calcKeyModZoneVolume(sF32 _freq, sF32 _mod) {
    sF32 v = 1.0f;
 
-   if(key_range && !b_skip_range)
+#ifndef TKSAMPLER_SKIP_RANGE
+#ifndef TKSAMPLER_SKIP_RANGE_KEY
+   if(key_range
+#ifndef LIBSYNERGY_BUILD
+      && !b_skip_range
+#endif // LIBSYNERGY_BUILD
+      )
    {
       // Dyac_host_printf("xxx calcKeyModZoneVolume: freq=%f v=%f\n", _freq, v);
       sF32 a = key_range->calcAmount(_freq);
       v = v * a;
    }
+#endif // TKSAMPLER_SKIP_RANGE_KEY
+#endif // TKSAMPLER_SKIP_RANGE
 
-   if(mod_range && !b_skip_range)
+#ifndef TKSAMPLER_SKIP_RANGE
+#ifndef TKSAMPLER_SKIP_RANGE_MOD
+   if(mod_range
+#ifndef LIBSYNERGY_BUILD
+      && !b_skip_range
+#endif // LIBSYNERGY_BUILD
+      )
    {
       sF32 a = mod_range->calcAmount(_mod);
       v = v * a;
       // Dyac_host_printf("xxx calcKeyModZoneVolume: a=%f v=%f mod=%f\n", a, v, _mod);
    }
+#endif // TKSAMPLER_SKIP_RANGE_MOD
+#endif // TKSAMPLER_SKIP_RANGE
 
    return v;
 }
@@ -2155,9 +2219,11 @@ sSI StSample::_getWavepathIndex(void) {
 #endif // TKSAMPLER_WAVEPATH
 }
 
+#ifndef LIBSYNERGY_BUILD
 void StSample::_setEnableSkipRange(sSI _bEnable) {
    b_skip_range = _bEnable;
 }
+#endif // LIBSYNERGY_BUILD
 
 void StSample::_setEnableAlt(sSI _bEnable) {
    alt.b_enable = _bEnable;

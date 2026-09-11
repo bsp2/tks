@@ -22,13 +22,14 @@
 // ---- info   : This is part of the "syntracker" midi sequencer.
 // ----
 // ---- created: 23Sep2009
-// ---- changed: 21Jan2010, 24May2026, 07Sep2026
+// ---- changed: 21Jan2010, 24May2026, 07Sep2026, 11Sep2026
 // ----
 // ----
 // ----
 
 #include "tksampler.h"
 
+#ifndef TKSAMPLER_SKIP_MUTEX_GROUPS
 
 StSampleMutexGroup::StSampleMutexGroup(void) {
    next = NULL;
@@ -71,3 +72,5 @@ void StSampleMutexGroup::_setName(YAC_Object *_str) {
    name->yacCopy(_str);
 }
 #endif // LIBSYNERGY_BUILD
+
+#endif // TKSAMPLER_SKIP_MUTEX_GROUPS
