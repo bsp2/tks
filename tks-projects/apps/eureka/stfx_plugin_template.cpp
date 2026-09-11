@@ -46,7 +46,6 @@ static const char *loc_param_names[NUM_PARAMS
 $(PARAM_NAMES)
 #endif
 };
-#endif // CYCLE_SKIP_UI
 static float loc_param_resets[NUM_PARAMS
 #if defined(_MSC_VER) && 0 == NUM_PARAMS
                                    +1
@@ -58,6 +57,7 @@ static float loc_param_resets[NUM_PARAMS
 $(PARAM_RESETS)
 #endif
 };
+#endif // CYCLE_SKIP_UI
 
 $(MOD_DEFS)#ifndef CYCLE_SKIP_UI
 static const char *loc_mod_names[NUM_MODS
@@ -615,7 +615,9 @@ static st_plugin_shared_t *ST_PLUGIN_API loc_shared_new(st_plugin_info_t *_info)
    {
       memset((void*)ret, 0, sizeof(*ret));
       ret->base.info  = _info;
+#ifndef CYCLE_SKIP_UI
       memcpy((void*)ret->params, (void*)loc_param_resets, NUM_PARAMS * sizeof(float));
+#endif // CYCLE_SKIP_UI
 $(ARRAY_PARAM_SHARED_INIT)   }
    return &ret->base;
 }
