@@ -2355,7 +2355,7 @@ void StSampleVoice::noteOff(sF32 _vel) {
    if( (current_delay_countdown > 0) || (NULL == sample) )
    {
       // Has not started playing, yet
-      ////printf("xxx stopVoice 1\n");
+      // Dyac_host_printf("xxx stopVoice 1\n");
       stopVoice();
    }
    else if(!b_release)
@@ -2377,6 +2377,7 @@ void StSampleVoice::noteOff(sF32 _vel) {
          {
             if(NULL != pce->voice->info->note_off)
             {
+               // Dyac_host_printf("xxx voice release ms=%u note=%u pluginIdx=%u\n", Dyac_host_yacMilliSeconds(), note, pluginIdx);
                pce->voice->info->note_off(pce->voice,
                                           (sU8)note,
                                           _vel
@@ -2389,9 +2390,9 @@ void StSampleVoice::noteOff(sF32 _vel) {
 
       if(adsr_vol.adsr)
       {
-         // sBool bGlideRelease = (b_glide && sample->b_glide_release);
-         // Dyac_host_printf("xxx bGlideRelease=%d adsr_vol.isInRelease()=%d\n", bGlideRelease, adsr_vol.isInRelease());
-         // if(!bGlideRelease || !adsr_vol.isInRelease())
+         // // sBool bGlideRelease = (b_glide && sample->b_glide_release);
+         // // Dyac_host_printf("xxx bGlideRelease=%d adsr_vol.isInRelease()=%d\n", bGlideRelease, adsr_vol.isInRelease());
+         // // if(!bGlideRelease || !adsr_vol.isInRelease())
          if(adsr_vol.isInRelease())
             adsr_vol.noteOffRestartRelease();
          else
@@ -2450,7 +2451,7 @@ void StSampleVoice::noteOff(sF32 _vel) {
                }
                else
 #endif // TKSAMPLER_SKIP_TIMED_LOOP
-               if(sample->b_noteoff_immediate_loop_jump)  //  || b_timedloop
+               if(sample->b_noteoff_immediate_loop_jump)
                {
                   // may cause clicks, especially with "single-cycle" waveforms
                   current_loop_countdown = 1;
@@ -2470,14 +2471,14 @@ void StSampleVoice::noteOff(sF32 _vel) {
          {
             // No Release phase, "immediately" stop voice (after volume ramp down)
             softStopVoice();
-            ////printf("xxx StSampleVoice::noteOff: no release phase, softStopVoice 2\n");
+            // Dyac_host_printf("xxx StSampleVoice::noteOff: no release phase, softStopVoice 2\n");
          }
       }
       else
       {
          // No Release phase, "immediately" stop voice (after volume ramp down)
          softStopVoice();
-         ////printf("xxx StSampleVoice::noteOff: no release phase, softStopVoice\n");
+         // Dyac_host_printf("xxx StSampleVoice::noteOff: no release phase, softStopVoice\n");
       }
 
    }

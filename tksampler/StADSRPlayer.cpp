@@ -513,8 +513,9 @@ sF32 StADSRPlayer::tick(void) {
                      // printf("xxx env_release: attack_level=%f sustain_level=%f\n", attack_level, sustain_level);
                      // printf("xxx env_release: op=%d r=%f attack_level=%f sustain_level=%f\n", adsr->stage_op, r, attack_level, sustain_level);
                      // Dyac_host_printf("xxx StADSRPlayer: env_release: time=%f mod_speed=%f mod_rspeed=%f cIntensity=%f r=%f\n", time, mod_speed, mod_rspeed, cIntensity, r);
-                     // // // current_env->tickPrecise(mod_speed * mod_rspeed);
-                     current_env->yacEnvTickPrecise(mod_speed * mod_rspeed * *sp_mod_speed * *sp_mod_rspeed * mmdst_speed * mmdst_rspeed);
+                     const sF32 tickSpd = mod_speed * mod_rspeed * *sp_mod_speed * *sp_mod_rspeed * mmdst_speed * mmdst_rspeed;
+                     // Dyac_host_printf("xxx StADSRPlayer: tickSpd=%f\n", tickSpd);
+                     current_env->yacEnvTickPrecise(tickSpd);
                      stageTimescale = mod_rspeed * *sp_mod_rspeed * mmdst_rspeed;
                   }
                   else
