@@ -6,19 +6,19 @@
 # n=32bit build ("x86", jit)
 # y=64bit build ("amd64", no jit)
 ifeq ($(BUILD_64),)
-BUILD_64=y
+  BUILD_64=y
 endif
 
 ifeq ($(BUILD_ARM),)
-BUILD_ARM=y
+  BUILD_ARM=y
 endif
 
 
 #
-# Enable optimizations 
+# Enable optimizations
 #
 ifeq ($(RELEASE),)
-RELEASE=y
+  RELEASE=y
 endif
 
 
@@ -27,7 +27,7 @@ endif
 #  Strip executable if NOT set to 'y'
 #
 ifeq ($(DEBUG),)
-DEBUG=
+  DEBUG=
 endif
 
 
@@ -71,11 +71,11 @@ RSYNC_CMD=rsync -a -v -e ssh -u -r -l -z --exclude=\*.ini
 
 #
 # Where to install tks
-#   (creates 
+#   (creates
 #         $(TKS_SITE_PREFIX)/plugins
 #         $(TKS_SITE_PREFIX)/libraries
 #         $(TKS_SITE_PREFIX)/applications
-#         $(TKS_SITE_PREFIX)/modules 
+#         $(TKS_SITE_PREFIX)/modules
 #         directories,
 #    copies tks.sh to $(TKS_PREFIX)/tks and
 #    tks.bin to $(TKS_PREFIX)/tks.bin
@@ -86,25 +86,25 @@ RSYNC_CMD=rsync -a -v -e ssh -u -r -l -z --exclude=\*.ini
 #  (also used to build "tks.sh" startup script, see tks-source/install.tks)
 #  (note: the TARGET vars are for paths used on the target)
 ifeq ($(TKS_TARGET_PREFIX),)
-#TKS_TARGET_PREFIX=/usr/bin/
-#TKS_TARGET_SITE_PREFIX=/usr/lib/tks/
-#TKS_TARGET_PREFIX=$(TKS_ROOT)/../arm-linux-gnueabihf/
+  #TKS_TARGET_PREFIX=/usr/bin/
+  #TKS_TARGET_SITE_PREFIX=/usr/lib/tks/
+  #TKS_TARGET_PREFIX=$(TKS_ROOT)/../arm-linux-gnueabihf/
 endif
 
 ifeq ($(TKS_TARGET_SITE_PREFIX),)
-TKS_TARGET_SITE_PREFIX=$(TKS_TARGET_PREFIX)
+  TKS_TARGET_SITE_PREFIX=$(TKS_TARGET_PREFIX)
 endif
 
 
 # Installation paths used by development host
 ifeq ($(TKS_PREFIX),)
-TKS_PREFIX=$(CROSS_ROOT)$(TKS_TARGET_PREFIX)/bin/
-#TKS_PREFIX=$(TKS_ROOT)/../arm-linux-gnueabihf/
+  TKS_PREFIX=$(CROSS_ROOT)$(TKS_TARGET_PREFIX)/bin/
+  #TKS_PREFIX=$(TKS_ROOT)/../arm-linux-gnueabihf/
 endif
 
 ifeq ($(TKS_SITE_PREFIX),)
-TKS_SITE_PREFIX=$(CROSS_ROOT)$(TKS_TARGET_SITE_PREFIX)
-#TKS_SITE_PREFIX=$(TKS_ROOT)/../arm-linux-gnueabihf/
+  TKS_SITE_PREFIX=$(CROSS_ROOT)$(TKS_TARGET_SITE_PREFIX)
+  #TKS_SITE_PREFIX=$(TKS_ROOT)/../arm-linux-gnueabihf/
 endif
 
 
@@ -130,29 +130,29 @@ MD5SUM    = md5sum
 m         = $(MAKE) -f makefile.macos
 
 
-# 
+#
 # Number of parallel targets to make
-# 
+#
 NUMJOBS=`sysctl -n hw.ncpu`
 #NUMJOBS=4
 
 
 #
-# Target architecture 
+# Target architecture
 #
 ifeq ($(BUILD_ARM),y)
-ifeq ($(BUILD_64),y)
-ARCH=ARM64
+  ifeq ($(BUILD_64),y)
+    ARCH=ARM64
+  else
+    ARCH=ARM32
+  endif
 else
-ARCH=ARM32
-endif
-else
-ifeq ($(BUILD_64),y)
-ARCH=X64
-else
-ARCH=X86
-endif
-endif
+  ifeq ($(BUILD_64),y)
+    ARCH=X64
+  else
+    ARCH=X86
+  endif
+endif # BUILD_ARM
 
 
 #
@@ -178,22 +178,20 @@ OBJCFLAGS=
 # Target architecture flags
 #
 ARCHFLAGS=
-ifeq ($(BUILD_ARM),y)
-ifeq ($(BUILD_64),y)
-ARCHFLAGS+= -DARCH_ARM64
-else
-ARCHLAGS+= -DARCH_ARM32
-endif
-else
-ifeq ($(BUILD_64),y)
-ARCHFLAGS+= -DARCH_X64
-else
-ARCHFLAGS+= -DARCH_X86
-endif
-endif
 
-CFLAGS+= $(ARCHFLAGS)
-CPPFLAGS+= $(ARCHFLAGS)
+ifeq ($(BUILD_ARM),y)
+  ifeq ($(BUILD_64),y)
+    ARCHFLAGS+= -DARCH_ARM64
+  else
+    ARCHLAGS+= -DARCH_ARM32
+  endif
+else
+  ifeq ($(BUILD_64),y)
+    ARCHFLAGS+= -DARCH_X64
+  else
+    ARCHFLAGS+= -DARCH_X86
+  endif
+endif # BUILD_ARM
 
 
 
@@ -214,8 +212,6 @@ MFLAGS=
 #MFLAGS += -march=armv7-a -mfpu=neon -mfloat-abi=hard
 #endif
 #endif
-
-
 
 
 
@@ -256,25 +252,22 @@ EXTRA_LIBS+= -L"${TKS_LIB_PREFIX}"
 OPTFLAGS=
 
 ifeq ($(RELEASE),y)
+  ifeq ($(OPT_SIZE),y)
+    #OPTFLAGS += -Os
+    OPTFLAGS+= -Oz
+    LDFLAGS+= -Wl,-no_compact_unwind
+  else
+    OPTFLAGS += -O3
+  endif # OPT_SIZE
+  ifeq ($(OPT_LTO),y)
+    OPTFLAGS+= -flto
+    LDFLAGS += -flto
+  endif # OPT_LTO
+  #OPTFLAGS += -O2
+  #OPTFLAGS += -O2 -fsanitize=undefined
+  #OPTFLAGS +=
+endif # RELEASE
 
-ifeq ($(OPT_SIZE),y)
-#OPTFLAGS += -Os
-OPTFLAGS+= -Oz
-LDFLAGS+= -Wl,-no_compact_unwind
-else
-OPTFLAGS += -O3
-endif
-
-ifeq ($(OPT_LTO),y)
-OPTFLAGS+= -flto
-LDFLAGS += -flto
-endif
-
-#OPTFLAGS += -O2
-#OPTFLAGS += -O2 -fsanitize=undefined
-#OPTFLAGS +=
-
-endif
 
 
 #
@@ -282,17 +275,14 @@ endif
 #
 MACTARGET=
 ifeq ($(BUILD_ARM),y)
-# arm64 (m1/m2)
-MACTARGET+= -target arm64-apple-macos13
+  # arm64 (m1/m2)
+  MACTARGET+= -target arm64-apple-macos13
 else
-# legacy x86_64
-MACTARGET+= -target x86_64-apple-macos10.12
-#MACTARGET+= -target x86_64-apple-macos13
-endif
-CFLAGS    += $(MACTARGET)
-CPPFLAGS  += $(MACTARGET)
-OBJCFLAGS += $(MACTARGET)
-LDFLAGS   += $(MACTARGET)
+  # legacy x86_64
+  MACTARGET+= -target x86_64-apple-macos10.12
+  #MACTARGET+= -target x86_64-apple-macos13
+endif # BUILD_ARM
+
 
 
 #
@@ -301,9 +291,9 @@ LDFLAGS   += $(MACTARGET)
 DBGFLAGS=
 
 ifeq ($(DEBUG),y)
-DBGFLAGS += -g
-#DBGFLAGS= -g -pg
-#DBGFLAGS= -ggdb3
+  DBGFLAGS += -g
+  #DBGFLAGS= -g -pg
+  #DBGFLAGS= -ggdb3
 endif
 
 
@@ -311,7 +301,7 @@ endif
 # Target dependent flags
 #
 #ifeq ($(CROSS_TARGET),xyz)
-#LDFLAGS+= -Wl,-R./ 
+#LDFLAGS+= -Wl,-R./
 #CFLAGS   += -DXYZ
 #CPPFLAGS += -DXYZ
 #endif
@@ -320,6 +310,7 @@ endif
 #
 # Nothing to change after this line-----------------------------
 #
-CFLAGS+= $(EXTRA_INCLUDES) $(DBGFLAGS)
-CPPFLAGS+= $(EXTRA_INCLUDES) $(DBGFLAGS)
-LDFLAGS+= $(EXTRA_LIBS)
+CFLAGS   += $(ARCHFLAGS) $(MFLAGS) $(MACTARGET) $(EXTRA_INCLUDES) $(DBGFLAGS)
+CPPFLAGS += $(ARCHFLAGS) $(MFLAGS) $(MACTARGET) $(EXTRA_INCLUDES) $(DBGFLAGS)
+OBJCFLAGS+= $(MACTARGET)
+LDFLAGS  += $(MACTARGET) $(EXTRA_LIBS)

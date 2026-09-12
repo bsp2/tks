@@ -6,19 +6,19 @@
 # n=32bit build ("x86", jit)
 # y=64bit build ("amd64", no jit)
 ifeq ($(BUILD_64),)
-BUILD_64=y
+  BUILD_64=y
 endif
 
 ifeq ($(BUILD_ARM),)
-BUILD_ARM=n
+  BUILD_ARM=n
 endif
 
 
 #
-# Enable optimizations 
+# Enable optimizations
 #
 ifeq ($(RELEASE),)
-RELEASE=y
+  RELEASE=y
 endif
 
 
@@ -27,7 +27,7 @@ endif
 #  Strip executable if NOT set to 'y'
 #
 ifeq ($(DEBUG),)
-DEBUG=n
+  DEBUG=n
 endif
 
 
@@ -71,11 +71,11 @@ RSYNC_CMD=rsync -a -v -e ssh -u -r -l -z --exclude=\*.ini
 
 #
 # Where to install tks
-#   (creates 
+#   (creates
 #         $(TKS_SITE_PREFIX)/plugins
 #         $(TKS_SITE_PREFIX)/libraries
 #         $(TKS_SITE_PREFIX)/applications
-#         $(TKS_SITE_PREFIX)/modules 
+#         $(TKS_SITE_PREFIX)/modules
 #         directories,
 #    copies tks.sh to $(TKS_PREFIX)/tks and
 #    tks.bin to $(TKS_PREFIX)/tks.bin
@@ -86,25 +86,25 @@ RSYNC_CMD=rsync -a -v -e ssh -u -r -l -z --exclude=\*.ini
 #  (also used to build "tks.sh" startup script, see tks-source/install.tks)
 #  (note: the TARGET vars are for paths used on the target)
 ifeq ($(TKS_TARGET_PREFIX),)
-#TKS_TARGET_PREFIX=/usr/bin/
-#TKS_TARGET_SITE_PREFIX=/usr/lib/tks/
-#TKS_TARGET_PREFIX=$(TKS_ROOT)/../arm-linux-gnueabihf/
+  #TKS_TARGET_PREFIX=/usr/bin/
+  #TKS_TARGET_SITE_PREFIX=/usr/lib/tks/
+  #TKS_TARGET_PREFIX=$(TKS_ROOT)/../arm-linux-gnueabihf/
 endif
 
 ifeq ($(TKS_TARGET_SITE_PREFIX),)
-TKS_TARGET_SITE_PREFIX=$(TKS_TARGET_PREFIX)
+  TKS_TARGET_SITE_PREFIX=$(TKS_TARGET_PREFIX)
 endif
 
 
 # Installation paths used by development host
 ifeq ($(TKS_PREFIX),)
-TKS_PREFIX=$(CROSS_ROOT)$(TKS_TARGET_PREFIX)/bin/
-#TKS_PREFIX=$(TKS_ROOT)/../arm-linux-gnueabihf/
+  TKS_PREFIX=$(CROSS_ROOT)$(TKS_TARGET_PREFIX)/bin/
+  #TKS_PREFIX=$(TKS_ROOT)/../arm-linux-gnueabihf/
 endif
 
 ifeq ($(TKS_SITE_PREFIX),)
-TKS_SITE_PREFIX=$(CROSS_ROOT)$(TKS_TARGET_SITE_PREFIX)
-#TKS_SITE_PREFIX=$(TKS_ROOT)/../arm-linux-gnueabihf/
+  TKS_SITE_PREFIX=$(CROSS_ROOT)$(TKS_TARGET_SITE_PREFIX)
+  #TKS_SITE_PREFIX=$(TKS_ROOT)/../arm-linux-gnueabihf/
 endif
 
 
@@ -113,11 +113,11 @@ endif
 #
 AR        = $(CROSS_COMPILE)ar
 ifeq ($(BUILD_CLANG),y)
-CPP       = $(CROSS_COMPILE)clang++
-CC        = $(CROSS_COMPILE)clang
+  CPP       = $(CROSS_COMPILE)clang++
+  CC        = $(CROSS_COMPILE)clang
 else
-CPP       = $(CROSS_COMPILE)g++
-CC        = $(CROSS_COMPILE)gcc
+  CPP       = $(CROSS_COMPILE)g++
+  CC        = $(CROSS_COMPILE)gcc
 endif
 AS        = $(CROSS_COMPILE)as
 STRIP     = $(CROSS_COMPILE)strip
@@ -133,33 +133,33 @@ UPX       = upx
 MD5SUM    = md5sum
 m         = $(MAKE) -f makefile.linux
 
-# 
+#
 # Number of parallel targets to make
-# 
+#
 ifeq ($(BUILD_RASPBIAN),y)
-NUMJOBS=2
+  NUMJOBS=2
 else
-#NUMJOBS=`grep -c "BogoMIPS" /proc/cpuinfo`
-NUMJOBS=`grep -c "vendor_id" /proc/cpuinfo`
+  #NUMJOBS=`grep -c "BogoMIPS" /proc/cpuinfo`
+  NUMJOBS=`grep -c "vendor_id" /proc/cpuinfo`
 endif
 
 
 #
-# Target architecture 
+# Target architecture
 #
 ifeq ($(BUILD_ARM),y)
-ifeq ($(BUILD_64),y)
-ARCH=ARM64
+  ifeq ($(BUILD_64),y)
+    ARCH=ARM64
+  else
+    ARCH=ARM32
+  endif # BUILD_64
 else
-ARCH=ARM32
-endif
-else
-ifeq ($(BUILD_64),y)
-ARCH=X64
-else
-ARCH=X86
-endif
-endif
+  ifeq ($(BUILD_64),y)
+    ARCH=X64
+  else
+    ARCH=X86
+  endif
+endif # BUILD_ARM
 
 
 #
@@ -172,50 +172,6 @@ CFLAGS= -Wall
 # C++ compiler flags
 #
 CPPFLAGS= -Wall
-
-
-#
-# Target architecture flags
-#
-ARCHFLAGS=
-ifeq ($(BUILD_ARM),y)
-ifeq ($(BUILD_64),y)
-ARCHFLAGS+= -DARCH_ARM64
-else
-ARCHLAGS+= -DARCH_ARM32
-endif
-else
-ifeq ($(BUILD_64),y)
-ARCHFLAGS+= -DARCH_X64
-else
-ARCHFLAGS+= -DARCH_X86
-endif
-endif
-
-CFLAGS+= $(ARCHFLAGS)
-CPPFLAGS+= $(ARCHFLAGS)
-
-
-
-#
-# Target machine flags
-#
-MFLAGS=
-
-ifeq ($(CROSS_TARGET),OMAP3)
-MFLAGS += -mlittle-endian -march=armv7-a -mcpu=cortex-a8 -mfpu=neon
-endif
-
-ifeq ($(CROSS_TARGET),DNX_POKY)
-ifeq ($(BUILD_64),y)
-MFLAGS+= -march=armv8-a+crc
-else
-#-mthumb
-MFLAGS += -march=armv7-a -mfpu=neon -mfloat-abi=hard
-endif
-endif
-
-
 
 
 
@@ -233,12 +189,11 @@ AFLAGS=
 LDFLAGS=-Wl,--hash-style=gnu
 
 
+
 #
 # Extra includes
 #
 EXTRA_INCLUDES=
-#EXTRA_INCLUDES= -I/home/bsp/omap35x/zlib-1.2.3
-#EXTRA_INCLUDES= -I$(CROSS_ROOT)/usr/include
 
 
 
@@ -246,9 +201,63 @@ EXTRA_INCLUDES=
 # Extra library paths
 #
 EXTRA_LIBS=
-#EXTRA_LIBS= -L/home/bsp/omap35x/zlib-1.2.3
-#EXTRA_LIBS= -L$(CROSS_ROOT)/usr/lib
 EXTRA_LIBS+= -L"${TKS_LIB_PREFIX}"
+
+
+
+#
+# Target architecture flags
+#
+ARCHFLAGS=
+ifeq ($(BUILD_ARM),y)
+  ifeq ($(BUILD_64),y)
+    ARCHFLAGS+= -DARCH_ARM64
+  else
+    ARCHLAGS+= -DARCH_ARM32
+  endif # BUILD_64
+else
+  ifeq ($(BUILD_64),y)
+    ARCHFLAGS+= -DARCH_X64
+  else
+    ARCHFLAGS+= -DARCH_X86
+  endif # BUILD_64
+endif # BUILD_ARM
+
+CFLAGS+= $(ARCHFLAGS)
+CPPFLAGS+= $(ARCHFLAGS)
+
+
+
+#
+# Target machine flags
+#
+MFLAGS=
+
+ifeq ($(CROSS_TARGET),OMAP3)
+  MFLAGS += -pipe -mlittle-endian -march=armv7-a -mcpu=cortex-a8 -mfpu=neon
+  #EXTRA_INCLUDES= -I/home/bsp/omap35x/zlib-1.2.3
+  #EXTRA_LIBS= -L/home/bsp/omap35x/zlib-1.2.3
+endif
+
+ifeq ($(CROSS_TARGET),DNX_POKY)
+  ifeq ($(BUILD_64),y)
+    MFLAGS+= -march=armv8-a+crc
+  else
+    #-mthumb
+    MFLAGS += -march=armv7-a -mfpu=neon -mfloat-abi=hard
+  endif # BUILD_64
+endif # CROSS_TARGET POKY
+
+
+
+#
+# Cross root
+#
+ifneq ($(CROSS_ROOT),)
+  CFLAGS  += --sysroot=$(CROSS_ROOT)
+  CPPFLAGS+= --sysroot=$(CROSS_ROOT)
+  LDFLAGS += --sysroot=$(CROSS_ROOT)
+endif # /CROSS_ROOT
 
 
 #
@@ -257,51 +266,27 @@ EXTRA_LIBS+= -L"${TKS_LIB_PREFIX}"
 OPTFLAGS=
 
 ifeq ($(RELEASE),y)
-
-ifeq ($(CROSS_TARGET),OMAP3)
-CFLAGS  += -pipe -march=armv7-a -mcpu=cortex-a8 -mtune=cortex-a8 -mfpu=neon
-CPPFLAGS+= -pipe -march=armv7-a -mcpu=cortex-a8 -mtune=cortex-a8 -mfpu=neon
-OPTFLAGS += -O2
-else ifeq ($(CROSS_TARGET),DNX_POKY)
-CFLAGS  += $(MFLAGS) --sysroot=$(CROSS_ROOT)
-CPPFLAGS+= $(MFLAGS) --sysroot=$(CROSS_ROOT)
-LDFLAGS += $(MFLAGS) --sysroot=$(CROSS_ROOT)
-OPTFLAGS += -O3
-else
-ifeq ($(OPT_SIZE),y)
-OPTFLAGS+= -fno-exceptions -fno-unwind-tables
-ifeq ("${BUILD_CLANG}","y")
-OPTFLAGS+= -Oz
-OPTFLAGS+= -ffunction-sections -fdata-sections
-LDFLAGS+= -Wl,--gc-sections
-else
-OPTFLAGS+= -Os
-LDFLAGS+= -dead_strip
-endif
-else
-OPTFLAGS += -O3
-endif
-ifeq ($(OPT_LTO),y)
-OPTFLAGS+= -flto
-LDFLAGS += -flto
-endif
-# for Raspberry Pi or Poky Linux builds
-ifeq ($(BUILD_ARM),y)
-ifeq ($(BUILD_64),n)
-#OPTFLAGS+= -mtune=cortex-a8 -mfpu=neon
-CFLAGS  += -march=armv7-a -mthumb -mfpu=neon -mfloat-abi=hard
-CPPFLAGS+= -march=armv7-a -mthumb -mfpu=neon -mfloat-abi=hard
-LDFLAGS += -march=armv7-a -mthumb -mfpu=neon -mfloat-abi=hard
-endif # /BUILD_64
-ifneq ($(CROSS_ROOT),)
-CFLAGS  += --sysroot=$(CROSS_ROOT)
-CPPFLAGS+= --sysroot=$(CROSS_ROOT)
-LDFLAGS += --sysroot=$(CROSS_ROOT)
-endif # /CROSS_ROOT
-endif # /BUILD_ARM
-endif # /CROSS_TARGET
-
+  ifeq ($(OPT_SIZE),y)
+    OPTFLAGS+= -fno-exceptions -fno-unwind-tables
+    ifeq ("${BUILD_CLANG}","y")
+      OPTFLAGS+= -Oz
+      OPTFLAGS+= -ffunction-sections -fdata-sections
+      LDFLAGS+= -Wl,--gc-sections
+    else
+      OPTFLAGS+= -Os
+      LDFLAGS+= -dead_strip
+    endif # BUILD_CLANG
+  else
+    OPTFLAGS += -O3
+  endif # OPT_SIZE
+  ifeq ("${BUILD_CLANG}","y")
+    ifeq ($(OPT_LTO),y)
+      OPTFLAGS+= -flto
+      LDFLAGS += -flto
+    endif # OPT_LTO
+  endif # BUILD_CLANG
 endif # /RELEASE
+
 
 
 #
@@ -310,36 +295,31 @@ endif # /RELEASE
 DBGFLAGS=
 
 ifeq ($(DEBUG),y)
-DBGFLAGS += -g
-#DBGFLAGS= -g -pg
-#DBGFLAGS= -ggdb3
-ifneq ($(CROSS_ROOT),)
-CFLAGS  += $(MFLAGS) --sysroot=$(CROSS_ROOT)
-CPPFLAGS+= $(MFLAGS) --sysroot=$(CROSS_ROOT)
-LDFLAGS += $(MFLAGS) --sysroot=$(CROSS_ROOT)
-endif
+  DBGFLAGS += -g
+  #DBGFLAGS= -g -pg
+  #DBGFLAGS= -ggdb3
 endif
 
 
 #
-# Target dependent flags
+# (Other) Target dependent flags
 #
 ifeq ($(CROSS_TARGET),OMAP3)
-LDFLAGS+= -Wl,-R./ 
-CFLAGS   += -DOMAP3
-CPPFLAGS += -DOMAP3
+  LDFLAGS+= -Wl,-R./
+  CFLAGS   += -DOMAP3
+  CPPFLAGS += -DOMAP3
 endif
 
 ifeq ($(CROSS_TARGET),DNX_POKY)
-LDFLAGS+= -Wl,-R./ 
-CFLAGS   += -DDNX_POKY
-CPPFLAGS += -DDNX_POKY
+  LDFLAGS+= -Wl,-R./
+  CFLAGS   += -DDNX_POKY
+  CPPFLAGS += -DDNX_POKY
 endif
 
 
 #
 # Nothing to change after this line-----------------------------
 #
-CFLAGS+= $(EXTRA_INCLUDES) $(DBGFLAGS)
-CPPFLAGS+= $(EXTRA_INCLUDES) $(DBGFLAGS)
+CFLAGS+= $(MFLAGS) $(EXTRA_INCLUDES) $(DBGFLAGS)
+CPPFLAGS+= $(MFLAGS) $(EXTRA_INCLUDES) $(DBGFLAGS)
 LDFLAGS+= $(EXTRA_LIBS)
