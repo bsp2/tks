@@ -2584,6 +2584,7 @@ public:
                // Dprintf("xxx vel=%u min=%u max=%u\n", _vel, track->vel_min, track->vel_max);
                if( (_vel >= track->vel_min) && (_vel <= track->vel_max) )
                {
+                  // Dprintf("xxx ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n");
                   // Dprintf("xxx note=%u min=%u max=%u trp=%d\n", _note, track->note_min, track->note_max, track->note_trp);
                   if( (_note >= track->note_min) && (_note <= track->note_max) )
                   {
