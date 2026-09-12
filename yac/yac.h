@@ -2417,7 +2417,6 @@ public:
       free();
 #endif // YAC_SKIP_FLOATARRAY_ALLOC_AND_FREE
    }
-#endif // YAC_NO_HOST
 
    void visit (sF32 *_elements, sUI _numElements) {
 #ifndef YAC_SKIP_FLOATARRAY_ALLOC_AND_FREE
@@ -2426,6 +2425,7 @@ public:
       elements = _elements;
       num_elements = max_elements = _numElements;
    }
+#endif // YAC_NO_HOST
 
 };
 #endif // YAC_CUST_FLOATARRAY
