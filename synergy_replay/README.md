@@ -8,7 +8,7 @@ Standalone "C" replay for exported Synergy / Eureka / Cycle projects.
 - procedural track samples (pre-render MIDI sequences to samples)
 - application-controlled MIDI note, program change, and modulation events ((poly-)pressure, pitchbend, CC, RPN)
 - multiple instances
-- typical arm64 code-size (gzip'd): ~162k (demo project, 25 synth+fx plugins) / ~36k (sampler only) / ~50k (FM only)
+- typical arm64 code-size (gzip'd): ~159k (demo project, 25 synth+fx plugins) / ~87k (FM only) / ~34k (sampler only)
 - MIT license
 
 see [replay](http://miditracker.org/replay.html) for further information.
@@ -24,12 +24,14 @@ After cloning the git repository (`git clone https://github.com/bsp2/tks.git`), 
 % cd git/tks
 % . ./setenv_macos_arm64.sh
 % cd synergy_replay
+% m clean
 % m plugins
 % m bin
 % ./sr_replay
 ```
 
 note: use `% m OPT_SIZE=n plugins`, `% m OPT_SIZE=n bin` for full optimization
+note: use `% m LOG=n PROFILE=n plugins`, `% m LOG=n PROFILE=n sz` for size optimization
 
 ## GNU / Linux
 
@@ -37,6 +39,7 @@ note: use `% m OPT_SIZE=n plugins`, `% m OPT_SIZE=n bin` for full optimization
 $ cd git/tks
 $ . ./setenv_linux.sh
 $ cd synergy_replay
+% m clean
 $ m plugins
 $ m bin
 $ ./sr_replay
