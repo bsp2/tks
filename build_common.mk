@@ -53,6 +53,14 @@
 #EXTRALIBS=-LIBPATH:libs other.lib
 
 
+#
+# Disable logging
+#
+ifeq ($(LOG),n)
+EXTRAFLAGS+= -DYAC_NO_STDIO
+endif
+
+
 
 #
 # Show available targets
