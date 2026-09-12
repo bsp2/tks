@@ -42,7 +42,7 @@ $ m bin
 $ ./sr_replay
 ```
 
-note: use `% export BUILD_CLANG=y`, `% m OPT_SIZE=n OPT_LTO=y plugins`, `% m OPT_SIZE=n OPT_LTO=y bin` for full optimization
+note: use `$ export BUILD_CLANG=y`, `$ m OPT_SIZE=n OPT_LTO=y plugins`, `$ m OPT_SIZE=n OPT_LTO=y bin` for full optimization
 
 ## Windows / MSVC
 (todo)
