@@ -21,7 +21,7 @@
 /// ----          17-Jul-2023 / 24-Jul-2023 / 26-Jul-2023 / 13-Jan-2024 / 07-Jun-2024 / 17-Aug-2024
 /// ----          20-Aug-2024 / 22-Aug-2024 / 10-Oct-2024 / 20-Oct-2024 / 14-Mar-2025 / 01-Oct-2025
 /// ----          03-Oct-2025 / 22-Feb-2026 / 09-Apr-2026 / 18-May-2026 / 08-Aug-2026 / 20-Aug-2026
-/// ----          21-Aug-2026 / 25-Aug-2026 / 07-Sep-2026
+/// ----          21-Aug-2026 / 25-Aug-2026 / 07-Sep-2026 / 12-Sep-2026
 /// ----
 /// ---- info   : YAC - Yet Another Component object model.  YAC is a self contained, binary level
 /// ----          C++ component/reflectance model and plugin SDK.
@@ -153,6 +153,9 @@
 //#define YAC_CUST_INTARRAY defined      // define to skip declaration of the YAC_IntArray class.
 //#define YAC_CUST_FLOATARRAY defined    // define to skip declaration of the YAC_FloatArray class.
 //#define YAC_CUST_POINTERARRAY defined  // define to skip declaration of the YAC_PointerArray class.
+//
+//#define YAC_SKIP_INTARRAY_ALLOC_AND_FREE defined
+//#define YAC_SKIP_FLOATARRAY_ALLOC_AND_FREE defined
 
 //#define YAC_TRACK_CHARALLOC 1    // define to keep track of total amount of allocated string chars
 
@@ -1323,10 +1326,12 @@ public:
    {
       if(((YAC_Object*)_ptr)->pool_handle.pool_id)
       {
+#ifndef YAC_NO_STDIO
          ::printf("[---] delete: object is pooled (handle=%08x:%08x)!!\n",
                   ((YAC_Object*)_ptr)->pool_handle.pool_id,
                   ((YAC_Object*)_ptr)->pool_handle.object_id
                   );
+#endif // YAC_NO_STDIO
       }
       else
       {
@@ -2374,6 +2379,7 @@ public:
    sUI   yacArrayGetNumElements (void) { return num_elements; }
    void *yacArrayGetPointer (void) { return (void*)elements; }
 
+#ifndef YAC_SKIP_FLOATARRAY_ALLOC_AND_FREE
    sBool alloc(sUI _num) {
       free();
       if(_num > 0u)
@@ -2404,11 +2410,22 @@ public:
       num_elements = 0u;
       max_elements = 0u;
    }
+#endif // YAC_SKIP_FLOATARRAY_ALLOC_AND_FREE
 
    ~YAC_FloatArray() {
+#ifndef YAC_SKIP_FLOATARRAY_ALLOC_AND_FREE
       free();
+#endif // YAC_SKIP_FLOATARRAY_ALLOC_AND_FREE
    }
 #endif // YAC_NO_HOST
+
+   void visit (sF32 *_elements, sUI _numElements) {
+#ifndef YAC_SKIP_FLOATARRAY_ALLOC_AND_FREE
+      free();
+#endif // YAC_SKIP_FLOATARRAY_ALLOC_AND_FREE
+      elements = _elements;
+      num_elements = max_elements = _numElements;
+   }
 
 };
 #endif // YAC_CUST_FLOATARRAY
@@ -2433,6 +2450,7 @@ public:
    sUI   yacArrayGetNumElements (void) { return num_elements; }
    void *yacArrayGetPointer (void) { return (void*)elements; }
 
+#ifndef YAC_SKIP_INTARRAY_ALLOC_AND_FREE
    sBool alloc(sUI _num) {
       free();
       if(_num > 0u)
@@ -2463,10 +2481,22 @@ public:
       num_elements = 0u;
       max_elements = 0u;
    }
+#endif // YAC_SKIP_INTARRAY_ALLOC_AND_FREE
 
    ~YAC_IntArray() {
+#ifndef YAC_SKIP_INTARRAY_ALLOC_AND_FREE
       free();
+#endif // YAC_SKIP_INTARRAY_ALLOC_AND_FREE
    }
+
+   void visit (sSI *_elements, sUI _numElements) {
+#ifndef YAC_SKIP_INTARRAY_ALLOC_AND_FREE
+      free();
+#endif // YAC_SKIP_INTARRAY_ALLOC_AND_FREE
+      elements = _elements;
+      num_elements = max_elements = _numElements;
+   }
+
 #endif // YAC_NO_HOST
 };
 #endif // YAC_CUST_INTARRAY
@@ -2898,7 +2928,11 @@ extern sSI yac_global_newdelete_numfrees;   // Tracks total number of calls to "
 
 #ifdef YAC_NO_HOST
 // (note) used for tksampler standalone build
+#ifndef YAC_NO_STDIO
 #define Dyac_host_printf printf
+#else
+#define Dyac_host_printf if(1);else printf
+#endif // YAC_NO_STDIO
 #define Dyac_host_yacMilliSeconds yac_host_yacMilliSeconds
 #define Dyac_host_yacGetDebugLevel yac_host_yacGetDebugLevel
 extern sUI yac_host_yacMilliSeconds (void);
