@@ -28,7 +28,7 @@
 // ----          11Aug2023, 08Sep2023, 19Sep2023, 22Sep2023, 18Nov2023, 03Oct2024, 07Dec2024
 // ----          04Jan2025, 09Jan2026, 10Apr2026, 09May2026, 15May2026, 17May2026, 18May2026
 // ----          19May2026, 20May2026, 22May2026, 23May2026, 25May2026, 26May2026, 08Sep2026
-// ----          10Sep2026, 11Sep2026
+// ----          10Sep2026, 11Sep2026, 12Sep2026
 // ----
 // ----
 // ----
@@ -79,6 +79,7 @@ void sr_printf(const char *_fmt, ...) { (void)_fmt; }
 #endif // SR_STDIO
 
 static YAC_FloatArray loc_sr_freq_table;
+static sF32 loc_sr_freq_table_data[128];
 
 static sF32 loc_sr_mix_rate = SR_MIX_RATE;   // 44100, 48000, ..
 static sF32 loc_sr_volume = SR_VOLUME;
@@ -270,7 +271,7 @@ sUI yac_host_yacGetDebugLevel(void) {
 }
 
 static void loc_sr_init_freq_table(void) {
-   loc_sr_freq_table.alloc(128u);
+   loc_sr_freq_table.visit(loc_sr_freq_table_data, 128u);
    for(sUI i = 0u; i < 128u; i++)
       loc_sr_freq_table.elements[i] = sF32( ((440.0f/32.0f)*exp( ((sF32(i)-9.0)/12.0)*log(2.0) )) );
 }
