@@ -34,6 +34,7 @@
 // ----          21Jan2024, 20Sep2024, 28Sep2024, 01Oct2024, 31Oct2024, 15Nov2024, 11Dec2024
 // ----          14Jan2025, 28May2025, 30May2025, 13Jun2025, 16Jan2026, 09Apr2026, 10Apr2026
 // ----          19May2026, 24May2026, 27May2026, 11Jul2026, 08Sep2026, 10Sep2026, 11Sep2026
+// ----          12Sep2026
 // ----
 // ----
 // ----
@@ -223,7 +224,9 @@ st_plugin_cache_entry_t *StSamplePlayer::findOrCreatePluginCacheEntry(st_plugin_
             plugin_cache.first = c;
             c->b_used = YAC_TRUE;
             if(Dyac_host_yacGetDebugLevel() > 1u)
+            {
                Dyac_host_printf("xxx StSamplePlayer::findOrCreatePluginInstance: add new voice instance (plugin id=\"%s\" voiceIdx=%u)\n", _info->id, _voiceIdx);
+            }
             return c;
          }
          else
@@ -1256,10 +1259,14 @@ void StSamplePlayer::lazyCreateVoicePlugins(StSample *_sample, StSampleVoice *_n
       if(NULL != pluginShared)
       {
          if(Dyac_host_yacGetDebugLevel() > 1u)
+         {
             Dyac_host_printf("xxx StSamplePlayer::lazyCreateVoicePlugins: pluginIdx=%u pluginShared=%p pce=%p\n", pluginIdx, pluginShared, pce);
+         }
          StPluginInfo *pluginInfo = pluginShared->info;
          if(Dyac_host_yacGetDebugLevel() >= 10u)
+         {
             Dyac_host_printf("xxx StSamplePlayer::lazyCreateVoicePlugins: pluginIdx=%u pluginInfo=%p\n", pluginIdx, pluginInfo);
+         }
          if(NULL != pce)
          {
             if(pce->voice->info != pluginInfo->info)
@@ -1279,7 +1286,9 @@ void StSamplePlayer::lazyCreateVoicePlugins(StSample *_sample, StSampleVoice *_n
          {
             // Find or create new plugin instance
             if(Dyac_host_yacGetDebugLevel() >= 10u)
+            {
                Dyac_host_printf("xxx findOrCreatePluginCacheEntry(info=%p)\n", pluginInfo->info);
+            }
             pce = findOrCreatePluginCacheEntry(pluginInfo->info, _nv->voice_idx);
             pce->voice->shared = pluginShared->shared;
          }

@@ -32,7 +32,7 @@
 // ----          31Oct2024, 03Nov2024, 08Nov2024, 09Nov2024, 11Dec2024, 03Jan2025, 04Jan2025
 // ----          12Jan2025, 09Jan2026, 11Jan2026, 10Apr2026, 08May2026, 09May2026, 14May2026
 // ----          15May2026, 24May2026, 27May2026, 11Jul2026, 12Jul2026, 07Sep2026, 08Sep2026
-// ----          10Sep2026
+// ----          10Sep2026, 11Sep2026, 12Sep2026
 // ----
 // ----
 // ----
@@ -11643,8 +11643,9 @@ sUI StSampleVoice::renderBlockNormal(sF32 *     buf,
 #endif
 
    if(bDebug)
+   {
       Dyac_host_printf("xxx cRate=%f sRate=%f\n", cRate, sRate);
-
+   }
 
 #ifndef TKSAMPLER_SKIP_LIVEREC
    const sF32 *inputsTmp[STSAMPLE_MAX_INPUTS] = {0};

@@ -25,7 +25,7 @@
 // ---- changed: 17May2020, 19May2020, 20May2020, 08Jun2020, 09Jun2020, 03Feb2021, 30Jul2021
 // ----          12Apr2023, 20Apr2023, 29Jul2023, 16Aug2023, 24Aug2023, 03Sep2023, 30Nov2023
 // ----          02Dec2023, 07Dec2023, 22Dec2023, 06Jan2024, 12Jan2024, 19Jan2024, 21Jan2024
-// ----          10Aug2024, 15Sep2024, 07Dec2024, 24May2026, 07Sep2026
+// ----          10Aug2024, 15Sep2024, 07Dec2024, 24May2026, 07Sep2026, 12Sep2026
 // ----
 // ----
 // ----
@@ -57,7 +57,9 @@ StPluginInfo::StPluginInfo(void) {
 
 StPluginInfo::~StPluginInfo() {
    if(Dyac_host_yacGetDebugLevel() >= 3u)
+   {
       Dyac_host_printf("[trc] StPluginInfo: DTOR this=%p info=%p\n", this, info);
+   }
    info = NULL;
 }
 
@@ -497,7 +499,9 @@ void StPluginShared::init(StPluginInfo *_info, st_plugin_shared_t *_shared) {
 
 void StPluginShared::freeShared(void) {
    if(Dyac_host_yacGetDebugLevel() >= 3u)
+   {
       Dyac_host_printf("[trc] StPluginShared::freeShared: this=%p shared=%p\n", this, shared);
+   }
    if(NULL != shared)
    {
       if(NULL != info->info->shared_delete)
@@ -1013,7 +1017,9 @@ void StPluginVoice::init(StPluginShared *_shared, sF32 _sampleRate, sUI _voiceId
       }
 
       if(Dyac_host_yacGetDebugLevel() >= 3u)
+      {
          Dyac_host_printf("[trc] StPluginVoice::init: info=%p voice=%p idx=%u\n", shared->shared->info, voice, _voiceIdx);
+      }
 
       if(NULL != voice)
       {
@@ -1042,7 +1048,9 @@ void StPluginVoice::init(StPluginShared *_shared, sF32 _sampleRate, sUI _voiceId
 
 void StPluginVoice::freeVoice(void) {
    if(Dyac_host_yacGetDebugLevel() >= 3u)
+   {
       Dyac_host_printf("[trc] StPluginVoice::freeVoice: this=%p voice=%p\n", this, voice);
+   }
    if(NULL != voice)
    {
       if(NULL != shared->shared->info->voice_delete)
@@ -1157,7 +1165,9 @@ StPluginLibrary::StPluginLibrary(void) {
 
 StPluginLibrary::~StPluginLibrary() {
    if(Dyac_host_yacGetDebugLevel() >= 3u)
+   {
       Dyac_host_printf("[trc] StPluginLibrary: DTOR this=%p num_infos=%u\n", this, num_infos);
+   }
    close();
 }
 
@@ -1318,7 +1328,9 @@ void StPluginLibrary::close(void) {
       for(sUI infoIdx = 0u; infoIdx < num_infos; infoIdx++)
       {
          if(Dyac_host_yacGetDebugLevel() >= 3u)
+         {
             Dyac_host_printf("xxx StPluginLibrary::close: free infoidx=%u id=\"%s\"\n", infoIdx, infos[infoIdx]->id);
+         }
          if(NULL != infos[infoIdx]->plugin_exit)
          {
             infos[infoIdx]->plugin_exit(infos[infoIdx]);
