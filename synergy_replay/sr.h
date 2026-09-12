@@ -63,58 +63,58 @@ extern "C" {
 #include <stdio.h>
 extern void sr_printf(const char *_fmt, ...);
 #define Dprintf  if(0) ; else sr_printf
-#define Derror   if(0) ; else sr_printf
-#define Dsuccess if(0) ; else sr_printf
+#define Derror   if(0) ; else Dprintf
+#define Dsuccess if(0) ; else Dprintf
 #ifdef SR_INFO
-#define Dinfo    if(0) ; else sr_printf
+#define Dinfo    if(0) ; else Dprintf
 #else
-#define Dinfo    if(1) ; else sr_printf
+#define Dinfo    if(1) ; else Dprintf
 #endif // SR_INFO
 #ifdef SR_INFOV
-#define Dinfov   if(0) ; else sr_printf
+#define Dinfov   if(0) ; else Dprintf
 #else
-#define Dinfov   if(1) ; else sr_printf
+#define Dinfov   if(1) ; else Dprintf
 #endif // SR_INFO
-#define Dsong    if(1) ; else sr_printf  // SMF/.mid loader debugging
+#define Dsong    if(1) ; else Dprintf  // SMF/.mid loader debugging
 
 // verbose .syn loader debugging:
 #ifdef SR_TRACE
-#define Dtrace       if(0) ; else sr_printf
-#define Ddtor        if(0) ; else sr_printf
+#define Dtrace       if(0) ; else Dprintf
+#define Ddtor        if(0) ; else Dprintf
 #else
-#define Dtrace       if(1) ; else sr_printf
-#define Ddtor        if(1) ; else sr_printf
+#define Dtrace       if(1) ; else Dprintf
+#define Ddtor        if(1) ; else Dprintf
 #endif // SR_TRACE
 
 // verbose SMF/.mid loader debugging:
 #ifdef SR_SONGTRACE
-#define Dsongtrace   if(0) ; else sr_printf
+#define Dsongtrace   if(0) ; else Dprintf
 #else
-#define Dsongtrace   if(1) ; else sr_printf
+#define Dsongtrace   if(1) ; else Dprintf
 #endif // SR_SONGTRACE
 
 // verbose replayer debugging:
 #ifdef SR_REPLAYTRACE
-#define Dreplay     if(0) ; else sr_printf
-#define Dreplay2    if(1) ; else sr_printf
+#define Dreplay     if(0) ; else Dprintf
+#define Dreplay2    if(1) ; else Dprintf
 #else
-#define Dreplay     if(1) ; else sr_printf
-#define Dreplay2    if(1) ; else sr_printf
+#define Dreplay     if(1) ; else Dprintf
+#define Dreplay2    if(1) ; else Dprintf
 #endif // SR_REPLAYTRACE
 
 #else
 extern void sr_printf(const char *_fmt, ...);  // stub
 #define Dprintf     if(1) ; else sr_printf
-#define Derror      if(1) ; else sr_printf
-#define Dinfo       if(1) ; else sr_printf
-#define Dinfov      if(1) ; else sr_printf
-#define Dsuccess    if(1) ; else sr_printf
-#define Dtrace      if(1) ; else sr_printf
-#define Dsongtrace  if(1) ; else sr_printf
-#define Dsong       if(1) ; else sr_printf
-#define Dreplay     if(1) ; else sr_printf
-#define Dreplay2    if(1) ; else sr_printf
-#define Ddtor       if(1) ; else sr_printf
+#define Derror      if(1) ; else Dprintf
+#define Dinfo       if(1) ; else Dprintf
+#define Dinfov      if(1) ; else Dprintf
+#define Dsuccess    if(1) ; else Dprintf
+#define Dtrace      if(1) ; else Dprintf
+#define Dsongtrace  if(1) ; else Dprintf
+#define Dsong       if(1) ; else Dprintf
+#define Dreplay     if(1) ; else Dprintf
+#define Dreplay2    if(1) ; else Dprintf
+#define Ddtor       if(1) ; else Dprintf
 #endif // SR_STDIO
 
 // ---------------------------------------- private
