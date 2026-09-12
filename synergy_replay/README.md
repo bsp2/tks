@@ -31,6 +31,7 @@ After cloning the git repository (`git clone https://github.com/bsp2/tks.git`), 
 ```
 
 note: use `% m OPT_SIZE=n plugins`, `% m OPT_SIZE=n bin` for full optimization
+
 note: use `% m LOG=n PROFILE=n plugins`, `% m LOG=n PROFILE=n sz` for size optimization
 
 ## GNU / Linux
