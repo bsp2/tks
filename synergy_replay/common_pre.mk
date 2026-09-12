@@ -16,6 +16,8 @@ FILTERS     :=n
 PLUGINS     :=n
 PROCEDURAL  :=n
 AUDIO       :=y
+#LOG         :=n
+#PROFILE     :=n
 else
 ifeq ($(DEMO_ALL),y)
 MIN_FEATURES:=n
@@ -30,9 +32,8 @@ FILTERS     :=y
 PLUGINS     :=y
 PROCEDURAL  :=y
 AUDIO       :=y
-SR_TRACK_SENDS:=y
-SR_TRACK_FX   :=y
-SR_VOICE_FX   :=y
+LOG         :=y
+PROFILE     :=y
 else
 ifeq ($(DEMO_3),y)
 include music/autogen_demo_3_fm-a.mk
