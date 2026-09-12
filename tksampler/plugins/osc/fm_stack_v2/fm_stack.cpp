@@ -12,7 +12,7 @@
 // ----          06Sep2023, 07Sep2023, 08Sep2023, 09Sep2023, 10Sep2023, 11Sep2023, 12Sep2023
 // ----          13Sep2023, 16Sep2023, 19Sep2023, 20Sep2023, 21Sep2023, 11Nov2023, 30Nov2023
 // ----          15Dec2023, 11Jan2024, 21Jan2024, 07Feb2024, 28Apr2024, 14Oct2024, 17Apr2026
-// ----          26Apr2026, 18May2026, 10Sep2026, 11Sep2026
+// ----          26Apr2026, 18May2026, 10Sep2026, 11Sep2026, 12Sep2026
 // ----
 // ----
 // ----
@@ -38,6 +38,12 @@
 //   FMSTACK_INIT               // init function name
 
 #define MODFM defined
+
+#define Dprintf if(0);else printf
+
+extern "C" {
+ST_PLUGIN_APICALL void fm_stack_init_common(void);
+}
 
 // -------------------------------------------------
 
@@ -127,8 +133,8 @@ static inline float loc_lm(float a, float b) {
 
 // -------------------------------------------------
 
-extern const sF32 *get_env_shape_lut (sF32 _s);
-extern const sF32 *get_vel_curve_lut (sF32 _s);
+extern const sF32 *fmstack_get_env_shape_lut (sF32 _s);
+extern const sF32 *fmstack_get_vel_curve_lut (sF32 _s);
 
 // -------------------------------------------------
 
@@ -239,7 +245,7 @@ static void loc_save_file_close(void) {
    fclose(fh);
    fh = NULL;
 }
-extern void save_env_shapes (void);
+extern void fmstack_save_env_shapes (void);
 #endif // SAVE
 
 // -------------------------------------------------
@@ -2307,6 +2313,8 @@ typedef struct env_s {
       sF32 r = 0.0f;
       sF32 t;
 
+      // Dprintf("xxx env.step(numFrames=%u): seg_idx=%u seg_frame_idx=%u\n", _numFrames, seg_idx, seg_frame_idx);
+
       if(SEG_END == seg_idx)
          return 0.0f;
 
@@ -2315,6 +2323,7 @@ typedef struct env_s {
          if(_params->atk_num_frames > 0u)
          {
             r = float(seg_frame_idx) / float(_params->atk_num_frames);
+            // Dprintf("xxx       seg_frame_idx=%u / params->atk_num_frames=%u  => r=%f\n", seg_frame_idx, _params->atk_num_frames, r);
             r = ApplyShape(lut_atk_shape, 1.0f - r);
 
             seg_frame_idx += _numFrames;
@@ -2679,7 +2688,7 @@ void FMSTACK_VOICE_OP_T::prepareBlock(const FMSTACK_SHARED_T *_shared,
                               ) {
    sF32 modRatio = 1.0f;
 
-   vel_curve_lut = get_vel_curve_lut(_voice->getVarParam(_shared, _paramOff + PARAM_OP_VEL_CURVE));
+   vel_curve_lut = fmstack_get_vel_curve_lut(_voice->getVarParam(_shared, _paramOff + PARAM_OP_VEL_CURVE));
 
    const sF32 coarse = _voice->getVarParamCoarse(_shared, _paramOff + PARAM_OP_COARSE);
    modRatio *= coarse;
@@ -2726,15 +2735,15 @@ void FMSTACK_VOICE_OP_T::prepareBlock(const FMSTACK_SHARED_T *_shared,
    if(NULL == aenv.lut_atk_shape)
    {
       // amp env shape
-      aenv.lut_atk_shape = get_env_shape_lut(_voice->getVarParam(_shared, _paramOffEnv + PARAM_ENV_ATK_SHAPE));
-      aenv.lut_dcy_shape = get_env_shape_lut(_voice->getVarParam(_shared, _paramOffEnv + PARAM_ENV_DCY_SHAPE));
-      aenv.lut_rls_shape = get_env_shape_lut(_voice->getVarParam(_shared, _paramOffEnv + PARAM_ENV_RLS_SHAPE));
+      aenv.lut_atk_shape = fmstack_get_env_shape_lut(_voice->getVarParam(_shared, _paramOffEnv + PARAM_ENV_ATK_SHAPE));
+      aenv.lut_dcy_shape = fmstack_get_env_shape_lut(_voice->getVarParam(_shared, _paramOffEnv + PARAM_ENV_DCY_SHAPE));
+      aenv.lut_rls_shape = fmstack_get_env_shape_lut(_voice->getVarParam(_shared, _paramOffEnv + PARAM_ENV_RLS_SHAPE));
 
       // pitch env shape
       const sUI paramOffPEnv = _paramOffEnv + (PARAM_PITCH_ENV_BASE - PARAM_AMP_ENV_BASE);
-      penv.lut_atk_shape = get_env_shape_lut(_voice->getVarParam(_shared, paramOffPEnv + PARAM_ENV_ATK_SHAPE));
-      penv.lut_dcy_shape = get_env_shape_lut(_voice->getVarParam(_shared, paramOffPEnv + PARAM_ENV_DCY_SHAPE));
-      penv.lut_rls_shape = get_env_shape_lut(_voice->getVarParam(_shared, paramOffPEnv + PARAM_ENV_RLS_SHAPE));
+      penv.lut_atk_shape = fmstack_get_env_shape_lut(_voice->getVarParam(_shared, paramOffPEnv + PARAM_ENV_ATK_SHAPE));
+      penv.lut_dcy_shape = fmstack_get_env_shape_lut(_voice->getVarParam(_shared, paramOffPEnv + PARAM_ENV_DCY_SHAPE));
+      penv.lut_rls_shape = fmstack_get_env_shape_lut(_voice->getVarParam(_shared, paramOffPEnv + PARAM_ENV_RLS_SHAPE));
    }
 
    // Amp envelope
@@ -2752,7 +2761,9 @@ void FMSTACK_VOICE_OP_T::prepareBlock(const FMSTACK_SHARED_T *_shared,
       const sF32 envVelAmtScl = loc_calc_vel_scl(vel_curve_lut[_voice->velocity_255], envVelAmt);
 
 #ifndef FMSTACK_HIRES_AENV
+      // Dprintf("xxx call aenv.step(numFramesOrig=%u)\n", _numFramesOrig);
       sF32 envLvl = aenv.step(_numFramesOrig, &aenv_params);
+      // Dprintf("xxx   => envLvl=%f\n", envLvl);
       envLvl *= envVelAmtScl;
       if(envAmt >= 0.0f)
          envLvl = 1.0f + (envLvl - 1.0f) * envAmt;
@@ -4616,6 +4627,9 @@ static void loc_calc_sine_tbl(void) {
 extern "C" {
 st_plugin_info_t *FMSTACK_INIT(void) {
    FMSTACK_INFO_T *ret = (FMSTACK_INFO_T *)malloc(sizeof(FMSTACK_INFO_T));
+
+   // Lazy-init once
+   fm_stack_init_common();
 
    if(NULL != ret)
    {

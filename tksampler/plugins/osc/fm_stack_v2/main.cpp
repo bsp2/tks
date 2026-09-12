@@ -41,7 +41,7 @@ extern st_plugin_info_t *fm_stack_init_uhires    (void);
 static sF32 loc_env_shape_lut[512*2048];  // -1..1. lin(0)@off=256*2048
 static sF32 loc_vel_curve_lut[32*32*256];
 
-extern void calc_env_shapes (sF32 *_d);
+extern void fmstack_calc_env_shapes (sF32 *_d);
 
 static void loc_calc_vel_curve(sF32 _c, sUI _off) {
    // see "tks-examples/tksdl/mm_curves.tks"
@@ -87,7 +87,7 @@ static void loc_init_vel_curve_lut(void) {
    }
 }
 
-const sF32 *get_vel_curve_lut(sF32 _s) {
+const sF32 *fmstack_get_vel_curve_lut(sF32 _s) {
    // 0..1 => -1..1
    _s = _s * 2.0f - 1.0f;
    sUI velCurveIdx;
@@ -106,7 +106,7 @@ const sF32 *get_vel_curve_lut(sF32 _s) {
    return &loc_vel_curve_lut[velCurveIdx << 8];
 }
 
-const sF32 *get_env_shape_lut(sF32 _s) {
+const sF32 *fmstack_get_env_shape_lut(sF32 _s) {
    // 0..1 => -1..1
    _s = _s * 2.0f - 1.0f;
    sUI shapeIdx;
@@ -133,14 +133,12 @@ ST_PLUGIN_APICALL void fm_stack_init_common(void) {
    {
       bInit = 0;
       loc_init_vel_curve_lut();
-      calc_env_shapes(loc_env_shape_lut);
+      fmstack_calc_env_shapes(loc_env_shape_lut);
    }
 }
 
 #ifndef STFX_SKIP_MAIN_INIT
 ST_PLUGIN_APICALL st_plugin_info_t *ST_PLUGIN_API st_plugin_init(unsigned int _pluginIdx) {
-
-   fm_stack_init_common();
 
    switch(_pluginIdx)
    {

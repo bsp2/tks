@@ -914,7 +914,7 @@ static const short *shapesPos[] = {
    /* 5 */ curve_dcy_shape_m5,
 };
 
-void calc_env_shapes(float *_d) {
+void fmstack_calc_env_shapes(float *_d) {
    loc_interpolate_shapes(shapesNeg, 7u, &_d[0], 256u);
    loc_interpolate_shapes(shapesPos, 6u, &_d[256*2048], 256u);
 
@@ -929,7 +929,7 @@ void calc_env_shapes(float *_d) {
 }
 
 #ifdef SAVE
-void save_env_shapes(void) {
+void fmstack_save_env_shapes(void) {
    loc_save_file_open("fmstack_env.dat");
    printf("xxx save \"fmstack_env.dat\"\n");
 
