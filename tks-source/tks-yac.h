@@ -4,6 +4,8 @@
 ///     - distributed under terms of the Lesser GNU General Public License (LGPL)
 //
 
+#include "tks-config.h"
+
 #define YAC_NO_EXPORTS defined
 
 /// Funny thing is: With MSVC, it's actually slower (5%!) when this is defined. (but why??)
@@ -35,6 +37,23 @@
 //#define YAC_EPSILONCOMPARE_REL_DEFAULT defined
 
 #include <yac.h>
+
+/// Define if your hardware can access multi-byte values at odd addresses (e.g. intel, not 68k)
+///  (note) currently only relevant in the JIT compiler
+#ifdef YAC_LITTLE_ENDIAN
+#define DX_ODDADDR defined
+#endif
+
+#ifdef YAC_POSIX
+#ifndef DX_NO_PTHREADS
+#define DX_PTHREADS defined
+#endif
+#endif
+
+#ifdef YAC_MSDOS
+#undef HAVE_VSNPRINTF
+#endif
+
 
 /*#ifdef YAC_OBJECT_POOL
 #undef YAC_DELETE
@@ -143,9 +162,6 @@ static inline void        yacDelete__inline        (YAC_Object *_o);
 
 #undef Dyac_throw_def
 #define Dyac_throw_def(a, b) tkscript->yacExceptionRaise(yac_host->yacContextGetDefault(), TKS_EXCEPTION_##a, b, __FILE__, __LINE__)
-
-
-#include "tks-config.h"
 
 
 extern YAC_Host *yac_host;
