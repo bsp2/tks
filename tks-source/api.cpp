@@ -54,7 +54,9 @@
 #include "TKS_DummyStream.h"
 #include "YAC_NibbleStream.h"
 #include "TKS_Process.h"
+#ifndef TKS_SKIP_API_LFSR
 #include "TKS_LFSR.h"
+#endif // TKS_SKIP_API_STACK
 
 
 // Thread safe object counting
@@ -103,7 +105,9 @@ YG("core");
 #include "TKS_ListIterator.h"
 #include "TKS_Pool.h"
 #include "TKS_PoolIterator.h"
+#ifndef TKS_SKIP_API_STACK
 #include "TKS_Stack.h"
+#endif // TKS_SKIP_API_STACK
 #include "TKS_StringIterator.h"
 #include "TKS_StringStackIterator.h"
 #include "TKS_Time.h"
@@ -13612,11 +13616,12 @@ Set stream size.
 YAC_C_CORE_POOLED(_DummyStream, "DummyStream", TKS_CLID_DUMMYSTREAM);
 
 
-// --------------------------------------------------------------------------- LFSR
+// --------------------------------------------------------------------------- STACK
 /* @class LFSR
 
 Pseudo random number generator (linear feedback shift register).
 */
+#ifndef TKS_SKIP_API_LFSR
 YC class _LFSR : public TKS_LFSR {
 public:
    YAC_POOLED(_LFSR, YAC_POOL_PRIORITY_MEDIUM);
@@ -13658,7 +13663,7 @@ Restore store
 };
 #include "ying_core_LFSR.cpp"
 YAC_C_CORE_POOLED(_LFSR, "LFSR", YAC_CLID_LFSR);
-
+#endif // TKS_SKIP_API_LFSR
 
 // --------------------------------------------------------------------------- LFSR_NR
 /* @class LFSR_NR
@@ -13679,6 +13684,7 @@ Warning: This is meant for _small_ random arrays (e.g. a sequence of 32 random v
     len=4096: ~0.15 mrand/sec
  (see tks-examples/lfsr.tks)
 */
+#ifndef TKS_SKIP_API_LFSR
 YC class _LFSR_NR : public TKS_LFSR_NR {
 public:
    YAC_POOLED(_LFSR_NR, YAC_POOL_PRIORITY_MEDIUM);
@@ -13698,7 +13704,7 @@ Return next random value in the range 0..(len-1)
 };
 #include "ying_core_LFSR_NR.cpp"
 YAC_C_CORE_POOLED(_LFSR_NR, "LFSR_NR", YAC_CLID_LFSR_NR);
-
+#endif // TKS_SKIP_API_LFSR
 
 //------------------------------------------------------------------------------------- Stream
 /* @class Stream,Object
@@ -15338,11 +15344,13 @@ sBool TKS_ScriptEngine::registerBuiltinClasses(void) {
    if(!registerClass(templ, 0, 0)) return 0;
 
    // -------------------------------------------------------------------- other
+#ifndef TKS_SKIP_API_LFSR
    templ=new _LFSR();            templ->class_ID=YAC_CLID_LFSR;
    if(!registerClass(templ, 1, 0)) return 0;
 
    templ=new _LFSR_NR();         templ->class_ID=YAC_CLID_LFSR_NR;
    if(!registerClass(templ, 1, 0)) return 0;
+#endif // TKS_SKIP_API_LFSR
 
    // -------------------------------------------------------------------- functions
 

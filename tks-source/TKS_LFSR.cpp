@@ -6,6 +6,8 @@
 
 #include "tks.h"
 
+#ifndef TKS_SKIP_API_LFSR
+
 #include "TKS_LFSR.h"
 
 
@@ -267,3 +269,5 @@ void TKS_LFSR_NR::genValues(void) {
    next_idx = 0u;
    // yac_host->printf("xxx TKS_LFSR_NR::genValues: LEAVE\n");
 }
+
+#endif // TKS_SKIP_API_LFSR
