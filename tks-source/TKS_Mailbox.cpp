@@ -6,6 +6,8 @@
 
 #include "tks.h"
 
+#ifndef TKS_SKIP_API_MAILBOX
+
 #include "YAC_ValueObject.h"
 #include "YAC_Event.h"
 #include "TKS_Mutex.h"
@@ -355,3 +357,5 @@ void TKS_Mailbox::waitEventById(sSI _id, sUI _timeoutMS, YAC_Value *_r) {
    }
 
 }
+
+#endif // TKS_SKIP_API_MAILBOX

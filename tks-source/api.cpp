@@ -125,8 +125,12 @@ YG("core");
 #include "TKS_SharedBuffer.h"
 #include "TKS_Mutex.h"
 #include "TKS_MutexObject.h"
+#ifndef TKS_SKIP_API_MAILBOX
 #include "TKS_Mailbox.h"
+#endif // TKS_SKIP_API_MAILBOX
+#ifndef TKS_SKIP_API_THREAD
 #include "TKS_Thread.h"
+#endif // TKS_SKIP_API_THREAD
 
 
 TKS_ClassDecl Class_ClassDecl;
@@ -8369,6 +8373,7 @@ Use %peekI32, %pokeI32, %ringReadBuffer, %ringWriteBuffer to atomatically read /
 Ring buffer sizes must be dword-aligned (but support un-aligned read/write offsets and sizes).
 
 */
+#ifndef TKS_SKIP_API_SHAREDBUFFER
 YC class _SharedBuffer : public TKS_SharedBuffer {
 public:
    YAC_POOLED(_Shared_Buffer, YAC_POOL_PRIORITY_LOW);
@@ -8438,6 +8443,7 @@ Check if shared memory is owned by this process.
 };
 #include "ying_core_SharedBuffer.cpp"
 YAC_C_CORE_POOLED(_SharedBuffer, "SharedBuffer", TKS_CLID_SHAREDBUFFER);
+#endif // TKS_SKIP_API_SHAREDBUFFER
 
 //------------------------------------------------------------------------------------- Class
 /* @class Class,Object
@@ -11179,6 +11185,7 @@ A generic event mailbox.
 
 
 */
+#ifndef TKS_SKIP_API_MAILBOX
 YC class _Mailbox : public TKS_Mailbox {
 public:
    YAC_POOLED(_Mailbox, YAC_POOL_PRIORITY_MEDIUM);
@@ -11243,6 +11250,7 @@ public:
 };
 #include "ying_core_Mailbox.cpp"
 YAC_C_CORE_POOLED(_Mailbox, "Mailbox", TKS_CLID_MAILBOX);
+#endif // TKS_SKIP_API_MAILBOX
 
 //------------------------------------------------------------------------------------- HashTable
 /* @class HashTable
@@ -11918,6 +11926,7 @@ Each thread has a mailbox that can be used to receive messages from other thread
 @see Mutex
 @see GetCurrentThread
 */
+#ifndef TKS_SKIP_API_THREAD
 YC class _Thread : public TKS_Thread {
 public:
 
@@ -12240,6 +12249,7 @@ Query number of logical CPU cores
 };
 #include "ying_core_Thread.cpp"
 YAC_C_CORE_POOLED(_Thread, "Thread", TKS_CLID_THREAD);
+#endif // TKS_SKIP_API_THREAD
 // --------------------------------------------------------------------------- Mutex
 /* @class Mutex,Object
 
@@ -12282,6 +12292,7 @@ Lock with timeout
 #include "ying_core_Mutex.cpp"
 YAC_C_CORE_POOLED(_Mutex, "Mutex", TKS_CLID_MUTEX);
 // --------------------------------------------------------------------------- Process
+#ifndef TKS_SKIP_API_PROCESS
 /* @class Process,Stream
 
 Represents an external process that communicates with its parent via anonymous pipes.
@@ -12340,6 +12351,7 @@ public:
 };
 #include "ying_core_Process.cpp"
 YAC_C_CORE_POOLED(_Process, "Process", TKS_CLID_PROCESS);
+#endif // TKS_SKIP_API_PROCESS
 // --------------------------------------------------------------------------- Time
 /* @class Time,Object
 
@@ -13830,12 +13842,16 @@ TkScript must have been compiled with thread local storage support (HAVE_TLS) or
 @see Thread
 */
 static YAC_Object *YAC_CALL APIC_GetCurrentThread(void) {
+#ifndef TKS_SKIP_API_THREAD
 #ifndef YAC_FORCE_NO_TLS
    return tks_current_thread;
 #else
    tkscript->printf("[~~~] GetCurrentThread() called but TLS support is not compiled in (define HAVE_TLS and recompile!). returning main_thread..\n");
    return tkscript->main_thread;
 #endif // HAVE_TLS
+#else
+   return NULL;
+#endif // TKS_SKIP_API_THREAD
 }
 
 
@@ -15272,16 +15288,20 @@ sBool TKS_ScriptEngine::registerBuiltinClasses(void) {
    templ=new _StringIterator();  templ->class_ID=TKS_CLID_STRINGITERATOR;
    if(!registerClass(templ, 1, 0)) return 0;
 
+#ifndef TKS_SKIP_API_SHAREDBUFFER
    templ=new _SharedBuffer();    templ->class_ID=TKS_CLID_SHAREDBUFFER;
    if(!registerClass(templ, 1, 0)) return 0;
    cpp_typecast_map[TKS_CLID_SHAREDBUFFER][YAC_CLID_BUFFER]=1;
    cpp_typecast_map[TKS_CLID_SHAREDBUFFER][YAC_CLID_STREAM]=1;
+#endif // TKS_SKIP_API_SHAREDBUFFER
 
    templ=new _Exception();       templ->class_ID=TKS_CLID_EXCEPTION;
    if(!registerClass(templ, 1, 0)) return 0;
 
+#ifndef TKS_SKIP_API_THREAD
    templ=new _Thread();          templ->class_ID=TKS_CLID_THREAD;
    if(!registerClass(templ, 1, 0)) return 0;
+#endif // TKS_SKIP_API_THREAD
 
    templ=new _Mutex();           templ->class_ID=TKS_CLID_MUTEX;
    if(!registerClass(templ, 1, 0)) return 0;
@@ -15289,16 +15309,20 @@ sBool TKS_ScriptEngine::registerBuiltinClasses(void) {
    templ=new _Condition();       templ->class_ID=TKS_CLID_CONDITION;
    if(!registerClass(templ, 1, 0)) return 0;
 
+#ifndef TKS_SKIP_API_MAILBOX
    templ=new _Mailbox();         templ->class_ID=TKS_CLID_MAILBOX;
    if(!registerClass(templ, 1, 0)) return 0;
+#endif // TKS_SKIP_API_MAILBOX
 
    templ=new _DummyStream();     templ->class_ID=TKS_CLID_DUMMYSTREAM;
    if(!registerClass(templ, 1, 0)) return 0;
    cpp_typecast_map[TKS_CLID_DUMMYSTREAM][YAC_CLID_STREAM]=1;
 
+#ifndef TKS_SKIP_API_PROCESS
    templ=new _Process();         templ->class_ID=TKS_CLID_PROCESS;
    if(!registerClass(templ, 1, 0)) return 0;
    cpp_typecast_map[TKS_CLID_PROCESS][YAC_CLID_STREAM]=1;
+#endif // TKS_SKIP_API_PROCESS
 
    // -------------------------------------------------------------------- "static" core
    templ=new _Configuration();   templ->class_ID=TKS_CLID_CONFIGURATION;

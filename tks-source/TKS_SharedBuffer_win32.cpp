@@ -8,6 +8,8 @@
 #include <string.h>
 #include "tks.h"
 
+#ifndef TKS_SKIP_API_SHAREDBUFFER
+
 #ifdef YAC_WIN32
 
 #include "PTN_Node.h"
@@ -194,3 +196,5 @@ sBool TKS_SharedBuffer::isOpen(void) {
 
 
 #endif // YAC_WIN32
+
+#endif // TKS_SKIP_API_SHAREDBUFFER

@@ -712,7 +712,9 @@ sBool TKS_Compiler::initializeStaticMethods(void) {
 sBool TKS_Compiler::compileCurrentChapter(PTN_Env *_env, sBool _bTSL) {
    // if(_bTSL) yac_host->printf("xxx compileCurrentChapter: bTSL=%d\n", _bTSL);
    TKX_Chapter *chapter = tkscript->tkx.current_chapter;
+#ifdef TKS_DCON
    sU16 numCompiledFiles = 0u;
+#endif // TKS_DCON
 
    sUI milliSec    = 0u; // assign 0 to satisfy GCC
    sUI milliSecOpt = 0u; // assign 0 to satisfy GCC
@@ -1000,7 +1002,9 @@ sBool TKS_Compiler::compileCurrentChapter(PTN_Env *_env, sBool _bTSL) {
                {
                   main_module = cs;
                }
+#ifdef TKS_DCON
                numCompiledFiles++;
+#endif // TKS_DCON
             }
             else
             {
@@ -1124,7 +1128,7 @@ sBool TKS_Compiler::compileCurrentChapter(PTN_Env *_env, sBool _bTSL) {
             Dprintf("[...] compileCurrentChapter: %i modules compiled (%i nodes).\n",
                     numCompiledFiles, numCompiledNodes/*totalNumNodes*/);
          }
-#endif
+#endif // TKS_DCON
       }
    }
 

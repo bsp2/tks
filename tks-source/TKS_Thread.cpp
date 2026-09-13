@@ -25,6 +25,8 @@
 
 #include "tks.h"
 
+#ifndef TKS_SKIP_API_THREAD
+
 #ifdef DX_PTHREADS
 
 #include <errno.h>
@@ -1388,14 +1390,21 @@ void TKS_Thread::_setCPUCore(sSI _coreIdx) {
 }
 
 void TKS_Thread::_allocEventQueue(sSI _size) {
+#ifndef TKS_SKIP_API_MAILBOX
    mbox.allocEventQueue((sUI)_size);
+#endif // TKS_SKIP_API_MAILBOX
 }
 
 sSI TKS_Thread::sendEvent2(YAC_Event *_ev) {
+#ifndef TKS_SKIP_API_MAILBOX
    return mbox.sendEvent(_ev);
+#else
+   return ~0;
+#endif // TKS_SKIP_API_MAILBOX
 }
 
 sSI TKS_Thread::_sendEvent(YAC_Object *_ev) {
+#ifndef TKS_SKIP_API_MAILBOX
    if(YAC_BCHK(_ev, YAC_CLID_EVENT))
    {
       return mbox.sendEvent((YAC_Event*)_ev);
@@ -1405,22 +1414,37 @@ sSI TKS_Thread::_sendEvent(YAC_Object *_ev) {
       Dprintf("[---] Thread::sendEvent: not an Event object.\n");
       return ~0;
    }
+#else
+   return ~0;
+#endif // TKS_SKIP_API_MAILBOX
 }
 
 YAC_Object *TKS_Thread::_peekEvent(void) {
+#ifndef TKS_SKIP_API_MAILBOX
    return mbox.peekEvent();
+#else
+   return NULL;
+#endif // TKS_SKIP_API_MAILBOX
 }
 
 YAC_Object *TKS_Thread::_peekEventById(sSI _id) {
+#ifndef TKS_SKIP_API_MAILBOX
    return mbox.peekEventById(_id);
+#else
+   return NULL;
+#endif // TKS_SKIP_API_MAILBOX
 }
 
 void TKS_Thread::_waitEvent(sUI _timeoutMS, YAC_Value *_r) {
+#ifndef TKS_SKIP_API_MAILBOX
    mbox.waitEvent(_timeoutMS, _r);
+#endif // TKS_SKIP_API_MAILBOX
 }
 
 void TKS_Thread::_waitEventById(sSI _id, sUI _timeoutMS, YAC_Value *_r) {
+#ifndef TKS_SKIP_API_MAILBOX
    mbox.waitEventById(_id, _timeoutMS, _r);
+#endif // TKS_SKIP_API_MAILBOX
 }
 
 sUI TKS_Thread::_rand(void) {
@@ -1471,3 +1495,5 @@ sBool TKS_Thread::Delay2(void) {
 sBool TKS_Thread::_Delay(void) {
    return TKS_Thread::Delay2();
 }
+
+#endif // TKS_SKIP_API_THREAD

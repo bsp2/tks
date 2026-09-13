@@ -7,6 +7,8 @@
 
 #include "tks.h"
 
+#ifndef TKS_SKIP_API_PROCESS
+
 #ifdef YAC_WIN32
 #include <process.h>  // getpid()
 #endif // YAC_WIN32
@@ -378,3 +380,5 @@ void TKS_Process::SendSignal_SIGUSR1(int _pid) {
 void TKS_Process::WaitSignal_SIGUSR1(void) {
    // not supported
 }
+
+#endif // TKS_SKIP_API_PROCESS

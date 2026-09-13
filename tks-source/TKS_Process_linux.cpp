@@ -9,6 +9,8 @@
 
 #include "tks.h"
 
+#ifndef TKS_SKIP_API_PROCESS
+
 #include "YAC_Buffer.h"
 #include "YAC_String.h"
 #include "YAC_StringArray.h"
@@ -372,3 +374,5 @@ void TKS_Process::WaitSignal_SIGUSR1(void) {
       // tkscript->printf("xxx sigwait SIGUSR1 returned\n");
    }
 }
+
+#endif // TKS_SKIP_API_PROCESS

@@ -384,11 +384,15 @@ TKS_CachedScript::~TKS_CachedScript() {
 }
 
 void TKS_CachedScript::init(void) {
+#ifdef TKS_USE_NODEALLOCATOR
    b_own_node_allocator            = YAC_FALSE;
+#endif // TKS_USE_NODEALLOCATOR
    b_done                          = YAC_FALSE;
    b_global_module_statements_done = YAC_FALSE;
 
+#ifdef TKS_USE_NODEALLOCATOR
    node_allocator        = NULL;
+#endif // TKS_USE_NODEALLOCATOR
    compiled_script       = NULL;
    parser_tree           = NULL;
    parser_tree_num_nodes = 0u;
@@ -3529,12 +3533,12 @@ void TKS_CachedScript::parseError(sU16 _line/*, sU16 _state, sU16 _state_index*/
          if(compiled_script->tokens.elements[st-1u] <= TOKEN_STRINGVAL)
             st--;
    }
+#ifdef TKS_DCON
    sUI en =
       ( (sUI(_toki)+tokRange) < compiled_script->tokens.num_elements)
       ? (sUI(_toki)+tokRange)
       : compiled_script->tokens.num_elements
       ;
-#ifdef TKS_DCON
    const sChar *tokName = tks_get_token_name(_tok);
    Dprintf("[---] parse error in module \"%s\" (file \"%s\")\n[---]  line %i, near token %i/%i *** %s ***:\n",
            (char*) name.chars,
@@ -16185,6 +16189,7 @@ sBool TKS_CachedScript::findDeclaredClassType(YAC_String *         _name,
    return 0;
 }
 
+#ifdef TKS_USE_NODEALLOCATOR
 void TKS_CachedScript::visitNodeAllocator(TKS_LinearAllocator *_allocator) {
    node_allocator       = _allocator;
    b_own_node_allocator = YAC_FALSE;
@@ -16203,3 +16208,4 @@ void TKS_CachedScript::freeNodeAllocator(void) {
    }
    node_allocator = NULL;
 }
+#endif // TKS_USE_NODEALLOCATOR

@@ -7,6 +7,9 @@
 
 #include <string.h>
 #include "tks.h"
+
+#ifndef TKS_SKIP_API_SHAREDBUFFER
+
 #include "PTN_Node.h"
 #include "YAC_Buffer.h"
 #include "TKS_SharedBuffer.h"
@@ -338,3 +341,5 @@ void TKS_SharedBuffer::pokeI32(sSI _offset, sSI _value) {
    YAC_Buffer::pokeI32(_offset, _value);
 #endif // USE_ATOMIC
 }
+
+#endif // TKS_SKIP_API_SHAREDBUFFER

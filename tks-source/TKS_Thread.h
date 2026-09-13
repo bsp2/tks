@@ -81,7 +81,9 @@ public:
 	YAC_Object *         user_data;     // passed to thread startup
    YAC_String           name;
 
+#ifndef TKS_SKIP_API_MAILBOX
    TKS_Mailbox mbox;
+#endif // TKS_SKIP_API_MAILBOX
 
    sU32 rand_seed;
 

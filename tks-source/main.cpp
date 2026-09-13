@@ -383,12 +383,16 @@ void NewEngine(int _argc, char **_argv, sBool _bRunInBG) {
 }
 
 void DeleteEngine(void) {
+#ifdef TKS_DCON
    sBool dbg = YAC_FALSE;
+#endif // TKS_DCON
 
    if(NULL != tkscript)
    {
       i_return = tkscript->i_return;
+#ifdef TKS_DCON
       dbg = (0 != tkscript->configuration.debug_level);
+#endif // TKS_DCON
       tks_free_streamio();
       delete tkscript;
       tkscript = NULL;

@@ -757,7 +757,11 @@ void TKS_ClassDecl::addClass(TKS_ClassDecl *_cd,
 TKS_ObjectCache *TKS_ClassDecl::getCreateConstants() {
    if(NULL == constants)
    {
+#ifdef TKS_USE_NODEALLOCATOR
       PTN_NEW_STATIC_NODE(constants, TKS_ObjectCache_PN)();
+#else
+      PTN_NEW_STATIC_NODE(constants, TKS_ObjectCache)();
+#endif // TKS_USE_NODEALLOCATOR
       constants->allocCache(TKS_MAX_CLASSCONSTANTS);
    }
    return constants;
@@ -818,7 +822,11 @@ sBool TKS_ClassDecl::setConstantDocumentation (YAC_String *_constantName, YAC_St
    TKS_CachedObject * co;
    if(NULL == constants_documentation)
    {
+#ifdef TKS_USE_NODEALLOCATOR
       PTN_NEW_STATIC_NODE(constants_documentation, TKS_ObjectCache_PN)();
+#else
+      PTN_NEW_STATIC_NODE(constants_documentation, TKS_ObjectCache)();
+#endif // TKS_USE_NODEALLOCATOR
       constants_documentation->allocCache(TKS_MAX_CLASSCONSTANTS);
    }
    if(0 == constants_documentation->max_entries)
@@ -858,7 +866,11 @@ PTN_Function *TKS_ClassDecl::addFunction(YAC_String *_name, sUI _prot_flags, sBo
 
    if(NULL == functions)
    {
+#ifdef TKS_USE_NODEALLOCATOR
       PTN_NEW_STATIC_NODE(functions, TKS_ObjectCache_PN)();
+#else
+      PTN_NEW_STATIC_NODE(functions, TKS_ObjectCache)();
+#endif // TKS_USE_NODEALLOCATOR
       functions->allocCache(TKS_MAX_CLASSFUNCTIONS);
    }
 

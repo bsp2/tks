@@ -1139,7 +1139,9 @@ void TKS_TokenizedScript::optimize(void) {
          nsa[i].refCopy(&strings.elements[i]);
          // Note: no need to call d'tor since buffer is already unlinked
          //       simply decrease object counter. tsl_cache strings are batch-freed later on.
+#ifdef TKS_STRING_OBJECTCOUNTER
          YAC_String::string_object_counter--;
+#endif // TKS_STRING_OBJECTCOUNTER
          YAC_Object::object_counter--;
       }
       // Note: do not delete, it's just a cache ref.

@@ -139,12 +139,14 @@ public:
    sUI getLineIdx (void) { return linenr; }
 
  public:
+#ifdef TKS_USE_NODEALLOCATOR
    TKS_LinearAllocator *node_allocator;
    sBool                b_own_node_allocator;
 
    void visitNodeAllocator (TKS_LinearAllocator *_allocator);
    void newNodeAllocator   (void);
    void freeNodeAllocator  (void);
+#endif // TKS_USE_NODEALLOCATOR
 
 };
 

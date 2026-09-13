@@ -372,6 +372,6 @@ void TKS_FunctionProfiler::PrintResults(void) {
 
 #else
 
-static sUI tks_functionprofiler_dummy;
+// static sUI tks_functionprofiler_dummy;
 
 #endif // TKS_PROFILE_FUNCTIONS

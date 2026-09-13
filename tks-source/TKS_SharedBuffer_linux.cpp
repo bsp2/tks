@@ -8,6 +8,8 @@
 #include <string.h>
 #include "tks.h"
 
+#ifndef TKS_SKIP_API_SHAREDBUFFER
+
 // (note) must be defined or memory view will not be consistent across processes
 //         applications should use peekI32() / pokeI32() to atomically read / write dwords
 //         - read/write offset must be dword-aligned
@@ -246,3 +248,5 @@ sBool TKS_SharedBuffer::isOpen(void) {
 
 
 #endif // YAC_LINUX || YAC_MACOS || YAC_QNX
+
+#endif // TKS_SKIP_API_SHAREDBUFFER

@@ -159,6 +159,10 @@
 /// Char allocator max. string size
 #define TKS_CHARALLOCATOR_THRESHOLD (64)
 
+/// if defined, use QueryPerformanceCounter() for TKS_ScriptEngine::getMilliseconds()
+///  to increase accuracy (w/o it's ~16ms)
+#define TKS_WIN32_USE_PERFCOUNTER defined
+
 #ifdef TKS_SPEEDHACKS
 #undef TKS_TRACE_NODES
 #undef TKS_PROFILE_STATEMENTS
@@ -171,10 +175,32 @@
 #undef TKS_FIX_ABSTRACTVARS
 #endif // TKS_SPEEDHACKS
 
-
-/// if defined, use QueryPerformanceCounter() for TKS_ScriptEngine::getMilliseconds()
-///  to increase accuracy (w/o it's ~16ms)
-#define TKS_WIN32_USE_PERFCOUNTER defined
+#ifdef TKS_OPT_SIZE
+#undef TKS_DCON
+#undef DX_VMDASM
+#undef DX_SAFEMODE
+#undef DX_JIT_TRACKARRAYELEMENTS
+#undef DX_TRACEFUNCTIONCALLS
+#undef DX_SCRIPTCONSTRAINTS
+#undef TKS_TRACE_NODES
+#undef TKS_PROFILE_STATEMENTS
+#undef TKS_PROFILE_FUNCTION_CALLSITES
+#undef TKS_PROFILE_FUNCTIONS
+#undef TKS_CHECKEXCEPTION
+#undef TKS_PAKFILE_OPENLOCAL
+#undef TKS_CHECK_ABSTRACTCALL
+#undef TKS_FIX_ABSTRACTVARS
+#undef TKS_CO_OBJECTCOUNTER
+#undef TKS_STRING_OBJECTCOUNTER
+#undef TKS_SCI_OBJECTCOUNTER
+#undef TKS_USE_NODEALLOCATOR
+#undef TKS_USE_CHARALLOCATOR
+#undef TKS_WIN32_USE_PERFCOUNTER
+// #define TKS_SKIP_API_THREAD       defined
+#define TKS_SKIP_API_PROCESS      defined
+#define TKS_SKIP_API_MAILBOX      defined
+#define TKS_SKIP_API_SHAREDBUFFER defined
+#endif // TKS_OPT_SIZE
 
 
 #endif // TKS_CONFIG_H__

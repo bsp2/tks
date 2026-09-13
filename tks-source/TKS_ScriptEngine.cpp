@@ -619,11 +619,13 @@ void TKS_ScriptEngine::freeContexts(void) {
       }
    }
 
+#ifndef TKS_SKIP_API_THREAD
    if(NULL != main_thread)
    {
       YAC_DELETE(main_thread);
       main_thread = NULL;
    }
+#endif // TKS_SKIP_API_THREAD
 }
 
 TKS_Context *TKS_ScriptEngine::lockGlobalContext(void) {
@@ -881,6 +883,7 @@ sBool TKS_ScriptEngine::init(void) {
    // ---- register core classes and create static variables ----
    if(registerBuiltinClasses())
    {
+#ifndef TKS_SKIP_API_THREAD
       // Setup main thread object
       main_thread = (TKS_Thread*) yacNewByID(TKS_CLID_THREAD);
       main_thread->initMain();
@@ -888,6 +891,7 @@ sBool TKS_ScriptEngine::init(void) {
 #ifndef YAC_FORCE_NO_TLS
       tks_current_thread = main_thread;
 #endif // HAVE_TLS
+#endif // TKS_SKIP_API_THREAD
 
       return YAC_TRUE;
    }
@@ -2363,12 +2367,14 @@ sBool TKS_ScriptEngine::evalFunction2(YAC_ContextHandle _context, PTN_Function *
       // Use context as thread default context if none exists
       // !!!!! NO !!!!!  it can happen that the "tks_current_context" has already been deleted (e.g. when it was set to the MIDITimer::script_context!)
       // apps must use yacContextSetDefault() if a script fxn/method is to be called from a non-script thread (e.g. the windows multimedia timer)
+#ifndef TKS_SKIP_API_THREAD
 #ifndef YAC_FORCE_NO_TLS
       if((NULL == tks_current_thread) && (NULL == tks_current_context))
       {
          tks_current_context = _context;
       }
 #endif // YAC_FORCE_NO_TLS
+#endif // TKS_SKIP_API_THREAD
 #endif // 0
 
       // Validate argument count
@@ -3853,7 +3859,7 @@ void  TKS_ScriptEngine::yacContextDestroy (YAC_ContextHandle _context) {
 }
 
 YAC_ContextHandle YAC_VCALL TKS_ScriptEngine::yacContextGetDefault (void) {
-#ifndef YAC_FORCE_NO_TLS
+#if !defined(YAC_FORCE_NO_TLS) && !defined(TKS_SKIP_API_THREAD)
    if(NULL != tks_current_thread)
    {
       return (YAC_ContextHandle) tks_current_thread->context;
@@ -3885,9 +3891,11 @@ YAC_ContextHandle YAC_VCALL TKS_ScriptEngine::yacContextGetDefault (void) {
 }
 
 void YAC_VCALL TKS_ScriptEngine::yacContextSetDefault (YAC_ContextHandle _context) {
+#ifndef TKS_SKIP_API_THREAD
 #ifndef YAC_FORCE_NO_TLS
    tks_current_context = _context;
 #endif // YAC_FORCE_NO_TLS
+#endif // TKS_SKIP_API_THREAD
 }
 
 #ifdef TKS_MT
@@ -4179,75 +4187,94 @@ sSI TKS_ScriptEngine::yacAtomicGet(volatile sSI *_v) {
 #endif
 
 YAC_ThreadHandle TKS_ScriptEngine::yacThreadNew(void) {
+#ifndef TKS_SKIP_API_THREAD
    TKS_Thread *th = (TKS_Thread*)yacNewByID(TKS_CLID_THREAD);
    return (YAC_ThreadHandle)th;
+#else
+   return NULL;
+#endif // TKS_SKIP_API_THREAD
 }
 
 void TKS_ScriptEngine::yacThreadAllocEventQueue(YAC_ThreadHandle _thread, sSI _size) {
+#if !defined(TKS_SKIP_API_THREAD) && !defined(TKS_SKIP_MAILBOX)
    if(NULL != _thread)
    {
       YAC_CAST_ARG(TKS_Thread, th, _thread);
       th->_allocEventQueue(_size);
    }
+#endif
 }
 
 sBool TKS_ScriptEngine::yacThreadStart(YAC_ThreadHandle _thread, yac_thread_fxn_t _fxn, void *_userData) {
    sBool r = YAC_FALSE;
+#ifndef TKS_SKIP_API_THREAD
    if(NULL != _thread)
    {
       YAC_CAST_ARG(TKS_Thread, th, _thread);
       // (note) userData is never dereferenced, does not need to be an actual Object
       r = th->create2(_fxn, (YAC_Object*)_userData);
    }
+#endif // TKS_SKIP_API_THREAD
    return r;
 }
 
 void TKS_ScriptEngine::yacThreadSetPriority(YAC_ThreadHandle _thread, yac_thread_priority_t _priority) {
+#ifndef TKS_SKIP_API_THREAD
    if(NULL != _thread)
    {
       YAC_CAST_ARG(TKS_Thread, th, _thread);
       th->_setPriority(_priority);
    }
+#endif // TKS_SKIP_API_THREAD
 }
 
 void TKS_ScriptEngine::yacThreadSetCPUCore(YAC_ThreadHandle _thread, sSI _coreIdx) {
+#ifndef TKS_SKIP_API_THREAD
    if(NULL != _thread)
    {
       YAC_CAST_ARG(TKS_Thread, th, _thread);
       th->_setCPUCore(_coreIdx/*-1==any*/);
    }
+#endif // TKS_SKIP_API_THREAD
 }
 
 void TKS_ScriptEngine::yacThreadSendEvent(YAC_ThreadHandle _thread, YAC_Event *_event) {
+#ifndef TKS_SKIP_API_MAILBOX
    if(NULL != _thread)
    {
       YAC_CAST_ARG(TKS_Thread, th, _thread);
       th->sendEvent2(_event);
    }
+#endif // TKS_SKIP_API_MAILBOX
 }
 
 YAC_Event *TKS_ScriptEngine::yacThreadPeekEvent(YAC_ThreadHandle _thread) {
    YAC_Event *r = NULL;
+#ifndef TKS_SKIP_API_MAILBOX
    if(NULL != _thread)
    {
       YAC_CAST_ARG(TKS_Thread, th, _thread);
       r = (YAC_Event*)th->_peekEvent();
    }
+#endif // TKS_SKIP_API_MAILBOX
    return r;
 }
 
 YAC_Event *TKS_ScriptEngine::yacThreadPeekEventById(YAC_ThreadHandle _thread, sSI _id) {
    YAC_Event *r = NULL;
+#ifndef TKS_SKIP_API_MAILBOX
    if(NULL != _thread)
    {
       YAC_CAST_ARG(TKS_Thread, th, _thread);
       r = (YAC_Event*)th->_peekEventById(_id);
    }
+#endif // TKS_SKIP_API_MAILBOX
    return r;
 }
 
 YAC_Event *TKS_ScriptEngine::yacThreadWaitEvent(YAC_ThreadHandle _thread, sUI _timeoutMS) {
    YAC_Event *r = NULL;
+#ifndef TKS_SKIP_API_MAILBOX
    if(NULL != _thread)
    {
       YAC_CAST_ARG(TKS_Thread, th, _thread);
@@ -4256,11 +4283,13 @@ YAC_Event *TKS_ScriptEngine::yacThreadWaitEvent(YAC_ThreadHandle _thread, sUI _t
       r = (YAC_Event*)rv.value.object_val;
       rv.deleteme = YAC_FALSE;
    }
+#endif // TKS_SKIP_API_MAILBOX
    return r;
 }
 
 YAC_Event *TKS_ScriptEngine::yacThreadWaitEventById(YAC_ThreadHandle _thread, sSI _id, sUI _timeoutMS) {
    YAC_Event *r = NULL;
+#ifndef TKS_SKIP_API_MAILBOX
    if(NULL != _thread)
    {
       YAC_CAST_ARG(TKS_Thread, th, _thread);
@@ -4268,48 +4297,62 @@ YAC_Event *TKS_ScriptEngine::yacThreadWaitEventById(YAC_ThreadHandle _thread, sS
       th->_waitEventById(_id, _timeoutMS, &rv);
       r = (YAC_Event*)rv.value.object_val;
    }
+#endif // TKS_SKIP_API_MAILBOX
    return r;
 }
 
 sUI TKS_ScriptEngine::yacThreadRand(YAC_ThreadHandle _thread) {
    sUI r = 0u;
+#ifndef TKS_SKIP_API_THREAD
    if(NULL != _thread)
    {
       YAC_CAST_ARG(TKS_Thread, th, _thread);
       r = th->_rand();
    }
+#endif // TKS_SKIP_API_THREAD
    return r;
 }
 
 void TKS_ScriptEngine::yacThreadSRand(YAC_ThreadHandle _thread, sUI _seed) {
+#ifndef TKS_SKIP_API_THREAD
    if(NULL != _thread)
    {
       YAC_CAST_ARG(TKS_Thread, th, _thread);
       th->_srand(_seed);
    }
+#endif // TKS_SKIP_API_THREAD
 }
 
 void TKS_ScriptEngine::yacThreadYield(void) {
+#ifndef TKS_SKIP_API_THREAD
    (void)TKS_Thread::Yield2();
+#endif // TKS_SKIP_API_THREAD
 }
 
 void TKS_ScriptEngine::yacThreadDelay(void) {
+#ifndef TKS_SKIP_API_THREAD
    (void)TKS_Thread::Delay2();
+#endif // TKS_SKIP_API_THREAD
 }
 
 void TKS_ScriptEngine::yacThreadWait(YAC_ThreadHandle _thread) {
+#ifndef TKS_SKIP_API_THREAD
    if(NULL != _thread)
    {
       YAC_CAST_ARG(TKS_Thread, th, _thread);
       th->_wait();
    }
+#endif // TKS_SKIP_API_THREAD
 }
 
 void TKS_ScriptEngine::yacThreadDelete(YAC_ThreadHandle _thread) {
+#ifndef TKS_SKIP_API_THREAD
    yacDelete((YAC_Object*)_thread);
+#endif // TKS_SKIP_API_THREAD
 }
 
 YAC_ThreadHandle TKS_ScriptEngine::yacThreadNewFromCurrent(void) {
+#ifndef TKS_SKIP_API_THREAD
    TKS_Thread *th = (TKS_Thread*)yacNewByID(TKS_CLID_THREAD);
    if(NULL != th)
    {
@@ -4319,10 +4362,17 @@ YAC_ThreadHandle TKS_ScriptEngine::yacThreadNewFromCurrent(void) {
 #endif // HAVE_TLS
    }
    return (YAC_ThreadHandle)th;
+#else
+   return NULL;
+#endif // TKS_SKIP_API_THREAD
 }
 
 sBool TKS_ScriptEngine::yacThreadIsMain(void) {
+#ifndef TKS_SKIP_API_THREAD
    return TKS_Thread::IsMain();
+#else
+   return YAC_TRUE;
+#endif // TKS_SKIP_API_THREAD
 }
 
 

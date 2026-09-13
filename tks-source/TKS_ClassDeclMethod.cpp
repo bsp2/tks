@@ -40,7 +40,7 @@ void TKS_ClassDeclMethod::allocVTable(void) {
       ;
    vtable = (TKS_ClassDeclMethod**) Dtkscompiler->static_node_allocator->alloc(sz);
 #else
-   sz = sizeof(TKS_ClassDeclMethod) * TKS_MAX_CLASSDECLS;
+   sUI sz = sizeof(TKS_ClassDeclMethod) * TKS_MAX_CLASSDECLS;
    vtable = new(std::nothrow) TKS_ClassDeclMethod*[TKS_MAX_CLASSDECLS];
    // (todo) handle OOM
 #endif // TKS_USE_NODEALLOCATOR
