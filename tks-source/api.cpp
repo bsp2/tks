@@ -11683,6 +11683,7 @@ A LIFO stack of objects.
 
 Dates back to the time when TkScript did not have local variables, yet :-)
 */
+#ifndef TKS_SKIP_API_STACK
 YC class _Stack : public TKS_Stack {
 public:
    YAC_POOLED(_Stack, YAC_POOL_PRIORITY_HIGH);
@@ -11749,6 +11750,7 @@ public:
 };
 #include "ying_core_Stack.cpp"
 YAC_C_CORE_POOLED(_Stack, "Stack", TKS_CLID_STACK);
+#endif // TKS_SKIP_API_STACK
 
 //------------------------------------------------------------------------------------- TreeNode
 /* @class TreeNode,Value
@@ -15269,8 +15271,10 @@ sBool TKS_ScriptEngine::registerBuiltinClasses(void) {
    templ=new _Pool();           templ->class_ID=TKS_CLID_POOL;
    if(!registerClass(templ, 1, 0)) return 0;
 
+#ifndef TKS_SKIP_API_STACK
    templ=new _Stack();           templ->class_ID=TKS_CLID_STACK;
    if(!registerClass(templ, 1, 0)) return 0;
+#endif // TKS_SKIP_API_STACK
 
    templ=new _Time();            templ->class_ID=TKS_CLID_TIME;
    if(!registerClass(templ, 1, 0)) return 0;

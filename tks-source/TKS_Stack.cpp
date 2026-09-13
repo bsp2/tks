@@ -5,6 +5,9 @@
 ///
 
 #include "tks.h"
+
+#ifndef TKS_SKIP_API_STACK
+
 #include "TKS_Stack.h"
 
 
@@ -135,3 +138,5 @@ void TKS_Stack::init(YAC_Object *_t, sSI _i) {
    setTemplate(_t);
    setSize(_i);
 }
+
+#endif // TKS_SKIP_API_STACK

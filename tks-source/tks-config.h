@@ -200,6 +200,7 @@
 #define TKS_SKIP_API_PROCESS      defined
 #define TKS_SKIP_API_MAILBOX      defined
 #define TKS_SKIP_API_SHAREDBUFFER defined
+#define TKS_SKIP_API_STACK        defined
 #endif // TKS_OPT_SIZE
 
 
