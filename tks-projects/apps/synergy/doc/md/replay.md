@@ -2,7 +2,7 @@
 % bsp
 % 26-May-2026
 >>>
-25May2026, 26May2026
+25May2026, 26May2026, 13Sep2026
 <<<
 $(var:header)
 
@@ -155,10 +155,10 @@ It does support classic tracker *effect commands* via the bundled `PTFX` script,
    - do not use any VST / CLAP plugins (STFX plugins are allowed, though)
    - do not use audio timeline tracks (this feature may be added later)
    - when using drumkit tracks, convert them to regular lanes using the track context menu utility function
-   - if procedural waveforms are used, the export function will also write a `autogen_calc_<xyz>.c` file to the `autogen_cycle/` folder
+   - if procedural waveforms are used, the export function will also write a `autogen_calc_<xyz>.c` file to the `export/` folder
    - copy the `.syn` file to the `synergy_replay/music/` folder
 - edit `synergy_replay/main.c` and the (platform-specific) Makefile (e.g. `makefile.linux`)
-   - in case of procedural waveforms: add the `autogen_cycle/autogen_calc_<xyz>.o` object file (replace the default one)
+   - in case of procedural waveforms: add the `export/autogen_calc_<xyz>.o` object file (replace the default one)
    - add / remove voice plugin modules as required (or keep the default selection)
    - change `SONGNAME` as required
 
