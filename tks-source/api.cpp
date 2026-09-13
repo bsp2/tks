@@ -74,7 +74,6 @@ TKS_Mutex *mtx_yac_object_counter = NULL;
    if(mtx_yac_object_counter) mtx_yac_object_counter->unlock()
 
 #include "TKS_Condition.h"
-
 #endif // TKS_MT
 #endif // YAC_OBJECT_COUNTER
 
@@ -127,8 +126,10 @@ YG("core");
 #include "TKS_Compiler.h"
 
 #include "TKS_SharedBuffer.h"
+#ifndef TKS_SKIP_API_MUTEX
 #include "TKS_Mutex.h"
 #include "TKS_MutexObject.h"
+#endif // TKS_SKIP_API_MUTEX
 #ifndef TKS_SKIP_API_MAILBOX
 #include "TKS_Mailbox.h"
 #endif // TKS_SKIP_API_MAILBOX
@@ -11486,6 +11487,7 @@ YAC_C_CORE_POOLED(_HashTable, "HashTable", YAC_CLID_HASHTABLE);
 A boolean condition variable that can be used for multi-threaded notifications resp. barriers.
 
 */
+#ifndef TKS_SKIP_API_CONDITION
 YC class _Condition : public TKS_Condition {
 public:
    YAC(_Condition);
@@ -11530,7 +11532,7 @@ public:
 };
 #include "ying_core_Condition.cpp"
 YAC_C_CORE(_Condition, "Condition", TKS_CLID_CONDITION);
-
+#endif // TKS_SKIP_API_CONDITION
 
 //-------------------------------------------------------------------------------------Configuration
 /* @class Configuration,Object
@@ -12266,6 +12268,7 @@ keywords are used in a method declaration.
 
 @see Thread
 */
+#ifndef TKS_SKIP_API_MUTEX
 YC class _Mutex : public TKS_MutexObject {
 public:
 	YAC_POOLED(_Mutex, YAC_POOL_PRIORITY_LOW);
@@ -12297,6 +12300,8 @@ Lock with timeout
 };
 #include "ying_core_Mutex.cpp"
 YAC_C_CORE_POOLED(_Mutex, "Mutex", TKS_CLID_MUTEX);
+#endif // TKS_SKIP_API_MUTEX
+
 // --------------------------------------------------------------------------- Process
 #ifndef TKS_SKIP_API_PROCESS
 /* @class Process,Stream
@@ -15313,11 +15318,15 @@ sBool TKS_ScriptEngine::registerBuiltinClasses(void) {
    if(!registerClass(templ, 1, 0)) return 0;
 #endif // TKS_SKIP_API_THREAD
 
+#ifndef TKS_SKIP_API_MUTEX
    templ=new _Mutex();           templ->class_ID=TKS_CLID_MUTEX;
    if(!registerClass(templ, 1, 0)) return 0;
+#endif // TKS_SKIP_API_MUTEX
 
+#ifndef TKS_SKIP_API_CONDITION
    templ=new _Condition();       templ->class_ID=TKS_CLID_CONDITION;
    if(!registerClass(templ, 1, 0)) return 0;
+#endif // TKS_SKIP_API_CONDITION
 
 #ifndef TKS_SKIP_API_MAILBOX
    templ=new _Mailbox();         templ->class_ID=TKS_CLID_MAILBOX;

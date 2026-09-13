@@ -827,6 +827,7 @@ void TKS_Language::newThreadFromCurrent(YAC_Value *_r) {
 }
 
 void TKS_Language::forceUnlockNamedMutex(YAC_String *_name) {
+#ifndef TKS_SKIP_API_MUTEX
    if(YAC_Is_String(_name))
    {
       TKS_NamedMutex *mtx = tkscript->findNamedMutex(_name);
@@ -837,9 +838,11 @@ void TKS_Language::forceUnlockNamedMutex(YAC_String *_name) {
          tkscript->printf("[dbg] TKS::forceUnlockNamedMutex(name=\"%s\") END\n", (const char*)_name->chars);
       }
    }
+#endif // TKS_SKIP_API_MUTEX
 }
 
 void TKS_Language::unlockNamedMutex(YAC_String *_name) {
+#ifndef TKS_SKIP_API_MUTEX
    if(YAC_Is_String(_name))
    {
       TKS_NamedMutex *mtx = tkscript->findNamedMutex(_name);
@@ -848,9 +851,11 @@ void TKS_Language::unlockNamedMutex(YAC_String *_name) {
          mtx->unlock();
       }
    }
+#endif // TKS_SKIP_API_MUTEX
 }
 
 void TKS_Language::lockNamedMutex(YAC_String *_name) {
+#ifndef TKS_SKIP_API_MUTEX
    if(YAC_Is_String(_name))
    {
       TKS_NamedMutex *mtx = tkscript->findNamedMutex(_name);
@@ -859,6 +864,7 @@ void TKS_Language::lockNamedMutex(YAC_String *_name) {
          mtx->lock();
       }
    }
+#endif // TKS_SKIP_API_MUTEX
 }
 
 void TKS_Language::getHomeDir(YAC_Value *_r) {

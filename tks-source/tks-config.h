@@ -8,58 +8,13 @@
 #define TKS_CONFIG_H__
 
 
-///============================================================================
-///
-/// Define this to effectively disable exceptions, constraints, node-tracing,
-///  profiling, abstractcall and other paranoia checks
-///
-///============================================================================
-//#define TKS_SPEEDHACKS defined
-
+// #define TKS_SPEEDHACKS defined
+// #define TKS_OPT_SIZE defined
 
 #include "config.h"
 
-
-///============================================================================
-///
-/// usually you won't have to change anything in this file.
-/// please see "config.h" instead.
-///
-///============================================================================
-
 #define TKS_PLUGIN defined
 #define TKS_DCON defined
-
-
-///============================================================================
-///
-/// OS-CONFIG
-///
-///============================================================================
-
-
-/// Define if your hardware can access multi-byte values at odd addresses (e.g. intel, not 68k)
-///  (note) currently only relevant in the JIT compiler
-#ifdef YAC_LITTLE_ENDIAN
-#define DX_ODDADDR defined
-#endif
-
-#ifdef YAC_POSIX
-#ifndef DX_NO_PTHREADS
-#define DX_PTHREADS defined
-#endif
-#endif
-
-#ifdef YAC_MSDOS
-#undef HAVE_VSNPRINTF
-#endif
-
-
-///============================================================================
-///
-/// ENVIRONMENT-CONFIG
-///
-///============================================================================
 
 /// Define if you want to compile with the VM disassembler (also requires TKS_JIT to be defined)
 #define DX_VMDASM defined
@@ -196,7 +151,13 @@
 #undef TKS_USE_NODEALLOCATOR
 #undef TKS_USE_CHARALLOCATOR
 #undef TKS_WIN32_USE_PERFCOUNTER
-// #define TKS_SKIP_API_THREAD       defined
+#if 1
+#undef TKS_MT
+#define YAC_FORCE_NO_TLS          defined
+#define TKS_SKIP_API_THREAD       defined
+#define TKS_SKIP_API_MUTEX        defined
+#define TKS_SKIP_API_CONDITION    defined
+#endif
 #define TKS_SKIP_API_PROCESS      defined
 #define TKS_SKIP_API_MAILBOX      defined
 #define TKS_SKIP_API_SHAREDBUFFER defined
