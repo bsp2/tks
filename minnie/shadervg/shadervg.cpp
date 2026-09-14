@@ -1524,7 +1524,7 @@ sUI YAC_CALL sdvg_CreateTexture2D(sUI _texfmt, sUI _w, sUI _h, const void *_data
          pixFormat = GL_RGB;
          type = GL_UNSIGNED_SHORT_5_6_5;
 #else
-         intFormat = GL_RGB5_1;
+         intFormat = GL_RGB5_A1;
          pixFormat = GL_BGRA;
          type      = GL_UNSIGNED_SHORT; //GL_5_6_5;
 #endif // SHADERVG_GLES
@@ -1645,7 +1645,7 @@ void YAC_CALL sdvg_UpdateTexture2D(sUI _texfmt, sUI _w, sUI _h, const void *_dat
          pixFormat = GL_RGB;
          type = GL_UNSIGNED_SHORT_5_6_5;
 #else
-         // intFormat = GL_RGB5_1;
+         // intFormat = GL_RGB5_A1;
          pixFormat = GL_BGRA;
          type      = GL_UNSIGNED_SHORT; //GL_5_6_5;
 #endif // SHADERVG_GLES
