@@ -95,7 +95,6 @@
 #ifdef YAC_MACOS
 #include <OpenGL/gl.h>
 #include <OpenGL/glext.h>
-//#include <OpenGL/gl3.h>
 #endif
 #endif // TKOPENGL_SKIP_GL_HEADERS
 
@@ -103,7 +102,7 @@
 #define GL_GLEXT_PROTOTYPES defined
 #include <EGL/egl.h>
 #ifdef DX_GLES_3
-#include <GLES3/gl3.h>
+#include <GLES3/gl32.h>
 #include <GLES3/gl2ext.h>
 #else
 #include <GLES2/gl2.h>
