@@ -98,6 +98,7 @@ The following preprocessor defines can be used for reducing the size of the (sta
 - `-DTKSAMPLER_SKIP_IPOL_VSR`       (always use LINEAR sample interpolation)
 - `-DTKSAMPLER_SKIP_IPOL_LANCZOS`   (always use LINEAR sample interpolation)
 - `-DTKSAMPLER_SKIP_AA_AI`          (skip anti-aliasing / anti-imaging filter)
+- `-DTKSAMPLER_SKIP_ALG`            (skip plugin routing algorithms. also a Makefile option)
 - `-DTKSAMPLER_SKIP_FILTER`         (skip filters)
 - `-DTKSAMPLER_SKIP_EXP_MM_OPS`     (disable *experimental* modmatrix ops)
 - `-DTKSAMPLER_SKIP_GLOBAL_REGS`    (disable global reg modmatrix sources + destinations)

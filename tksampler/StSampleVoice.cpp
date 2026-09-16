@@ -7269,7 +7269,7 @@ void StSampleVoice::renderBlockAdditive(sF32 *    _buf,
 #endif // TKSAMPLER_SKIP_FILTER
             processPluginsDef(YAC_FALSE/*bPreFilter*/, YAC_FALSE/*bMonoIn*/);
          }
-#ifndef LIBSYNERGY_BUILD
+#ifndef TKSAMPLER_SKIP_ALG
          else
          {
             sUI algInt = sample->plugin_alg_int + YAC_FALSE/*bMonoIn*/;
@@ -7278,7 +7278,7 @@ void StSampleVoice::renderBlockAdditive(sF32 *    _buf,
             else
                Dyac_host_printf("[!!!] invalid algInt=%u\n", algInt);
          }
-#endif // LIBSYNERGY_BUILD
+#endif // TKSAMPLER_SKIP_ALG
 
          if(0u != sample->plugin_mask_am)
             processPluginsAM(pluginAmp);
@@ -8240,7 +8240,7 @@ void StSampleVoice::renderBlockTimestretch(sF32 *    _buf,
 #endif // TKSAMPLER_SKIP_FILTER
             processPluginsDef(YAC_FALSE/*bPreFilter*/, YAC_FALSE/*bMonoIn*/);
          }
-#ifndef LIBSYNERGY_BUILD
+#ifndef TKSAMPLER_SKIP_ALG
          else
          {
             sUI algInt = sample->plugin_alg_int + YAC_FALSE/*bMonoIn*/;
@@ -8249,7 +8249,7 @@ void StSampleVoice::renderBlockTimestretch(sF32 *    _buf,
             else
                Dyac_host_printf("[!!!] invalid algInt=%u\n", algInt);
          }
-#endif // LIBSYNERGY_BUILD
+#endif // TKSAMPLER_SKIP_ALG
 
          if(0u != sample->plugin_mask_am)
             processPluginsAM(pluginAmp);
@@ -11053,7 +11053,7 @@ sUI StSampleVoice::renderFragmentGeneric(sF32 *&    buf,
             processPluginsDef(YAC_FALSE/*bPreFilter*/, (1u == numCh)/*bMonoIn*/);
 #endif // TKSAMPLER_SKIP_FILTER
          }
-#ifndef LIBSYNERGY_BUILD
+#ifndef TKSAMPLER_SKIP_ALG
          else
          {
             // (todo) properly handle/update mono hint
@@ -11067,7 +11067,7 @@ sUI StSampleVoice::renderFragmentGeneric(sF32 *&    buf,
             else
                Dyac_host_printf("[!!!] invalid algInt=%u\n", algInt);
          }
-#endif // LIBSYNERGY_BUILD
+#endif // TKSAMPLER_SKIP_ALG
 
          if(0u != sample->plugin_mask_am)
             processPluginsAM(pluginAmp);
