@@ -2,7 +2,7 @@
 // ---- file   : LineStripFlat32.h
 // ---- author : Bastian Spiegel <bs@tkscript.de>
 // ---- legal  : Distributed under terms of the MIT license (https://opensource.org/licenses/MIT)
-// ----          Copyright 2014-2025 by bsp
+// ----          Copyright 2014-2026 by bsp
 // ----
 // ----          Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 // ----          associated documentation files (the "Software"), to deal in the Software without restriction, including
@@ -32,6 +32,9 @@ class LineStripFlat32 : public ShaderVG_Shape {
       "uniform mat4  u_transform; \n"
       "uniform float u_stroke_w; \n"
       " \n"
+#ifndef SHADERVG_GL_VERTEX_ID
+      "ATTRIBUTE float a_vertex_id; \n"
+#endif // SHADERVG_GL_VERTEX_ID
       "ATTRIBUTE vec2  a_vertex; \n"
       "ATTRIBUTE vec2  a_vertex_n; \n"
       " \n"
@@ -45,7 +48,11 @@ class LineStripFlat32 : public ShaderVG_Shape {
       "  vec2 v2R = vec2(v2.x - vD.y, v2.y + vD.x); \n"
       "  vec2 v; \n"
       " \n"
+#ifndef SHADERVG_GL_VERTEX_ID
+      "  float index = a_vertex_id; \n"
+#else
       "  float index = float(gl_VertexID); \n"
+#endif // SHADERVG_GL_VERTEX_ID
       " \n"
       "  if(index > 4.9) { \n"
       "    v = v1R; \n"
@@ -113,6 +120,8 @@ class LineStripFlat32 : public ShaderVG_Shape {
       // (note) numTri = numSeg * 2
       //
 
+      Dsdvg_tracecallv("[trc] drawLineStripFlatVBO32: vboId=%u byteOffset=%u numPoints=%u\n", _vboId, _byteOffset, _numPoints);
+
       sdvg_BindVBO(_vboId);
 
       if(!bindShader())
@@ -122,6 +131,7 @@ class LineStripFlat32 : public ShaderVG_Shape {
       Dsdvg_uniform_4f(shape_u_color_stroke, _strokeR, _strokeG, _strokeB, _strokeA);
       Dsdvg_uniform_1f(shape_u_stroke_w, _strokeW);
 
+#ifdef SHADERVG_GL_VERTEX_ID
       Dsdvg_attrib_offset(shape_a_vertex,   2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/,  8/*stride*/, _byteOffset +  0);
       Dsdvg_attrib_offset(shape_a_vertex_n, 2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/,  8/*stride*/, _byteOffset +  8);
 
@@ -139,6 +149,22 @@ class LineStripFlat32 : public ShaderVG_Shape {
 
       Dsdvg_attrib_divisor_reset(shape_a_vertex);
       Dsdvg_attrib_divisor_reset(shape_a_vertex_n);
+#else
+      Dsdvg_attrib_offset(shape_a_vertex_id, 1/*size*/, GL_UNSIGNED_SHORT, GL_FALSE/*normalize*/, 10/*stride*/, _byteOffset +  0);
+      Dsdvg_attrib_offset(shape_a_vertex,    2/*size*/, GL_FLOAT,          GL_FALSE/*normalize*/, 10/*stride*/, _byteOffset +  2);
+      Dsdvg_attrib_offset(shape_a_vertex_n,  2/*size*/, GL_FLOAT,          GL_FALSE/*normalize*/, 10/*stride*/, _byteOffset + 62);
+
+      Dsdvg_attrib_enable(shape_a_vertex_id);
+      Dsdvg_attrib_enable(shape_a_vertex);
+      Dsdvg_attrib_enable(shape_a_vertex_n);
+
+      const sUI numInstances = (_numPoints - 1u);
+      Dsdvg_draw_triangles_vbo(0u, 6u * numInstances);
+
+      Dsdvg_attrib_disable(shape_a_vertex_n);
+      Dsdvg_attrib_disable(shape_a_vertex);
+      Dsdvg_attrib_disable(shape_a_vertex_id);
+#endif // SHADERVG_GL_VERTEX_ID
    }
 
 };

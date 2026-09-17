@@ -55,6 +55,9 @@ class ShaderVG_Shape {
    sSI shape_a_vertex;
    sSI shape_a_vertex_n;   // optional
    sSI shape_a_vertex_nn;  // optional
+#ifndef SHADERVG_GL_VERTEX_ID
+   sSI shape_a_vertex_id;  // GLES2
+#endif // SHADERVG_GL_VERTEX_ID
    sSI shape_a_pattern;    // optional
    sSI shape_a_pattern_n;  // optional
    sSI shape_a_index;      // optional

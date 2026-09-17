@@ -37,9 +37,12 @@ class LineStripFlatAA14_2PatternDecal : public ShaderVG_Shape {
       " \n"
       "ATTRIBUTE vec2  a_vertex; \n"
       "ATTRIBUTE vec2  a_vertex_n; \n"
+#ifndef SHADERVG_GL_VERTEX_ID
+      "ATTRIBUTE float a_vertex_id; \n"
+#endif // SHADERVG_GL_VERTEX_ID
       " \n"
       "VARYING_OUT vec2 v_vertex_mp; \n"
-      "flat VARYING_OUT vec2 v_plane_n; \n"
+      "VARYING_FLAT VARYING_OUT vec2 v_plane_n; \n"
       "VARYING_OUT vec2 v_paint_uv; \n"
       " \n"
       "void main(void) { \n"
@@ -53,7 +56,11 @@ class LineStripFlatAA14_2PatternDecal : public ShaderVG_Shape {
       "  vec2 v2R = vec2(v2.x - vD.y, v2.y + vD.x); \n"
       "  vec2 v; \n"
       " \n"
+#ifndef SHADERVG_GL_VERTEX_ID
+      "  float index = mod(float(a_vertex_id), 6.0); \n"
+#else
       "  float index = float(gl_VertexID); \n"
+#endif // SHADERVG_GL_VERTEX_ID
       " \n"
       "  if(index > 4.9) { \n"
       "    v = v1R; \n"
@@ -95,7 +102,7 @@ class LineStripFlatAA14_2PatternDecal : public ShaderVG_Shape {
       "uniform vec2      u_paint_ndir; \n"
       " \n"
       "VARYING_IN vec2 v_vertex_mp; \n"
-      "flat VARYING_IN vec2 v_plane_n; \n"
+      "VARYING_FLAT VARYING_IN vec2 v_plane_n; \n"
       "VARYING_IN vec2 v_paint_uv; \n"
       " \n"
       "void main(void) { \n"

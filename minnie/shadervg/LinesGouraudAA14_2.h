@@ -36,12 +36,15 @@ class LinesGouraudAA14_2 : public ShaderVG_Shape {
       "ATTRIBUTE vec4 a_color_n; \n"
       "ATTRIBUTE vec2 a_vertex; \n"
       "ATTRIBUTE vec2 a_vertex_n; \n"
+#ifndef SHADERVG_GL_VERTEX_ID
+      "ATTRIBUTE float a_vertex_id; \n"
+#endif // SHADERVG_GL_VERTEX_ID
       " \n"
       "VARYING_OUT vec2 v_vertex_mp_1; \n"
       "VARYING_OUT vec2 v_vertex_mp_2; \n"
-      "flat VARYING_OUT vec2 v_plane_n; \n"
-      "flat VARYING_OUT vec2 v_plane_n_1; \n"
-      "flat VARYING_OUT vec2 v_plane_n_2; \n"
+      "VARYING_FLAT VARYING_OUT vec2 v_plane_n; \n"
+      "VARYING_FLAT VARYING_OUT vec2 v_plane_n_1; \n"
+      "VARYING_FLAT VARYING_OUT vec2 v_plane_n_2; \n"
       "VARYING_OUT vec4 v_color; \n"
       " \n"
       "void main(void) { \n"
@@ -57,7 +60,11 @@ class LinesGouraudAA14_2 : public ShaderVG_Shape {
       "  vec2 vN2 = normalize(v2R - v2L); \n"
       "  vec2 v; \n"
       " \n"
-      "  float index = float(gl_VertexID % 6); \n"
+#ifndef SHADERVG_GL_VERTEX_ID
+      "  float index = mod(float(a_vertex_id), 6.0); \n"
+#else
+      "  float index = float(gl_VertexID); \n"
+#endif // SHADERVG_GL_VERTEX_ID
       " \n"
       "  if(index > 4.9) { \n"
       "    v = v1R; \n"
@@ -104,9 +111,9 @@ class LinesGouraudAA14_2 : public ShaderVG_Shape {
       " \n"
       "VARYING_IN vec2 v_vertex_mp_1; \n"
       "VARYING_IN vec2 v_vertex_mp_2; \n"
-      "flat VARYING_IN vec2 v_plane_n; \n"
-      "flat VARYING_IN vec2 v_plane_n_1; \n"
-      "flat VARYING_IN vec2 v_plane_n_2; \n"
+      "VARYING_FLAT VARYING_IN vec2 v_plane_n; \n"
+      "VARYING_FLAT VARYING_IN vec2 v_plane_n_1; \n"
+      "VARYING_FLAT VARYING_IN vec2 v_plane_n_2; \n"
       "VARYING_IN vec4 v_color; \n"
       " \n"
       "void main(void) { \n"
@@ -182,6 +189,7 @@ class LinesGouraudAA14_2 : public ShaderVG_Shape {
       }
 #endif // SHADERVG_DEBUG_FRAG
 
+#ifdef SHADERVG_GL_VERTEX_ID
       Dsdvg_attrib_offset(shape_a_color,    4/*size*/, GL_UNSIGNED_BYTE, GL_TRUE /*normalize*/, 16/*stride*/, _byteOffset +  0);
       Dsdvg_attrib_offset(shape_a_color_n,  4/*size*/, GL_UNSIGNED_BYTE, GL_TRUE /*normalize*/, 16/*stride*/, _byteOffset +  8);
       Dsdvg_attrib_offset(shape_a_vertex,   2/*size*/, GL_SHORT,         GL_FALSE/*normalize*/, 16/*stride*/, _byteOffset +  4);
@@ -209,6 +217,28 @@ class LinesGouraudAA14_2 : public ShaderVG_Shape {
       Dsdvg_attrib_divisor_reset(shape_a_color_n);
       Dsdvg_attrib_divisor_reset(shape_a_vertex);
       Dsdvg_attrib_divisor_reset(shape_a_vertex_n);
+#else
+      Dsdvg_attrib_offset(shape_a_vertex_id, 1/*size*/, GL_UNSIGNED_SHORT, GL_FALSE/*normalize*/, 10/*stride*/, _byteOffset +  0);
+      Dsdvg_attrib_offset(shape_a_color,     4/*size*/, GL_UNSIGNED_BYTE,  GL_TRUE /*normalize*/, 10/*stride*/, _byteOffset +  2);
+      Dsdvg_attrib_offset(shape_a_color_n,   4/*size*/, GL_UNSIGNED_BYTE,  GL_TRUE /*normalize*/, 10/*stride*/, _byteOffset + 62);
+      Dsdvg_attrib_offset(shape_a_vertex,    2/*size*/, GL_SHORT,          GL_FALSE/*normalize*/, 10/*stride*/, _byteOffset +  6);
+      Dsdvg_attrib_offset(shape_a_vertex_n,  2/*size*/, GL_SHORT,          GL_FALSE/*normalize*/, 10/*stride*/, _byteOffset + 66);
+
+      Dsdvg_attrib_enable(shape_a_vertex_id);
+      Dsdvg_attrib_enable(shape_a_color);
+      Dsdvg_attrib_enable(shape_a_color_n);
+      Dsdvg_attrib_enable(shape_a_vertex);
+      Dsdvg_attrib_enable(shape_a_vertex_n);
+
+      const sUI numInstances = (_numPoints / 2u);
+      Dsdvg_draw_triangles_vbo(0u, 6u * numInstances);
+
+      Dsdvg_attrib_disable(shape_a_color_n);
+      Dsdvg_attrib_disable(shape_a_color);
+      Dsdvg_attrib_disable(shape_a_vertex_n);
+      Dsdvg_attrib_disable(shape_a_vertex);
+      Dsdvg_attrib_disable(shape_a_vertex_id);
+#endif // SHADERVG_GL_VERTEX_ID
    }
 
 };

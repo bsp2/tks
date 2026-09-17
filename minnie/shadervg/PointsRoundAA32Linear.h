@@ -37,6 +37,9 @@ class PointsRoundAA32Linear : public ShaderVG_Shape {
       "uniform vec2  u_paint_start; \n"
       " \n"
       "ATTRIBUTE vec2 a_vertex; \n"
+#ifndef SHADERVG_GL_VERTEX_ID
+      "ATTRIBUTE float a_vertex_id; \n"
+#endif // SHADERVG_GL_VERTEX_ID
       " \n"
       "VARYING_OUT vec2 v_vertex_mp; \n"
       "VARYING_OUT vec2 v_paint_pos; \n"
@@ -48,7 +51,11 @@ class PointsRoundAA32Linear : public ShaderVG_Shape {
 #ifdef SHADERVG_UNIFORM_ARRAY
       "  v = vCtr + u_a_offset[int(gl_VertexID)]; \n"
 #else
+#ifndef SHADERVG_GL_VERTEX_ID
+      "  float index = mod(float(a_vertex_id), 6.0); \n"
+#else
       "  float index = float(gl_VertexID); \n"
+#endif // SHADERVG_GL_VERTEX_ID
       " \n"
       "  if(index > 4.9) { \n"
       "    v = vec2(vCtr.x - u_point_radius, vCtr.y + u_point_radius); \n"  // LB

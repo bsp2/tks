@@ -38,10 +38,13 @@ class PointsRoundPatternAA14_2 : public ShaderVG_Shape {
       "ATTRIBUTE vec2  a_vertex; \n"
       "ATTRIBUTE vec2  a_vertex_n; \n"
       "ATTRIBUTE float a_pattern; \n"
+#ifndef SHADERVG_GL_VERTEX_ID
+      "ATTRIBUTE float a_vertex_id; \n"
+#endif // SHADERVG_GL_VERTEX_ID
       " \n"
       "VARYING_OUT vec2 v_vertex_mp; \n"
-      "flat VARYING_OUT vec2 v_plane_n; \n"
-      "flat VARYING_OUT float v_pat; \n"
+      "VARYING_FLAT VARYING_OUT vec2 v_plane_n; \n"
+      "VARYING_FLAT VARYING_OUT float v_pat; \n"
       " \n"
       "void main(void) { \n"
       "  vec2 v1 = a_vertex * 0.25; \n"
@@ -53,7 +56,11 @@ class PointsRoundPatternAA14_2 : public ShaderVG_Shape {
 #ifdef SHADERVG_UNIFORM_ARRAY
       "  v = v1 + u_a_offset[int(gl_VertexID)]; \n"
 #else
+#ifndef SHADERVG_GL_VERTEX_ID
+      "  float index = mod(float(a_vertex_id), 6.0); \n"
+#else
       "  float index = float(gl_VertexID); \n"
+#endif // SHADERVG_GL_VERTEX_ID
       " \n"
       "  if(index > 4.9) { \n"
       "    v = vec2(v1.x - u_point_radius, v1.y + u_point_radius); \n"  // LB
@@ -93,8 +100,8 @@ class PointsRoundPatternAA14_2 : public ShaderVG_Shape {
       "uniform float u_line_pattern_off; \n"
       " \n"
       "VARYING_IN vec2 v_vertex_mp; \n"
-      "flat VARYING_IN vec2 v_plane_n; \n"
-      "flat VARYING_IN float v_pat; \n"
+      "VARYING_FLAT VARYING_IN vec2 v_plane_n; \n"
+      "VARYING_FLAT VARYING_IN float v_pat; \n"
       " \n"
       "void main(void) { \n"
       "  vec2 vd = abs(v_vertex_mp); \n"
@@ -180,6 +187,7 @@ class PointsRoundPatternAA14_2 : public ShaderVG_Shape {
          Dsdvg_uniform_1f(shape_u_line_pattern_scl, _linePatternScale);
          Dsdvg_uniform_1f(shape_u_line_pattern_off, _linePatternOffset);
 
+#ifdef SHADERVG_GL_VERTEX_ID
          Dsdvg_attrib_offset(shape_a_vertex,   2/*size*/, GL_SHORT, GL_FALSE/*normalize*/, 6/*stride*/, _byteOffset + 0);
          Dsdvg_attrib_offset(shape_a_vertex_n, 2/*size*/, GL_SHORT, GL_FALSE/*normalize*/, 6/*stride*/, _byteOffset + 6);
          Dsdvg_attrib_offset(shape_a_pattern,  1/*size*/, GL_SHORT, GL_FALSE/*normalize*/, 6/*stride*/, _byteOffset + 4);
@@ -202,6 +210,25 @@ class PointsRoundPatternAA14_2 : public ShaderVG_Shape {
          Dsdvg_attrib_divisor_reset(shape_a_vertex);
          Dsdvg_attrib_divisor_reset(shape_a_vertex_n);
          Dsdvg_attrib_divisor_reset(shape_a_pattern);
+#else
+         Dsdvg_attrib_offset(shape_a_vertex_id, 1/*size*/, GL_UNSIGNED_SHORT, GL_FALSE/*normalize*/, 8/*stride*/, _byteOffset +  0);
+         Dsdvg_attrib_offset(shape_a_vertex,    2/*size*/, GL_SHORT,          GL_FALSE/*normalize*/, 8/*stride*/, _byteOffset +  2);
+         Dsdvg_attrib_offset(shape_a_vertex_n,  2/*size*/, GL_SHORT,          GL_FALSE/*normalize*/, 8/*stride*/, _byteOffset + 10);
+         Dsdvg_attrib_offset(shape_a_pattern,   1/*size*/, GL_SHORT,          GL_FALSE/*normalize*/, 8/*stride*/, _byteOffset +  6);
+
+         Dsdvg_attrib_enable(shape_a_vertex_id);
+         Dsdvg_attrib_enable(shape_a_vertex);
+         Dsdvg_attrib_enable(shape_a_vertex_n);
+         Dsdvg_attrib_enable(shape_a_pattern);
+
+         const sUI numInstances = (_numVertices - 1u);
+         Dsdvg_draw_triangles_vbo(0u, 6u * numInstances);
+
+         Dsdvg_attrib_disable(shape_a_vertex);
+         Dsdvg_attrib_disable(shape_a_vertex_n);
+         Dsdvg_attrib_disable(shape_a_pattern);
+         Dsdvg_attrib_disable(shape_a_vertex_id);
+#endif // SHADERVG_GL_VERTEX_ID
       }
    }
 

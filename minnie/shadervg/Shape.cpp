@@ -59,6 +59,9 @@ ShaderVG_Shape::ShaderVG_Shape(void) {
    shape_a_vertex     = -1;
    shape_a_vertex_n   = -1;
    shape_a_vertex_nn  = -1;
+#ifndef SHADERVG_GL_VERTEX_ID
+   shape_a_vertex_id  = -1;
+#endif // SHADERVG_GL_VERTEX_ID
    shape_a_pattern    = -1;
    shape_a_pattern_n  = -1;
    shape_a_index      = -1;
@@ -568,6 +571,9 @@ sBool ShaderVG_Shape::queryLocationsAndValidate(void) {
    shape_a_vertex    = shape_shader.getAttribLocation("a_vertex");
    shape_a_vertex_n  = shape_shader.getAttribLocation("a_vertex_n");   // optional
    shape_a_vertex_nn = shape_shader.getAttribLocation("a_vertex_nn");  // optional
+#ifndef SHADERVG_GL_VERTEX_ID
+   shape_a_vertex_id = shape_shader.getAttribLocation("a_vertex_id");  // GLES2
+#endif // SHADERVG_GL_VERTEX_ID
    shape_a_pattern   = shape_shader.getAttribLocation("a_pattern");    // optional
    shape_a_pattern_n = shape_shader.getAttribLocation("a_pattern_n");  // optional
    shape_a_index     = shape_shader.getAttribLocation("a_index");      // optional
@@ -2284,6 +2290,7 @@ void ShaderVG_Shape::drawPointsRoundAAVBO32Paint(sUI              _vboId,
                        NULL/*mvpMatrixUnproject*/
                        );
 
+#ifdef SHADERVG_GL_VERTEX_ID
    Dsdvg_attrib_offset(shape_a_vertex, 2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/, 8/*stride*/, _byteOffset);
 
    Dsdvg_attrib_enable(shape_a_vertex);
@@ -2294,6 +2301,19 @@ void ShaderVG_Shape::drawPointsRoundAAVBO32Paint(sUI              _vboId,
 
    Dsdvg_attrib_disable(shape_a_vertex);
    Dsdvg_attrib_divisor_reset(shape_a_vertex);
+#else
+   Dsdvg_attrib_offset(shape_a_vertex_id, 1/*size*/, GL_UNSIGNED_SHORT, GL_FALSE/*normalize*/, 10/*stride*/, _byteOffset + 0);
+   Dsdvg_attrib_offset(shape_a_vertex,    2/*size*/, GL_FLOAT,          GL_FALSE/*normalize*/, 10/*stride*/, _byteOffset + 2);
+
+   Dsdvg_attrib_enable(shape_a_vertex_id);
+   Dsdvg_attrib_enable(shape_a_vertex);
+
+   const sUI numInstances = _numPoints;
+   Dsdvg_draw_triangles_vbo(0u, 6u * numInstances);
+
+   Dsdvg_attrib_disable(shape_a_vertex);
+   Dsdvg_attrib_disable(shape_a_vertex_id);
+#endif // SHADERVG_GL_VERTEX_ID
 }
 
 void ShaderVG_Shape::drawPointsRoundAAVBO14_2Paint(sUI              _vboId,
@@ -2351,6 +2371,7 @@ void ShaderVG_Shape::drawPointsRoundAAVBO14_2Paint(sUI              _vboId,
                        NULL/*mvpMatrixUnproject*/
                        );
 
+#ifdef SHADERVG_GL_VERTEX_ID
    Dsdvg_attrib_offset(shape_a_vertex, 2/*size*/, GL_SHORT, GL_FALSE/*normalize*/, 4/*stride*/, _byteOffset);
 
    Dsdvg_attrib_enable(shape_a_vertex);
@@ -2361,6 +2382,19 @@ void ShaderVG_Shape::drawPointsRoundAAVBO14_2Paint(sUI              _vboId,
 
    Dsdvg_attrib_disable(shape_a_vertex);
    Dsdvg_attrib_divisor_reset(shape_a_vertex);
+#else
+   Dsdvg_attrib_offset(shape_a_vertex_id, 1/*size*/, GL_UNSIGNED_SHORT, GL_FALSE/*normalize*/, 6/*stride*/, _byteOffset + 0);
+   Dsdvg_attrib_offset(shape_a_vertex,    2/*size*/, GL_SHORT,          GL_FALSE/*normalize*/, 6/*stride*/, _byteOffset + 2);
+
+   Dsdvg_attrib_enable(shape_a_vertex_id);
+   Dsdvg_attrib_enable(shape_a_vertex);
+
+   const sUI numInstances = _numPoints;
+   Dsdvg_draw_triangles_vbo(0u, 6u * numInstances);
+
+   Dsdvg_attrib_disable(shape_a_vertex);
+   Dsdvg_attrib_disable(shape_a_vertex_id);
+#endif // SHADERVG_GL_VERTEX_ID
 }
 
 #ifdef SHADERVG_UNIFORM_ARRAY

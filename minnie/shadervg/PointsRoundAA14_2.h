@@ -36,6 +36,9 @@ class PointsRoundAA14_2 : public ShaderVG_Shape {
 #endif // SHADERVG_UNIFORM_ARRAY
       " \n"
       "ATTRIBUTE vec2 a_vertex; \n"
+#ifndef SHADERVG_GL_VERTEX_ID
+      "ATTRIBUTE float a_vertex_id; \n"
+#endif // SHADERVG_GL_VERTEX_ID
       " \n"
       "VARYING_OUT vec2 v_vertex_mp; \n"
       " \n"
@@ -46,7 +49,11 @@ class PointsRoundAA14_2 : public ShaderVG_Shape {
 #ifdef SHADERVG_UNIFORM_ARRAY
       "  v = vCtr + u_a_offset[int(gl_VertexID)]; \n"
 #else
+#ifndef SHADERVG_GL_VERTEX_ID
+      "  float index = mod(float(a_vertex_id), 6.0); \n"
+#else
       "  float index = float(gl_VertexID); \n"
+#endif // SHADERVG_GL_VERTEX_ID
       " \n"
       "  if(index > 4.9) { \n"
       "    v = vec2(vCtr.x - u_point_radius, vCtr.y + u_point_radius); \n"  // LB
@@ -119,53 +126,5 @@ class PointsRoundAA14_2 : public ShaderVG_Shape {
       return YAC_FALSE;
    }
 
-#if 0
-   void drawPointsRoundAAVBO14_2(sUI              _vboId,
-                                 sUI              _byteOffset,
-                                 sUI              _numPoints,
-                                 Dsdvg_mat4_ref_t _mvpMatrix,
-                                 sF32             _strokeR, sF32 _strokeG, sF32 _strokeB, sF32 _strokeA,
-                                 sF32             _pointRadius,
-                                 sF32             _aaRange
-                                 ) {
-      //
-      // VBO vertex format (4 bytes per vertex):
-      //   +0 s14.2 x
-      //   +2 s14.2 y
-      //
-
-      Dprintf("xxx DrawPointsRoundAAVBO14_2: vboId=%u byteOffset=%u numPoints=%u pointRadius=%f aaRange=%f\n", _vboId, _byteOffset, _numPoints, _pointRadius, _aaRange);
-
-      sdvg_BindVBO(_vboId);
-
-      if(!bindShader())
-         return;
-
-      Dsdvg_uniform_mat4(shape_u_transform, _mvpMatrix);
-      Dsdvg_uniform_4f(shape_u_color_stroke, _strokeR, _strokeG, _strokeB, _strokeA);
-      Dsdvg_uniform_1f(shape_u_point_radius, _pointRadius);
-#ifdef SHADERVG_UNIFORM_ARRAY
-      updateUniformOffsetArray(_pointRadius);
-#endif // SHADERVG_UNIFORM_ARRAY
-      Dsdvg_uniform_1f(shape_u_aa_range, _aaRange);
-#ifdef SHADERVG_DEBUG_FRAG
-      if(-1 != shape_u_debug)
-      {
-         Dsdvg_uniform_1f(shape_u_debug, b_debug ? 1.0f : 0.0f);
-      }
-#endif // SHADERVG_DEBUG_FRAG
-
-      Dsdvg_attrib_offset(shape_a_vertex, 2/*size*/, GL_SHORT, GL_FALSE/*normalize*/, 4/*stride*/, _byteOffset);
-
-      Dsdvg_attrib_enable(shape_a_vertex);
-      Dsdvg_attrib_divisor(shape_a_vertex, 1);
-
-      const sUI numInstances = _numPoints;
-      Dsdvg_draw_triangles_instanced_vbo(6, numInstances);
-
-      Dsdvg_attrib_disable(shape_a_vertex);
-      Dsdvg_attrib_divisor_reset(shape_a_vertex);
-   }
-#endif // 0
-
+   // see also: Shape::drawPointsRoundAAVBO14_2Paint()
 };

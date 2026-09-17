@@ -32,14 +32,17 @@ class LinesFlatAA14_2 : public ShaderVG_Shape {
       "uniform mat4  u_transform; \n"
       "uniform float u_stroke_w; \n"
       " \n"
+#ifndef SHADERVG_GL_VERTEX_ID
+      "ATTRIBUTE float a_vertex_id; \n"
+#endif // SHADERVG_GL_VERTEX_ID
       "ATTRIBUTE vec2  a_vertex; \n"
       "ATTRIBUTE vec2  a_vertex_n; \n"
       " \n"
       "VARYING_OUT vec2 v_vertex_mp_1; \n"
       "VARYING_OUT vec2 v_vertex_mp_2; \n"
-      "flat VARYING_OUT vec2 v_plane_n; \n"
-      "flat VARYING_OUT vec2 v_plane_n_1; \n"
-      "flat VARYING_OUT vec2 v_plane_n_2; \n"
+      "VARYING_FLAT VARYING_OUT vec2 v_plane_n; \n"
+      "VARYING_FLAT VARYING_OUT vec2 v_plane_n_1; \n"
+      "VARYING_FLAT VARYING_OUT vec2 v_plane_n_2; \n"
       " \n"
       "void main(void) { \n"
       "  vec2 v1 = a_vertex * 0.25; \n"
@@ -54,7 +57,11 @@ class LinesFlatAA14_2 : public ShaderVG_Shape {
       "  vec2 vN2 = normalize(v2R - v2L); \n"
       "  vec2 v; \n"
       " \n"
+#ifndef SHADERVG_GL_VERTEX_ID
+      "  float index = a_vertex_id; \n"
+#else
       "  float index = float(gl_VertexID); \n"
+#endif // SHADERVG_GL_VERTEX_ID
       " \n"
       "  if(index > 4.9) { \n"
       "    v = v1R; \n"
@@ -95,9 +102,9 @@ class LinesFlatAA14_2 : public ShaderVG_Shape {
       " \n"
       "VARYING_IN vec2 v_vertex_mp_1; \n"
       "VARYING_IN vec2 v_vertex_mp_2; \n"
-      "flat VARYING_IN vec2 v_plane_n; \n"
-      "flat VARYING_IN vec2 v_plane_n_1; \n"
-      "flat VARYING_IN vec2 v_plane_n_2; \n"
+      "VARYING_FLAT VARYING_IN vec2 v_plane_n; \n"
+      "VARYING_FLAT VARYING_IN vec2 v_plane_n_1; \n"
+      "VARYING_FLAT VARYING_IN vec2 v_plane_n_2; \n"
       " \n"
       "void main(void) { \n"
       "  float d = abs(dot(v_vertex_mp_1, v_plane_n)); \n"
@@ -168,6 +175,9 @@ class LinesFlatAA14_2 : public ShaderVG_Shape {
       }
 #endif // SHADERVG_DEBUG_FRAG
 
+      const sUI numInstances = (_numPoints / 2u);
+
+#ifdef SHADERVG_GL_VERTEX_ID
       Dsdvg_attrib_offset(shape_a_vertex,   2/*size*/, GL_SHORT, GL_FALSE/*normalize*/, 8/*stride*/, _byteOffset + 0);
       Dsdvg_attrib_offset(shape_a_vertex_n, 2/*size*/, GL_SHORT, GL_FALSE/*normalize*/, 8/*stride*/, _byteOffset + 4);
 
@@ -177,7 +187,6 @@ class LinesFlatAA14_2 : public ShaderVG_Shape {
       Dsdvg_attrib_divisor(shape_a_vertex, 1);
       Dsdvg_attrib_divisor(shape_a_vertex_n, 1);
 
-      const sUI numInstances = (_numPoints / 2u);
       Dsdvg_draw_triangles_instanced_vbo(6, numInstances);
 
       Dsdvg_attrib_disable(shape_a_vertex_n);
@@ -185,6 +194,22 @@ class LinesFlatAA14_2 : public ShaderVG_Shape {
 
       Dsdvg_attrib_divisor_reset(shape_a_vertex);
       Dsdvg_attrib_divisor_reset(shape_a_vertex_n);
+#else
+      Dsdvg_attrib_offset(shape_a_vertex_id, 1/*size*/, GL_UNSIGNED_SHORT, GL_FALSE/*normalize*/, 6/*stride*/, _byteOffset +  0);
+      Dsdvg_attrib_offset(shape_a_vertex,    2/*size*/, GL_SHORT,          GL_FALSE/*normalize*/, 6/*stride*/, _byteOffset +  2);
+      Dsdvg_attrib_offset(shape_a_vertex_n,  2/*size*/, GL_SHORT,          GL_FALSE/*normalize*/, 6/*stride*/, _byteOffset + 38);
+
+      Dsdvg_attrib_enable(shape_a_vertex_id);
+      Dsdvg_attrib_enable(shape_a_vertex);
+      Dsdvg_attrib_enable(shape_a_vertex_n);
+
+      Dsdvg_draw_triangles_vbo(0u, numInstances * 6u);
+
+      Dsdvg_attrib_disable(shape_a_vertex_n);
+      Dsdvg_attrib_disable(shape_a_vertex);
+      Dsdvg_attrib_disable(shape_a_vertex_id);
+#endif // SHADERVG_GL_VERTEX_ID
+
    }
 
 };

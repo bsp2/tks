@@ -35,6 +35,9 @@ class PointsRoundGouraudAA32 : public ShaderVG_Shape {
       "uniform vec2  u_a_offset[6]; \n"
 #endif // SHADERVG_UNIFORM_ARRAY
       " \n"
+#ifndef SHADERVG_GL_VERTEX_ID
+      "ATTRIBUTE float a_vertex_id; \n"
+#endif // SHADERVG_GL_VERTEX_ID
       "ATTRIBUTE vec2 a_vertex; \n"
       "ATTRIBUTE vec4 a_color; \n"
       " \n"
@@ -48,7 +51,11 @@ class PointsRoundGouraudAA32 : public ShaderVG_Shape {
 #ifdef SHADERVG_UNIFORM_ARRAY
       "  v = vCtr + u_a_offset[int(gl_VertexID)]; \n"
 #else
+#ifndef SHADERVG_GL_VERTEX_ID
+      "  float index = a_vertex_id; \n"
+#else
       "  float index = float(gl_VertexID); \n"
+#endif // SHADERVG_GL_VERTEX_ID
       " \n"
       "  if(index > 4.9) { \n"
       "    v = vec2(vCtr.x - u_point_radius, vCtr.y + u_point_radius); \n"  // LB
@@ -161,6 +168,7 @@ class PointsRoundGouraudAA32 : public ShaderVG_Shape {
       }
 #endif // SHADERVG_DEBUG_FRAG
 
+#ifdef SHADERVG_GL_VERTEX_ID
       Dsdvg_attrib_offset(shape_a_color,    4/*size*/, GL_UNSIGNED_BYTE,  GL_TRUE/*normalize*/,  12/*stride*/, _byteOffset +  0);
       Dsdvg_attrib_offset(shape_a_vertex,   2/*size*/, GL_FLOAT,          GL_FALSE/*normalize*/, 12/*stride*/, _byteOffset +  4);
 
@@ -178,6 +186,25 @@ class PointsRoundGouraudAA32 : public ShaderVG_Shape {
 
       Dsdvg_attrib_divisor_reset(shape_a_color);
       Dsdvg_attrib_divisor_reset(shape_a_vertex);
+#else
+      Dsdvg_attrib_offset(shape_a_vertex_id, 1/*size*/, GL_UNSIGNED_SHORT, GL_FALSE/*normalize*/, 14/*stride*/, _byteOffset +  0);
+      Dsdvg_attrib_offset(shape_a_color,     4/*size*/, GL_UNSIGNED_BYTE,  GL_TRUE/*normalize*/,  14/*stride*/, _byteOffset +  2);
+      Dsdvg_attrib_offset(shape_a_vertex,    2/*size*/, GL_FLOAT,          GL_FALSE/*normalize*/, 14/*stride*/, _byteOffset +  6);
+
+      Dsdvg_attrib_enable(shape_a_vertex_id);
+      Dsdvg_attrib_enable(shape_a_color);
+      Dsdvg_attrib_enable(shape_a_vertex);
+
+      Dsdvg_attrib_divisor(shape_a_color, 1);
+      Dsdvg_attrib_divisor(shape_a_vertex, 1);
+
+      const sUI numInstances = _numPoints;
+      Dsdvg_draw_triangles_vbo(0u, 6u * numInstances);
+
+      Dsdvg_attrib_disable(shape_a_color);
+      Dsdvg_attrib_disable(shape_a_vertex);
+      Dsdvg_attrib_disable(shape_a_vertex_id);
+#endif // SHADERVG_GL_VERTEX_ID
    }
 
 };

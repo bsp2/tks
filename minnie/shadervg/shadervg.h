@@ -109,6 +109,13 @@ Initialize ShaderVG library
 */
 YF sBool YAC_CALL sdvg_Init (sBool _bGLCore);
 
+
+/* @function sdvg_GetEnableGLCore:boolean
+Check if GL core (GL4.x or GLES 3.x) is enabled
+*/
+YF sBool YAC_CALL sdvg_GetEnableGLCore (void);
+
+
 /* @function sdvg_Exit
 Shutdown ShaderVG library
 

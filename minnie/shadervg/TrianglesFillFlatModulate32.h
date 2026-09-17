@@ -34,7 +34,7 @@ class TrianglesFillFlatModulate32 : public ShaderVG_Shape {
       "ATTRIBUTE vec4 a_color; \n"
       "ATTRIBUTE vec2 a_vertex; \n"
       " \n"
-      "flat VARYING_OUT vec4 v_color; \n"
+      "VARYING_FLAT VARYING_OUT vec4 v_color; \n"
       " \n"
       "void main(void) { \n"
       "  v_color = a_color * u_color_fill; \n"
@@ -46,7 +46,7 @@ class TrianglesFillFlatModulate32 : public ShaderVG_Shape {
    const char *fs_src =
       "uniform vec4 u_color_fill; \n"
       " \n"
-      "flat VARYING_IN vec4 v_color; \n"
+      "VARYING_FLAT VARYING_IN vec4 v_color; \n"
       " \n"
       "void main(void) { \n"
       "  FRAGCOLOR = v_color; \n"
