@@ -34,6 +34,9 @@ $ ./test_mib
 $ ./test_shadervg
 ~~~
 
+## Makefile options
+`MINNIE_GLES2=y` disables GLES3 features (uniform arrays, instanced rendering, ..)
+
 ### Interactive keys
 ~~~
     UP : Next test
