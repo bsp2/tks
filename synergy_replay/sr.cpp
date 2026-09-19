@@ -744,7 +744,8 @@ public:
       range->_setEnableNoteOnFilter(ifs.s8());
       return YAC_TRUE;
    }
-#else
+#endif // TKSAMPLER_SKIP_RANGE_VEL|MOD
+
    sBool loadRangeVelMod_nop(SR_BufferStreamLE &ifs) {
       /*range->_setLo(*/ifs.s8()/* /127.0f)*/;
       /*range->_setHi(*/ifs.s8()/* /127.0f)*/;
@@ -753,7 +754,6 @@ public:
       /*range->_setEnableNoteOnFilter*/(ifs.s8());
       return YAC_TRUE;
    }
-#endif // TKSAMPLER_SKIP_RANGE_VEL|MOD
 
    sBool loadEnv(SR_BufferStreamLE &ifs, StEnvelope *env, sU8 ver) {
       if(ver >= 2u)
