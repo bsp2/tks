@@ -409,6 +409,11 @@ ifeq ($(RELEASE),y)
 #OPTFLAGS= -Ox -Ot
 OPTFLAGS= -O2 -Oy
 #OPTFLAGS += -arch:AVX2
+ifeq ($(OPT_LTO),y)
+CFLAGS+= -GL
+CPPFLAGS+= -GL
+LDFLAGS+= -LTCG
+endif
 else ifeq ($(DEBUG),y)
 OPTFLAGS_DEBUG= -Od -D_DEBUG
 OPTFLAGS=$(OPTFLAGS_DEBUG)
