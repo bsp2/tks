@@ -109,15 +109,11 @@ A detailed changelog is available [here](CHANGELOG.txt).
   ].table_noborder
 
 >>>mac_quarantine
-- after copying the app to the `/Applications` folder, it must be openend via context menu "open" instead of double-clicking it (first run only).
-- alternatively, the download-quarantine attribute can be removed from the app using the `terminal` app:
-~~~~
-% xattr -r -d com.apple.quarantine /Applications/Synergy\_arm64.app
-~~~~
+after copying the app to the `/Applications` folder and opening it (which will fail due to the macOS certificate check), go to `System Settings` => `Privacy & Security` and click `Allow anyway` (first run only).
 <<<
 note: $(buf!mac_quarantine) 
 
-note: tested on arm64 macOS 26.4
+note: tested on arm64 macOS 26 + 27
 
 
 ## Windows
@@ -125,6 +121,7 @@ note: tested on arm64 macOS 26.4
   |cols=140,40
   |:File                                                                                       |:Description
   | [synergy-miditracker-26May2026c-win64.7z](files/synergy-miditracker-26May2026c-win64.7z)   | Latest (stable) Release
+  | [synergy-miditracker-19Sep2026-win64-preview.7z](files/synergy-miditracker-19Sep2026-win64-preview.7z) | Latest Preview Release
   ].table_noborder
 
 important: when upgrading to a new release, backup your `synergy_config_local.tks` and then replace the default local config
