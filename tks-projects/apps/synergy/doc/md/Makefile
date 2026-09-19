@@ -38,4 +38,4 @@ replay:
 # cygwin
 .PHONY: thumbs
 thumbs:
-	(cd screenshots/thumb; sh create_thumbs.sh)
+	(cd screenshots/thumb; bash create_thumbs.sh)

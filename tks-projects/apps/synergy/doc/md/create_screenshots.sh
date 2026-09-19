@@ -7,7 +7,7 @@ for d in screenshots/*.png; do
     echo -n ")\$(var:alt=Screenshot)\$(inc?img.html)" >>screenshots.md
     echo "idx=$IDX"
     IDX=$((IDX+1))
-    IDX=$((IDX%6))
+    IDX=$((IDX%7))
     if [ $IDX -eq 0 ]; then
         echo "" >>screenshots.md
     fi
