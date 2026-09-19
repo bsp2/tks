@@ -56,6 +56,9 @@
 #ifdef DEMO_3
 #define SONGNAME "demo_3_fm-a"
 #define CYCLE_CALC_FXN cycle_calc_waveform_demo_3_fm_a
+#elif defined(DEMO_SIMPLE)
+#define SONGNAME "simple"
+#define CYCLE_CALC_FXN cycle_calc_waveform_simple
 #else
 #define SONGNAME "demo_2-r-sr"
 #define CYCLE_CALC_FXN cycle_calc_waveform_demo_2_r_sr
@@ -129,6 +132,9 @@ extern st_plugin_info_t *fm_stack_init_loresh (void);
 extern st_plugin_info_t *fm_stack_init_medres (void);
 extern st_plugin_info_t *fm_stack_init_medresh (void);
 extern st_plugin_info_t *fm_stack_init_hires (void);
+
+extern st_plugin_info_t *bitflipper_init (void);
+extern st_plugin_info_t *tuned_fb_init (void);
 
 // ------------------------------------ profiling
 #ifdef SR_PROFILE
@@ -297,7 +303,17 @@ static void loc_batch_render(sr_proj_t proj, sr_song_t song) {
 
 // ------------------------------------ loc_register_plugins
 #ifdef SR_FX
-#ifndef DEMO_3
+#ifdef DEMO_3
+static void loc_register_plugins_demo_3(void) {
+   sr_register_plugin(&fm_stack_init_medres);
+}
+#elif defined(DEMO_SIMPLE)
+static void loc_register_plugins_demo_simple(void) {
+   sr_register_plugin(&gain_init);
+   sr_register_plugin(&bitflipper_init);
+   sr_register_plugin(&tuned_fb_init);
+}
+#else
 static void loc_register_plugins_demo_2(void) {
    sr_register_plugin(&amp_init);
    sr_register_plugin(&biquad_lpf_1_init);
@@ -327,10 +343,6 @@ static void loc_register_plugins_demo_2(void) {
    sr_register_plugin(&fm_stack_init_medresh);
    sr_register_plugin(&fm_stack_init_hires);
 }
-#else
-static void loc_register_plugins_demo_3(void) {
-   sr_register_plugin(&fm_stack_init_medres);
-}
 #endif // DEMO_3
 #endif // SR_FX
 
@@ -351,6 +363,8 @@ int main(int argc, char**argv) {
 #ifdef SR_FX
 #ifdef DEMO_3
    loc_register_plugins_demo_3();
+#elif defined(DEMO_SIMPLE)
+   loc_register_plugins_demo_simple();
 #else
    loc_register_plugins_demo_2();
 #endif // DEMO_3
