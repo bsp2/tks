@@ -55,6 +55,7 @@ _MinnieDrawable::_MinnieDrawable(void) {
    buf_gl = NULL;
    gl_buf_id = 0u;
    b_gl_buf_update_pending = YAC_FALSE;
+   b_debug = YAC_FALSE;
 
    buf_draw = NULL;
    c32_bg_color = 0u;
