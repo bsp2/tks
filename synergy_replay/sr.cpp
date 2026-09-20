@@ -1150,7 +1150,7 @@ public:
          pluginDef->info_oo.createSharedInstance(&r);
          if( (r.type >= YAC_TYPE_OBJECT) && (NULL != r.value.object_val) )
          {
-            Dtrace("[...] SR_Sample::newVoicePluginById: added plugin id=\"%s\"\n", _id);
+            Dplugin("[...] SR_Sample::newVoicePluginById: added plugin id=\"%s\"\n", _id);
             r.deleteme = YAC_FALSE;  // unlink
             shared = (StPluginShared*)r.value.object_val;
          }

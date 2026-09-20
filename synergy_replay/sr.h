@@ -77,6 +77,8 @@ extern void sr_printf(const char *_fmt, ...);
 #endif // SR_INFO
 #define Dsong    if(1) ; else Dprintf  // SMF/.mid loader debugging
 
+#define Dplugin  if(0) ; else Dprintf
+
 // verbose .syn loader debugging:
 #ifdef SR_TRACE
 #define Dtrace       if(0) ; else Dprintf
@@ -112,6 +114,7 @@ extern void sr_printf(const char *_fmt, ...);  // stub
 #define Dtrace      if(1) ; else Dprintf
 #define Dsongtrace  if(1) ; else Dprintf
 #define Dsong       if(1) ; else Dprintf
+#define Dplugin     if(1) ; else Dprintf
 #define Dreplay     if(1) ; else Dprintf
 #define Dreplay2    if(1) ; else Dprintf
 #define Ddtor       if(1) ; else Dprintf
