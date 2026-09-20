@@ -133,8 +133,10 @@ m         = $(MAKE) -f makefile.macos
 #
 # Number of parallel targets to make
 #
-NUMJOBS=`sysctl -n hw.ncpu`
-#NUMJOBS=4
+ifeq ($(NUM_JOBS),)
+NUM_JOBS=`sysctl -n hw.ncpu`
+#NUM_JOBS=4
+endif
 
 
 #

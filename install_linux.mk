@@ -136,13 +136,13 @@ m         = $(MAKE) -f makefile.linux
 #
 # Number of parallel targets to make
 #
+ifeq ($(NUM_JOBS),)
 ifeq ($(BUILD_RASPBIAN),y)
-  NUMJOBS=2
+  NUM_JOBS=4
 else
-  #NUMJOBS=`grep -c "BogoMIPS" /proc/cpuinfo`
-  NUMJOBS=`grep -c "vendor_id" /proc/cpuinfo`
+  NUM_JOBS=`grep -c "processor" /proc/cpuinfo`
 endif
-
+endif # NUM_JOBS
 
 #
 # Target architecture
