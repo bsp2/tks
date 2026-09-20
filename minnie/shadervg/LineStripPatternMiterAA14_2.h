@@ -448,10 +448,10 @@ class LineStripPatternMiterAA14_2 : public ShaderVG_Shape {
       "    a = 1.0 - smoothstep(u_stroke_w - u_aa_range, u_stroke_w, d); \n"
       "  } \n"
       "  float patA = TEXTURE2D(u_sampler, v_uv).TEX_ALPHA; \n"
-      "  FRAGCOLOR = vec4(u_color_stroke.rgb, u_color_stroke.a * a * patA); \n"
+      "  OUT_FRAGCOLOR = vec4(u_color_stroke.rgb, u_color_stroke.a * a * patA); \n"
 #ifdef SHADERVG_DEBUG_FRAG
       "  if(u_debug > 0.0) { \n"
-      "    FRAGCOLOR = vec4(u_color_stroke.r, a, u_color_stroke.b, u_color_stroke.a); \n"
+      "    OUT_FRAGCOLOR = vec4(u_color_stroke.r, a, u_color_stroke.b, u_color_stroke.a); \n"
       "  } \n"
 #endif // SHADERVG_DEBUG_FRAG
       "} \n"

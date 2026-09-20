@@ -71,7 +71,7 @@ class PolygonFillFlat14_2Conic : public ShaderVG_Shape {
       "  if(a >= 1.0) a -= 1.0; \n"   // (note) use texture repeat ?
       "  else if(a < 0.0) a += 1.0; \n"
       "  vec4 c = TEXTURE2D(u_paint_tex, vec2(a, 0.0)); \n"
-      "  FRAGCOLOR = c * u_color_fill; \n"
+      "  OUT_FRAGCOLOR = c * u_color_fill; \n"
       "} \n"
       ;
 

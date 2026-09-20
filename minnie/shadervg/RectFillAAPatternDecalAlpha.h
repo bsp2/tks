@@ -84,9 +84,9 @@ class RectFillAAPatternDecalAlpha : public ShaderVG_Shape {
       "  uv.x = v_paint_uv.x * u_paint_ndir.x - v_paint_uv.y * u_paint_ndir.y; \n"
       "  uv.y = v_paint_uv.x * u_paint_ndir.y + v_paint_uv.y * u_paint_ndir.x; \n"
       "  float ap = TEXTURE2D(u_paint_tex, uv).TEX_ALPHA; \n"
-      "  FRAGCOLOR = vec4(mix(color.rgb, u_color_stroke.rgb, u_color_stroke.a * ap * u_decal_alpha), color.a * a); \n"
+      "  OUT_FRAGCOLOR = vec4(mix(color.rgb, u_color_stroke.rgb, u_color_stroke.a * ap * u_decal_alpha), color.a * a); \n"
       "  if(u_debug > 0.0) \n"
-      "    FRAGCOLOR = vec4(1,0,0,1); \n"
+      "    OUT_FRAGCOLOR = vec4(1,0,0,1); \n"
       "} \n"
       ;
 

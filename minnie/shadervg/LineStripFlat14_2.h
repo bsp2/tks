@@ -82,7 +82,7 @@ class LineStripFlat14_2 : public ShaderVG_Shape {
       "uniform vec4 u_color_stroke; \n"
       " \n"
       "void main(void) { \n"
-      "  FRAGCOLOR = u_color_stroke; \n"
+      "  OUT_FRAGCOLOR = u_color_stroke; \n"
       "} \n"
       ;
 

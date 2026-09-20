@@ -115,10 +115,10 @@ class LinesFlatAA32 : public ShaderVG_Shape {
       "  a *= a1; \n"
       "  float a2 = smoothstep(0.0, u_aa_range, d2); \n"
       "  a *= a2; \n"
-      "  FRAGCOLOR = vec4(u_color_stroke.rgb, u_color_stroke.a * a); \n"
+      "  OUT_FRAGCOLOR = vec4(u_color_stroke.rgb, u_color_stroke.a * a); \n"
 #ifdef SHADERVG_DEBUG_FRAG
       "  if(u_debug > 0.0) { \n"
-      "    FRAGCOLOR = vec4(u_color_stroke.r, a, u_color_stroke.b, u_color_stroke.a); \n"
+      "    OUT_FRAGCOLOR = vec4(u_color_stroke.r, a, u_color_stroke.b, u_color_stroke.a); \n"
       "  } \n"
 #endif // SHADERVG_DEBUG_FRAG
       "} \n"
@@ -205,7 +205,7 @@ class LinesFlatAA32 : public ShaderVG_Shape {
       Dsdvg_attrib_enable(shape_a_vertex);
       Dsdvg_attrib_enable(shape_a_vertex_n);
 
-      Dsdvg_draw_triangles_vbo(0u, numInstances * 6u);
+      Dsdvg_draw_triangles_vbo(0u, numInstances * 12u - 6u);
 
       Dsdvg_attrib_disable(shape_a_vertex_n);
       Dsdvg_attrib_disable(shape_a_vertex);

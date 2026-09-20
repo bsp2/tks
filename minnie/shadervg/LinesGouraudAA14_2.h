@@ -61,11 +61,18 @@ class LinesGouraudAA14_2 : public ShaderVG_Shape {
       "  vec2 v; \n"
       " \n"
 #ifndef SHADERVG_GL_VERTEX_ID
-      "  float index = mod(float(a_vertex_id), 6.0); \n"
+      "  float index = a_vertex_id; \n"
 #else
       "  float index = float(gl_VertexID); \n"
 #endif // SHADERVG_GL_VERTEX_ID
       " \n"
+#ifndef SHADERVG_GL_VERTEX_ID
+      "  if(index > 5.9) { \n"
+      "    v = vec2(0,0); \n"
+      "    v_color = a_color; \n"
+      "  } \n"
+      "  else \n"
+#endif // SHADERVG_GL_VERTEX_ID
       "  if(index > 4.9) { \n"
       "    v = v1R; \n"
       "    v_color = a_color; \n"
@@ -125,10 +132,10 @@ class LinesGouraudAA14_2 : public ShaderVG_Shape {
       "  a *= a1; \n"
       "  float a2 = smoothstep(0.0, u_aa_range, d2); \n"
       "  a *= a2; \n"
-      "  FRAGCOLOR = vec4(u_color_stroke.rgb*v_color.rgb, u_color_stroke.a * v_color.a * a); \n"
+      "  OUT_FRAGCOLOR = vec4(u_color_stroke.rgb*v_color.rgb, u_color_stroke.a * v_color.a * a); \n"
 #ifdef SHADERVG_DEBUG_FRAG
       "  if(u_debug > 0.0) { \n"
-      "    FRAGCOLOR = vec4(u_color_stroke.r, a, u_color_stroke.b, u_color_stroke.a); \n"
+      "    OUT_FRAGCOLOR = vec4(u_color_stroke.r, a, u_color_stroke.b, u_color_stroke.a); \n"
       "  } \n"
 #endif // SHADERVG_DEBUG_FRAG
       "} \n"
@@ -231,7 +238,7 @@ class LinesGouraudAA14_2 : public ShaderVG_Shape {
       Dsdvg_attrib_enable(shape_a_vertex_n);
 
       const sUI numInstances = (_numPoints / 2u);
-      Dsdvg_draw_triangles_vbo(0u, 6u * numInstances);
+      Dsdvg_draw_triangles_vbo(0u, 12u * numInstances - 6u);
 
       Dsdvg_attrib_disable(shape_a_color_n);
       Dsdvg_attrib_disable(shape_a_color);

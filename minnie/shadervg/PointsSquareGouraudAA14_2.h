@@ -57,10 +57,7 @@ class PointsSquareGouraudAA14_2 : public ShaderVG_Shape {
       "  float index = float(gl_VertexID); \n"
 #endif // SHADERVG_GL_VERTEX_ID
       " \n"
-      "  if(index > 5.9) { \n"
-      "    v = vec2(0,0); \n"
-      "  } \n"
-      "  else if(index > 4.9) { \n"
+      "  if(index > 4.9) { \n"
       "    v = vec2(vCtr.x - u_point_radius, vCtr.y + u_point_radius); \n"  // LB
       "  } \n"
       "  else if(index > 3.9) { \n"
@@ -104,10 +101,10 @@ class PointsSquareGouraudAA14_2 : public ShaderVG_Shape {
       "  float d = length(max(vd, 0.0)) + min(max(vd.x, vd.y), 0.0); \n"
       // aa
       "  float a = 1.0 - smoothstep(0.0, u_aa_range, d); \n"
-      "  FRAGCOLOR = vec4(u_color_stroke.rgb * v_color.rgb, u_color_stroke.a * v_color.a * a); \n"
+      "  OUT_FRAGCOLOR = vec4(u_color_stroke.rgb * v_color.rgb, u_color_stroke.a * v_color.a * a); \n"
 #ifdef SHADERVG_DEBUG_FRAG
       "  if(u_debug > 0.0) { \n"
-      "    FRAGCOLOR = vec4(1.0, a, a, 1.0); \n"
+      "    OUT_FRAGCOLOR = vec4(1.0, a, a, 1.0); \n"
       "  } \n"
 #endif // SHADERVG_DEBUG_FRAG
       "} \n"

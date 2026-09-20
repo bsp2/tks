@@ -54,7 +54,7 @@ class TrianglesTexUVGouraud14_2Alpha : public ShaderVG_Shape {
       "VARYING_IN vec4 v_color; \n"
       " \n"
       "void main() { \n"
-      "  FRAGCOLOR = vec4(u_color_fill.rgb, TEXTURE2D(u_sampler, v_uv).TEX_ALPHA * u_color_fill.a) * v_color; \n"
+      "  OUT_FRAGCOLOR = vec4(u_color_fill.rgb, TEXTURE2D(u_sampler, v_uv).TEX_ALPHA * u_color_fill.a) * v_color; \n"
       "} \n"
       ;
 

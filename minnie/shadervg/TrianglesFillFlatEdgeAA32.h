@@ -81,7 +81,7 @@ class TrianglesFillFlatEdgeAA32 : public ShaderVG_Shape {
       "         ) \n"
       "     ) \n"
       "     ; \n"
-      "  FRAGCOLOR = vec4(u_color_fill.rgb, u_color_fill.a*min(1.0,a)); \n"
+      "  OUT_FRAGCOLOR = vec4(u_color_fill.rgb, u_color_fill.a*min(1.0,a)); \n"
       "} \n"
       ;
 

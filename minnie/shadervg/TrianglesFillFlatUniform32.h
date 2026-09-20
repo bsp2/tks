@@ -43,7 +43,7 @@ class TrianglesFillFlatUniform32 : public ShaderVG_Shape {
       "uniform vec4 u_color_fill; \n"
       " \n"
       "void main(void) { \n"
-      "  FRAGCOLOR = u_color_fill; \n"
+      "  OUT_FRAGCOLOR = u_color_fill; \n"
       "} \n"
       ;
 

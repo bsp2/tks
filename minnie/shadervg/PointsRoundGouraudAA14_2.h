@@ -100,10 +100,10 @@ class PointsRoundGouraudAA14_2 : public ShaderVG_Shape {
       "  float d = length(vd); \n"
       // aa
       "  float a = 1.0 - smoothstep(u_point_radius - u_aa_range, u_point_radius, d); \n"
-      "  FRAGCOLOR = vec4(u_color_stroke.rgb * v_color.rgb, u_color_stroke.a * v_color.a * a); \n"
+      "  OUT_FRAGCOLOR = vec4(u_color_stroke.rgb * v_color.rgb, u_color_stroke.a * v_color.a * a); \n"
 #ifdef SHADERVG_DEBUG_FRAG
       "  if(u_debug > 0.0) { \n"
-      "    FRAGCOLOR = vec4(1.0, a, a, 1.0); \n"
+      "    OUT_FRAGCOLOR = vec4(1.0, a, a, 1.0); \n"
       "  } \n"
 #endif // SHADERVG_DEBUG_FRAG
       "} \n"

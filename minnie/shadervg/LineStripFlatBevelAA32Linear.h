@@ -213,10 +213,10 @@ class LineStripFlatBevelAA32Linear : public ShaderVG_Shape {
       "  } \n"
       "  float dp = dot(v_paint_pos, u_paint_ndir) * u_paint_ob_len; \n"
       "  vec4 cp = TEXTURE2D(u_paint_tex, vec2(dp, 0.0)); \n"
-      "  FRAGCOLOR = vec4(u_color_stroke.rgb * cp.rgb, u_color_stroke.a * cp.a * a); \n"
+      "  OUT_FRAGCOLOR = vec4(u_color_stroke.rgb * cp.rgb, u_color_stroke.a * cp.a * a); \n"
 #ifdef SHADERVG_DEBUG_FRAG
       "  if(u_debug > 0.0) { \n"
-      "    FRAGCOLOR = vec4(u_color_stroke.r, a, u_color_stroke.b, u_color_stroke.a); \n"
+      "    OUT_FRAGCOLOR = vec4(u_color_stroke.r, a, u_color_stroke.b, u_color_stroke.a); \n"
       "  } \n"
 #endif // SHADERVG_DEBUG_FRAG
       "} \n"

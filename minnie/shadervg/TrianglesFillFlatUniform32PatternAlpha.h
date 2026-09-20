@@ -56,7 +56,7 @@ class TrianglesFillFlatUniform32PatternAlpha : public ShaderVG_Shape {
       "  uv.x = v_paint_uv.x * u_paint_ndir.x - v_paint_uv.y * u_paint_ndir.y; \n"
       "  uv.y = v_paint_uv.x * u_paint_ndir.y + v_paint_uv.y * u_paint_ndir.x; \n"
       "  float a = TEXTURE2D(u_paint_tex, uv).TEX_ALPHA; \n"
-      "  FRAGCOLOR = vec4(u_color_fill.rgb, u_color_fill.a * a); \n"
+      "  OUT_FRAGCOLOR = vec4(u_color_fill.rgb, u_color_fill.a * a); \n"
       "} \n"
       ;
 

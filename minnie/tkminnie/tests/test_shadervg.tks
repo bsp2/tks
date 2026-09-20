@@ -37,6 +37,7 @@ use tkmath;
 namespace default;
 
 boolean b_glcore = 1;
+boolean b_glvertexid = 1;  // 1=GL3.x/GL4.x/GLES3.x, 0=GL2.x/GLES2.x (updated during init)
 
 putenv("TKSDL_GLERROR=1");
 
@@ -570,7 +571,7 @@ StringArray mode_names = [/*   0 */ "rect_fill_aa",
                           /* 236 */ "begin_line_strip_miter_aa_conic_closed",
                           ];
 
-Buffer buf_vbo; buf_vbo.size = 16384;
+Buffer buf_vbo; buf_vbo.size = sdvg_HaveGLVertexID() ? 16384 : 131072;
 int    buf_vbo_id;
 
 int tex_id;
@@ -697,6 +698,31 @@ function TestLineStripFlat_1(boolean _bAA) {
    // trace "xxx TestLineStripFlat"+(_bAA?"EdgeAA":"")+"_1: buf_vbo.offset="+buf_vbo.offset;
 }
 
+function TestLineStripFlat_1_GLES2(boolean _bAA) {
+   // (note) use sdvg_BeginLineStrip*() to avoid special case handling for GLES2
+   buf_vbo.offset = 0;
+   int idx = 0;
+   loop(6)
+   {
+      buf_vbo.i16 = idx++;
+      buf_vbo.i16 = 4 * 100.0;
+      buf_vbo.i16 = 4 * 360.0;
+   }
+   idx = 0;
+   loop(6)
+   {
+      buf_vbo.i16 = idx++;
+      buf_vbo.i16 = 4 * 540.0;
+      buf_vbo.i16 = 4 * 120.0;
+   }
+   sdvg_UpdateVBO(buf_vbo_id, 0, buf_vbo.offset, buf_vbo);
+   if(_bAA)
+      sdvg_DrawLineStripFlatAAVBO14_2(buf_vbo_id, 0/*offset*/, 2/*numPoints*/);
+   else
+      sdvg_DrawLineStripFlatVBO14_2(buf_vbo_id, 0/*offset*/, 2/*numPoints*/);
+   // trace "xxx TestLineStripFlat"+(_bAA?"EdgeAA":"")+"_1: buf_vbo.offset="+buf_vbo.offset;
+}
+
 // ---------------------------------------------------------------------------- TestLineStripFlat_2 (14+16)
 function TestLineStripFlat_2(boolean _bAA) {
    int numSeg = 64;
@@ -722,6 +748,36 @@ function TestLineStripFlat_2(boolean _bAA) {
    // trace "xxx TestLineStripFlat_2: buf_vbo.offset="+buf_vbo.offset;
 }
 
+function TestLineStripFlat_2_GLES2(boolean _bAA) {
+   // (note) use sdvg_BeginLineStrip*() to avoid special case handling for GLES2
+   int numSeg = 64;
+   int numPoints = numSeg + 1;
+   float w = (2PI / numSeg);
+   float a = ang_x;
+   float x = 100.0;
+   float xStep = 440.0 / numSeg;
+   buf_vbo.offset = 0;
+   loop(numPoints)
+   {
+      float y = sin(a) * 120.0 + 240.0;
+      int idx = 0;
+      loop(6)
+      {
+         buf_vbo.i16 = idx++;
+         buf_vbo.i16 = 4 * x;
+         buf_vbo.i16 = 4 * y;
+      }
+      a += w;
+      x += xStep;
+   }
+   sdvg_UpdateVBO(buf_vbo_id, 0, buf_vbo.offset, buf_vbo);
+   if(_bAA)
+      sdvg_DrawLineStripFlatAAVBO14_2(buf_vbo_id, 0, numPoints);
+   else
+      sdvg_DrawLineStripFlatVBO14_2(buf_vbo_id, 0, numPoints);
+   // trace "xxx TestLineStripFlat_2: buf_vbo.offset="+buf_vbo.offset;
+}
+
 // ---------------------------------------------------------------------------- TestLineStripFlatBevel (17+18)
 function TestLineStripFlatBevel(boolean _bAA) {
    int numSeg = 64;
@@ -736,6 +792,37 @@ function TestLineStripFlatBevel(boolean _bAA) {
       float y = sin(a) * 120.0 + 240.0;
       buf_vbo.i16 = 4 * x;
       buf_vbo.i16 = 4 * y;
+      a += w;
+      x += xStep;
+   }
+   sdvg_UpdateVBO(buf_vbo_id, 0, buf_vbo.offset, buf_vbo);
+   if(_bAA)
+      sdvg_DrawLineStripFlatBevelAAVBO14_2(buf_vbo_id, 0, numPoints, true/*bSkipLastLineJoint*/);
+   else
+      sdvg_DrawLineStripFlatBevelVBO14_2(buf_vbo_id, 0, numPoints, true/*bSkipLastLineJoint*/);
+}
+
+function TestLineStripFlatBevel_GLES2(boolean _bAA) {
+   // (note) line joints are currently not supported in GLES2 build (shader requires gl_InstanceID)
+   // (note) => will look the same as TestLineStripFlat_GLES2()
+   // (note) use sdvg_BeginLineStrip*() to avoid special case handling for GLES2
+   int numSeg = 64;
+   int numPoints = numSeg + 1;
+   float w = (2PI / numSeg);
+   float a = ang_x;
+   float x = 100.0;
+   float xStep = 440.0 / numSeg;
+   buf_vbo.offset = 0;
+   loop(numPoints)
+   {
+      float y = sin(a) * 120.0 + 240.0;
+      int idx = 0;
+      loop(6)
+      {
+         buf_vbo.i16 = idx++;
+         buf_vbo.i16 = 4 * x;
+         buf_vbo.i16 = 4 * y;
+      }
       a += w;
       x += xStep;
    }
@@ -792,7 +879,7 @@ function LazyCreateCustomShader_1() {
          // "   vec3 c = vec3(cr2, cg2, cb2); \n"
 
          // "   vec3 c = vec3((cr1+cr2)*0.5, (cg1+cg2)*0.5, (cb1+cb2)*0.5); \n"
-         "   FRAGCOLOR = vec4(u_color_fill.rgb * c, u_color_fill.a); \n"
+         "   OUT_FRAGCOLOR = vec4(u_color_fill.rgb * c, u_color_fill.a); \n"
          "} \n"
          ;
       custom_shader_idx_1 = sdvg_CreateShader(vs, fs, "test_shadervg/custom_shader_1");
@@ -867,7 +954,7 @@ function TestCustomShader_2(float sizeX, float sizeY) {
          "VARYING_IN vec4 v_color; \n"
          " \n"
          "void main(void) { \n"
-         "   FRAGCOLOR = vec4(v_color.rgb, v_color.a * u_global_alpha); \n"
+         "   OUT_FRAGCOLOR = vec4(v_color.rgb, v_color.a * u_global_alpha); \n"
          "} \n"
          ;
       custom_shader_idx_2 = sdvg_CreateShader(vs, fs, "test_shadervg/custom_shader_2");
@@ -927,7 +1014,7 @@ function TestCustomShader_3_VBO(Matrix4f mProj, float sizeX, float sizeY) {
          "VARYING_IN vec4 v_color; \n"
          " \n"
          "void main(void) { \n"
-         "   FRAGCOLOR = vec4(v_color.rgb, v_color.a * u_global_alpha); \n"
+         "   OUT_FRAGCOLOR = vec4(v_color.rgb, v_color.a * u_global_alpha); \n"
          "} \n"
          ;
       custom_shader_idx_3 = sdvg_CreateShader(vs, fs, "test_shadervg/custom_shader_3");
@@ -1012,7 +1099,43 @@ function TestLinesFlat(boolean _bAA) {
       sdvg_DrawLinesFlatAAVBO14_2(buf_vbo_id, 0, numPoints);
    else
       sdvg_DrawLinesFlatVBO14_2(buf_vbo_id, 0, numPoints);
-   // trace "xxx TestLinesFlatAA: buf_vbo.offset="+buf_vbo.offset;
+   // trace "xxx TestLinesFlat: buf_vbo.offset="+buf_vbo.offset;
+}
+
+function TestLinesFlat_GLES2(boolean _bAA) {
+   // (note) use sdvg_BeginLines*() to avoid special case handling for GLES2
+   int numSeg = 64;
+   int numPoints = numSeg * 2;
+   float w = (2PI / numSeg);
+   float a = ang_x * 0.5;
+   buf_vbo.offset = 0;
+   loop(numPoints / 2)
+   {
+      float x1 = sin(a) * 200.0 + (VP_W/2);
+      float y1 = cos(a) * 200.0 + (VP_H/2);
+      float x2 = sin(a) * 120.0 + (VP_W/2);
+      float y2 = cos(a) * 120.0 + (VP_H/2);
+      int idx = 0;
+      loop(6)
+      {
+         buf_vbo.i16 = idx++;
+         buf_vbo.i16 = 4 * x1;
+         buf_vbo.i16 = 4 * y1;
+      }
+      loop(6)
+      {
+         buf_vbo.i16 = idx++;
+         buf_vbo.i16 = 4 * x2;
+         buf_vbo.i16 = 4 * y2;
+      }
+      a += w;
+   }
+   sdvg_UpdateVBO(buf_vbo_id, 0, buf_vbo.offset, buf_vbo);
+   if(_bAA)
+      sdvg_DrawLinesFlatAAVBO14_2(buf_vbo_id, 0, numPoints);
+   else
+      sdvg_DrawLinesFlatVBO14_2(buf_vbo_id, 0, numPoints);
+   // trace "xxx TestLinesFlat_GLES2: buf_vbo.offset="+buf_vbo.offset;
 }
 
 // ---------------------------------------------------------------------------- TestBeginLineStripFlat (24+25)
@@ -1722,7 +1845,7 @@ function TestText_3_Swirl() {
          "VARYING_IN vec2 v_uv; \n"
          " \n"
          "void main(void) { \n"
-         "  FRAGCOLOR = vec4(u_color_fill.rgb, TEXTURE2D(u_sampler, v_uv).TEX_ALPHA * u_color_fill.a); \n"
+         "  OUT_FRAGCOLOR = vec4(u_color_fill.rgb, TEXTURE2D(u_sampler, v_uv).TEX_ALPHA * u_color_fill.a); \n"
          "} \n"
          ;
       test_text_3_shader_idx = sdvg_CreateShader(vs, fs, "test_shadervg/test_text_3_swirl");
@@ -2945,6 +3068,43 @@ function TestLinesRandAAVBO() {
    sdvg_DrawLinesGouraudAAVBO14_2(buf_vbo_id, 0/*offset*/, numLines << 1);
 }
 
+function TestLinesRandAAVBO_GLES2() {
+   // (note) use sdvg_BeginLinesGouraud*() to avoid special case handling for GLES2
+   // (note) same coordinates+colors as test264_line_benchmark
+   int numLines = 1000;
+   if(0 == buf_vbo.offset)
+   {
+      loc_rand_seed(0x9C82F83B);
+
+      loop(numLines)
+      {
+         loop(2)
+         {
+            int x = (int)(4.0f * ((loc_randf(2.0f) - 1.0f) * (VP_W* 0.5f) + (VP_W*0.5f)));
+            int y = (int)(4.0f * ((loc_randf(2.0f) - 1.0f) * (VP_H*-0.5f) + (VP_H*0.5f)));
+            byte r = loc_randu() & 255;
+            byte g = loc_randu() & 255;
+            byte b = loc_randu() & 255;
+            byte a = (loc_randu() & 127) + 128;
+            int idx = 0;
+            loop(6)
+            {
+               buf_vbo.i16 = idx++;
+               buf_vbo.i8 = r;
+               buf_vbo.i8 = g;
+               buf_vbo.i8 = b;
+               buf_vbo.i8 = a;
+               buf_vbo.i16 = x;
+               buf_vbo.i16 = y;
+            }
+         }
+      }
+      sdvg_UpdateVBO(buf_vbo_id, 0/*offset*/, buf_vbo.offset/*size*/, buf_vbo);
+   }
+   sdvg_SetStrokeWidth(1.0f);
+   sdvg_DrawLinesGouraudAAVBO14_2(buf_vbo_id, 0/*offset*/, numLines << 1);
+}
+
 // ---------------------------------------------------------------------------- TestLinesRand2 (177)
 function TestLinesRand2AAVBO() {
    int numVerts = 1000+2;
@@ -2959,7 +3119,7 @@ function TestLinesRand2AAVBO() {
 
       int i = 1;
 
-      loop(numVerts-1)
+      loop(numVerts - 1)
       {
          x += i % 29;
          y += 23 - i % 23;
@@ -2972,6 +3132,55 @@ function TestLinesRand2AAVBO() {
 
          buf_vbo.i16 = 4 * xCoord;
          buf_vbo.i16 = 4 * yCoord;
+
+         i++;
+      }
+      sdvg_UpdateVBO(buf_vbo_id, 0/*offset*/, buf_vbo.offset/*size*/, buf_vbo);
+   }
+   sdvg_SetStrokeWidth(3.0f);
+   sdvg_SetColorARGB(#FFffffff);
+   if(0)
+      sdvg_DrawLineStripFlatAAVBO14_2(buf_vbo_id, 0/*offset*/, numVerts);
+   else
+      sdvg_DrawLineStripFlatBevelAAVBO14_2(buf_vbo_id, 0/*offset*/, numVerts, true/*bSkipLastLineJoint*/);
+}
+
+function TestLinesRand2AAVBO_GLES2() {
+   int numVerts = 1000+2;
+   if(0 == buf_vbo.offset)
+   {
+      loc_rand_seed(0x9C82F83B);
+      int x = (int)loc_randf(VP_W);
+      int y = (int)loc_randf(VP_H);
+
+      int idx = 0;
+      loop(6)
+      {
+         buf_vbo.i16 = idx++;
+         buf_vbo.i16 = (4 * x);
+         buf_vbo.i16 = (4 * y);
+      }
+
+      int i = 1;
+
+      loop(numVerts - 1)
+      {
+         x += i % 29;
+         y += 23 - i % 23;
+
+         x %= VP_W * 2;
+         y %= VP_H * 2;
+
+         int xCoord = (x >= VP_W) ? (2 * VP_W - x) : x;
+         int yCoord = (y >= VP_H) ? (2 * VP_H - y) : y;
+
+         idx = 0;
+         loop(6)
+         {
+            buf_vbo.i16 = idx++;
+            buf_vbo.i16 = 4 * xCoord;
+            buf_vbo.i16 = 4 * yCoord;
+         }
 
          i++;
       }
@@ -3009,6 +3218,35 @@ function TestLineStripFlatBevel32(boolean _bAA) {
       sdvg_DrawLineStripFlatBevelVBO32(buf_vbo_id, 0, numPoints, true/*bSkipLastLineJoint*/);
 }
 
+function TestLineStripFlatBevel32_GLES2(boolean _bAA) {
+   // (note) use sdvg_BeginLineStrip*() to avoid special case handling for GLES2
+   int numSeg = 64;
+   int numPoints = numSeg + 1;
+   float w = (2PI / numSeg);
+   float a = ang_x;
+   float x = 100.0;
+   float xStep = 440.0 / numSeg;
+   buf_vbo.offset = 0;
+   loop(numPoints)
+   {
+      float y = sin(a) * 120.0 + 240.0;
+      int idx = 0;
+      loop(6)
+      {
+         buf_vbo.i16 = idx++;
+         buf_vbo.add2f(x, y);
+      }
+      a += w;
+      x += xStep;
+   }
+   sdvg_UpdateVBO(buf_vbo_id, 0/*offset*/, buf_vbo.offset/*size*/, buf_vbo);
+   sdvg_SetStrokeWidth(stroke_w * 4);
+   if(_bAA)
+      sdvg_DrawLineStripFlatBevelAAVBO32(buf_vbo_id, 0, numPoints, true/*bSkipLastLineJoint*/);
+   else
+      sdvg_DrawLineStripFlatBevelVBO32(buf_vbo_id, 0, numPoints, true/*bSkipLastLineJoint*/);
+}
+
 // ---------------------------------------------------------------------------- TestLineStripFlatBevel14_2 (180+181)
 function TestLineStripFlatBevel14_2(boolean _bAA) {
    int numSeg = 64;
@@ -3023,6 +3261,36 @@ function TestLineStripFlatBevel14_2(boolean _bAA) {
       float y = sin(a) * 120.0 + 240.0;
       buf_vbo.i16 = 4 * x;
       buf_vbo.i16 = 4 * y;
+      a += w;
+      x += xStep;
+   }
+   sdvg_UpdateVBO(buf_vbo_id, 0/*offset*/, buf_vbo.offset/*size*/, buf_vbo);
+   sdvg_SetStrokeWidth(stroke_w * 4);
+   if(_bAA)
+      sdvg_DrawLineStripFlatBevelAAVBO14_2(buf_vbo_id, 0, numPoints, true/*bSkipLastLineJoint*/);
+   else
+      sdvg_DrawLineStripFlatBevelVBO14_2(buf_vbo_id, 0, numPoints, true/*bSkipLastLineJoint*/);
+}
+
+function TestLineStripFlatBevel14_2_GLES2(boolean _bAA) {
+   // (note) use sdvg_BeginLineStrip*() to avoid special case handling for GLES2
+   int numSeg = 64;
+   int numPoints = numSeg + 1;
+   float w = (2PI / numSeg);
+   float a = ang_x;
+   float x = 100.0;
+   float xStep = 440.0 / numSeg;
+   buf_vbo.offset = 0;
+   loop(numPoints)
+   {
+      float y = sin(a) * 120.0 + 240.0;
+      int idx = 0;
+      loop(6)
+      {
+         buf_vbo.i16 = idx++;
+         buf_vbo.i16 = 4 * x;
+         buf_vbo.i16 = 4 * y;
+      }
       a += w;
       x += xStep;
    }
@@ -3447,27 +3715,45 @@ function DrawTest() {
          break;
 
       case RENDER_LINE_STRIP_FLAT_1: // 13
-         TestLineStripFlat_1(false/*bAA*/);
+         if(b_glvertexid)
+            TestLineStripFlat_1(false/*bAA*/);
+         else
+            TestLineStripFlat_1_GLES2(false/*bAA*/);
          break;
 
       case RENDER_LINE_STRIP_FLAT_2: // 14
-         TestLineStripFlat_2(false/*bAA*/);
+         if(b_glvertexid)
+            TestLineStripFlat_2(false/*bAA*/);
+         else
+            TestLineStripFlat_2_GLES2(false/*bAA*/);
          break;
 
       case RENDER_LINE_STRIP_FLAT_AA_1: // 15
-         TestLineStripFlat_1(true/*bAA*/);
+         if(b_glvertexid)
+            TestLineStripFlat_1(true/*bAA*/);
+         else
+            TestLineStripFlat_1_GLES2(true/*bAA*/);
          break;
 
       case RENDER_LINE_STRIP_FLAT_AA_2: // 16
-         TestLineStripFlat_2(true/*bAA*/);
+         if(b_glvertexid)
+            TestLineStripFlat_2(true/*bAA*/);
+         else
+            TestLineStripFlat_2_GLES2(true/*bAA*/);
          break;
 
       case RENDER_LINE_STRIP_FLAT_BEVEL: // 17
-         TestLineStripFlatBevel(false/*bAA*/);
+         if(b_glvertexid)
+            TestLineStripFlatBevel(false/*bAA*/);
+         else
+            TestLineStripFlatBevel_GLES2(false/*bAA*/);
          break;
 
       case RENDER_LINE_STRIP_FLAT_BEVEL_AA: // 18
-         TestLineStripFlatBevel(true/*bAA*/);
+         if(b_glvertexid)
+            TestLineStripFlatBevel(true/*bAA*/);
+         else
+            TestLineStripFlatBevel_GLES2(true/*bAA*/);
          break;
 
       case RENDER_CUSTOM_SHADER_1: // 19
@@ -3483,11 +3769,17 @@ function DrawTest() {
          break;
 
       case RENDER_LINES: // 22
-         TestLinesFlat(false/*bAA*/);
+         if(b_glvertexid)
+            TestLinesFlat(false/*bAA*/);
+         else
+            TestLinesFlat_GLES2(false/*bAA*/);
          break;
 
       case RENDER_LINES_AA: // 23
-         TestLinesFlat(true/*bAA*/);
+         if(b_glvertexid)
+            TestLinesFlat(true/*bAA*/);
+         else
+            TestLinesFlat_GLES2(true/*bAA*/);
          break;
 
       case RENDER_BEGIN_LINE_STRIP: // 24
@@ -4954,7 +5246,10 @@ function DrawTest() {
          break;
 
       case RENDER_LINES_RAND_AA_VBO: // 174
-         TestLinesRandAAVBO();
+         if(b_glvertexid)
+            TestLinesRandAAVBO();
+         else
+            TestLinesRandAAVBO_GLES2();
          break;
 
       case RENDER_BEGIN_LINE_STRIP_MITER_CLOSED: // 175
@@ -4966,31 +5261,46 @@ function DrawTest() {
          break;
 
       case RENDER_LINES_RAND2_AA_VBO: // 177
-         TestLinesRand2AAVBO();
+         if(b_glvertexid)
+            TestLinesRand2AAVBO();
+         else
+            TestLinesRand2AAVBO_GLES2();
          break;
 
       case RENDER_LINE_STRIP_FLAT_BEVEL_32_PATTERN: // 178
          SetupPaintPatternGradientStatic();
          sdvg_SetStrokeWidth(stroke_w * 4.0f);
-         TestLineStripFlatBevel32(false/*bAA*/);
+         if(b_glvertexid)
+            TestLineStripFlatBevel32(false/*bAA*/);
+         else
+            TestLineStripFlatBevel32_GLES2(false/*bAA*/);
          break;
 
       case RENDER_LINE_STRIP_FLAT_BEVEL_AA_32_PATTERN: // 179
          SetupPaintPatternGradientStatic();
          sdvg_SetStrokeWidth(stroke_w * 4.0f);
-         TestLineStripFlatBevel32(true/*bAA*/);
+         if(b_glvertexid)
+            TestLineStripFlatBevel32(true/*bAA*/);
+         else
+            TestLineStripFlatBevel32_GLES2(true/*bAA*/);
          break;
 
       case RENDER_LINE_STRIP_FLAT_BEVEL_14_2_PATTERN: // 180
          SetupPaintPatternGradientStatic();
          sdvg_SetStrokeWidth(stroke_w * 4.0f);
-         TestLineStripFlatBevel14_2(false/*bAA*/);
+         if(b_glvertexid)
+            TestLineStripFlatBevel14_2(false/*bAA*/);
+         else
+            TestLineStripFlatBevel14_2_GLES2(false/*bAA*/);
          break;
 
       case RENDER_LINE_STRIP_FLAT_BEVEL_AA_14_2_PATTERN: // 181
          SetupPaintPatternGradientStatic();
          sdvg_SetStrokeWidth(stroke_w * 4.0f);
-         TestLineStripFlatBevel14_2(true/*bAA*/);
+         if(b_glvertexid)
+            TestLineStripFlatBevel14_2(true/*bAA*/);
+         else
+            TestLineStripFlatBevel14_2_GLES2(true/*bAA*/);
          break;
 
       case RENDER_BEGIN_LINE_STRIP_BEVEL_PATTERN: // 182
@@ -6089,9 +6399,17 @@ function main() {
    SDL.enableUNICODE(true);
    SDL.enableKeyRepeat(100/*delay*/, 20/*rate*/);
 
-   // sdvg_SetScratchBufferSize(64*1024);  // TC183: 60253 fps
-   sdvg_SetScratchBufferSize(256*1024);  // TC183: 73655 fps
-   // sdvg_SetScratchBufferSize(4096*1024);  // TC183: 94132 fps
+   b_glvertexid = sdvg_HaveGLVertexID();
+   if(b_glvertexid)
+   {
+      // sdvg_SetScratchBufferSize(64*1024);  // TC183: 60253 fps
+      sdvg_SetScratchBufferSize(256*1024);  // TC183: 73655 fps
+      // sdvg_SetScratchBufferSize(4096*1024);  // TC183: 94132 fps
+   }
+   else
+   {
+      sdvg_SetScratchBufferSize(6*256*1024);
+   }
    sdvg_SetGLSLVersion(b_glcore/*bV3*/, false/*bGLES*/, null/*sVersionStringOrNull*/);
    if(!sdvg_Init(b_glcore))
       die "[---] sdvg_Init() failed";

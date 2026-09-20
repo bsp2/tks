@@ -54,7 +54,7 @@ class TrianglesFillFlatUniform14_2Radial : public ShaderVG_Shape {
       "void main(void) { \n"
       "  float d = length(v_paint_pos); \n"
       "  vec4 c = TEXTURE2D(u_paint_tex, vec2(d, 0.0)); \n"
-      "  FRAGCOLOR = c * u_color_fill; \n"
+      "  OUT_FRAGCOLOR = c * u_color_fill; \n"
       "} \n"
       ;
 

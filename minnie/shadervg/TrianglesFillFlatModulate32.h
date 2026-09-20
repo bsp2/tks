@@ -49,7 +49,7 @@ class TrianglesFillFlatModulate32 : public ShaderVG_Shape {
       "VARYING_FLAT VARYING_IN vec4 v_color; \n"
       " \n"
       "void main(void) { \n"
-      "  FRAGCOLOR = v_color; \n"
+      "  OUT_FRAGCOLOR = v_color; \n"
       "} \n"
       ;
 

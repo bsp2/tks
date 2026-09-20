@@ -61,7 +61,7 @@ class LineStripPatternAA14_2 : public ShaderVG_Shape {
       "  vec2 uv; \n"
       " \n"
 #ifndef SHADERVG_GL_VERTEX_ID
-      "  float index = mod(float(a_vertex_id), 6.0); \n"
+      "  float index = a_vertex_id; \n"
 #else
       "  float index = float(gl_VertexID); \n"
 #endif // SHADERVG_GL_VERTEX_ID
@@ -118,10 +118,10 @@ class LineStripPatternAA14_2 : public ShaderVG_Shape {
       "  float d = abs(dot(v_vertex_mp, v_plane_n)); \n"
       "  float a = 1.0 - smoothstep(u_stroke_w - u_aa_range, u_stroke_w, d); \n"
       "  float patA = TEXTURE2D(u_sampler, v_uv).TEX_ALPHA; \n"
-      "  FRAGCOLOR = vec4(u_color_stroke.rgb, u_color_stroke.a * a * patA); \n"
+      "  OUT_FRAGCOLOR = vec4(u_color_stroke.rgb, u_color_stroke.a * a * patA); \n"
 #ifdef SHADERVG_DEBUG_FRAG
       "  if(u_debug > 0.0) { \n"
-      "    FRAGCOLOR = vec4(a, fract(v_uv.x), fract(v_uv.y), 1); \n"
+      "    OUT_FRAGCOLOR = vec4(a, fract(v_uv.x), fract(v_uv.y), 1); \n"
       "  } \n"
 #endif // SHADERVG_DEBUG_FRAG
       "} \n"

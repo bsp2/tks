@@ -57,7 +57,7 @@ class TrianglesTexUVGouraudDecal32Alpha : public ShaderVG_Shape {
       " \n"
       "void main() { \n"
       "  float a = TEXTURE2D(u_sampler, v_uv).TEX_ALPHA; \n"
-      "  FRAGCOLOR = vec4(mix(u_color_fill.rgb, u_color_stroke.rgb * v_color.rgb, a * u_color_stroke.a * u_decal_alpha * v_color.a), u_color_fill.a); \n"
+      "  OUT_FRAGCOLOR = vec4(mix(u_color_fill.rgb, u_color_stroke.rgb * v_color.rgb, a * u_color_stroke.a * u_decal_alpha * v_color.a), u_color_fill.a); \n"
       "} \n"
       ;
 

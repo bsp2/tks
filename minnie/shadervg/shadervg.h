@@ -111,9 +111,15 @@ YF sBool YAC_CALL sdvg_Init (sBool _bGLCore);
 
 
 /* @function sdvg_GetEnableGLCore:boolean
-Check if GL core (GL4.x or GLES 3.x) is enabled
+Check if GL core (GL4.x or GLES 2.0 / 3.x) is enabled
 */
 YF sBool YAC_CALL sdvg_GetEnableGLCore (void);
+
+
+/* @function sdvg_HaveGLVertexID:boolean
+True in GL4.x or GLES3.x build
+*/
+YF sBool YAC_CALL sdvg_HaveGLVertexID (void);
 
 
 /* @function sdvg_Exit

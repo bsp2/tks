@@ -57,7 +57,7 @@ class PointsRoundPatternDecalAA14_2 : public ShaderVG_Shape {
       "  v = v1 + u_a_offset[int(gl_VertexID)]; \n"
 #else
 #ifndef SHADERVG_GL_VERTEX_ID
-      "  float index = mod(float(a_vertex_id), 6.0); \n"
+      "  float index = a_vertex_id; \n"
 #else
       "  float index = float(gl_VertexID); \n"
 #endif // SHADERVG_GL_VERTEX_ID
@@ -114,10 +114,10 @@ class PointsRoundPatternDecalAA14_2 : public ShaderVG_Shape {
       "  float u = (dp + v_pat) * u_line_pattern_scl + u_line_pattern_off; \n"
       "  float patA = TEXTURE2D(u_sampler, vec2(u, 0.0)).TEX_ALPHA; \n"
       "  vec4 c = mix(u_color_fill.rgba, u_color_stroke.rgba, patA * u_decal_alpha); \n"
-      "  FRAGCOLOR = vec4(c.rgb, c.a * a); \n"
+      "  OUT_FRAGCOLOR = vec4(c.rgb, c.a * a); \n"
 #ifdef SHADERVG_DEBUG_FRAG
       "  if(u_debug > 0.0) { \n"
-      "    FRAGCOLOR = vec4(1.0/*patA*/, u, a, 1.0); \n"
+      "    OUT_FRAGCOLOR = vec4(1.0/*patA*/, u, a, 1.0); \n"
       "  } \n"
 #endif // SHADERVG_DEBUG_FRAG
       "} \n"

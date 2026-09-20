@@ -99,10 +99,10 @@ class RectStrokeAARadial : public ShaderVG_Shape {
       " \n"
       "  float d = length(v_paint_pos); \n"
       "  vec4 c = TEXTURE2D(u_paint_tex, vec2(d, 0.0)); \n"
-      "  FRAGCOLOR = vec4(c.rgb * color.rgb, c.a * color.a * aO); \n"
+      "  OUT_FRAGCOLOR = vec4(c.rgb * color.rgb, c.a * color.a * aO); \n"
 #ifdef SHADERVG_DEBUG_FRAG
       "  if(u_debug > 0.0) \n"
-      "    FRAGCOLOR = vec4(1,0,0,1); \n"
+      "    OUT_FRAGCOLOR = vec4(1,0,0,1); \n"
 #endif // SHADERVG_DEBUG_FRAG
       "} \n"
       ;

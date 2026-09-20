@@ -59,7 +59,7 @@ class PolygonFillFlat32Pattern : public ShaderVG_Shape {
       "  uv.x = paintUV.x * u_paint_ndir.x - paintUV.y * u_paint_ndir.y; \n"
       "  uv.y = paintUV.x * u_paint_ndir.y + paintUV.y * u_paint_ndir.x; \n"
       "  vec4 c = TEXTURE2D(u_paint_tex, uv); \n"
-      "  FRAGCOLOR = c * u_color_fill; \n"
+      "  OUT_FRAGCOLOR = c * u_color_fill; \n"
       "} \n"
       ;
 

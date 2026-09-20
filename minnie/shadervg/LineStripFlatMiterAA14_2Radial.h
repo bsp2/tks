@@ -401,10 +401,10 @@ class LineStripFlatMiterAA14_2Radial : public ShaderVG_Shape {
       "  } \n"
       "  float dp = length(v_paint_pos); \n"
       "  vec4 cp = TEXTURE2D(u_paint_tex, vec2(dp, 0.0)); \n"
-      "  FRAGCOLOR = vec4(u_color_stroke.rgb * cp.rgb, u_color_stroke.a * cp.a * a); \n"
+      "  OUT_FRAGCOLOR = vec4(u_color_stroke.rgb * cp.rgb, u_color_stroke.a * cp.a * a); \n"
 #ifdef SHADERVG_DEBUG_FRAG
       "  if(u_debug > 0.0) { \n"
-      "    FRAGCOLOR = vec4(u_color_stroke.r, a, u_color_stroke.b, u_color_stroke.a); \n"
+      "    OUT_FRAGCOLOR = vec4(u_color_stroke.r, a, u_color_stroke.b, u_color_stroke.a); \n"
       "  } \n"
 #endif // SHADERVG_DEBUG_FRAG
       "} \n"

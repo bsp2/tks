@@ -54,7 +54,7 @@ class TrianglesFillFlatUniform32Linear : public ShaderVG_Shape {
       "void main(void) { \n"
       "  float d = dot(v_paint_pos, u_paint_ndir) * u_paint_ob_len; \n"
       "  vec4 c = TEXTURE2D(u_paint_tex, vec2(d, 0.0)); \n"
-      "  FRAGCOLOR = c * u_color_fill; \n"
+      "  OUT_FRAGCOLOR = c * u_color_fill; \n"
       "} \n"
       ;
 

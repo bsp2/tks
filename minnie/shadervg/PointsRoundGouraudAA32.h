@@ -100,10 +100,10 @@ class PointsRoundGouraudAA32 : public ShaderVG_Shape {
       "  float d = length(vd); \n"
       // aa
       "  float a = 1.0 - smoothstep(u_point_radius - u_aa_range, u_point_radius, d); \n"
-      "  FRAGCOLOR = vec4(u_color_stroke.rgb * v_color.rgb, u_color_stroke.a * v_color.a * a); \n"
+      "  OUT_FRAGCOLOR = vec4(u_color_stroke.rgb * v_color.rgb, u_color_stroke.a * v_color.a * a); \n"
 #ifdef SHADERVG_DEBUG_FRAG
       "  if(u_debug > 0.0) { \n"
-      "    FRAGCOLOR = vec4(1.0, a, a, 1.0); \n"
+      "    OUT_FRAGCOLOR = vec4(1.0, a, a, 1.0); \n"
       "  } \n"
 #endif // SHADERVG_DEBUG_FRAG
       "} \n"
@@ -169,8 +169,8 @@ class PointsRoundGouraudAA32 : public ShaderVG_Shape {
 #endif // SHADERVG_DEBUG_FRAG
 
 #ifdef SHADERVG_GL_VERTEX_ID
-      Dsdvg_attrib_offset(shape_a_color,    4/*size*/, GL_UNSIGNED_BYTE,  GL_TRUE/*normalize*/,  12/*stride*/, _byteOffset +  0);
-      Dsdvg_attrib_offset(shape_a_vertex,   2/*size*/, GL_FLOAT,          GL_FALSE/*normalize*/, 12/*stride*/, _byteOffset +  4);
+      Dsdvg_attrib_offset(shape_a_color,  4/*size*/, GL_UNSIGNED_BYTE, GL_TRUE/*normalize*/,  12/*stride*/, _byteOffset +  0);
+      Dsdvg_attrib_offset(shape_a_vertex, 2/*size*/, GL_FLOAT,         GL_FALSE/*normalize*/, 12/*stride*/, _byteOffset +  4);
 
       Dsdvg_attrib_enable(shape_a_color);
       Dsdvg_attrib_enable(shape_a_vertex);
@@ -194,9 +194,6 @@ class PointsRoundGouraudAA32 : public ShaderVG_Shape {
       Dsdvg_attrib_enable(shape_a_vertex_id);
       Dsdvg_attrib_enable(shape_a_color);
       Dsdvg_attrib_enable(shape_a_vertex);
-
-      Dsdvg_attrib_divisor(shape_a_color, 1);
-      Dsdvg_attrib_divisor(shape_a_vertex, 1);
 
       const sUI numInstances = _numPoints;
       Dsdvg_draw_triangles_vbo(0u, 6u * numInstances);

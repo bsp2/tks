@@ -63,7 +63,7 @@ class TrianglesTexUVFlat32AlphaSDF : public ShaderVG_Shape {
 #ifdef SHADERVG_AA_EXP
       "  a = pow(a, u_a_exp); \n"
 #endif // SHADERVG_AA_EXP
-      "  FRAGCOLOR = vec4(u_color_fill.rgb, a * u_color_fill.a); \n"
+      "  OUT_FRAGCOLOR = vec4(u_color_fill.rgb, a * u_color_fill.a); \n"
       "} \n"
       ;
 

@@ -83,10 +83,10 @@ class RectFillAALinear : public ShaderVG_Shape {
 #endif // SHADERVG_AA_EXP
       "  float d = dot(v_paint_pos, u_paint_ndir) * u_paint_ob_len; \n"
       "  vec4 c = TEXTURE2D(u_paint_tex, vec2(d, 0.0)); \n"
-      "  FRAGCOLOR = vec4(c.rgb * color.rgb, c.a * color.a * a); \n"
+      "  OUT_FRAGCOLOR = vec4(c.rgb * color.rgb, c.a * color.a * a); \n"
 #ifdef SHADERVG_DEBUG_FRAG
       "  if(u_debug > 0.0) \n"
-      "    FRAGCOLOR = vec4(1,0,0,1); \n"
+      "    OUT_FRAGCOLOR = vec4(1,0,0,1); \n"
 #endif // SHADERVG_DEBUG_FRAG
       "} \n"
       ;

@@ -50,7 +50,7 @@ class TrianglesTexUVFlat32Alpha : public ShaderVG_Shape {
       "VARYING_IN vec2 v_uv; \n"
       " \n"
       "void main() { \n"
-      "  FRAGCOLOR = vec4(u_color_fill.rgb, TEXTURE2D(u_sampler, v_uv).TEX_ALPHA * u_color_fill.a); \n"
+      "  OUT_FRAGCOLOR = vec4(u_color_fill.rgb, TEXTURE2D(u_sampler, v_uv).TEX_ALPHA * u_color_fill.a); \n"
       "} \n"
       ;
 

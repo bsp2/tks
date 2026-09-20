@@ -50,7 +50,7 @@ class PointsRoundAA14_2 : public ShaderVG_Shape {
       "  v = vCtr + u_a_offset[int(gl_VertexID)]; \n"
 #else
 #ifndef SHADERVG_GL_VERTEX_ID
-      "  float index = mod(float(a_vertex_id), 6.0); \n"
+      "  float index = a_vertex_id; \n"
 #else
       "  float index = float(gl_VertexID); \n"
 #endif // SHADERVG_GL_VERTEX_ID
@@ -96,10 +96,10 @@ class PointsRoundAA14_2 : public ShaderVG_Shape {
       "  float d = length(vd); \n"
       // aa
       "  float a = 1.0 - smoothstep(u_point_radius - u_aa_range, u_point_radius, d); \n"
-      "  FRAGCOLOR = vec4(u_color_stroke.rgb, u_color_stroke.a * a); \n"
+      "  OUT_FRAGCOLOR = vec4(u_color_stroke.rgb, u_color_stroke.a * a); \n"
 #ifdef SHADERVG_DEBUG_FRAG
       "  if(u_debug > 0.0) { \n"
-      "    FRAGCOLOR = vec4(1.0, a, a, 1.0); \n"
+      "    OUT_FRAGCOLOR = vec4(1.0, a, a, 1.0); \n"
       "  } \n"
 #endif // SHADERVG_DEBUG_FRAG
       "} \n"

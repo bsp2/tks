@@ -64,11 +64,18 @@ class LinesPatternAA14_2 : public ShaderVG_Shape {
       "  vec2 uv; \n"
       " \n"
 #ifndef SHADERVG_GL_VERTEX_ID
-      "  float index = mod(float(a_vertex_id), 6.0); \n"
+      "  float index = a_vertex_id; \n"
 #else
       "  float index = float(gl_VertexID); \n"
 #endif // SHADERVG_GL_VERTEX_ID
       " \n"
+#ifndef SHADERVG_GL_VERTEX_ID
+      "  if(index > 5.9) { \n"
+      "    v = vec2(0,0); \n"
+      "    uv = vec2(0,0); \n"
+      "  } \n"
+      "  else \n"
+#endif // SHADERVG_GL_VERTEX_ID
       "  if(index > 4.9) { \n"
       "    v = v1R; \n"
       "    uv = vec2(a_pattern, 1.0); \n"
@@ -133,10 +140,10 @@ class LinesPatternAA14_2 : public ShaderVG_Shape {
       "  a *= a1; \n"
       "  a *= a2; \n"
       "  float patA = TEXTURE2D(u_sampler, v_uv).TEX_ALPHA; \n"
-      "  FRAGCOLOR = vec4(u_color_stroke.rgb, u_color_stroke.a * a * patA); \n"
+      "  OUT_FRAGCOLOR = vec4(u_color_stroke.rgb, u_color_stroke.a * a * patA); \n"
 #ifdef SHADERVG_DEBUG_FRAG
       "  if(u_debug > 0.0) { \n"
-      "    FRAGCOLOR = vec4(a, fract(v_uv.x), fract(v_uv.y), 1); \n"
+      "    OUT_FRAGCOLOR = vec4(a, fract(v_uv.x), fract(v_uv.y), 1); \n"
       "  } \n"
 #endif // SHADERVG_DEBUG_FRAG
       "} \n"
@@ -242,13 +249,9 @@ class LinesPatternAA14_2 : public ShaderVG_Shape {
       Dsdvg_attrib_enable(shape_a_vertex_n);
       Dsdvg_attrib_enable(shape_a_pattern);
       Dsdvg_attrib_enable(shape_a_pattern_n);
-      Dsdvg_attrib_divisor(shape_a_vertex, 1);
-      Dsdvg_attrib_divisor(shape_a_vertex_n, 1);
-      Dsdvg_attrib_divisor(shape_a_pattern, 1);
-      Dsdvg_attrib_divisor(shape_a_pattern_n, 1);
 
       const sUI numInstances = (_numPoints / 2u);
-      Dsdvg_draw_triangles_vbo(0u, 6u * numInstances);
+      Dsdvg_draw_triangles_vbo(0u, 12u * numInstances - 6u);
 
       Dsdvg_attrib_disable(shape_a_vertex_n);
       Dsdvg_attrib_disable(shape_a_vertex);

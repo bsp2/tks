@@ -58,7 +58,7 @@ class PolygonFillFlat32Radial : public ShaderVG_Shape {
       "  vec2 paintPos = (v - u_paint_start) * u_paint_ob_size; \n"
       "  float d = length(paintPos); \n"
       "  vec4 c = TEXTURE2D(u_paint_tex, vec2(d, 0.0)); \n"
-      "  FRAGCOLOR = c * u_color_fill; \n"
+      "  OUT_FRAGCOLOR = c * u_color_fill; \n"
       "} \n"
       ;
 

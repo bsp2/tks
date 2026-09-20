@@ -102,10 +102,10 @@ class RectStrokeAAPatternAlpha : public ShaderVG_Shape {
       "  uv.x = v_paint_uv.x * u_paint_ndir.x - v_paint_uv.y * u_paint_ndir.y; \n"
       "  uv.y = v_paint_uv.x * u_paint_ndir.y + v_paint_uv.y * u_paint_ndir.x; \n"
       "  float ap = TEXTURE2D(u_paint_tex, uv).TEX_ALPHA; \n"
-      "  FRAGCOLOR = vec4(color.rgb, color.a * aO * ap); \n"
+      "  OUT_FRAGCOLOR = vec4(color.rgb, color.a * aO * ap); \n"
 #ifdef SHADERVG_DEBUG_FRAG
       "  if(u_debug > 0.0) \n"
-      "    FRAGCOLOR = vec4(1,0,0,1); \n"
+      "    OUT_FRAGCOLOR = vec4(1,0,0,1); \n"
 #endif // SHADERVG_DEBUG_FRAG
       "} \n"
       ;

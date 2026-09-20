@@ -84,7 +84,7 @@ class TrianglesFillGouraudEdgeAA14_2 : public ShaderVG_Shape {
       "         ) \n"
       "     ) \n"
       "     ; \n"
-      "  FRAGCOLOR = vec4(v_color.rgb, v_color.a * min(1.0,a) * u_global_alpha); \n"
+      "  OUT_FRAGCOLOR = vec4(v_color.rgb, v_color.a * min(1.0,a) * u_global_alpha); \n"
       "} \n"
       ;
 

@@ -90,10 +90,10 @@ class EllipseFillAA : public ShaderVG_Shape {
       "  a = pow(a, u_aa_exp); \n"
 #endif // SHADERVG_AA_EXP
       " \n"
-      "  FRAGCOLOR = vec4(color.xyz, color.a*a); \n"
+      "  OUT_FRAGCOLOR = vec4(color.xyz, color.a*a); \n"
 #ifdef SHADERVG_DEBUG_FRAG
       "  if(u_debug > 0.0) \n"
-      "    FRAGCOLOR = vec4(1,0,0,1); \n"
+      "    OUT_FRAGCOLOR = vec4(1,0,0,1); \n"
 #endif // SHADERVG_DEBUG_FRAG
       "} \n"
       ;

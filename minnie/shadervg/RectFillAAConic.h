@@ -99,10 +99,10 @@ class RectFillAAConic : public ShaderVG_Shape {
       "  if(ap >= 1.0) ap -= 1.0; \n"   // (note) use texture repeat ?
       "  else if(ap < 0.0) ap += 1.0; \n"
       "  vec4 c = TEXTURE2D(u_paint_tex, vec2(ap, 0.0)); \n"
-      "  FRAGCOLOR = vec4(c.rgb * color.rgb, c.a * color.a * a); \n"
+      "  OUT_FRAGCOLOR = vec4(c.rgb * color.rgb, c.a * color.a * a); \n"
 #ifdef SHADERVG_DEBUG_FRAG
       "  if(u_debug > 0.0) \n"
-      "    FRAGCOLOR = vec4(1,0,0,1); \n"
+      "    OUT_FRAGCOLOR = vec4(1,0,0,1); \n"
 #endif // SHADERVG_DEBUG_FRAG
       "} \n"
       ;

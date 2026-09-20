@@ -877,6 +877,8 @@ static sUI current_draw_attrib_offset;       // incs with each AttribOffset*() c
 static sUI current_draw_lines_vertex_index;  // incs with each Vertex2f() call in DRAW_MODE_LINES* (0, 6)
 static sUI current_draw_vertex_index;        // incs with each Vertex2f() call
 #ifndef SHADERVG_GL_VERTEX_ID
+static sBool b_current_draw_mode_gouraud;
+static sUI last_attrib_argb;  // LINES_GOURAUD
 static sUI current_draw_vertex_write_index;
 #endif // SHADERVG_GL_VERTEX_ID
 
@@ -1266,6 +1268,14 @@ sBool YAC_CALL sdvg_GetEnableGLCore(void) {
    return sdvg_b_glcore;
 }
 
+sBool YAC_CALL sdvg_HaveGLVertexID(void) {
+#ifdef SHADERVG_GL_VERTEX_ID
+   return YAC_TRUE;
+#else
+   return YAC_FALSE;
+#endif // SHADERVG_GL_VERTEX_ID
+}
+
 void YAC_CALL sdvg_Exit(void) {
 
    Dsdvg_tracecall("[trc] sdvg_Exit()\n");
@@ -1544,8 +1554,13 @@ sUI YAC_CALL sdvg_CreateTexture2D(sUI _texfmt, sUI _w, sUI _h, const void *_data
          }
          else
          {
+#ifdef YAC_MACOS
+            intFormat = GL_ALPHA;
+            pixFormat = GL_ALPHA;
+#else
             intFormat = GL_INTENSITY;
             pixFormat = GL_LUMINANCE;
+#endif // YAC_MACOS
             type      = GL_UNSIGNED_BYTE;
          }
 #endif // SHADERVG_GLES
@@ -1831,7 +1846,7 @@ static void loc_BufferLinePatternVertex2x(YAC_Buffer *_b, sS16 _x, sS16 _y) {
    draw_last_x = xf;
    draw_last_y = yf;
 
-#ifndef SHADERVG_GL_VERTEX_ID
+#ifdef SHADERVG_GL_VERTEX_ID
    Dstream_write_2s16(_b, _x, _y);
    Dstream_write_1fx(_b, draw_last_pattern);
 #else
@@ -1853,7 +1868,7 @@ static void loc_BufferAddLinesPointFlat14_2(YAC_Buffer *_b, sF32 _x, sF32 _y) {
 #else
    for(sUI i = 0u; i < 6u; i++)
    {
-      Dstream_write_i16(_b, (current_draw_vertex_write_index++ % 6u));
+      Dstream_write_i16(_b, (current_draw_vertex_write_index++ % 12u));
       Dstream_write_2fx(_b, _x, _y);
    }
 #endif // SHADERVG_GL_VERTEX_ID
@@ -1870,7 +1885,44 @@ static void loc_BufferAddLinesPointFlat32(YAC_Buffer *_b, sF32 _x, sF32 _y) {
    for(sUI i = 0u; i < 6u; i++)
    {
       Dsdvg_debugprintfvv("[>>>] loc_BufferAddLinesPointFlat32: p=(%f;%f) current_draw_vertex_write_index=%u\n", _x, _y, current_draw_vertex_write_index);
-      Dstream_write_i16(_b, (current_draw_vertex_write_index++ % 6u));
+      Dstream_write_i16(_b, (current_draw_vertex_write_index++ % 12u));
+      Dstream_write_2f(_b, _x, _y);
+   }
+#endif // SHADERVG_GL_VERTEX_ID
+   current_draw_lines_vertex_index += 1u;
+   if(current_draw_lines_vertex_index >= 2u)
+      current_draw_lines_vertex_index = 0u;
+}
+#endif // SHADERVG_USE_DEFAULT_LINE_14_2
+
+#ifdef SHADERVG_USE_DEFAULT_LINE_14_2
+static void loc_BufferAddLinesPointGouraud14_2(YAC_Buffer *_b, sF32 _x, sF32 _y) {
+   // called by sdvg_Vertex2f() in DRAW_MODE_LINES*
+#ifdef SHADERVG_GL_VERTEX_ID
+   Dstream_write_2fx(_b, _x, _y);
+#else
+   for(sUI i = 0u; i < 6u; i++)
+   {
+      Dstream_write_i16(_b, (current_draw_vertex_write_index++ % 12u));
+      sdvg_WriteC32AsRGBA8(attrib_write_buffer, last_attrib_argb);
+      Dstream_write_2fx(_b, _x, _y);
+   }
+#endif // SHADERVG_GL_VERTEX_ID
+   current_draw_lines_vertex_index += 1u;
+   if(current_draw_lines_vertex_index >= 2u)
+      current_draw_lines_vertex_index = 0u;
+}
+#else
+static void loc_BufferAddLinesPointGouraud32(YAC_Buffer *_b, sF32 _x, sF32 _y) {
+   // called by sdvg_Vertex2f() in DRAW_MODE_LINES*
+#ifdef SHADERVG_GL_VERTEX_ID
+   Dstream_write_2f(_b, _x, _y);
+#else
+   for(sUI i = 0u; i < 6u; i++)
+   {
+      Dsdvg_debugprintfvv("[>>>] loc_BufferAddLinesPointGouraud32: p=(%f;%f) current_draw_vertex_write_index=%u\n", _x, _y, current_draw_vertex_write_index);
+      Dstream_write_i16(_b, (current_draw_vertex_write_index++ % 12u));
+      sdvg_WriteC32AsRGBA8(attrib_write_buffer, last_attrib_argb);
       Dstream_write_2f(_b, _x, _y);
    }
 #endif // SHADERVG_GL_VERTEX_ID
@@ -1900,7 +1952,7 @@ static void loc_BufferAddLinesPointPattern14_2(YAC_Buffer *_b, sF32 _x, sF32 _y)
 #else
    for(sUI i = 0u; i < 6u; i++)
    {
-      Dstream_write_i16(_b, (current_draw_vertex_write_index++ % 6u));
+      Dstream_write_i16(_b, (current_draw_vertex_write_index++ % 12u));
       Dstream_write_2fx(_b, _x, _y);
       Dstream_write_1fx(_b, draw_last_pattern);
    }
@@ -1933,7 +1985,7 @@ static void loc_BufferAddLinesPointPattern32(YAC_Buffer *_b, sF32 _x, sF32 _y) {
 #else
    for(sUI i = 0u; i < 6u; i++)
    {
-      Dstream_write_i16(_b, (current_draw_vertex_write_index++ % 6u));
+      Dstream_write_i16(_b, (current_draw_vertex_write_index++ % 12u));
       Dstream_write_2f(_b, _x, _y);
       Dstream_write_f32(_b, draw_last_pattern);
    }
@@ -6402,12 +6454,12 @@ void sdvg_int_FixShaderSourceFrag(YAC_String *_s, YAC_String *_r) {
 
    // (todo) use simplified overwrite-replace
    YAC_String k;
-   k.visit("VARYING_FLAT"); yac_host->yacStringReplace(_r, &k, s_glsl_varying_flat);
-   k.visit("VARYING_IN");   yac_host->yacStringReplace(_r, &k, s_glsl_varying_in);
-   k.visit("FRAGCOLOR");    yac_host->yacStringReplace(_r, &k, s_glsl_fragcolor);
-   k.visit("TEXTURE2D");    yac_host->yacStringReplace(_r, &k, s_glsl_texture2d);
-   k.visit("TEXTURE3D");    yac_host->yacStringReplace(_r, &k, s_glsl_texture3d);
-   k.visit("TEX_ALPHA");    yac_host->yacStringReplace(_r, &k, s_glsl_tex_alpha);
+   k.visit("VARYING_FLAT");  yac_host->yacStringReplace(_r, &k, s_glsl_varying_flat);
+   k.visit("VARYING_IN");    yac_host->yacStringReplace(_r, &k, s_glsl_varying_in);
+   k.visit("OUT_FRAGCOLOR"); yac_host->yacStringReplace(_r, &k, s_glsl_fragcolor);
+   k.visit("TEXTURE2D");     yac_host->yacStringReplace(_r, &k, s_glsl_texture2d);
+   k.visit("TEXTURE3D");     yac_host->yacStringReplace(_r, &k, s_glsl_texture3d);
+   k.visit("TEX_ALPHA");     yac_host->yacStringReplace(_r, &k, s_glsl_tex_alpha);
 #else
    // MINNIE_LIB
    _r->alloc(_s->length + 512u);
@@ -6420,12 +6472,12 @@ void sdvg_int_FixShaderSourceFrag(YAC_String *_s, YAC_String *_r) {
    _r->append(" \n");
    _r->append(_s);
    YAC_String k;
-   k.visit("VARYING_FLAT"); _r->overwriteReplace(&k, &s_glsl_varying_flat);
-   k.visit("VARYING_IN");   _r->overwriteReplace(&k, &s_glsl_varying_in);
-   k.visit("FRAGCOLOR");    _r->overwriteReplace(&k, &s_glsl_fragcolor);
-   k.visit("TEXTURE2D");    _r->overwriteReplace(&k, &s_glsl_texture2d);
-   k.visit("TEXTURE3D");    _r->overwriteReplace(&k, &s_glsl_texture3d);
-   k.visit("TEX_ALPHA");    _r->overwriteReplace(&k, &s_glsl_tex_alpha);
+   k.visit("VARYING_FLAT");  _r->overwriteReplace(&k, &s_glsl_varying_flat);
+   k.visit("VARYING_IN");    _r->overwriteReplace(&k, &s_glsl_varying_in);
+   k.visit("OUT_FRAGCOLOR"); _r->overwriteReplace(&k, &s_glsl_fragcolor);
+   k.visit("TEXTURE2D");     _r->overwriteReplace(&k, &s_glsl_texture2d);
+   k.visit("TEXTURE3D");     _r->overwriteReplace(&k, &s_glsl_texture3d);
+   k.visit("TEX_ALPHA");     _r->overwriteReplace(&k, &s_glsl_tex_alpha);
    // Dprintf("xxx sdvg_int_FixShaderSourceFrag: return s.length=%u s=\"%s\" r=\"%s\"\n", _s->length, _s->chars, _r->chars);
 #endif // SHADERVG_SCRIPT_API
 }
@@ -7703,6 +7755,14 @@ static sBool BeginDraw(sUI _numVertices, sUI _stride, sUI _mult = 1u) {
    current_draw_vertex_index       = 0u;
 #ifndef SHADERVG_GL_VERTEX_ID
    current_draw_vertex_write_index = 0u;
+   b_current_draw_mode_gouraud =
+         (DRAW_MODE_LINES_GOURAUD            == current_draw_mode)
+      || (DRAW_MODE_LINES_GOURAUD_AA         == current_draw_mode)
+      || (DRAW_MODE_POINTS_SQUARE_GOURAUD    == current_draw_mode)
+      || (DRAW_MODE_POINTS_SQUARE_GOURAUD_AA == current_draw_mode)
+      || (DRAW_MODE_POINTS_ROUND_GOURAUD     == current_draw_mode)
+      || (DRAW_MODE_POINTS_ROUND_GOURAUD_AA  == current_draw_mode)
+      ;
 #endif // SHADERVG_GL_VERTEX_ID
    current_draw_lines_vertex_index = 0u;
 
@@ -10488,12 +10548,19 @@ void YAC_CALL sdvg_Vertex2f(sF32 _x, sF32 _y) {
 
       case DRAW_MODE_LINES:
       case DRAW_MODE_LINES_AA:
-      case DRAW_MODE_LINES_GOURAUD:
-      case DRAW_MODE_LINES_GOURAUD_AA:
 #ifdef SHADERVG_USE_DEFAULT_LINE_14_2
          loc_BufferAddLinesPointFlat14_2(attrib_write_buffer, _x, _y);
 #else
          loc_BufferAddLinesPointFlat32(attrib_write_buffer, _x, _y);
+#endif // SHADERVG_USE_DEFAULT_LINE_14_2
+         break;
+
+      case DRAW_MODE_LINES_GOURAUD:
+      case DRAW_MODE_LINES_GOURAUD_AA:
+#ifdef SHADERVG_USE_DEFAULT_LINE_14_2
+         loc_BufferAddLinesPointGouraud14_2(attrib_write_buffer, _x, _y);
+#else
+         loc_BufferAddLinesPointGouraud32(attrib_write_buffer, _x, _y);
 #endif // SHADERVG_USE_DEFAULT_LINE_14_2
          break;
 
@@ -10563,10 +10630,30 @@ void YAC_CALL sdvg_Vertex2f(sF32 _x, sF32 _y) {
 
       case DRAW_MODE_POINTS_SQUARE:
       case DRAW_MODE_POINTS_SQUARE_AA:
-      case DRAW_MODE_POINTS_SQUARE_GOURAUD:
-      case DRAW_MODE_POINTS_SQUARE_GOURAUD_AA:
       case DRAW_MODE_POINTS_ROUND:
       case DRAW_MODE_POINTS_ROUND_AA:
+#ifdef SHADERVG_GL_VERTEX_ID
+#ifdef SHADERVG_USE_DEFAULT_POINT_14_2
+         sdvg_Attrib2fx(_x, _y);
+#else
+         sdvg_Attrib2f(_x, _y);
+#endif // SHADERVG_USE_DEFAULT_POINT_14_2
+#else
+         for(sUI i = 0u; i < 6u; i++)
+         {
+            Dstream_write_i16(attrib_write_buffer, (current_draw_vertex_write_index++ % 6u));
+#ifdef SHADERVG_USE_DEFAULT_POINT_14_2
+            sdvg_Attrib2fx(_x, _y);
+#else
+            // Dprintf("xxx f POINTS_SQUARE_GOURAUD vtx idx=%u\n", current_draw_vertex_write_index);
+            sdvg_Attrib2f(_x, _y);
+#endif // SHADERVG_USE_DEFAULT_POINT_14_2
+         }
+#endif // SHADERVG_GL_VERTEX_ID
+         break;
+
+      case DRAW_MODE_POINTS_SQUARE_GOURAUD:
+      case DRAW_MODE_POINTS_SQUARE_GOURAUD_AA:
       case DRAW_MODE_POINTS_ROUND_GOURAUD:
       case DRAW_MODE_POINTS_ROUND_GOURAUD_AA:
 #ifdef SHADERVG_GL_VERTEX_ID
@@ -10578,7 +10665,8 @@ void YAC_CALL sdvg_Vertex2f(sF32 _x, sF32 _y) {
 #else
          for(sUI i = 0u; i < 6u; i++)
          {
-            Dstream_write_i16(attrib_write_buffer, (current_draw_vertex_write_index++ % 6u));
+            Dstream_write_i16(attrib_write_buffer, i);
+            sdvg_WriteC32AsRGBA8(attrib_write_buffer, last_attrib_argb);
 #ifdef SHADERVG_USE_DEFAULT_POINT_14_2
             sdvg_Attrib2fx(_x, _y);
 #else
@@ -10699,12 +10787,19 @@ void YAC_CALL sdvg_Vertex2x(sS16 _x, sS16 _y) {
 
       case DRAW_MODE_LINES:
       case DRAW_MODE_LINES_AA:
-      case DRAW_MODE_LINES_GOURAUD:
-      case DRAW_MODE_LINES_GOURAUD_AA:
 #ifdef SHADERVG_USE_DEFAULT_LINE_14_2
          loc_BufferAddLinesPointFlat14_2(attrib_write_buffer, _x, _y);
 #else
          loc_BufferAddLinesPointFlat32(attrib_write_buffer, _x, _y);
+#endif // SHADERVG_USE_DEFAULT_LINE_14_2
+         break;
+
+      case DRAW_MODE_LINES_GOURAUD:
+      case DRAW_MODE_LINES_GOURAUD_AA:
+#ifdef SHADERVG_USE_DEFAULT_LINE_14_2
+         loc_BufferAddLinesPointGouraud14_2(attrib_write_buffer, _x, _y);
+#else
+         loc_BufferAddLinesPointGouraud32(attrib_write_buffer, _x, _y);
 #endif // SHADERVG_USE_DEFAULT_LINE_14_2
          break;
 
@@ -10774,10 +10869,29 @@ void YAC_CALL sdvg_Vertex2x(sS16 _x, sS16 _y) {
 
       case DRAW_MODE_POINTS_SQUARE:
       case DRAW_MODE_POINTS_SQUARE_AA:
-      case DRAW_MODE_POINTS_SQUARE_GOURAUD:
-      case DRAW_MODE_POINTS_SQUARE_GOURAUD_AA:
       case DRAW_MODE_POINTS_ROUND:
       case DRAW_MODE_POINTS_ROUND_AA:
+#ifdef SHADERVG_GL_VERTEX_ID
+#ifdef SHADERVG_USE_DEFAULT_POINT_14_2
+         sdvg_Attrib2i16(_x, _y);
+#else
+         sdvg_Attrib2xf(_x, _y);
+#endif // SHADERVG_USE_DEFAULT_POINT_14_2
+#else
+         for(sUI i = 0u; i < 6u; i++)
+         {
+            Dstream_write_i16(attrib_write_buffer, (current_draw_vertex_write_index++ % 6u));
+#ifdef SHADERVG_USE_DEFAULT_POINT_14_2
+            sdvg_Attrib2i16(_x, _y);
+#else
+            sdvg_Attrib2xf(_x, _y);
+#endif // SHADERVG_USE_DEFAULT_POINT_14_2
+         }
+#endif // SHADERVG_GL_VERTEX_ID
+         break;
+
+      case DRAW_MODE_POINTS_SQUARE_GOURAUD:
+      case DRAW_MODE_POINTS_SQUARE_GOURAUD_AA:
       case DRAW_MODE_POINTS_ROUND_GOURAUD:
       case DRAW_MODE_POINTS_ROUND_GOURAUD_AA:
 #ifdef SHADERVG_GL_VERTEX_ID
@@ -10789,7 +10903,8 @@ void YAC_CALL sdvg_Vertex2x(sS16 _x, sS16 _y) {
 #else
          for(sUI i = 0u; i < 6u; i++)
          {
-            Dstream_write_i16(attrib_write_buffer, (current_draw_vertex_write_index++ % 6u));
+            Dstream_write_i16(attrib_write_buffer, i);
+            sdvg_WriteC32AsRGBA8(attrib_write_buffer, last_attrib_argb);
 #ifdef SHADERVG_USE_DEFAULT_POINT_14_2
             sdvg_Attrib2i16(_x, _y);
 #else
@@ -10927,13 +11042,35 @@ void YAC_CALL sdvg_Color4f(sF32 _r, sF32 _g, sF32 _b, sF32 _a) {
 }
 
 void YAC_CALL sdvg_AttribARGB(sUI _c32) {
+#ifdef SHADERVG_GL_VERTEX_ID
    // (todo) convert as required
    sdvg_WriteC32AsRGBA8(attrib_write_buffer, _c32);
+#else
+   if(b_current_draw_mode_gouraud)
+   {
+      last_attrib_argb = _c32;
+   }
+   else
+   {
+      sdvg_WriteC32AsRGBA8(attrib_write_buffer, _c32);
+   }
+#endif // SHADERVG_GL_VERTEX_ID;
 }
 
 void YAC_CALL sdvg_ColorARGB(sUI _c32) {
+#ifdef SHADERVG_GL_VERTEX_ID
    // (todo) convert as required
-   sdvg_AttribARGB(_c32);
+   sdvg_WriteC32AsRGBA8(attrib_write_buffer, _c32);
+#else
+   if(b_current_draw_mode_gouraud)
+   {
+      last_attrib_argb = _c32;
+   }
+   else
+   {
+      sdvg_WriteC32AsRGBA8(attrib_write_buffer, _c32);
+   }
+#endif // SHADERVG_GL_VERTEX_ID;
 }
 
 #ifdef SHADERVG_USE_SCRATCHBUFFERSUBDATA
@@ -11102,7 +11239,7 @@ void YAC_CALL sdvg_End(void) {
 #else
 #error SHADERVG_STENCIL_POLYGONS is not enabled and GL_TES_npolygons is not available
 #endif // SHADERVG_HW_NPOLYGONS && GL_TES_npolygons
-#ifdef SHADERVG_POLYGON_AA_OUTLINES
+#if defined(SHADERVG_POLYGON_AA_OUTLINES) && defined(SHADERVG_GL_VERTEX_ID)
                         // Draw AA outline
                         const sF32 oldStrokeW = stroke_w;
                         const sF32 oldStrokeWScale = stroke_w_scale;
@@ -11129,7 +11266,7 @@ void YAC_CALL sdvg_End(void) {
                                                         );
                         stroke_w = oldStrokeW;
                         stroke_w_scale = oldStrokeWScale;
-#endif // SHADERVG_POLYGON_AA_OUTLINES
+#endif // defined(SHADERVG_POLYGON_AA_OUTLINES) && defined(SHADERVG_GL_VERTEX_ID)
                         loc_RebindCurrentShape();
                      }
                   }
@@ -11151,7 +11288,7 @@ void YAC_CALL sdvg_End(void) {
 #else
 #error SHADERVG_STENCIL_POLYGONS is not enabled and GL_TES_npolygons is not available
 #endif // SHADERVG_HW_NPOLYGONS && GL_TES_npolygons
-#ifdef SHADERVG_POLYGON_AA_OUTLINES
+#if defined(SHADERVG_POLYGON_AA_OUTLINES) && defined(SHADERVG_GL_VERTEX_ID)
                         // Draw AA outline
                         const sF32 oldStrokeW = stroke_w;
                         const sF32 oldStrokeWScale = stroke_w_scale;
@@ -11170,7 +11307,7 @@ void YAC_CALL sdvg_End(void) {
                                                         );
                         stroke_w = oldStrokeW;
                         stroke_w_scale = oldStrokeWScale;
-#endif // SHADERVG_POLYGON_AA_OUTLINES
+#endif // defined(SHADERVG_POLYGON_AA_OUTLINES) && defined(SHADERVG_GL_VERTEX_ID)
                         loc_RebindCurrentShape();
                      }
                   }
@@ -11192,7 +11329,7 @@ void YAC_CALL sdvg_End(void) {
 #else
 #error SHADERVG_STENCIL_POLYGONS is not enabled and GL_TES_npolygons is not available
 #endif // SHADERVG_HW_NPOLYGONS && GL_TES_npolygons
-#ifdef SHADERVG_POLYGON_AA_OUTLINES
+#if defined(SHADERVG_POLYGON_AA_OUTLINES) && defined(SHADERVG_GL_VERTEX_ID)
                         // Draw AA outline
                         const sF32 oldStrokeW = stroke_w;
                         const sF32 oldStrokeWScale = stroke_w_scale;
@@ -11211,13 +11348,14 @@ void YAC_CALL sdvg_End(void) {
                                                         );
                         stroke_w = oldStrokeW;
                         stroke_w_scale = oldStrokeWScale;
-#endif // SHADERVG_POLYGON_AA_OUTLINES
+#endif // defined(SHADERVG_POLYGON_AA_OUTLINES) && defined(SHADERVG_GL_VERTEX_ID)
                         loc_RebindCurrentShape();
                      }
                   }
                   break;
 
                case DRAW_MODE_LINE_STRIP:
+#ifdef SHADERVG_GL_VERTEX_ID
 #ifdef SHADERVG_USE_DEFAULT_LINE_14_2
                   sdvg_DrawLineStripFlatVBO14_2(current_vbo_id,
                                                 current_draw_start_offset,
@@ -11229,6 +11367,26 @@ void YAC_CALL sdvg_End(void) {
                                               current_draw_vertex_index
                                               );
 #endif // SHADERVG_USE_DEFAULT_LINE_14_2
+#else
+                  {
+                     sBool bAA = b_aa;
+                     b_aa = YAC_FALSE;
+                     // support paints
+#ifdef SHADERVG_USE_DEFAULT_LINE_14_2
+                     sdvg_DrawLineStripFlatAAVBO14_2(current_vbo_id,
+                                                     current_draw_start_offset,
+                                                     current_draw_vertex_index
+                                                     );
+#else
+                     sdvg_DrawLineStripFlatAAVBO32(current_vbo_id,
+                                                   current_draw_start_offset,
+                                                   current_draw_vertex_index
+                                                   );
+#endif // SHADERVG_USE_DEFAULT_LINE_14_2
+                     b_aa = bAA;
+                  }
+#endif // SHADERVG_GL_VERTEX_ID
+
                   break;
 
                 case DRAW_MODE_LINE_STRIP_AA:

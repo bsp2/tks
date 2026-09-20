@@ -53,7 +53,7 @@ class PointsRoundAA32PatternDecal : public ShaderVG_Shape {
       "  v = vCtr + u_a_offset[int(gl_VertexID)]; \n"
 #else
 #ifndef SHADERVG_GL_VERTEX_ID
-      "  float index = mod(float(a_vertex_id), 6.0); \n"
+      "  float index = a_vertex_id; \n"
 #else
       "  float index = float(gl_VertexID); \n"
 #endif // SHADERVG_GL_VERTEX_ID
@@ -109,10 +109,10 @@ class PointsRoundAA32PatternDecal : public ShaderVG_Shape {
       "  uv.x = v_paint_uv.x * u_paint_ndir.x - v_paint_uv.y * u_paint_ndir.y; \n"
       "  uv.y = v_paint_uv.x * u_paint_ndir.y + v_paint_uv.y * u_paint_ndir.x; \n"
       "  vec4 cp = TEXTURE2D(u_paint_tex, uv); \n"
-      "  FRAGCOLOR = vec4(mix(u_color_fill.rgb, u_color_stroke.rgb * cp.rgb, u_color_stroke.a * cp.a * u_decal_alpha), u_color_fill.a * a); \n"
+      "  OUT_FRAGCOLOR = vec4(mix(u_color_fill.rgb, u_color_stroke.rgb * cp.rgb, u_color_stroke.a * cp.a * u_decal_alpha), u_color_fill.a * a); \n"
 #ifdef SHADERVG_DEBUG_FRAG
       "  if(u_debug > 0.0) { \n"
-      "    FRAGCOLOR = vec4(u_color_fill.r, a, u_color_fill.b, u_color_fill.a); \n"
+      "    OUT_FRAGCOLOR = vec4(u_color_fill.r, a, u_color_fill.b, u_color_fill.a); \n"
       "  } \n"
 #endif // SHADERVG_DEBUG_FRAG
       "} \n"

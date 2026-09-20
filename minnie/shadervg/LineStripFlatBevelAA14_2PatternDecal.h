@@ -217,10 +217,10 @@ class LineStripFlatBevelAA14_2PatternDecal : public ShaderVG_Shape {
       "  uv.x = v_paint_uv.x * u_paint_ndir.x - v_paint_uv.y * u_paint_ndir.y; \n"
       "  uv.y = v_paint_uv.x * u_paint_ndir.y + v_paint_uv.y * u_paint_ndir.x; \n"
       "  vec4 cp = TEXTURE2D(u_paint_tex, uv); \n"
-      "  FRAGCOLOR = vec4(mix(u_color_fill.rgb, u_color_stroke.rgb * cp.rgb, u_color_stroke.a * cp.a * u_decal_alpha), u_color_fill.a * a); \n"
+      "  OUT_FRAGCOLOR = vec4(mix(u_color_fill.rgb, u_color_stroke.rgb * cp.rgb, u_color_stroke.a * cp.a * u_decal_alpha), u_color_fill.a * a); \n"
 #ifdef SHADERVG_DEBUG_FRAG
       "  if(u_debug > 0.0) { \n"
-      "    FRAGCOLOR = vec4(uv.x, a, uv.y, 1.0); \n"
+      "    OUT_FRAGCOLOR = vec4(uv.x, a, uv.y, 1.0); \n"
       "  } \n"
 #endif // SHADERVG_DEBUG_FRAG
       "} \n"

@@ -95,9 +95,12 @@ sBool hal_window_init(sUI _w, sUI _h) {
    SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE, 5);
    SDL_GL_SetAttribute(SDL_GL_BLUE_SIZE, 5);
    SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+#ifdef SHADERVG_GL_VERTEX_ID
    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 4);
    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+// else: GLES2 build dev on macOS
+#endif // SHADERVG_GL_VERTEX_ID
 #ifdef SHADERVG_DEPTH
    SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 16);
 #else

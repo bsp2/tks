@@ -61,7 +61,7 @@ class PolygonFillFlat32PatternDecal : public ShaderVG_Shape {
       "  uv.x = paintUV.x * u_paint_ndir.x - paintUV.y * u_paint_ndir.y; \n"
       "  uv.y = paintUV.x * u_paint_ndir.y + paintUV.y * u_paint_ndir.x; \n"
       "  vec4 cp = TEXTURE2D(u_paint_tex, uv); \n"
-      "  FRAGCOLOR = vec4(mix(u_color_fill.rgb, cp.rgb * u_color_stroke.rgb, u_color_stroke.a * cp.a * u_decal_alpha), u_color_fill.a); \n"
+      "  OUT_FRAGCOLOR = vec4(mix(u_color_fill.rgb, cp.rgb * u_color_stroke.rgb, u_color_stroke.a * cp.a * u_decal_alpha), u_color_fill.a); \n"
       "} \n"
       ;
 
