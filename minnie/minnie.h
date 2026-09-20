@@ -3517,6 +3517,12 @@ class Path {
          {
             sUI vtxIdx = (vtxIdxWrap >= numVerts) ? (vtxIdxWrap - numVerts) : vtxIdxWrap;
 
+            sF32 x = (_va[(vtxIdx<<1)+0] + _tx) * _geoScaleX;
+            sF32 y = (_va[(vtxIdx<<1)+1] + _ty) * _geoScaleY;
+
+            Dexportprintfvv("[>>>] minnie::Path::exportVertices: va[%u]=(%f;%f)\n", vtxIdxWrap, x, y);
+
+#ifdef SHADERVG_GL_VERTEX_ID
             if(!_bUniformColors)
             {
                Dstream_write_i8(_ofs, (_c32Fill >> 16) & 255 );  // r
@@ -3525,10 +3531,22 @@ class Path {
                Dstream_write_i8(_ofs, (_c32Fill >> 24) & 255 );  // a
             }
 
-            sF32 x = (_va[(vtxIdx<<1)+0] + _tx) * _geoScaleX;
-            sF32 y = (_va[(vtxIdx<<1)+1] + _ty) * _geoScaleY;
+#if MINNIE_EXPORT_VERTEX_16BIT
+            Dstream_write_i16(_ofs, sS16(x*4.0f));
+            Dstream_write_i16(_ofs, sS16(y*4.0f));
+#else
+            Dstream_write_f32(_ofs, x);
+            Dstream_write_f32(_ofs, y);
+#endif // MINNIE_EXPORT_VERTEX_16BIT
 
-            Dexportprintfvv("[>>>] minnie::Path::exportVertices: va[%u]=(%f;%f)\n", vtxIdxWrap, x, y);
+#else
+            if(!_bUniformColors)
+            {
+               Dstream_write_i8(_ofs, (_c32Fill >> 16) & 255 );  // r
+               Dstream_write_i8(_ofs, (_c32Fill >>  8) & 255 );  // g
+               Dstream_write_i8(_ofs, (_c32Fill      ) & 255 );  // b
+               Dstream_write_i8(_ofs, (_c32Fill >> 24) & 255 );  // a
+            }
 
 #if MINNIE_EXPORT_VERTEX_16BIT
             Dstream_write_i16(_ofs, sS16(x*4.0f));
@@ -3537,6 +3555,8 @@ class Path {
             Dstream_write_f32(_ofs, x);
             Dstream_write_f32(_ofs, y);
 #endif // MINNIE_EXPORT_VERTEX_16BIT
+
+#endif // SHADERVG_GL_VERTEX_ID
          }
       }
    }
@@ -9622,6 +9642,7 @@ struct MinnieSetup {
          const sF32 x = _va->elements.f32[idxOff + 0u];
          const sF32 y = _va->elements.f32[idxOff + 1u];
          Dexportprintfvv("[>>>] minnie::exportLineStripPoints: va[%u]=(%f;%f)\n", vtxIdx++, x, y);
+#ifdef SHADERVG_GL_VERTEX_ID
 #if MINNIE_EXPORT_VERTEX_16BIT
          Dexport_vb_i16(sSI(x * 4.0f));
          Dexport_vb_i16(sSI(y * 4.0f));
@@ -9629,6 +9650,19 @@ struct MinnieSetup {
          Dexport_vb_f32(x);
          Dexport_vb_f32(y);
 #endif // MINNIE_EXPORT_VERTEX_16BIT
+#else
+         for(sU16 idx = 0u; idx < 6u; idx++)
+         {
+            Dexport_vb_i16(idx);
+#if MINNIE_EXPORT_VERTEX_16BIT
+            Dexport_vb_i16(sSI(x * 4.0f));
+            Dexport_vb_i16(sSI(y * 4.0f));
+#else
+            Dexport_vb_f32(x);
+            Dexport_vb_f32(y);
+#endif // MINNIE_EXPORT_VERTEX_16BIT
+         }
+#endif // SHADERVG_GL_VERTEX_ID
       }
    }
 
@@ -9662,6 +9696,8 @@ struct MinnieSetup {
          const sF32 x = (_va->elements.f32[idxOff + 0u] + cur_x) * geo_scale_x;
          const sF32 y = (_va->elements.f32[idxOff + 1u] + cur_y) * geo_scale_y;
          Dexportprintfvv("[>>>] minnie::exportLineStripPointsTranslateScale: va[%u]=(%f;%f)\n", vtxIdx++, x, y);
+
+#ifdef SHADERVG_GL_VERTEX_ID
 #if MINNIE_EXPORT_VERTEX_16BIT
          Dexport_vb_i16(sSI(x * 4.0f));
          Dexport_vb_i16(sSI(y * 4.0f));
@@ -9669,6 +9705,19 @@ struct MinnieSetup {
          Dexport_vb_f32(x);
          Dexport_vb_f32(y);
 #endif // MINNIE_EXPORT_VERTEX_16BIT
+#else
+         for(sU16 idx = 0u; idx < 6u; idx++)
+         {
+            Dexport_vb_i16(idx);
+#if MINNIE_EXPORT_VERTEX_16BIT
+            Dexport_vb_i16(sSI(x * 4.0f));
+            Dexport_vb_i16(sSI(y * 4.0f));
+#else
+            Dexport_vb_f32(x);
+            Dexport_vb_f32(y);
+#endif // MINNIE_EXPORT_VERTEX_16BIT
+         }
+#endif // SHADERVG_GL_VERTEX_ID
       }
    }
 
@@ -9718,6 +9767,8 @@ struct MinnieSetup {
             patOff += d;
          }
          Dexportprintfvv("[>>>] minnie::exportLineStripPointsPattern: va[%u]=(%f;%f) patOff=%f\n", vtxIdx, x, y, patOff);
+
+#ifdef SHADERVG_GL_VERTEX_ID
 #if MINNIE_EXPORT_VERTEX_16BIT
          Dexport_vb_i16(sSI(x * 4.0f));
          Dexport_vb_i16(sSI(y * 4.0f));
@@ -9727,6 +9778,22 @@ struct MinnieSetup {
          Dexport_vb_f32(y);
          Dexport_vb_f32(patOff);
 #endif // MINNIE_EXPORT_VERTEX_16BIT
+#else
+         for(sU16 idx = 0u; idx < 6u; idx++)
+         {
+            Dexport_vb_i16(idx);
+#if MINNIE_EXPORT_VERTEX_16BIT
+            Dexport_vb_i16(sSI(x * 4.0f));
+            Dexport_vb_i16(sSI(y * 4.0f));
+            Dexport_vb_i16(sSI(patOff * 4.0f));
+#else
+            Dexport_vb_f32(x);
+            Dexport_vb_f32(y);
+            Dexport_vb_f32(patOff);
+#endif // MINNIE_EXPORT_VERTEX_16BIT
+         }
+#endif // SHADERVG_GL_VERTEX_ID
+
          lastX = x;
          lastY = y;
          /* /\* if(vtxIdx < numClosed) *\/ */
@@ -9755,6 +9822,7 @@ struct MinnieSetup {
          const sF32 dy = (pointLastY - pointLastYPrev);
          const sF32 x = pointLastX + dx;
          const sF32 y = pointLastY + dy;
+#ifdef SHADERVG_GL_VERTEX_ID
 #if MINNIE_EXPORT_VERTEX_16BIT
          Dexport_vb_i16(sSI(x * 4.0f));
          Dexport_vb_i16(sSI(y * 4.0f));
@@ -9764,6 +9832,21 @@ struct MinnieSetup {
          Dexport_vb_f32(y);
          Dexport_vb_f32(pointPatOff);
 #endif // MINNIE_EXPORT_VERTEX_16BIT
+#else
+         for(sU16 idx = 0u; idx < 6u; idx++)
+         {
+            Dexport_vb_i16(idx);
+#if MINNIE_EXPORT_VERTEX_16BIT
+            Dexport_vb_i16(sSI(x * 4.0f));
+            Dexport_vb_i16(sSI(y * 4.0f));
+            Dexport_vb_i16(sSI(pointPatOff * 4.0f));
+#else
+            Dexport_vb_f32(x);
+            Dexport_vb_f32(y);
+            Dexport_vb_f32(pointPatOff);
+#endif // MINNIE_EXPORT_VERTEX_16BIT
+         }
+#endif // SHADERVG_GL_VERTEX_ID
          Dexportprintfvv("[>>>] minnie::exportLineStripPointsPattern<cap>: va[%u]=(%f;%f) patOff=%f\n", vtxIdx, x, y, pointPatOff);
       }
    }
@@ -9815,6 +9898,8 @@ struct MinnieSetup {
             patOff += d;
          }
          Dexportprintfvv("[>>>] minnie::exportLineStripPointsTranslateScalePattern: va[%u]=(%f;%f) patOff=%f\n", vtxIdx, x, y, patOff);
+
+#ifdef SHADERVG_GL_VERTEX_ID
 #if MINNIE_EXPORT_VERTEX_16BIT
          Dexport_vb_i16(sSI(x * 4.0f));
          Dexport_vb_i16(sSI(y * 4.0f));
@@ -9824,6 +9909,22 @@ struct MinnieSetup {
          Dexport_vb_f32(y);
          Dexport_vb_f32(patOff);
 #endif // MINNIE_EXPORT_VERTEX_16BIT
+#else
+         for(sU16 idx = 0u; idx < 6u; idx++)
+         {
+            Dexport_vb_i16(idx);
+#if MINNIE_EXPORT_VERTEX_16BIT
+            Dexport_vb_i16(sSI(x * 4.0f));
+            Dexport_vb_i16(sSI(y * 4.0f));
+            Dexport_vb_i16(sSI(patOff * 4.0f));
+#else
+            Dexport_vb_f32(x);
+            Dexport_vb_f32(y);
+            Dexport_vb_f32(patOff);
+#endif // MINNIE_EXPORT_VERTEX_16BIT
+         }
+#endif // SHADERVG_GL_VERTEX_ID
+
          lastX = x;
          lastY = y;
          /* /\* if(vtxIdx < numClosed) *\/ */
@@ -9838,6 +9939,7 @@ struct MinnieSetup {
       }
       // add 2 extra pattern line-cap vertices
       {
+#ifdef SHADERVG_GL_VERTEX_ID
 #if MINNIE_EXPORT_VERTEX_16BIT
          Dexport_vb_i16(sSI(pointLastX * 4.0f));
          Dexport_vb_i16(sSI(pointLastY * 4.0f));
@@ -9847,11 +9949,27 @@ struct MinnieSetup {
          Dexport_vb_f32(pointLastY);
          Dexport_vb_f32(pointPatOff);
 #endif // MINNIE_EXPORT_VERTEX_16BIT
+#else
+         for(sU16 idx = 0u; idx < 6u; idx++)
+         {
+            Dexport_vb_i16(idx);
+#if MINNIE_EXPORT_VERTEX_16BIT
+            Dexport_vb_i16(sSI(pointLastX * 4.0f));
+            Dexport_vb_i16(sSI(pointLastY * 4.0f));
+            Dexport_vb_i16(sSI(pointPatOff * 4.0f));
+#else
+            Dexport_vb_f32(pointLastX);
+            Dexport_vb_f32(pointLastY);
+            Dexport_vb_f32(pointPatOff);
+#endif // MINNIE_EXPORT_VERTEX_16BIT
+         }
+#endif // SHADERVG_GL_VERTEX_ID
          Dexportprintfvv("[>>>] minnie::exportLineStripPointsTranslateScalePattern<cap>: va[%u]=(%f;%f) patOff=%f\n", vtxIdx++, pointLastX, pointLastY, pointPatOff);
          const sF32 dx = (pointLastX - pointLastXPrev);
          const sF32 dy = (pointLastY - pointLastYPrev);
          const sF32 x = pointLastX + dx;
          const sF32 y = pointLastY + dy;
+#ifdef SHADERVG_GL_VERTEX_ID
 #if MINNIE_EXPORT_VERTEX_16BIT
          Dexport_vb_i16(sSI(x * 4.0f));
          Dexport_vb_i16(sSI(y * 4.0f));
@@ -9861,6 +9979,21 @@ struct MinnieSetup {
          Dexport_vb_f32(y);
          Dexport_vb_f32(pointPatOff);
 #endif // MINNIE_EXPORT_VERTEX_16BIT
+#else
+         for(sU16 idx = 0u; idx < 6u; idx++)
+         {
+            Dexport_vb_i16(idx);
+#if MINNIE_EXPORT_VERTEX_16BIT
+            Dexport_vb_i16(sSI(x * 4.0f));
+            Dexport_vb_i16(sSI(y * 4.0f));
+            Dexport_vb_i16(sSI(pointPatOff * 4.0f));
+#else
+            Dexport_vb_f32(x);
+            Dexport_vb_f32(y);
+            Dexport_vb_f32(pointPatOff);
+#endif // MINNIE_EXPORT_VERTEX_16BIT
+         }
+#endif // SHADERVG_GL_VERTEX_ID
          Dexportprintfvv("[>>>] minnie::exportLineStripPointsTranslateScalePattern<cap>: va[%u]=(%f;%f) patOff=%f\n", vtxIdx, x, y, pointPatOff);
       }
    }
