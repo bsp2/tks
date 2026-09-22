@@ -206,7 +206,7 @@ static sF32 loc_randf(sF32 _max) {
 // ----------------------------------------------------------------------------
 static void Test_00(void) {
    // concave path
-   
+
    MinPathId pid = minBeginPath();
    minSeg(32u);
 
@@ -704,6 +704,8 @@ static void Test_23(sBool _bFill, sBool _bStroke) {
    sF32 px = 800.0f/2;
    sF32 py = 400.0f/2;
 
+   // Dprintf("xxx r=(%f; %f)  s=(%f; %f)\n", rx, ry, sx, sy);
+
    minMoveTo(px, py);
 
    sF32 rot = 0.0f;
@@ -1122,7 +1124,7 @@ static void Test_36(void) {
    sF32 y;
 
    sF32 aAng[] = { anim_1 * 0.5f, anim_2 * 0.5f,    anim_3,      anim_4,      anim_5,  anim_6*2.0f };
-   sF32 aAngOff[] = { 
+   sF32 aAngOff[] = {
       sM_PIf * (1.0f + sinf(anim_2)*1.0f),
       sM_PIf * (1.0f + sinf(anim_1)*1.0f),
       sM_PIf * (1.0f + sinf(anim_6)*1.0f),
@@ -1261,7 +1263,7 @@ static void Test_37(void) {
    sF32 vph = (sF32)VP_H;
 
    sdvg_ProjInit2D(vpw, vph);
-  
+
    sF32 tAngX = anim_1;
    sF32 tAngY = anim_2;
    sF32 twx = 0.123132f*3.0f*1.3f;
