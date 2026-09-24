@@ -49,8 +49,10 @@ static glanyfun_t int_GetProcAddress(const char *_name) {
    return (glanyfun_t) MyNSGLGetProcAddress(_name);
 #elif defined(SHADERVG_GLES)
    return (glanyfun_t) eglGetProcAddress((const char*)_name);
-#else
+#elif defined(SHADERVG_X11)
    return (glanyfun_t) glXGetProcAddress((const GLubyte*)_name);
+#else
+#error int_GetProcessAddress: missing implementation
 #endif // YAC_WIN32
 }
 
