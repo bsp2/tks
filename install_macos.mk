@@ -36,6 +36,7 @@ endif
 #
 SCP_USER=root
 SCP_HOST=${BOARD_IP}
+SCP_FLAGS=
 SCP_PLUGIN_PATH=/usr/lib/tks/plugins/
 SCP_TKS_PREFIX=/usr/
 RSYNC_CMD=rsync -a -v -e ssh -u -r -l -z --exclude=\*.ini
@@ -112,8 +113,8 @@ endif
 # Tool setup
 #
 AR        = $(CROSS_COMPILE)ar
-CPP       = $(CROSS_COMPILE)g++
-CC        = $(CROSS_COMPILE)gcc
+CXX       = $(CROSS_COMPILE)clang++
+CC        = $(CROSS_COMPILE)clang
 AS        = $(CROSS_COMPILE)as
 STRIP     = $(CROSS_COMPILE)strip -x
 CP        = cp -f

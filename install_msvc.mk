@@ -279,10 +279,12 @@ DXSDK_INC=c:/Program Files (x86)/Microsoft DirectX SDK (August 2008)/Include
 #
 ifeq ($(BUILD_64),y)
 CC        = "$(VCTK_BINPATH_64)/cl.exe"
+CXX       = "$(VCTK_BINPATH_64)/cl.exe"
 LD        = "$(VCTK_BINPATH_64)/link.exe"
 LIB       = "$(VCTK_BINPATH_64)/lib.exe"
 else
 CC        = "$(VCTK_BINPATH_32)/cl.exe"
+CXX       = "$(VCTK_BINPATH_32)/cl.exe"
 LD        = "$(VCTK_BINPATH_32)/link.exe"
 LIB       = "$(VCTK_BINPATH_32)/lib.exe"
 endif

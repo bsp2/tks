@@ -29,7 +29,7 @@ ifeq ($(CUSTOM_BIN_TARGET),y)
 else
 .PHONY: bin
 bin: $(BIN_RULES) $(ALL_OBJ)
-	$(CPP) -shared -o "$(TARGET)" -Wl,-soname,$(TARGET) $(ALL_OBJ) $(LDFLAGS) $(EXTRALIBS)
+	$(CXX) -shared -o "$(TARGET)" -Wl,-soname,$(TARGET) $(ALL_OBJ) $(LDFLAGS) $(EXTRALIBS)
 ifneq ($(DEBUG),y)
 	$(STRIP) "$(TARGET)"
 endif
@@ -39,7 +39,7 @@ endif
 
 
 .cpp.o:
-	$(CPP) $(CPPFLAGS) $(OPTFLAGS) $(DBGFLAGS) -c $< -o $@
+	$(CXX) $(CPPFLAGS) $(OPTFLAGS) $(DBGFLAGS) -c $< -o $@
 
 .c.o:
 	$(CC) $(CFLAGS) $(OPTFLAGS) $(DBGFLAGS) -c $< -o $@

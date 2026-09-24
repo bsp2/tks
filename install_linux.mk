@@ -36,6 +36,7 @@ endif
 #
 SCP_USER=root
 SCP_HOST=$(BOARD_IP)
+SCP_FLAGS=
 SCP_PLUGIN_PATH=/usr/lib/tks/plugins/
 SCP_TKS_PREFIX=/usr/
 RSYNC_CMD=rsync -a -v -e ssh -u -r -l -z --exclude=\*.ini
@@ -82,6 +83,7 @@ RSYNC_CMD=rsync -a -v -e ssh -u -r -l -z --exclude=\*.ini
 #    )
 #
 
+
 # Target installation paths for executable and libraries/plugins/modules
 #  (also used to build "tks.sh" startup script, see tks-source/install.tks)
 #  (note: the TARGET vars are for paths used on the target)
@@ -113,10 +115,10 @@ endif
 #
 AR        = $(CROSS_COMPILE)ar
 ifeq ($(BUILD_CLANG),y)
-  CPP       = $(CROSS_COMPILE)clang++
+  CXX       = $(CROSS_COMPILE)clang++
   CC        = $(CROSS_COMPILE)clang
 else
-  CPP       = $(CROSS_COMPILE)g++
+  CXX       = $(CROSS_COMPILE)g++
   CC        = $(CROSS_COMPILE)gcc
 endif
 AS        = $(CROSS_COMPILE)as
@@ -133,6 +135,7 @@ UPX       = upx
 MD5SUM    = md5sum
 m         = $(MAKE) -f makefile.linux
 
+
 #
 # Number of parallel targets to make
 #
@@ -140,9 +143,10 @@ ifeq ($(NUM_JOBS),)
 ifeq ($(BUILD_RASPBIAN),y)
   NUM_JOBS=4
 else
-  NUM_JOBS=`grep -c "processor" /proc/cpuinfo`
+  NUM_JOBS=`nproc`
 endif
 endif # NUM_JOBS
+
 
 #
 # Target architecture
@@ -174,12 +178,10 @@ CFLAGS= -Wall
 CPPFLAGS= -Wall
 
 
-
 #
 # Assembly flags
 #
 AFLAGS=
-
 
 
 #
@@ -189,12 +191,10 @@ AFLAGS=
 LDFLAGS=-Wl,--hash-style=gnu
 
 
-
 #
 # Extra includes
 #
 EXTRA_INCLUDES=
-
 
 
 #
@@ -202,7 +202,6 @@ EXTRA_INCLUDES=
 #
 EXTRA_LIBS=
 EXTRA_LIBS+= -L"${TKS_LIB_PREFIX}"
-
 
 
 #
@@ -227,7 +226,6 @@ CFLAGS+= $(ARCHFLAGS)
 CPPFLAGS+= $(ARCHFLAGS)
 
 
-
 #
 # Target machine flags
 #
@@ -247,7 +245,6 @@ ifeq ($(CROSS_TARGET),DNX_POKY)
     MFLAGS += -march=armv7-a -mfpu=neon -mfloat-abi=hard
   endif # BUILD_64
 endif # CROSS_TARGET POKY
-
 
 
 #
@@ -286,7 +283,6 @@ ifeq ($(RELEASE),y)
     endif # OPT_LTO
   endif # BUILD_CLANG
 endif # /RELEASE
-
 
 
 #

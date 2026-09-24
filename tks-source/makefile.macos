@@ -16,20 +16,24 @@ TARGET_LIB= libtks.dylib
 MINOPTFLAGS= -O2
 #MINOPTFLAGS= -O1
 
+CPPFLAGS+= -Wno-vla-cxx-extension
+
 ifeq ($(TKS_OPT_SIZE),y)
-CFLAGS += -DTKS_OPT_SIZE
-CPPFLAGS += -DTKS_OPT_SIZE
+CFLAGS+= -DTKS_OPT_SIZE
+CPPFLAGS+= -DTKS_OPT_SIZE
 LDFLAGS+= -Wl,-map,tks.map
 LDFLAGS+= -dead_strip
 endif
 
 CPPFLAGS+= -DDX_SYSEXEC -DDX_Z -DHAVE_TLS -DHAVE_DLFCN -DHAVE_APPLE_QOS
-CPPFLAGS +=-DAUTOLOAD_TKOPENGL
+
+CPPFLAGS_EXE+= -DAUTOLOAD_TKOPENGL
+CPPFLAGS_LIB+= -fPIC -DTKS_LIB
 
 ifeq ($(ARCH),X64)
 CPPFLAGS+=-DDX_X64
 else ifeq ($(ARCH),X86)
-CPPFLAGS+=  -DTKS_JIT -DDX_X86
+CPPFLAGS+= -DTKS_JIT -DDX_X86
 else ifeq ($(ARCH),ARM64)
 CPPFLAGS+= -DDX_ARM
 CPPFLAGS+= -DDX_ARM64
@@ -41,37 +45,36 @@ endif
 
 CPPFLAGS+= -I../yac
 
-# (note) see main.cpp (tks_lib_init(), tks_lib_run(), ..)
-ifeq ($(TKS_LIB),y)
-CPPFLAGS += -DTKS_LIB
-endif
-
 include make.objects
 
 PLAF_OBJ = TKS_Plugin_dlfcn.o tks_debug_stub.o TKS_SharedBuffer_linux.o TKS_Process_linux.o
 
+ALL_OBJ+=$(PLAF_OBJ)
+ALL_OBJ_LIB=$(addprefix lib/,$(ALL_OBJ))
 
 #
 # Build shared executable (otherwise the plugin loader may not work)
 #
 .PHONY: bin
-bin:	$(ALL_OBJ) VMCore.o TKS_CachedScript.o $(PLAF_OBJ)
-	$(CPP) -o tks $(DBGFLAGS) $(LDFLAGS) $(ALL_OBJ) VMCore.o TKS_CachedScript.o $(PLAF_OBJ) -lm -lz -ldl -lpthread
+bin:	$(ALL_OBJ)
+	$(CXX) -o tks $(DBGFLAGS) $(LDFLAGS) $(ALL_OBJ) -lm -lz -ldl -lpthread
+	@ls -ld tks
 	@echo "Build finished at `date +%H:%M`."
 
 
 #
-# Build scriptengine lib (experimental)
+# Build scriptengine lib
 #
 .PHONY: bin_lib
-bin_lib: $(ALL_OBJ) VMCore.o TKS_CachedScript.o $(PLAF_OBJ)
-#	$(CPP) -shared -o "$(TARGET_LIB)" -Wl,-soname,$(TARGET_LIB)
-	$(CPP) -dynamiclib -o $(TARGET_LIB) $(ALL_OBJ) VMCore.o TKS_CachedScript.o $(LDFLAGS) $(PLAF_OBJ) -lm -lz -ldl -lpthread
+bin_lib: $(ALL_OBJ_LIB)
+	$(CXX) -dynamiclib -o $(TARGET_LIB) $(ALL_OBJ_LIB) $(LDFLAGS) -lm -lz -ldl -lpthread
+	@ls -ld $(TARGET_LIB)
 	@echo "Lib Build finished at `date +%H:%M`."
 
+
 .PHONY: lib
-lib:
-	$(MAKE) -f makefile.macos clean ; $(MAKE) -f makefile.macos -j$(NUM_JOBS) TKS_LIB=y OPT_SIZE=$(OPT_SIZE) OPT_LTO=$(OPT_LTO) bin_lib
+lib: clean_lib
+	$(m) -j$(NUM_JOBS) TKS_LIB=y OPT_SIZE=$(OPT_SIZE) OPT_LTO=$(OPT_LTO) bin_lib
 
 
 #
@@ -83,41 +86,20 @@ sz: bin
 
 
 #
-# Compress binary [optional / deprecated]
+# Build statically linked binary
 #
-.PHONY: upx
-upx: bin
-	$(UPX) -9 $(TARGET)
-
-
-#
-# Re-scan YAC interface bindings and write ying_* files
-#
-.PHONY: yac
-yac:
-	$(TKS) app:ying -ng -nc api.cpp
-
-
-#
-# Optimization seems to cause bugs
-#  (todo) can probably be removed, this was on Linux/GCC (some time ago)
-#
-VMCore.o: VMCore.cpp
-	$(CPP) $(CPPFLAGS) $(MINOPTFLAGS) $(DBGFLAGS) -c VMCore.cpp -o VMCore.o
-
-
-#
-# Use of variable length array (CLang only)
-#
-TKS_Process_linux.o: TKS_Process_linux.cpp
-	$(CPP) $(CPPFLAGS) -Wno-vla-cxx-extension $(OPTFLAGS) $(DBGFLAGS) -c $< -o $@
+static:	$(ALL_OBJ)
+	$(CXX) -static -o tks $(LDFLAGS) $(ALL_OBJ) -lm -lz -ldl -lpthread
+	@ls -ld tks
+	@echo "Build finished at `date +%H:%M`."
+        @echo "[...] warning: static builds seem to have problems loading shared objects (plugins)"
 
 
 #
 # Optimization seems to cause bugs
 #
 #TKS_CachedScript.o: TKS_CachedScript.cpp
-#	$(CPP) $(CPPFLAGS) $(MINOPTFLAGS) $(DBGFLAGS) -c TKS_CachedScript.cpp -o TKS_CachedScript.o
+#	$(CXX) $(CPPFLAGS) $(MINOPTFLAGS) $(DBGFLAGS) -c TKS_CachedScript.cpp -o TKS_CachedScript.o
 
 
 #
@@ -160,71 +142,23 @@ install_lib:
 	@ls -ld "$(TKS_LIB_PREFIX)/$(TARGET_LIB)"
 
 
-#
-# Generate HTML API documentation
-#
-.PHONY: doc
-doc:
-	$(TKS) app:dog++ -pn core api.cpp >tks.ee
-	(cd doc ; $(TKS) app:dog -fp "" ../tks.ee)
-
-
-# special documentation target, internally used for the "BIG" documentation that covers tks+all plugins/libraries
-.PHONY: ee
-ee:
-	$(TKS) app:dog++ -pn core api.cpp >../apidocs/ee/core.ee
-
-
-#
-# Show help
-#
-.PHONY: help
-help:
-	@echo "       help     : this page."
-	@echo "       bin      : build dynamically linked exe."
-	@echo "       upx       : build dynamically linked exe and compress it with UPX."
-	@echo "       doc       : generate HTML API documentation";
-	@echo "       yac       : rebuild API interface bindings"
-	@echo "       static   : build statically linked exe."
-	@echo "       clean    : remove object files."
-	@echo "       realclean: clean and remove backup files."
-
-
-static:	$(ALL_OBJ) VMCore.o TKS_CachedScript.o $(PLAF_OBJ)
-	$(CPP) -static -o tks $(LDFLAGS) $(ALL_OBJ) VMCore.o TKS_CachedScript.o $(PLAF_OBJ) -lm -lz -ldl -lpthread
-	@echo "Build finished at `date +%H:%M`."
-        @echo "[...] warning: static builds seem to have problems loading shared objects (plugins)"
+include makefile.common
 
 
 #
 # Rule for building object files
 #
 .cpp.o:
-		$(CPP) $(CPPFLAGS) $(OPTFLAGS) $(DBGFLAGS) -c $< -o $@
+	$(CXX) $(CPPFLAGS) $(CPPFLAGS_EXE) $(OPTFLAGS) $(DBGFLAGS) -c $< -o $@
+
+.c.o:
+	$(CC) $(CPPFLAGS) $(CPPFLAGS_EXE) $(OPTFLAGS) $(DBGFLAGS) -c $< -o $@
+
+lib/%.o : %.cpp
+	$(CXX) $(CPPFLAGS) $(CPPFLAGS_LIB) $(OPTFLAGS) $(DBGFLAGS) -c $< -o $@
+
+lib/%.o : %.c
+	$(CC) $(CPPFLAGS) $(CPPFLAGS_LIB) $(OPTFLAGS) $(DBGFLAGS) -c $< -o $@
 
 .s.o:
-		$(AS) $(AFLAGS) $< -o $@
-
-
-#
-# Remove object files and targets.
-#
-.PHONY: clean
-clean:
-		@echo "cleaning up.."
-		$(RM) $(ALL_OBJ) VMCore.o TKS_CachedScript.o $(PLAF_OBJ)
-
-#
-# Make clean and remove backup files
-#
-.PHONY: realclean
-realclean:	clean
-		$(RM) `find . -name \*\~` $(TARGET) $(TARGET_LIB)
-
-
-#
-#
-#
-.PHONY: deploy
-deploy: bin
-	scp tks ${SCP_USER}@${SCP_HOST}:${SCP_TKS_PREFIX}/bin/tks.bin
+	$(AS) $(AFLAGS) $< -o $@

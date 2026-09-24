@@ -75,7 +75,7 @@ ifeq ($(CUSTOM_BIN_TARGET),y)
 else
 .PHONY: bin
 bin: $(BIN_RULES) $(ALL_OBJ)
-	$(CPP) -dynamiclib -o $(TARGET) $(ALL_OBJ) $(LDFLAGS) $(EXTRALIBS)
+	$(CXX) -dynamiclib -o $(TARGET) $(ALL_OBJ) $(LDFLAGS) $(EXTRALIBS)
 #-install_name "$(TKS_SITE_PREFIX)/plugins/$(TARGET)"
 ifneq ($(DEBUG),y)
 ifneq ("$(PLUGIN)","")
@@ -87,7 +87,7 @@ endif
 endif
 
 .cpp.o:
-	$(CPP) $(CPPFLAGS) $(OPTFLAGS) $(DBGFLAGS) -c $< -o $@
+	$(CXX) $(CPPFLAGS) $(OPTFLAGS) $(DBGFLAGS) -c $< -o $@
 
 .c.o:
 	$(CC) $(CFLAGS) $(OPTFLAGS) $(DBGFLAGS) -c $< -o $@

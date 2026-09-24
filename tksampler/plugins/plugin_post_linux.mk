@@ -2,7 +2,7 @@
 #include $(TKS_ROOT)/install_linux.mk
 
 .cpp.o:
-	$(CPP) $(CPPFLAGS) $(OPTFLAGS) $(DBGFLAGS) -fPIC -c $< -o $@
+	$(CXX) $(CPPFLAGS) $(OPTFLAGS) $(DBGFLAGS) -fPIC -c $< -o $@
 
 .c.o:
 	$(CC) $(CFLAGS) $(OPTFLAGS) $(DBGFLAGS) -fPIC -c $< -o $@
@@ -10,7 +10,7 @@
 
 .PHONY: bin
 bin: $(ALL_OBJ)
-	$(CPP) -shared -o "$(TARGET).so" -Wl,-soname,$(TARGET).so $(LDFLAGS) $(ALL_OBJ) $(EXTRALIBS)
+	$(CXX) -shared -o "$(TARGET).so" -Wl,-soname,$(TARGET).so $(LDFLAGS) $(ALL_OBJ) $(EXTRALIBS)
 ifneq ($(DEBUG),y)
 	$(STRIP) "$(TARGET).so"
 endif

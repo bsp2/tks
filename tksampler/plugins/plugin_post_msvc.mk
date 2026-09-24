@@ -1,6 +1,6 @@
 
 .cpp.o:
-	$(CC) $(CPPFLAGS) $(OPTFLAGS_PLUGIN) -c $< -Fo"$@"
+	$(CXX) $(CPPFLAGS) $(OPTFLAGS_PLUGIN) -c $< -Fo"$@"
 
 .c.o:
 	$(CC) $(CPPFLAGS) $(OPTFLAGS_PLUGIN) -c $< -Fo"$@"
