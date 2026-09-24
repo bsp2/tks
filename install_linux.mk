@@ -175,7 +175,7 @@ CFLAGS= -Wall
 #
 # C++ compiler flags
 #
-CPPFLAGS= -Wall
+CXXFLAGS= -Wall
 
 
 #
@@ -223,7 +223,7 @@ else
 endif # BUILD_ARM
 
 CFLAGS+= $(ARCHFLAGS)
-CPPFLAGS+= $(ARCHFLAGS)
+CXXFLAGS+= $(ARCHFLAGS)
 
 
 #
@@ -252,7 +252,7 @@ endif # CROSS_TARGET POKY
 #
 ifneq ($(CROSS_ROOT),)
   CFLAGS  += --sysroot=$(CROSS_ROOT)
-  CPPFLAGS+= --sysroot=$(CROSS_ROOT)
+  CXXFLAGS+= --sysroot=$(CROSS_ROOT)
   LDFLAGS += --sysroot=$(CROSS_ROOT)
 endif # /CROSS_ROOT
 
@@ -303,13 +303,13 @@ endif
 ifeq ($(CROSS_TARGET),OMAP3)
   LDFLAGS+= -Wl,-R./
   CFLAGS   += -DOMAP3
-  CPPFLAGS += -DOMAP3
+  CXXFLAGS += -DOMAP3
 endif
 
 ifeq ($(CROSS_TARGET),DNX_POKY)
   LDFLAGS+= -Wl,-R./
   CFLAGS   += -DDNX_POKY
-  CPPFLAGS += -DDNX_POKY
+  CXXFLAGS += -DDNX_POKY
 endif
 
 
@@ -317,5 +317,5 @@ endif
 # Nothing to change after this line-----------------------------
 #
 CFLAGS+= $(MFLAGS) $(EXTRA_INCLUDES) $(DBGFLAGS)
-CPPFLAGS+= $(MFLAGS) $(EXTRA_INCLUDES) $(DBGFLAGS)
+CXXFLAGS+= $(MFLAGS) $(EXTRA_INCLUDES) $(DBGFLAGS)
 LDFLAGS+= $(MFLAGS) $(EXTRA_LIBS)

@@ -20,9 +20,9 @@ TARGET=$(PLUGIN).dll
 endif
 endif
 
-CPPFLAGS += -I"${TKS_ROOT}/yac" -DWIN32 $(EXTRAFLAGS) $(EXTRAFLAGS_CPP)
+CXXFLAGS += -I"${TKS_ROOT}/yac" -DWIN32 $(EXTRAFLAGS) $(EXTRAFLAGS_CPP)
 ifneq ($(YAC_ALLOW_TLS),y)
-CPPFLAGS += -DYAC_FORCE_NO_TLS
+CXXFLAGS += -DYAC_FORCE_NO_TLS
 endif
 CFLAGS += $(EXTRAFLAGS_C)
 
@@ -51,10 +51,10 @@ endif
 
 
 .cpp.o:
-	$(CXX) $(CPPFLAGS) $(OPTFLAGS_PLUGIN) -c $< -Fo"$@"
+	$(CXX) $(CXXFLAGS) $(OPTFLAGS_PLUGIN) -c $< -Fo"$@"
 
 .c.o:
-	$(CC) $(CPPFLAGS) $(OPTFLAGS_PLUGIN) -c $< -Fo"$@"
+	$(CC) $(CXXFLAGS) $(OPTFLAGS_PLUGIN) -c $< -Fo"$@"
 
 
 #

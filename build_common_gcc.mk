@@ -5,7 +5,7 @@
 #
 #
 
-CPPFLAGS += -I${TKS_ROOT}/yac
+CXXFLAGS += -I${TKS_ROOT}/yac
 CFLAGS += -I${TKS_ROOT}/yac
 # -Wall -I$(CROSS_ROOT)/usr/include
 #CFLAGS += -Wall
@@ -39,7 +39,7 @@ endif
 
 
 .cpp.o:
-	$(CXX) $(CPPFLAGS) $(OPTFLAGS) $(DBGFLAGS) -c $< -o $@
+	$(CXX) $(CXXFLAGS) $(OPTFLAGS) $(DBGFLAGS) -c $< -o $@
 
 .c.o:
 	$(CC) $(CFLAGS) $(OPTFLAGS) $(DBGFLAGS) -c $< -o $@

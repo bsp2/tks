@@ -1,9 +1,9 @@
 
 .cpp.o:
-	$(CXX) $(CPPFLAGS) $(OPTFLAGS_PLUGIN) -c $< -Fo"$@"
+	$(CXX) $(CXXFLAGS) $(OPTFLAGS_PLUGIN) -c $< -Fo"$@"
 
 .c.o:
-	$(CC) $(CPPFLAGS) $(OPTFLAGS_PLUGIN) -c $< -Fo"$@"
+	$(CC) $(CXXFLAGS) $(OPTFLAGS_PLUGIN) -c $< -Fo"$@"
 
 
 .PHONY: bin

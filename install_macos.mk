@@ -167,7 +167,7 @@ CFLAGS= -Wall
 #
 # C++ compiler flags
 #
-CPPFLAGS= -Wall
+CXXFLAGS= -Wall
 
 
 #
@@ -306,7 +306,7 @@ endif
 #ifeq ($(CROSS_TARGET),xyz)
 #LDFLAGS+= -Wl,-R./
 #CFLAGS   += -DXYZ
-#CPPFLAGS += -DXYZ
+#CXXFLAGS += -DXYZ
 #endif
 
 
@@ -314,6 +314,6 @@ endif
 # Nothing to change after this line-----------------------------
 #
 CFLAGS   += $(ARCHFLAGS) $(MFLAGS) $(MACTARGET) $(EXTRA_INCLUDES) $(DBGFLAGS)
-CPPFLAGS += $(ARCHFLAGS) $(MFLAGS) $(MACTARGET) $(EXTRA_INCLUDES) $(DBGFLAGS)
+CXXFLAGS += $(ARCHFLAGS) $(MFLAGS) $(MACTARGET) $(EXTRA_INCLUDES) $(DBGFLAGS)
 OBJCFLAGS+= $(MACTARGET)
 LDFLAGS  += $(MACTARGET) $(EXTRA_LIBS)

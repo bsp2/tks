@@ -2,7 +2,7 @@
 #include $(TKS_ROOT)/install_linux.mk
 
 .cpp.o:
-	$(CXX) $(CPPFLAGS) $(OPTFLAGS) $(DBGFLAGS) -fPIC -c $< -o $@
+	$(CXX) $(CXXFLAGS) $(OPTFLAGS) $(DBGFLAGS) -fPIC -c $< -o $@
 
 .c.o:
 	$(CC) $(CFLAGS) $(OPTFLAGS) $(DBGFLAGS) -fPIC -c $< -o $@

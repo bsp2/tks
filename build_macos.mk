@@ -30,7 +30,7 @@ EXTRAFLAGS += -I/usr/local/homebrew/include
 EXTRAFLAGS_CPP += -I/usr/local/homebrew/include
 endif
 
-CPPFLAGS += -Wall -fPIC -I"${TKS_ROOT}/yac" $(EXTRAFLAGS) $(EXTRAFLAGS_CPP)
+CXXFLAGS += -Wall -fPIC -I"${TKS_ROOT}/yac" $(EXTRAFLAGS) $(EXTRAFLAGS_CPP)
 CFLAGS += -Wall -fPIC -I"${TKS_ROOT}/yac" $(EXTRAFLAGS) $(EXTRAFLAGS_C)
 OBJCFLAGS += -fPIC -I"${TKS_ROOT}/yac"
 EXTRALIBS += -L$(CROSS_ROOT)/usr/lib -lm
@@ -87,7 +87,7 @@ endif
 endif
 
 .cpp.o:
-	$(CXX) $(CPPFLAGS) $(OPTFLAGS) $(DBGFLAGS) -c $< -o $@
+	$(CXX) $(CXXFLAGS) $(OPTFLAGS) $(DBGFLAGS) -c $< -o $@
 
 .c.o:
 	$(CC) $(CFLAGS) $(OPTFLAGS) $(DBGFLAGS) -c $< -o $@
