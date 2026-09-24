@@ -2,7 +2,7 @@
 % bsp
 % 26-May-2026
 >>>
-25May2026, 26May2026, 13Sep2026
+25May2026, 26May2026, 13Sep2026, 24Sep2026
 <<<
 $(var:header)
 
@@ -155,10 +155,11 @@ It does support classic tracker *effect commands* via the bundled `PTFX` script,
    - do not use any VST / CLAP plugins (STFX plugins are allowed, though)
    - do not use audio timeline tracks (this feature may be added later)
    - when using drumkit tracks, convert them to regular lanes using the track context menu utility function
-   - if procedural waveforms are used, the export function will also write a `autogen_calc_<xyz>.c` file to the `export/` folder
-   - copy the `.syn` file to the `synergy_replay/music/` folder
+   - if procedural waveforms are used, the export function will also write a `<xyz>_calc_float.c` file to the `export/` folder
+   - `export/<xyz>.mk` will contain build settings (replay features / preprocessor defines)
+   - copy the `.syn`, `.mk` and `.c` files to the `synergy_replay/music/` folder
 - edit `synergy_replay/main.c` and the (platform-specific) Makefile (e.g. `makefile.linux`)
-   - in case of procedural waveforms: add the `export/autogen_calc_<xyz>.o` object file (replace the default one)
+   - in case of procedural waveforms: add the `export/<xyz>_calc_float.o` object filename to `make.objects`
    - add / remove voice plugin modules as required (or keep the default selection)
    - change `SONGNAME` as required
 
@@ -215,7 +216,7 @@ The main functions (in chronological order) are:
 - `void sr_exit (void)` - Shutdown Synergy replay
 
 note: `st_plugin_single_init_fxn_t` is a pointer to the plugin init function, e.g. `amp_init` in [amp.c](https://github.com/bsp2/tks/blob/main/tksampler/plugins/fx/fx_core/amp.c)
-note: `sr_cycle_calc_waveform_fxn_t` is a pointer to the auto-generated `cycle_calc_waveform_<songname>` function in `autogen_calc_\<songname\>_float.c` ([example](https://github.com/bsp2/tks/blob/main/synergy_replay/music/autogen_calc_demo_2-r-sr_float.c))
+note: `sr_cycle_calc_waveform_fxn_t` is a pointer to the auto-generated `cycle_calc_waveform_<songname>` function in `\<songname\>_calc_float.c` ([example](https://github.com/bsp2/tks/blob/main/synergy_replay/music/demo_2-s-sr_calc_float.c))
 
 See [sr.h](https://github.com/bsp2/tks/blob/main/synergy_replay/sr.h) and [main.c](https://github.com/bsp2/tks/blob/main/synergy_replay/sr.h) details.
 
