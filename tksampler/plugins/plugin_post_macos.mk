@@ -8,13 +8,15 @@
 	$(CC) $(CFLAGS) $(OPTFLAGS) $(DBGFLAGS) -fPIC -c $< -o $@
 
 
-.PHONY: bin
-bin: $(ALL_OBJ)
+$(TARGET).dylib: $(ALL_OBJ)
 	$(CXX) -dynamiclib -o "$(TARGET).dylib" $(LDFLAGS) $(ALL_OBJ) $(EXTRALIBS)
-#$(LDFLAGS)
 ifneq ($(DEBUG),y)
 	$(STRIP) "$(TARGET).dylib"
 endif
+
+.PHONY: bin
+bin: $(TARGET).dylib
+	@ls -ld "$(TARGET).dylib"
 	@echo "Build finished at `date +%H:%M`."
 
 .PHONY: install

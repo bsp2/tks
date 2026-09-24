@@ -73,8 +73,7 @@ clean_static_target:
 else
 ifeq ($(CUSTOM_BIN_TARGET),y)
 else
-.PHONY: bin
-bin: $(BIN_RULES) $(ALL_OBJ)
+$(TARGET): $(ALL_OBJ)
 	$(CXX) -dynamiclib -o $(TARGET) $(ALL_OBJ) $(LDFLAGS) $(EXTRALIBS)
 #-install_name "$(TKS_SITE_PREFIX)/plugins/$(TARGET)"
 ifneq ($(DEBUG),y)
@@ -82,6 +81,10 @@ ifneq ("$(PLUGIN)","")
 	$(STRIP) "$(TARGET)"
 endif
 endif
+
+.PHONY: bin
+bin: $(TARGET) $(BIN_RULES)
+	@ls -ld $(TARGET)
 	@echo "Build finished at `date +%H:%M`."
 endif
 endif

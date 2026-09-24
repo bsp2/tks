@@ -6,9 +6,12 @@
 	$(CC) $(CXXFLAGS) $(OPTFLAGS_PLUGIN) -c $< -Fo"$@"
 
 
-.PHONY: bin
-bin: $(ALL_OBJ)
+$(TARGET).dll: $(ALL_OBJ)
 	$(LD) $(LDFLAGS_SIZE) -OUT:"$(TARGET).dll" $(ALL_OBJ) $(EXTRALIBS)
+
+.PHONY: bin
+bin: $(TARGET).dll
+	@ls -ld "$(TARGET).dll"
 	@echo "Build finished at `date +%H:%M`."
 
 .PHONY: install

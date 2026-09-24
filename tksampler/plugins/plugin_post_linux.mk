@@ -8,12 +8,15 @@
 	$(CC) $(CFLAGS) $(OPTFLAGS) $(DBGFLAGS) -fPIC -c $< -o $@
 
 
-.PHONY: bin
-bin: $(ALL_OBJ)
+$(TARGET).so: $(ALL_OBJ)
 	$(CXX) -shared -o "$(TARGET).so" -Wl,-soname,$(TARGET).so $(LDFLAGS) $(ALL_OBJ) $(EXTRALIBS)
 ifneq ($(DEBUG),y)
 	$(STRIP) "$(TARGET).so"
 endif
+
+.PHONY: bin
+bin: $(TARGET).so
+	@ls -ld "$(TARGET).so"
 	@echo "Build finished at `date +%H:%M`."
 
 .PHONY: install

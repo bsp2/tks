@@ -42,9 +42,12 @@ clean_static_target:
 else
 ifeq ($(CUSTOM_BIN_TARGET),y)
 else
-.PHONY: bin
-bin: $(BIN_RULES) $(ALL_OBJ)
+$(TARGET): $(ALL_OBJ)
 	$(LD) $(LDFLAGS_SIZE) -OUT:$(TARGET) $(ALL_OBJ) $(EXTRALIBS) -DLL -MAP
+
+.PHONY: bin
+bin: $(TARGET) $(BIN_RULES)
+	@ls -ld $(TARGET)
 	@echo "Build finished at `date +%H:%M`."
 endif
 endif

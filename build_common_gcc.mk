@@ -27,12 +27,15 @@ clean_static_target:
 else
 ifeq ($(CUSTOM_BIN_TARGET),y)
 else
-.PHONY: bin
-bin: $(BIN_RULES) $(ALL_OBJ)
+$(TARGET):  $(ALL_OBJ)
 	$(CXX) -shared -o "$(TARGET)" -Wl,-soname,$(TARGET) $(ALL_OBJ) $(LDFLAGS) $(EXTRALIBS)
 ifneq ($(DEBUG),y)
 	$(STRIP) "$(TARGET)"
 endif
+
+.PHONY: bin
+bin: $(BIN_RULES) $(TARGET) 
+	@ls -ld $(TARGET)
 	@echo "Build finished at `date +%H:%M`."
 endif
 endif
