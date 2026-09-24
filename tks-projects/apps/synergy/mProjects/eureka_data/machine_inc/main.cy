@@ -1,25 +1,15 @@
+inc lut4
+inc tri_hs
+
 arg p_amp 0.7 0 8
 
-curve 0 globalcurve
-
-inc .mysin
-inc .myosc
-inc .patchui
-inc .patch
-
-#~myosc id=osc1
-#~myosc id=osc2
-
-#def uipatch
-#  set osc1.in_freq 0.3
-#  calc osc1
-#  set osc2.in_phase osc1.out
-#  set osc2.in_freq 1.5
-#  calc osc2
-#  osc2.out
-#  #sin
+curve user_curve
+lcurve wav
+lcurve mylcurve
 
 <out:
-  ~patch
-  #sin f=0
+  pha
+  ~lut4 wav
+  lut mylcurve lin=1 b=1 c=1
+  * $p_amp
   clp
