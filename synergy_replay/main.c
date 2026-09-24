@@ -60,8 +60,8 @@
 #define SONGNAME "simple"
 #define CYCLE_CALC_FXN cycle_calc_waveform_simple
 #else
-#define SONGNAME "demo_2-r-sr"
-#define CYCLE_CALC_FXN cycle_calc_waveform_demo_2_r_sr
+#define SONGNAME "demo_2-s-sr"
+#define CYCLE_CALC_FXN cycle_calc_waveform_demo_2_s_sr
 #endif // DEMO_3
 
 extern void CYCLE_CALC_FXN (float *_wfAddr);
@@ -374,7 +374,7 @@ int main(int argc, char**argv) {
    sr_song_t song = sr_song_new();
 
    // Load instruments / samples / tracks
-   sr_bool_t bOk = sr_proj_load_file(proj, "music/autogen_" SONGNAME ".syn");
+   sr_bool_t bOk = sr_proj_load_file(proj, "music/" SONGNAME ".syn");
 
    if(bOk)
    {

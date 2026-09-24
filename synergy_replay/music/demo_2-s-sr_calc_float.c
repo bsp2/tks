@@ -1934,7 +1934,7 @@ static void calc_water_drop_1_0_(float *_d) {
 extern void sr_handle_cycle_sample_calc_finished (unsigned int _sampleIdx);
 #define HSCF(a)  sr_handle_cycle_sample_calc_finished(a)
 
-void cycle_calc_waveform_demo_2_r_sr(float *_wfAddr) {
+void cycle_calc_waveform_demo_2_s_sr(float *_wfAddr) {
    // smp: "cycle_rs" sz=1139 (1.11k) bProc=1
    calc_cycle_rs_0_rs                           (_wfAddr +      0);  // total=  1139 ( 4.44k)
    HSCF(0);

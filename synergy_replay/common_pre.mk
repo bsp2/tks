@@ -40,12 +40,12 @@ LOG         :=y
 PROFILE     :=y
 else
 ifeq ($(DEMO_SIMPLE),y)
-include music/autogen_simple.mk
+include music/simple.mk
 else
 ifeq ($(DEMO_3),y)
-include music/autogen_demo_3_fm-a.mk
+include music/demo_3_fm-a.mk
 else
-include music/autogen_demo_2-r-sr.mk
+include music/demo_2-s-sr.mk
 endif # DEMO_3
 endif # DEMO_SIMPLE
 endif # DEMO_ALL
