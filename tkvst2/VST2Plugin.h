@@ -46,7 +46,8 @@ YC class VST2Plugin : public YAC_Object {
 
    // 32 = 16 stereo ins + outs
    //  (note) UVI Falcon for example uses 34 output buffers
-#define VST2PLUGIN_MAX_IO_BUFFERS  YCI (48u)
+/* #define VST2PLUGIN_MAX_IO_BUFFERS  YCI (48u) */
+#define VST2PLUGIN_MAX_IO_BUFFERS  YCI (64u)
 
 #define VST2PLUGIN_MAX_SHELL_PLUGINS  YCI  (1024u)
 
