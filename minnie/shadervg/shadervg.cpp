@@ -967,6 +967,8 @@ static shadervg_paint_t paint;
 
 // true=use GL core profile (GLSL 3.x, VAO)
 sBool sdvg_b_glcore = YAC_FALSE;
+GLuint sdvg_int_current_prg;
+sSI sdvg_int_shape_state_u_transform;
 static sUI vao_id = 0u;  // when sdvg_b_glcore=1
 
 // framebuffer size
@@ -1189,6 +1191,8 @@ sBool YAC_CALL sdvg_Init(sBool _bGLCore) {
    // mvp_matrix_unproject = (Matrix4f*) minnie_alloc(NULL/*allocator*/, sizeof(Matrix4f));
    // new(mvp_matrix_unproject)Matrix4f();
 #endif // SHADERVG_SCRIPT_API
+
+   sdvg_int_shape_state_u_transform = 1;
 
    b_aa                = YAC_TRUE;
    aa_range            = 1.5f;
@@ -2551,15 +2555,26 @@ static sBool loc_UpdateShaderUniforms(sBool _bPolygon) {
                                             );
       }
 
-      loc = current_shape->shape_u_transform;
-      Dsdvg_debugprintfvv("[trc] sdvg:UpdateShaderUniforms: shape_u_transform=%d\n", current_shape->shape_u_transform);
-      if(loc >= 0)
-      {
-         Dsdvg_uniform_mat4(loc, mvp_matrix);
+      current_shape->lazyUpdateTransform(mvp_matrix);
 
+      // // if(current_shape->shape_state_u_transform != sdvg_int_shape_state_u_transform)
+      // // {
+      // //    current_shape->shape_state_u_transform = sdvg_int_shape_state_u_transform;
+      // //    loc = current_shape->shape_u_transform;
+      // //    Dsdvg_debugprintfvv("[trc] sdvg:UpdateShaderUniforms: shape_u_transform=%d\n", current_shape->shape_u_transform);
+      // //    if(loc >= 0)
+      // //    {
+      // //       Dsdvg_uniform_mat4(loc, mvp_matrix);
+
+      // //       // (todo) unmap / remap scratch ?
+      // //       return YAC_TRUE;
+      // //    }
+      // // }
+      // // else
+      // // {
          // (todo) unmap / remap scratch ?
          return YAC_TRUE;
-      }
+      // // }
    }
    return YAC_FALSE;
 }
@@ -2640,7 +2655,8 @@ static void loc_DrawLineStripFlatAAVBOPaint(sUI _vboId,
 
     _shape->bindShader();
 
-   Dsdvg_uniform_mat4(_shape->shape_u_transform, mvp_matrix);
+    _shape->lazyUpdateTransform(mvp_matrix);
+
    Dsdvg_uniform_4f(_shape->shape_u_color_stroke, stroke_r, stroke_g, stroke_b, stroke_a * global_a);
    if(-1 != _shape->shape_u_color_fill)
    {
@@ -6554,7 +6570,7 @@ static sSI loc_BindFillShader(ShaderVG_Shape *_shape) {
 
    if(NULL != mvp_matrix)
    {
-      Dsdvg_uniform_mat4(_shape->shape_u_transform, mvp_matrix);
+      _shape->lazyUpdateTransform(mvp_matrix);
       Dsdvg_uniform_4f(_shape->shape_u_color_fill, fill_r, fill_g, fill_b, fill_a * global_a);
       Dsdvg_attrib_enable(aVertexFill);
 
@@ -6634,6 +6650,7 @@ sBool YAC_CALL sdvg_OnOpen(void) {
       if(shapeType->b_enable)
       {
          Dsdvg_debugprintfv("[trc] sdvg_OnOpen: call shape[%u].onOpen()\n", i);
+         shape->shape_state_u_transform = -2;
          if(!shape->onOpen())
          {
             Dsdvg_errorprintf("[---] sdvg_OnOpen: shape[%u].onOpen() failed"
@@ -6656,10 +6673,13 @@ sBool YAC_CALL sdvg_OnOpen(void) {
       for(sUI shaderIdx = 0u; shaderIdx < SHADERVG_MAX_CUSTOM_SHADERS; shaderIdx++)
       {
          ShaderVG_CustomShape *cs = &custom_shapes[shaderIdx];
+         cs->shape_state_u_transform = -2;
          cs->onOpen();
       }
    }
    current_shape = NULL;
+   sdvg_int_current_prg = 0u;
+   sdvg_int_shape_state_u_transform = 1;
 
    current_vbo_id = 0u;
 
@@ -6957,6 +6977,8 @@ void YAC_CALL sdvg_TransformChanged(void) {
    }
 #endif // SHADERVG_USE_POLYGON_SHADERS
 #endif // SHADERVG_SCRIPT_API
+
+   sdvg_int_shape_state_u_transform = (sdvg_int_shape_state_u_transform + 1) & 1073741823;
 }
 
 void YAC_CALL sdvg_UpdateTransform(void) {
@@ -7006,6 +7028,8 @@ void YAC_CALL sdvg_BeginFrame(void) {
    sdvg_UnbindVBO();
 
    current_shape = NULL;
+   sdvg_int_current_prg = 0u;
+
    current_draw_mode = DRAW_MODE_NONE;
    num_draw_attrib_enables = 0u;
 
@@ -7030,6 +7054,8 @@ void YAC_CALL sdvg_BeginFrame(void) {
    {
       Dsdvg_glcall(glBindVertexArray(vao_id));
    }
+
+   sdvg_int_shape_state_u_transform = (sdvg_int_shape_state_u_transform + 1) & 1073741823;
 }
 
 void YAC_CALL sdvg_Flush(void) {
@@ -7058,6 +7084,7 @@ void YAC_CALL sdvg_EndFrame(void) {
       sdvg_UnmapVBO();
    sdvg_BindVBO(0);
    Dsdvg_glcall(glUseProgram(0));
+   sdvg_int_current_prg = 0u;
    Dsdvg_glcall(glDisable(GL_SCISSOR_TEST));
 }
 
@@ -7560,6 +7587,7 @@ void YAC_CALL sdvg_BindShader(sUI _shaderIdx) {
 
 void YAC_CALL sdvg_UnbindShader(void) {
    Dsdvg_glcall(glUseProgram(0));
+   sdvg_int_current_prg = 0u;
    current_shape = NULL;
 }
 

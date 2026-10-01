@@ -70,7 +70,7 @@ class TrianglesFillGouraud32 : public ShaderVG_Shape {
    void drawTrianglesFillGouraudVBO32(sUI              _vboId,
                                       sUI              _byteOffset,
                                       sUI              _numVerts,
-                                      Dsdvg_mat4_ref_t _projMatrix
+                                      Dsdvg_mat4_ref_t _mvpMatrix
                                       ) {
       //
       // VBO vertex format (12 bytes per vertex):
@@ -87,7 +87,7 @@ class TrianglesFillGouraud32 : public ShaderVG_Shape {
       if(!bindShader())
          return;
 
-      Dsdvg_uniform_mat4(shape_u_transform, _projMatrix);
+      lazyUpdateTransform(_mvpMatrix);
 
       Dsdvg_attrib_offset(shape_a_color,  4/*size*/, GL_UNSIGNED_BYTE, GL_TRUE /*normalize*/, 12/*stride*/, _byteOffset + 0);
       Dsdvg_attrib_offset(shape_a_vertex, 2/*size*/, GL_FLOAT,         GL_FALSE/*normalize*/, 12/*stride*/, _byteOffset + 4);
@@ -105,7 +105,7 @@ class TrianglesFillGouraud32 : public ShaderVG_Shape {
    void drawPolygonFillGouraudVBO32(sUI              _vboId,
                                     sUI              _byteOffset,
                                     sUI              _numVerts,
-                                    Dsdvg_mat4_ref_t _projMatrix,
+                                    Dsdvg_mat4_ref_t _mvpMatrix,
                                     sBool            _bNonZero
                                     ) {
       //
@@ -123,7 +123,7 @@ class TrianglesFillGouraud32 : public ShaderVG_Shape {
       if(!bindShader())
          return;
 
-      Dsdvg_uniform_mat4(shape_u_transform, _projMatrix);
+      lazyUpdateTransform(_mvpMatrix);
 
       Dsdvg_attrib_offset(shape_a_color,  4/*size*/, GL_UNSIGNED_BYTE, GL_TRUE /*normalize*/, 12/*stride*/, _byteOffset + 0);
       Dsdvg_attrib_offset(shape_a_vertex, 2/*size*/, GL_FLOAT,         GL_FALSE/*normalize*/, 12/*stride*/, _byteOffset + 4);

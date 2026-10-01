@@ -91,7 +91,7 @@ class TrianglesFillFlat14_2 : public ShaderVG_Shape {
          return;
 
       /* Dyac_host_printf("xxx u_transform=%d a_vertex=%d a_color=%d mvpMatrix=%p\n", shape_u_transform, shape_a_vertex, shape_a_color, _mvpMatrix); */
-      Dsdvg_uniform_mat4(shape_u_transform, _mvpMatrix);
+      lazyUpdateTransform(_mvpMatrix);
 
       Dsdvg_attrib_offset(shape_a_color,  4/*size*/, GL_UNSIGNED_BYTE, GL_TRUE/*normalize*/,  8/*stride*/, _byteOffset + 0);
       Dsdvg_attrib_offset(shape_a_vertex, 2/*size*/, GL_SHORT,         GL_FALSE/*normalize*/, 8/*stride*/, _byteOffset + 4);

@@ -132,7 +132,7 @@ class TrianglesFillFlatEdgeAA14_2 : public ShaderVG_Shape {
       if(!bindShader())
          return;
 
-      Dsdvg_uniform_mat4(shape_u_transform, _mvpMatrix);
+      lazyUpdateTransform(_mvpMatrix);
       Dsdvg_uniform_4f(shape_u_color_fill, _fillR, _fillG, _fillB, _fillA);
       Dsdvg_uniform_1f(shape_u_aa, _bAA ? 1.0f : 0.0f);
 

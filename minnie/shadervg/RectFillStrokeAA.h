@@ -239,7 +239,7 @@ class RectFillStrokeAA : public ShaderVG_Shape {
          if(!bindShader())
             return;
 
-         Dsdvg_uniform_mat4(shape_u_transform, _mvpMatrix);
+         lazyUpdateTransform(_mvpMatrix);
          Dsdvg_uniform_2f(shape_u_center,   _centerX, _centerY);
          Dsdvg_uniform_2f(shape_u_size_i,   _sizeX - _strokeW, _sizeY - _strokeW);
          Dsdvg_uniform_2f(shape_u_size_o,   _sizeX + _strokeW, _sizeY + _strokeW);
@@ -324,7 +324,7 @@ class RectFillStrokeAA : public ShaderVG_Shape {
       if(!bindShader())
          return;
 
-      Dsdvg_uniform_mat4(shape_u_transform, _mvpMatrix);
+      lazyUpdateTransform(_mvpMatrix);
       Dsdvg_uniform_2f(shape_u_center,   _centerX, _centerY);
       Dsdvg_uniform_2f(shape_u_size_i,   _sizeX - _strokeW, _sizeY - _strokeW);
       Dsdvg_uniform_2f(shape_u_size_o,   _sizeX + _strokeW, _sizeY + _strokeW);

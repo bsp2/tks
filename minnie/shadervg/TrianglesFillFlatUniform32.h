@@ -80,7 +80,7 @@ class TrianglesFillFlatUniform32 : public ShaderVG_Shape {
       if(!bindShader())
          return;
 
-      Dsdvg_uniform_mat4(shape_u_transform, _mvpMatrix);
+      lazyUpdateTransform(_mvpMatrix);
       Dsdvg_uniform_4f(shape_u_color_fill, _fillR, _fillG, _fillB, _fillA);
 
       Dsdvg_attrib_offset(shape_a_vertex, 2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/, 8/*stride*/, _byteOffset);
@@ -94,7 +94,7 @@ class TrianglesFillFlatUniform32 : public ShaderVG_Shape {
    void drawPolygonFillFlatUniformVBO32(sUI              _vboId,
                                         sUI              _byteOffset,
                                         sUI              _numVerts,
-                                        Dsdvg_mat4_ref_t _projMatrix,
+                                        Dsdvg_mat4_ref_t _mvpMatrix,
                                         sF32             _fillR, sF32 _fillG, sF32 _fillB, sF32 _fillA,
                                         sBool            _bNonZero
                                         ) {
@@ -109,7 +109,7 @@ class TrianglesFillFlatUniform32 : public ShaderVG_Shape {
       if(!bindShader())
          return;
 
-      Dsdvg_uniform_mat4(shape_u_transform, _projMatrix);
+      lazyUpdateTransform(_mvpMatrix);
       Dsdvg_uniform_4f(shape_u_color_fill, _fillR, _fillG, _fillB, _fillA);
 
       Dsdvg_attrib_offset(shape_a_vertex, 2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/, 8/*stride*/, _byteOffset);

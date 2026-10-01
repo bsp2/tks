@@ -2,7 +2,7 @@
 // ---- file   : TrianglesFillGouraudEdgeAA14_2.h
 // ---- author : Bastian Spiegel <bs@tkscript.de>
 // ---- legal  : Distributed under terms of the MIT license (https://opensource.org/licenses/MIT)
-// ----          Copyright 2014-2025 by bsp
+// ----          Copyright 2014-2026 by bsp
 // ----
 // ----          Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 // ----          associated documentation files (the "Software"), to deal in the Software without restriction, including
@@ -140,7 +140,7 @@ class TrianglesFillGouraudEdgeAA14_2 : public ShaderVG_Shape {
       if(!bindShader())
          return;
 
-      Dsdvg_uniform_mat4(shape_u_transform, _mvpMatrix);
+      lazyUpdateTransform(_mvpMatrix);
       Dsdvg_uniform_1f(shape_u_aa, _bAA ? 1.0f : 0.0f);
       Dsdvg_uniform_1f(shape_u_global_alpha, _alpha);
 

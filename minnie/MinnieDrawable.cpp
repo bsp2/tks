@@ -133,6 +133,8 @@ void _MinnieDrawable::freeGL(void) {
    // must be called by onOpen()
    if(0u != gl_buf_id)
    {
+      reset();
+
       Dsdvg_glcall(zglDeleteBuffer(gl_buf_id));
       gl_buf_id = 0u;
    }

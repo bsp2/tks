@@ -40,11 +40,14 @@ class ShaderVG_Shape;
 #define Dsdvg_debugprintfv     if( MINNIE_PRINTF);else Dsdvg_printf
 #define Dsdvg_debugprintfvv     if( MINNIE_PRINTF);else Dsdvg_printf
 #define Dsdvg_transformprintf   if( MINNIE_PRINTF);else Dsdvg_printf
+#define Dsdvg_transformprintfv  if( MINNIE_PRINTF);else Dsdvg_printf
 
 #include <stdlib.h>
 #include <new>
 
-extern sBool sdvg_b_glcore;
+extern sBool  sdvg_b_glcore;
+extern GLuint sdvg_int_current_prg;
+extern sSI    sdvg_int_shape_state_u_transform;
 
 typedef struct shadervg_paint_s {
 #define PAINT_SOLID                0

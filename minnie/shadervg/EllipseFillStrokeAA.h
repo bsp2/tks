@@ -276,7 +276,7 @@ class EllipseFillStrokeAA : public ShaderVG_Shape {
          if(!bindShader())
             return;
 
-         Dsdvg_uniform_mat4(shape_u_transform, _mvpMatrix);
+         lazyUpdateTransform(_mvpMatrix);
          Dsdvg_uniform_2f(shape_u_center,   _centerX, _centerY);
          Dsdvg_uniform_2f(shape_u_size_i,   _radiusX - _strokeW, _radiusY - _strokeW);
          Dsdvg_uniform_2f(shape_u_size_o,   _radiusX + _strokeW, _radiusY + _strokeW);
@@ -385,7 +385,7 @@ class EllipseFillStrokeAA : public ShaderVG_Shape {
       if(!bindShader())
          return;
 
-      Dsdvg_uniform_mat4(shape_u_transform, _mvpMatrix);
+      lazyUpdateTransform(_mvpMatrix);
       Dsdvg_uniform_2f(shape_u_center,   _centerX, _centerY);
       Dsdvg_uniform_2f(shape_u_size_i,   _radiusX - _strokeW, _radiusY - _strokeW);
       Dsdvg_uniform_2f(shape_u_size_o,   _radiusX + _strokeW, _radiusY + _strokeW);

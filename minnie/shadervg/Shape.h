@@ -69,6 +69,7 @@ class ShaderVG_Shape {
    sSI shape_a_uv;         // optional
 
    sSI shape_u_transform;
+   sSI shape_state_u_transform;
    sSI shape_u_last_instance;        // optional
    sSI shape_u_aa;                   // optional
    sSI shape_u_aa_range;             // optional for non-AA shader
@@ -195,6 +196,8 @@ class ShaderVG_Shape {
    sBool bindShader (void);
    sSI bindShaderAndReturnVertexAttrib (void);
    void unbindShader (void);
+
+   void lazyUpdateTransform (Dsdvg_mat4_ref_t _mvpMatrix);
 
    void drawTrianglesFillFlatUniformVBO32Paint (sUI              _vboId,
                                                 sUI              _byteOffset,

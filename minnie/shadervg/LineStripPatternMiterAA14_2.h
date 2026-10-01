@@ -511,7 +511,7 @@ class LineStripPatternMiterAA14_2 : public ShaderVG_Shape {
          if(!bindShader())
             return;
 
-         Dsdvg_uniform_mat4(shape_u_transform, _mvpMatrix);
+         lazyUpdateTransform(_mvpMatrix);
          Dsdvg_uniform_4f(shape_u_color_stroke, _strokeR, _strokeG, _strokeB, _strokeA);
          Dsdvg_uniform_1f(shape_u_stroke_w, _strokeW);
          Dsdvg_uniform_1f(shape_u_aa_range, _aaRange);
