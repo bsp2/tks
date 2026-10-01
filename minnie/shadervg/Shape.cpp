@@ -647,6 +647,10 @@ sBool ShaderVG_Shape::queryLocationsAndValidate(void) {
       Dsdvg_errorprintf("[---] ShaderVG_Shape::createShapeShader: validateShapeShader() failed\n");
    }
 
+   Dsdvg_glcall(glUseProgram(shape_shader.prg_id));
+   configureConstUniforms();
+   Dsdvg_glcall(glUseProgram(sdvg_int_current_prg));
+
    sdvg_int_debug_print_mem_info();
 
    return r;

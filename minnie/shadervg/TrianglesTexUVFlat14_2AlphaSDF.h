@@ -93,6 +93,10 @@ class TrianglesTexUVFlat14_2AlphaSDF : public ShaderVG_Shape {
       return YAC_FALSE;
    }
 
+   void configureConstUniforms(void) {
+      Dsdvg_uniform_1i(shape_u_sampler, 0);
+   }
+
    void drawTrianglesTexUVFlatVBO14_2AlphaSDF(sUI              _vboId,
                                               sUI              _byteOffset,
                                               sUI              _numVerts,
@@ -118,7 +122,6 @@ class TrianglesTexUVFlat14_2AlphaSDF : public ShaderVG_Shape {
 
       lazyUpdateTransform(_mvpMatrix);
       Dsdvg_uniform_4f(shape_u_color_fill, _fillR, _fillG, _fillB, _fillA);
-      Dsdvg_uniform_1i(shape_u_sampler, 0);
       Dsdvg_uniform_1f(shape_u_a_min, _aMin);
       Dsdvg_uniform_1f(shape_u_a_max, _aMax);
       Dsdvg_uniform_1f(shape_u_a_maxmin_scale, _aMaxMinScale);

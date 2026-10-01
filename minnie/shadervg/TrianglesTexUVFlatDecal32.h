@@ -77,6 +77,10 @@ class TrianglesTexUVFlatDecal32 : public ShaderVG_Shape {
       return YAC_FALSE;
    }
 
+   void configureConstUniforms(void) {
+      Dsdvg_uniform_1i(shape_u_sampler, 0);
+   }
+
    void drawTrianglesTexUVFlatDecalVBO32(sUI              _vboId,
                                          sUI              _byteOffset,
                                          sUI              _numVerts,
@@ -102,7 +106,6 @@ class TrianglesTexUVFlatDecal32 : public ShaderVG_Shape {
       Dsdvg_uniform_4f(shape_u_color_fill,   _fillR,   _fillG,   _fillB,   _fillA);
       Dsdvg_uniform_4f(shape_u_color_stroke, _strokeR, _strokeG, _strokeB, _strokeA);
       Dsdvg_uniform_1f(shape_u_decal_alpha, _decalAlpha);
-      Dsdvg_uniform_1i(shape_u_sampler, 0);
 
       Dsdvg_attrib_offset(shape_a_uv,     2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/, 16/*stride*/, _byteOffset + 0);
       Dsdvg_attrib_offset(shape_a_vertex, 2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/, 16/*stride*/, _byteOffset + 8);

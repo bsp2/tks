@@ -181,6 +181,8 @@ class ShaderVG_Shape {
 
    sBool queryLocationsAndValidate (void);
 
+   virtual void configureConstUniforms (void) { }
+
   public:
    sBool createShapeShader (const char *_sVS, const char *_sFS);
 

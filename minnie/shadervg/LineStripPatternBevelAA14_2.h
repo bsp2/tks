@@ -277,6 +277,10 @@ class LineStripPatternBevelAA14_2 : public ShaderVG_Shape {
       return YAC_FALSE;
    }
 
+   void configureConstUniforms(void) {
+      Dsdvg_uniform_1i(shape_u_sampler, 0);
+   }
+
    void drawLineStripPatternBevelAAVBO14_2(sUI              _vboId,
                                            sUI              _byteOffset,
                                            sUI              _numPoints,
@@ -316,7 +320,6 @@ class LineStripPatternBevelAA14_2 : public ShaderVG_Shape {
          Dsdvg_uniform_1f(shape_u_debug, b_debug ? 1.0f : 0.0f);
       }
 #endif // SHADERVG_DEBUG_FRAG
-      Dsdvg_uniform_1i(shape_u_sampler, 0);
       Dsdvg_uniform_1f(shape_u_line_pattern_scl, _linePatternScale * 0.25f);
       Dsdvg_uniform_1f(shape_u_line_pattern_off, _linePatternOffset);
 

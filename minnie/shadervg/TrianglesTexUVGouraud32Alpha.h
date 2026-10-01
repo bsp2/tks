@@ -77,6 +77,10 @@ class TrianglesTexUVGouraud32Alpha : public ShaderVG_Shape {
       return YAC_FALSE;
    }
 
+   void configureConstUniforms(void) {
+      Dsdvg_uniform_1i(shape_u_sampler, 0);
+   }
+
    void drawTrianglesTexUVGouraudVBO32Alpha(sUI              _vboId,
                                             sUI              _byteOffset,
                                             sUI              _numVerts,
@@ -102,7 +106,6 @@ class TrianglesTexUVGouraud32Alpha : public ShaderVG_Shape {
 
       lazyUpdateTransform(_mvpMatrix);
       Dsdvg_uniform_4f(shape_u_color_fill, _fillR, _fillG, _fillB, _fillA);
-      Dsdvg_uniform_1i(shape_u_sampler, 0);
 
       Dsdvg_attrib_offset(shape_a_uv,     2/*size*/, GL_FLOAT,         GL_FALSE/*normalize*/, 20/*stride*/, _byteOffset +  0);
       Dsdvg_attrib_offset(shape_a_color,  4/*size*/, GL_UNSIGNED_BYTE, GL_TRUE /*normalize*/, 20/*stride*/, _byteOffset +  8);
