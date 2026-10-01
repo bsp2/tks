@@ -142,5 +142,4 @@ class LineStripFlatAA32Pattern : public ShaderVG_Shape {
    }
 
    // (note) see also: shadervg.cpp:loc_DrawLineStripFlatAAVBOPaint()
-
 };

@@ -157,59 +157,5 @@ class RectStrokeAA : public ShaderVG_Shape {
       }
    }
 
-   void drawRectStrokeAAVBO32(sUI              _vboId,
-                              sUI              _byteOffsetBorder,
-                              sUI              _numVertsBorder,
-                              sUI              _glPrimTypeBorder,
-                              Dsdvg_mat4_ref_t _mvpMatrix,
-                              sF32             _centerX, sF32 _centerY,
-                              sF32             _sizeX,   sF32 _sizeY,
-                              sF32             _strokeR, sF32 _strokeG, sF32 _strokeB, sF32 _strokeA,
-                              sF32             _strokeW,
-                              sF32             _aaRange,
-                              sF32             _aaExp
-                              ) {
-
-      sdvg_BindVBO(_vboId);
-
-      // Outer border
-      if(_numVertsBorder > 0u)
-      {
-         if(!bindShader())
-            return;
-
-         Dsdvg_uniform_mat4(shape_u_transform, _mvpMatrix);
-         Dsdvg_uniform_2f(shape_u_center,   _centerX, _centerY);
-         Dsdvg_uniform_2f(shape_u_size_i,   _sizeX - _strokeW, _sizeY - _strokeW);
-         Dsdvg_uniform_2f(shape_u_size_o,   _sizeX + _strokeW, _sizeY + _strokeW);
-         Dsdvg_uniform_1f(shape_u_aa_range, _aaRange);
-
-#ifdef SHADERVG_AA_EXP
-         if(-1 != shape_u_aa_exp)
-         {
-            Dsdvg_uniform_1f(shape_u_aa_exp, _aaExp);
-         }
-#endif // SHADERVG_AA_EXP
-
-         Dsdvg_uniform_4f(shape_u_color_stroke, _strokeR, _strokeG, _strokeB, _strokeA);
-
-#ifdef SHADERVG_DEBUG_FRAG
-         if(-1 != shape_u_debug)
-         {
-            Dsdvg_uniform_1f(shape_u_debug, b_debug ? 1.0f : 0.0f);
-         }
-#endif // SHADERVG_DEBUG_FRAG
-
-         Dsdvg_attrib_offset(shape_a_vertex, 2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/, 0/*stride*/, _byteOffsetBorder);
-
-         Dsdvg_attrib_enable(shape_a_vertex);
-
-         Dsdvg_draw_arrays_vbo(_glPrimTypeBorder, 0, _numVertsBorder);
-
-         Dsdvg_attrib_disable(shape_a_vertex);
-      }
-   }
-
    // see also: ShaderVG_Shape::drawRectStrokeAAPaint()
-
 };
