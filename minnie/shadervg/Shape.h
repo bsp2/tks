@@ -135,6 +135,11 @@ class ShaderVG_Shape {
    virtual ~ShaderVG_Shape();
 
    void copyName (const char *_name);
+#ifdef SHADERVG_OBJECT_LABELS
+   const char *getName (void) { return name; }
+#else
+   const char *getName (void) { return "-"; }
+#endif // SHADERVG_OBJECT_LABELS
 
    void allocScratchBuffer (sSI _aVertex, Dsdvg_buffer_ref_t _scratchBuf, sUI _numBytes);
 

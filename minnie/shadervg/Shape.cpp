@@ -976,11 +976,12 @@ void ShaderVG_Shape::unbindShader(void) {
 }
 
 void ShaderVG_Shape::lazyUpdateTransform(Dsdvg_mat4_ref_t _mvpMatrix) {
+   Dsdvg_transformprintfvv("[trc] lazyUpdateTransform: shape=\"%s\" sdvg_int_shape_state_u_transform=%d shape_state_u_transform=%d\n", getName(), sdvg_int_shape_state_u_transform, shape_state_u_transform);
    if(shape_state_u_transform != sdvg_int_shape_state_u_transform)
    {
       shape_state_u_transform = sdvg_int_shape_state_u_transform;
       Dsdvg_uniform_mat4(shape_u_transform, _mvpMatrix);
-      Dsdvg_transformprintfv("[trc] lazyUpdateTransform: sdvg_int_shape_state_u_transform=%d\n", sdvg_int_shape_state_u_transform);
+      Dsdvg_transformprintfv("[trc] lazyUpdateTransform: shape=\"%s\" shape_u_transform=%d sdvg_int_shape_state_u_transform=%d\n", getName(), shape_u_transform, sdvg_int_shape_state_u_transform);
    }
 }
 

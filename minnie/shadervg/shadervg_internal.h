@@ -36,11 +36,12 @@ class ShaderVG_Shape;
 #define Dsdvg_warnprintf        if(!MINNIE_PRINTF);else Dsdvg_printf
 #define Dsdvg_errorprintf       if(!MINNIE_PRINTF);else Dsdvg_printf
 #define Dsdvg_errorbeginprintf  if(!MINNIE_PRINTF);else Dsdvg_printf
-#define Dsdvg_debugprintf       if(!MINNIE_PRINTF);else Dsdvg_printf
+#define Dsdvg_debugprintf       if( MINNIE_PRINTF);else Dsdvg_printf
 #define Dsdvg_debugprintfv     if( MINNIE_PRINTF);else Dsdvg_printf
 #define Dsdvg_debugprintfvv     if( MINNIE_PRINTF);else Dsdvg_printf
 #define Dsdvg_transformprintf   if( MINNIE_PRINTF);else Dsdvg_printf
 #define Dsdvg_transformprintfv  if( MINNIE_PRINTF);else Dsdvg_printf
+#define Dsdvg_transformprintfvv if( MINNIE_PRINTF);else Dsdvg_printf
 
 #include <stdlib.h>
 #include <new>

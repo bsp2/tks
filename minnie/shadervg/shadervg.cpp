@@ -1181,7 +1181,7 @@ sBool YAC_CALL sdvg_Init(sBool _bGLCore) {
 
 #ifdef SHADERVG_SCRIPT_API
    mvp_matrix = yac_host->yacNew(NULL/*nsp*/, "Matrix4f");
-   mvp_matrix_unproject = NULL;  // (todo)
+   mvp_matrix_unproject = NULL; // yac_host->yacNew(NULL/*nsp*/, "Matrix4f");
 #else
    mvp_matrix = new(std::nothrow) Matrix4f();
    // mvp_matrix = (Matrix4f*) minnie_alloc(NULL/*allocator*/, sizeof(Matrix4f));
