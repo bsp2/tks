@@ -321,6 +321,10 @@ extern YAC_TLS minnie_context_t minnie_context;
 #define MINNIE_DRAWOP_FILLRULE_EVENODD                       0x40
 #define MINNIE_DRAWOP_FILLRULE_NONZERO                       0x41
 #define MINNIE_DRAWOP_LINE_PATTERN                           0x42
+#define MINNIE_DRAWOP_COLOR                                  0x43
+#define MINNIE_DRAWOP_COLOR_FILL                             0x44
+#define MINNIE_DRAWOP_COLOR_STROKE                           0x45
+#define MINNIE_DRAWOP_COLOR_FILL_STROKE                      0x46
 
 
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -4202,6 +4206,8 @@ struct MinnieSetup {
    sUI   active_dl_start_offset;  // VB byte offset
    sUI   active_dl_c32_fill;
    sUI   active_dl_c32_stroke;
+   sUI   prev_dl_c32_fill;
+   sUI   prev_dl_c32_stroke;
    sF32  active_dl_stroke_w;
    sF32  active_dl_decal_alpha;
    sF32  active_dl_miter_limit;
@@ -4463,8 +4469,10 @@ struct MinnieSetup {
       active_dl_num_tris           = 0u;
       active_dl_num_verts          = 0u;
       active_dl_start_offset       = 0u;
-      active_dl_c32_fill           = 0x12CD34EFu;
-      active_dl_c32_stroke         = 0x12CD34EFu;
+      active_dl_c32_fill           = 0x12CD04EFu;
+      active_dl_c32_stroke         = 0x12CD04EFu;
+      prev_dl_c32_fill             = 0x12CD04EFu;
+      prev_dl_c32_stroke           = 0x12CD04EFu;
       active_dl_decal_alpha        = 1.0f;
       active_dl_stroke_w           = 0.0f;
       active_dl_miter_limit        = 32.0f;
@@ -6353,7 +6361,55 @@ struct MinnieSetup {
    }
 
    // <method.png>
+#ifndef MINNIE_DRAWOP_INLINE_COLORS
+   void lazyEmitColor(void) {
+      Ddebugprintfv("[trc] MinnieSetup::lazyEmitColor: prev_dl_c32_fill=#%08x active_dl_c32_fill=#%08x\n", prev_dl_c32_fill, active_dl_c32_fill);
+      if(active_dl_c32_fill != prev_dl_c32_fill)
+      {
+         if(active_dl_c32_stroke != prev_dl_c32_stroke)
+         {
+            if(active_dl_c32_stroke != active_dl_c32_fill)
+            {
+               // Both fill + stroke changed
+               Dexport_dl_i16(MINNIE_DRAWOP_COLOR_FILL_STROKE);
+               Dexport_dl_i32(active_dl_c32_fill);    // ARGB32
+               Dexport_dl_i32(active_dl_c32_stroke);  // ARGB32
+               prev_dl_c32_fill   = active_dl_c32_fill;
+               prev_dl_c32_stroke = active_dl_c32_stroke;
+            }
+            else
+            {
+               // Both fill + stroke changed (same)
+               Dexport_dl_i16(MINNIE_DRAWOP_COLOR);
+               Dexport_dl_i32(active_dl_c32_fill);    // ARGB32
+               prev_dl_c32_fill = prev_dl_c32_stroke = active_dl_c32_fill;
+            }
+         }
+         else
+         {
+            // Fill color changed
+            Dexport_dl_i16(MINNIE_DRAWOP_COLOR_FILL);
+            Dexport_dl_i32(active_dl_c32_fill);    // ARGB32
+            prev_dl_c32_fill = active_dl_c32_fill;
+         }
+      }
+      else if(active_dl_c32_stroke != prev_dl_c32_stroke)
+      {
+         // Stroke color changed
+         Dexport_dl_i16(MINNIE_DRAWOP_COLOR_STROKE);
+         Dexport_dl_i32(active_dl_c32_stroke);    // ARGB32
+         prev_dl_c32_stroke = active_dl_c32_stroke;
+      }
+   }
+#endif // !MINNIE_DRAWOP_INLINE_COLORS
+
+   // <method.png>
    void finishActiveDrawListOp(void) {
+
+#ifndef MINNIE_DRAWOP_INLINE_COLORS
+      lazyEmitColor();
+#endif // !MINNIE_DRAWOP_INLINE_COLORS
+
       switch(active_dl_op)
       {
          default:
@@ -6368,7 +6424,9 @@ struct MinnieSetup {
                Dexport_dl_i16(active_dl_op);
                Dexport_dl_i32(active_dl_start_offset);
                Dexport_dl_i32(active_dl_num_tris * 3u);
+#ifdef MINNIE_DRAWOP_INLINE_COLORS
                Dexport_dl_i32(active_dl_c32_fill);    // ARGB32
+#endif // MINNIE_DRAWOP_INLINE_COLORS
             }
             break;
 
@@ -6380,8 +6438,10 @@ struct MinnieSetup {
                Dexport_dl_i16(active_dl_op);
                Dexport_dl_i32(active_dl_start_offset);
                Dexport_dl_i32(active_dl_num_tris * 3u);
+#ifdef MINNIE_DRAWOP_INLINE_COLORS
                Dexport_dl_i32(active_dl_c32_fill);    // ARGB32
                Dexport_dl_i32(active_dl_c32_stroke);  // ARGB32
+#endif // MINNIE_DRAWOP_INLINE_COLORS
             }
             break;
 
@@ -6393,8 +6453,10 @@ struct MinnieSetup {
                Dexport_dl_i16(active_dl_op);
                Dexport_dl_i32(active_dl_start_offset);
                Dexport_dl_i32(active_dl_num_tris * 3u);
+#ifdef MINNIE_DRAWOP_INLINE_COLORS
                Dexport_dl_i32(active_dl_c32_fill);    // ARGB32
                Dexport_dl_i32(active_dl_c32_stroke);  // ARGB32
+#endif // MINNIE_DRAWOP_INLINE_COLORS
             }
             break;
 
@@ -6431,8 +6493,10 @@ struct MinnieSetup {
                Dexport_dl_i16(active_dl_op);
                Dexport_dl_i32(active_dl_start_offset);
                Dexport_dl_i32(active_dl_num_verts);
+#ifdef MINNIE_DRAWOP_INLINE_COLORS
                Dexport_dl_i32(active_dl_c32_fill);    // ARGB32
                Dexport_dl_i32(active_dl_c32_stroke);  // ARGB32
+#endif // MINNIE_DRAWOP_INLINE_COLORS
             }
             break;
 
@@ -6447,8 +6511,10 @@ struct MinnieSetup {
                           active_dl_c32_stroke
                           );
             Dexport_dl_i16(active_dl_op);
+#ifdef MINNIE_DRAWOP_INLINE_COLORS
             Dexport_dl_i32(active_dl_c32_fill);    // ARGB32
             Dexport_dl_i32(active_dl_c32_stroke);  // ARGB32
+#endif // MINNIE_DRAWOP_INLINE_COLORS
             break;
 
          case MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32_SUB:
@@ -6500,8 +6566,10 @@ struct MinnieSetup {
                Dexport_dl_f32(cyc);
                Dexport_dl_f32(sxh);
                Dexport_dl_f32(syh);
+#ifdef MINNIE_DRAWOP_INLINE_COLORS
                Dexport_dl_i32(active_dl_c32_fill);    // ARGB32
                Dexport_dl_i32(active_dl_c32_stroke);  // ARGB32
+#endif // MINNIE_DRAWOP_INLINE_COLORS
                const sF32 aaOff = 1/*b_aa*/ ? MINNIE_RECT_FILL_AA_SIZE_OFFSET : 0.0f;
                setupRectFillVBO32(cxc, cyc,
                                   sxh + aaOff, syh + aaOff,
@@ -6524,8 +6592,10 @@ struct MinnieSetup {
                Dexport_dl_f32(cyc);
                Dexport_dl_f32(sxh);
                Dexport_dl_f32(syh);
+#ifdef MINNIE_DRAWOP_INLINE_COLORS
                Dexport_dl_i32(active_dl_c32_fill);    // ARGB32
                Dexport_dl_i32(active_dl_c32_stroke);  // ARGB32
+#endif // MINNIE_DRAWOP_INLINE_COLORS
                Dexport_dl_f32(active_dl_stroke_w);
                const sF32 aaOffSize   = 1/*b_aa*/ ? MINNIE_RECT_AA_SIZE_OFFSET   : 0.0f;
                const sF32 aaOffStroke = 1/*b_aa*/ ? MINNIE_RECT_AA_STROKE_OFFSET : 0.0f;
@@ -6551,8 +6621,10 @@ struct MinnieSetup {
                Dexport_dl_f32(cyc);
                Dexport_dl_f32(sxh);
                Dexport_dl_f32(syh);
+#ifdef MINNIE_DRAWOP_INLINE_COLORS
                Dexport_dl_i32(active_dl_c32_fill);    // ARGB32
                Dexport_dl_i32(active_dl_c32_stroke);  // ARGB32
+#endif // MINNIE_DRAWOP_INLINE_COLORS
                Dexport_dl_f32(active_dl_stroke_w);
                const sF32 aaOffSize   = 1/*b_aa*/ ? MINNIE_RECT_AA_SIZE_OFFSET   : 0.0f;
                const sF32 aaOffStroke = 1/*b_aa*/ ? MINNIE_RECT_AA_STROKE_OFFSET : 0.0f;
@@ -6573,8 +6645,10 @@ struct MinnieSetup {
                Dexport_dl_f32(active_dl_cy * geo_scale_y);
                Dexport_dl_f32(active_dl_rx * geo_scale_x);
                Dexport_dl_f32(active_dl_ry * geo_scale_y);
+#ifdef MINNIE_DRAWOP_INLINE_COLORS
                Dexport_dl_i32(active_dl_c32_fill);    // ARGB32
                Dexport_dl_i32(active_dl_c32_stroke);  // ARGB32
+#endif // MINNIE_DRAWOP_INLINE_COLORS
                const sF32 aaOff = 1/*b_aa*/ ? MINNIE_ELLIPSE_FILL_AA_SIZE_OFFSET : 0.0f;
                setupEllipseFillVBO32(active_dl_cx * geo_scale_x,
                                      active_dl_cy * geo_scale_y,
@@ -6593,8 +6667,10 @@ struct MinnieSetup {
                Dexport_dl_f32(active_dl_cy * geo_scale_y);
                Dexport_dl_f32(active_dl_rx * geo_scale_x);
                Dexport_dl_f32(active_dl_ry * geo_scale_y);
+#ifdef MINNIE_DRAWOP_INLINE_COLORS
                Dexport_dl_i32(active_dl_c32_fill);    // ARGB32
                Dexport_dl_i32(active_dl_c32_stroke);  // ARGB32
+#endif // MINNIE_DRAWOP_INLINE_COLORS
                Dexport_dl_f32(active_dl_stroke_w);
                const sF32 aaOffSize   = 1/*b_aa*/ ? MINNIE_ELLIPSE_AA_SIZE_OFFSET   : 0.0f;
                const sF32 aaOffStroke = 1/*b_aa*/ ? MINNIE_ELLIPSE_AA_STROKE_OFFSET : 0.0f;
@@ -6616,8 +6692,10 @@ struct MinnieSetup {
                Dexport_dl_f32(active_dl_cy * geo_scale_y);
                Dexport_dl_f32(active_dl_rx * geo_scale_x);
                Dexport_dl_f32(active_dl_ry * geo_scale_y);
+#ifdef MINNIE_DRAWOP_INLINE_COLORS
                Dexport_dl_i32(active_dl_c32_fill);    // ARGB32
                Dexport_dl_i32(active_dl_c32_stroke);  // ARGB32
+#endif // MINNIE_DRAWOP_INLINE_COLORS
                Dexport_dl_f32(active_dl_stroke_w);
                const sF32 aaOffSize   = 1/*b_aa*/ ? MINNIE_ELLIPSE_AA_SIZE_OFFSET   : 0.0f;
                const sF32 aaOffStroke = 1/*b_aa*/ ? MINNIE_ELLIPSE_AA_STROKE_OFFSET : 0.0f;
@@ -6646,8 +6724,10 @@ struct MinnieSetup {
                Dexport_dl_f32(syh);
                Dexport_dl_f32(active_dl_rx * geo_scale_x);
                Dexport_dl_f32(active_dl_ry * geo_scale_y);
+#ifdef MINNIE_DRAWOP_INLINE_COLORS
                Dexport_dl_i32(active_dl_c32_fill);    // ARGB32
                Dexport_dl_i32(active_dl_c32_stroke);  // ARGB32
+#endif // MINNIE_DRAWOP_INLINE_COLORS
                const sF32 aaOff = 1/*b_aa*/ ? MINNIE_ROUNDRECT_FILL_AA_SIZE_OFFSET : 0.0f;  // (todo) Dsdvg_pixel_scl
                setupRoundRectFillVBO32(cxc, cyc,
                                        sxh + aaOff, syh + aaOff,
@@ -6674,8 +6754,10 @@ struct MinnieSetup {
                Dexport_dl_f32(syh);
                Dexport_dl_f32(active_dl_rx * geo_scale_x);
                Dexport_dl_f32(active_dl_ry * geo_scale_y);
+#ifdef MINNIE_DRAWOP_INLINE_COLORS
                Dexport_dl_i32(active_dl_c32_fill);    // ARGB32
                Dexport_dl_i32(active_dl_c32_stroke);  // ARGB32
+#endif // MINNIE_DRAWOP_INLINE_COLORS
                Dexport_dl_f32(active_dl_stroke_w);
                const sF32 aaOffSize   = 1/*b_aa*/ ? MINNIE_ROUNDRECT_AA_SIZE_OFFSET   : 0.0f;
                const sF32 aaOffStroke = 1/*b_aa*/ ? MINNIE_ROUNDRECT_AA_STROKE_OFFSET : 0.0f;
@@ -6706,8 +6788,10 @@ struct MinnieSetup {
                Dexport_dl_f32(syh);
                Dexport_dl_f32(active_dl_rx * geo_scale_x);
                Dexport_dl_f32(active_dl_ry * geo_scale_y);
+#ifdef MINNIE_DRAWOP_INLINE_COLORS
                Dexport_dl_i32(active_dl_c32_fill);    // ARGB32
                Dexport_dl_i32(active_dl_c32_stroke);  // ARGB32
+#endif // MINNIE_DRAWOP_INLINE_COLORS
                Dexport_dl_f32(active_dl_stroke_w);
                const sF32 aaOffSize   = 1/*b_aa*/ ? MINNIE_ROUNDRECT_AA_SIZE_OFFSET   : 0.0f;
                const sF32 aaOffStroke = 1/*b_aa*/ ? MINNIE_ROUNDRECT_AA_STROKE_OFFSET : 0.0f;
@@ -6736,7 +6820,9 @@ struct MinnieSetup {
                Dexport_dl_i16(active_dl_op);
                Dexport_dl_i32(active_dl_start_offset);
                Dexport_dl_i32(active_dl_num_tris * 3u);
+#ifdef MINNIE_DRAWOP_INLINE_COLORS
                Dexport_dl_i32(active_dl_c32_fill);  // ARGB32
+#endif // MINNIE_DRAWOP_INLINE_COLORS
                total_num_tris_tex += active_dl_num_tris;
             }
             break;
@@ -6748,8 +6834,10 @@ struct MinnieSetup {
                Dexport_dl_i16(active_dl_op);
                Dexport_dl_i32(active_dl_start_offset);
                Dexport_dl_i32(active_dl_num_tris * 3u);
+#ifdef MINNIE_DRAWOP_INLINE_COLORS
                Dexport_dl_i32(active_dl_c32_fill);    // ARGB32
                Dexport_dl_i32(active_dl_c32_stroke);  // ARGB32
+#endif // MINNIE_DRAWOP_INLINE_COLORS
                total_num_tris_tex += active_dl_num_tris;
             }
             break;
@@ -6761,7 +6849,9 @@ struct MinnieSetup {
                Dexport_dl_i16(active_dl_op);
                Dexport_dl_i32(active_dl_start_offset);
                Dexport_dl_i32(active_dl_num_tris * 3u);
+#ifdef MINNIE_DRAWOP_INLINE_COLORS
                Dexport_dl_i32(active_dl_c32_fill);  // ARGB32
+#endif // MINNIE_DRAWOP_INLINE_COLORS
                total_num_tris_tex += active_dl_num_tris;
             }
             break;
@@ -6773,8 +6863,10 @@ struct MinnieSetup {
                Dexport_dl_i16(active_dl_op);
                Dexport_dl_i32(active_dl_start_offset);
                Dexport_dl_i32(active_dl_num_tris * 3u);
+#ifdef MINNIE_DRAWOP_INLINE_COLORS
                Dexport_dl_i32(active_dl_c32_fill);    // ARGB32
                Dexport_dl_i32(active_dl_c32_stroke);  // ARGB32
+#endif // MINNIE_DRAWOP_INLINE_COLORS
                total_num_tris_tex += active_dl_num_tris;
             }
             break;
@@ -6807,8 +6899,10 @@ struct MinnieSetup {
                Dexport_dl_i16(active_dl_op);
                Dexport_dl_i32(active_dl_start_offset);
                Dexport_dl_i32(active_dl_num_verts);
+#ifdef MINNIE_DRAWOP_INLINE_COLORS
                Dexport_dl_i32(active_dl_c32_fill);    // ARGB32
                Dexport_dl_i32(active_dl_c32_stroke);  // ARGB32
+#endif // MINNIE_DRAWOP_INLINE_COLORS
                Dexport_dl_f32(active_dl_stroke_w);
                Dexport_dl_i8(active_dl_line_strip_flags);
                total_num_line_strips++;
@@ -6844,8 +6938,10 @@ struct MinnieSetup {
                Dexport_dl_i16(active_dl_op);
                Dexport_dl_i32(active_dl_start_offset);
                Dexport_dl_i32(active_dl_num_verts);
+#ifdef MINNIE_DRAWOP_INLINE_COLORS
                Dexport_dl_i32(active_dl_c32_fill);    // ARGB32
                Dexport_dl_i32(active_dl_c32_stroke);  // ARGB32
+#endif // MINNIE_DRAWOP_INLINE_COLORS
                Dexport_dl_f32(active_dl_stroke_w);
                Dexport_dl_i8(active_dl_line_strip_flags);
                total_num_line_strips++;
@@ -6871,7 +6967,9 @@ struct MinnieSetup {
                Dexport_dl_i16(active_dl_op);
                Dexport_dl_i32(active_dl_start_offset);
                Dexport_dl_i32(active_dl_num_verts);
+#ifdef MINNIE_DRAWOP_INLINE_COLORS
                Dexport_dl_i32(active_dl_c32_stroke);  // ARGB32
+#endif // MINNIE_DRAWOP_INLINE_COLORS
                Dexport_dl_f32(active_dl_stroke_w);
                Dexport_dl_f32(active_dl_miter_limit);
                Dexport_dl_i8(active_dl_line_strip_flags);
@@ -6922,7 +7020,7 @@ struct MinnieSetup {
    }
 
    // <method.png>
-   sBool beginDrawListOp(sUI _op) {
+   sBool beginDrawListOp(sUI _op, sBool _bSwapFillStroke = YAC_FALSE) {
       if(NULL != dl_export_ofs && NULL != vb_export_ofs)
       {
          finishActiveDrawListOp();
@@ -6931,8 +7029,16 @@ struct MinnieSetup {
          active_dl_start_offset       = Dexport_vb_get_offset();
          active_dl_num_tris           = 0u;
          active_dl_num_verts          = 0u;
-         active_dl_c32_fill           = cur_c32_fill;
-         active_dl_c32_stroke         = cur_c32_stroke;
+         if(_bSwapFillStroke)
+         {
+            active_dl_c32_fill           = cur_c32_stroke;
+            active_dl_c32_stroke         = cur_c32_fill;
+         }
+         else
+         {
+            active_dl_c32_fill           = cur_c32_fill;
+            active_dl_c32_stroke         = cur_c32_stroke;
+         }
          active_dl_stroke_w           = cur_stroke_w;
          active_dl_miter_limit        = cur_miter_limit;
          active_dl_paint_id           = cur_paint_id;
@@ -6970,6 +7076,7 @@ struct MinnieSetup {
    sBool beginDrawListOpTri(void) {
       sUI op = 0u;
       lazyUnbindLinePattern();
+      sBool bSwapFillStroke = YAC_FALSE;
 
       if(b_uniform_colors)
       {
@@ -6980,6 +7087,7 @@ struct MinnieSetup {
 #else
             op = MINNIE_DRAWOP_TRIANGLES_STROKE_FLAT_UNIFORM_32;
 #endif // MINNIE_EXPORT_VERTEX_16BIT
+            bSwapFillStroke = YAC_TRUE;
          }
          else
          {
@@ -7017,7 +7125,7 @@ struct MinnieSetup {
          return YAC_TRUE;
       }
 
-      return beginDrawListOp(op);
+      return beginDrawListOp(op, bSwapFillStroke);
    }
 
 #if MINNIE_EXPORT_TRIS_EDGEAA
