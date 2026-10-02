@@ -7083,6 +7083,7 @@ void YAC_CALL sdvg_SetColor4f(sF32 _r, sF32 _g, sF32 _b, sF32 _a) {
    sdvg_int_color_fill.a = sdvg_int_color_stroke.a = _a;
    sdvg_int_color_fill_ga.a = sdvg_int_color_stroke_ga.a = _a * global_a;
    Dsdvg_inc_shape_state(u_color_fill);
+   Dsdvg_inc_shape_state(u_color_stroke);
 }
 
 void YAC_CALL sdvg_SetColorARGB(sUI _c32) {
