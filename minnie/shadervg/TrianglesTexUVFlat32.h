@@ -2,7 +2,7 @@
 // ---- file   : TrianglesTexUVFlat32.h
 // ---- author : Bastian Spiegel <bs@tkscript.de>
 // ---- legal  : Distributed under terms of the MIT license (https://opensource.org/licenses/MIT)
-// ----          Copyright 2025 by bsp
+// ----          Copyright 2025-2026 by bsp
 // ----
 // ----          Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 // ----          associated documentation files (the "Software"), to deal in the Software without restriction, including
@@ -79,8 +79,7 @@ class TrianglesTexUVFlat32 : public ShaderVG_Shape {
    void drawTrianglesTexUVFlatVBO32(sUI              _vboId,
                                     sUI              _byteOffset,
                                     sUI              _numVerts,
-                                    Dsdvg_mat4_ref_t _mvpMatrix,
-                                    sF32             _fillR, sF32 _fillG, sF32 _fillB, sF32 _fillA
+                                    Dsdvg_mat4_ref_t _mvpMatrix
                                     ) {
       //
       // VBO vertex format (16 bytes per vertex):
@@ -96,7 +95,7 @@ class TrianglesTexUVFlat32 : public ShaderVG_Shape {
          return;
 
       lazyUpdateTransform(_mvpMatrix);
-      Dsdvg_uniform_4f(shape_u_color_fill, _fillR, _fillG, _fillB, _fillA);
+      lazyUpdateColorFill(&sdvg_int_color_fill_ga);
 
       Dsdvg_attrib_offset(shape_a_uv,     2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/, 16/*stride*/, _byteOffset + 0);
       Dsdvg_attrib_offset(shape_a_vertex, 2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/, 16/*stride*/, _byteOffset + 8);

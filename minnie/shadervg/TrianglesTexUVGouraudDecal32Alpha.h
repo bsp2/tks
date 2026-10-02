@@ -2,7 +2,7 @@
 // ---- file   : TrianglesTexUVGouraudDecal32Alpha.h
 // ---- author : Bastian Spiegel <bs@tkscript.de>
 // ---- legal  : Distributed under terms of the MIT license (https://opensource.org/licenses/MIT)
-// ----          Copyright 2025 by bsp
+// ----          Copyright 2025-2026 by bsp
 // ----
 // ----          Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 // ----          associated documentation files (the "Software"), to deal in the Software without restriction, including
@@ -90,8 +90,6 @@ class TrianglesTexUVGouraudDecal32Alpha : public ShaderVG_Shape {
                                                  sUI              _byteOffset,
                                                  sUI              _numVerts,
                                                  Dsdvg_mat4_ref_t _mvpMatrix,
-                                                 sF32             _fillR, sF32 _fillG, sF32 _fillB, sF32 _fillA,
-                                                 sF32             _strokeR, sF32 _strokeG, sF32 _strokeB, sF32 _strokeA,
                                                  sF32             _decalAlpha
                                                  ) {
       //
@@ -112,8 +110,9 @@ class TrianglesTexUVGouraudDecal32Alpha : public ShaderVG_Shape {
          return;
 
       lazyUpdateTransform(_mvpMatrix);
-      Dsdvg_uniform_4f(shape_u_color_fill,   _fillR,   _fillG,   _fillB,   _fillA);
-      Dsdvg_uniform_4f(shape_u_color_stroke, _strokeR, _strokeG, _strokeB, _strokeA);
+      lazyUpdateColorFill(&sdvg_int_color_fill_ga);
+      lazyUpdateColorStroke(&sdvg_int_color_stroke);  // no global_a
+
       Dsdvg_uniform_1f(shape_u_decal_alpha, _decalAlpha);
 
       Dsdvg_attrib_offset(shape_a_uv,     2/*size*/, GL_FLOAT,         GL_FALSE/*normalize*/, 20/*stride*/, _byteOffset +  0);

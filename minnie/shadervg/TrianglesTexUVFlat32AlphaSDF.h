@@ -99,7 +99,6 @@ class TrianglesTexUVFlat32AlphaSDF : public ShaderVG_Shape {
                                             sUI              _byteOffset,
                                             sUI              _numVerts,
                                             Dsdvg_mat4_ref_t _mvpMatrix,
-                                            sF32             _fillR, sF32 _fillG, sF32 _fillB, sF32 _fillA,
                                             sF32             _aMin,
                                             sF32             _aMax,
                                             sF32             _aMaxMinScale,  // (1.0/(aMax-aMin))
@@ -119,7 +118,8 @@ class TrianglesTexUVFlat32AlphaSDF : public ShaderVG_Shape {
          return;
 
       lazyUpdateTransform(_mvpMatrix);
-      Dsdvg_uniform_4f(shape_u_color_fill, _fillR, _fillG, _fillB, _fillA);
+      lazyUpdateColorFill(&sdvg_int_color_fill_ga);
+
       Dsdvg_uniform_1f(shape_u_a_min, _aMin);
       Dsdvg_uniform_1f(shape_u_a_max, _aMax);
       Dsdvg_uniform_1f(shape_u_a_maxmin_scale, _aMaxMinScale);

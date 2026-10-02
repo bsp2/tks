@@ -136,7 +136,6 @@ class PointsSquareGouraudAA32 : public ShaderVG_Shape {
                                        sUI              _byteOffset,
                                        sUI              _numPoints,
                                        Dsdvg_mat4_ref_t _mvpMatrix,
-                                       sF32             _strokeR, sF32 _strokeG, sF32 _strokeB, sF32 _strokeA,
                                        sF32             _pointRadius,
                                        sF32             _aaRange
                                        ) {
@@ -156,7 +155,8 @@ class PointsSquareGouraudAA32 : public ShaderVG_Shape {
          return;
 
       lazyUpdateTransform(_mvpMatrix);
-      Dsdvg_uniform_4f(shape_u_color_stroke, _strokeR, _strokeG, _strokeB, _strokeA);
+      lazyUpdateColorStroke(&sdvg_int_color_stroke_ga);
+
       Dsdvg_uniform_1f(shape_u_point_radius, _pointRadius);
 #ifdef SHADERVG_UNIFORM_ARRAY
       updateUniformOffsetArray(_pointRadius);

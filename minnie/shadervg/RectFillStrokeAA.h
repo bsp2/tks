@@ -214,8 +214,6 @@ class RectFillStrokeAA : public ShaderVG_Shape {
                                   Dsdvg_mat4_ref_t _mvpMatrix,
                                   sF32             _centerX, sF32 _centerY,
                                   sF32             _sizeX,   sF32 _sizeY,
-                                  sF32             _fillR,   sF32 _fillG,   sF32 _fillB,   sF32 _fillA,
-                                  sF32             _strokeR, sF32 _strokeG, sF32 _strokeB, sF32 _strokeA,
                                   sF32             _strokeW,
                                   sF32             _aaRange,
                                   sF32             _aaExp
@@ -240,6 +238,9 @@ class RectFillStrokeAA : public ShaderVG_Shape {
             return;
 
          lazyUpdateTransform(_mvpMatrix);
+         lazyUpdateColorFill(&sdvg_int_color_fill_ga);
+         lazyUpdateColorStroke(&sdvg_int_color_stroke_ga);
+
          Dsdvg_uniform_2f(shape_u_center,   _centerX, _centerY);
          Dsdvg_uniform_2f(shape_u_size_i,   _sizeX - _strokeW, _sizeY - _strokeW);
          Dsdvg_uniform_2f(shape_u_size_o,   _sizeX + _strokeW, _sizeY + _strokeW);
@@ -251,9 +252,6 @@ class RectFillStrokeAA : public ShaderVG_Shape {
             Dsdvg_uniform_1f(shape_u_aa_exp, _aaExp);
          }
 #endif // SHADERVG_AA_EXP
-
-         Dsdvg_uniform_4f(shape_u_color_fill,   _fillR,   _fillG,   _fillB,   _fillA);
-         Dsdvg_uniform_4f(shape_u_color_stroke, _strokeR, _strokeG, _strokeB, _strokeA);
 
 #ifdef SHADERVG_DEBUG_FRAG
          if(-1 != shape_u_debug)
@@ -275,8 +273,6 @@ class RectFillStrokeAA : public ShaderVG_Shape {
                              Dsdvg_mat4_ref_t _mvpMatrix,
                              sF32 _centerX, sF32 _centerY,
                              sF32 _sizeX,   sF32 _sizeY,
-                             sF32 _fillR,   sF32 _fillG,   sF32 _fillB,   sF32 _fillA,
-                             sF32 _strokeR, sF32 _strokeG, sF32 _strokeB, sF32 _strokeA,
                              sF32 _strokeW,
                              sF32 _aaRange,
                              sF32 _aaExp
@@ -325,6 +321,9 @@ class RectFillStrokeAA : public ShaderVG_Shape {
          return;
 
       lazyUpdateTransform(_mvpMatrix);
+      lazyUpdateColorFill(&sdvg_int_color_fill_ga);
+      lazyUpdateColorStroke(&sdvg_int_color_stroke_ga);
+
       Dsdvg_uniform_2f(shape_u_center,   _centerX, _centerY);
       Dsdvg_uniform_2f(shape_u_size_i,   _sizeX - _strokeW, _sizeY - _strokeW);
       Dsdvg_uniform_2f(shape_u_size_o,   _sizeX + _strokeW, _sizeY + _strokeW);
@@ -336,9 +335,6 @@ class RectFillStrokeAA : public ShaderVG_Shape {
          Dsdvg_uniform_1f(shape_u_aa_exp, _aaExp);
       }
 #endif // SHADERVG_AA_EXP
-
-      Dsdvg_uniform_4f(shape_u_color_fill,   _fillR,   _fillG,   _fillB,   _fillA);
-      Dsdvg_uniform_4f(shape_u_color_stroke, _strokeR, _strokeG, _strokeB, _strokeA);
 
 #ifdef SHADERVG_DEBUG_FRAG
       if(-1 != shape_u_debug)

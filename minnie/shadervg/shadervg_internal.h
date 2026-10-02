@@ -31,17 +31,20 @@ class ShaderVG_Shape;
 
 // ----------- Log helper macros -----------
 #define Dsdvg_printf            if(!MINNIE_PRINTF);else Dyac_host_printf
-#define Dsdvg_tracecall        if( MINNIE_PRINTF);else Dsdvg_printf
-#define Dsdvg_tracecallv       if( MINNIE_PRINTF);else Dsdvg_printf
+#define Dsdvg_tracecall         if( MINNIE_PRINTF);else Dsdvg_printf
+#define Dsdvg_tracecallv        if( MINNIE_PRINTF);else Dsdvg_printf
 #define Dsdvg_warnprintf        if(!MINNIE_PRINTF);else Dsdvg_printf
 #define Dsdvg_errorprintf       if(!MINNIE_PRINTF);else Dsdvg_printf
 #define Dsdvg_errorbeginprintf  if(!MINNIE_PRINTF);else Dsdvg_printf
 #define Dsdvg_debugprintf       if( MINNIE_PRINTF);else Dsdvg_printf
-#define Dsdvg_debugprintfv     if( MINNIE_PRINTF);else Dsdvg_printf
+#define Dsdvg_debugprintfv      if( MINNIE_PRINTF);else Dsdvg_printf
 #define Dsdvg_debugprintfvv     if( MINNIE_PRINTF);else Dsdvg_printf
 #define Dsdvg_transformprintf   if( MINNIE_PRINTF);else Dsdvg_printf
 #define Dsdvg_transformprintfv  if( MINNIE_PRINTF);else Dsdvg_printf
 #define Dsdvg_transformprintfvv if( MINNIE_PRINTF);else Dsdvg_printf
+#define Dsdvg_uniformprintf     if( MINNIE_PRINTF);else Dsdvg_printf
+#define Dsdvg_uniformprintfv    if( MINNIE_PRINTF);else Dsdvg_printf
+#define Dsdvg_uniformprintfvv   if( MINNIE_PRINTF);else Dsdvg_printf
 
 #include <stdlib.h>
 #include <new>
@@ -69,10 +72,16 @@ typedef struct sdvg_paint_s {
    sF32 size_y;   // PAINT_RADIAL/CONIC/PATTERN*
 } sdvg_paint_t;
 
-extern sBool        sdvg_int_b_glcore;
-extern GLuint       sdvg_int_current_prg;
-extern sSI          sdvg_int_shape_state_u_transform;
-extern sdvg_paint_t sdvg_int_paint;
+extern sBool          sdvg_int_b_glcore;
+extern GLuint         sdvg_int_current_prg;
+extern sdvg_color4f_t sdvg_int_color_fill;
+extern sdvg_color4f_t sdvg_int_color_fill_ga;
+extern sdvg_color4f_t sdvg_int_color_stroke;
+extern sdvg_color4f_t sdvg_int_color_stroke_ga;
+extern sSI            sdvg_int_shape_state_u_transform;
+extern sSI            sdvg_int_shape_state_u_color_fill;
+extern sSI            sdvg_int_shape_state_u_color_stroke;
+extern sdvg_paint_t   sdvg_int_paint;
 
 // -----------  internal -----------
 void sdvg_int_BindScratchBuffer (void);
@@ -125,6 +134,7 @@ void sdvg_int_debug_print_mem_info (void);
 #define Dsdvg_uniform_2f(a,v1,v2) Dsdvg_glcall(glUniform2f(a,v1,v2))
 #define Dsdvg_uniform_3f(a,v1,v2,v3) Dsdvg_glcall(glUniform3f(a,v1,v2,v3))
 #define Dsdvg_uniform_4f(a,v1,v2,v3,v4) Dsdvg_glcall(glUniform4f(a,v1,v2,v3,v4))
+#define Dsdvg_uniform_4fv(a,num,v) Dsdvg_glcall(glUniform4fv(a,num,v))
 #define Dsdvg_uniform_2fv(a,num,va) Dsdvg_glcall(glUniform2fv(a,num,va))
 #define Dsdvg_uniform_mat4(a,m) sdvg_int_UniformMatrix4(a,m)  // load row-major matrix (+convert to GL column-major)
 #define Dsdvg_attrib_offset(a,s,t,n,d,o) Dsdvg_glcall(zglVertexAttribOffset(a,s,t,n,d,o))
@@ -133,6 +143,7 @@ void sdvg_int_debug_print_mem_info (void);
 #define Dsdvg_attrib_disable(a) Dsdvg_glcall(glDisableVertexAttribArray(a))
 #define Dsdvg_attrib_divisor(a, n) Dsdvg_glcall(glVertexAttribDivisor((a), (n)))
 #define Dsdvg_attrib_divisor_reset(a) Dsdvg_glcall(glVertexAttribDivisor((a), 0))
+#define Dsdvg_inc_shape_state(a) sdvg_int_shape_state_##a = ((sdvg_int_shape_state_##a) + 1) & 1073741823
 #define Dsdvg_stencil_poly_even_odd_pass1()                          \
    Dsdvg_glcall(glEnable(GL_STENCIL_TEST));                          \
    Dsdvg_glcall(glStencilMask(1));                                   \

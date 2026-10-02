@@ -67,8 +67,7 @@ class TrianglesFillFlatUniform14_2 : public ShaderVG_Shape {
    void drawTrianglesFillFlatUniformVBO14_2(sUI              _vboId,
                                             sUI              _byteOffset,
                                             sUI              _numVerts,
-                                            Dsdvg_mat4_ref_t _mvpMatrix,
-                                            sF32             _fillR, sF32 _fillG, sF32 _fillB, sF32 _fillA
+                                            Dsdvg_mat4_ref_t _mvpMatrix
                                             ) {
       // VBO vertex format (4 bytes per vertex):
       //   +0 s14.2 x
@@ -82,7 +81,7 @@ class TrianglesFillFlatUniform14_2 : public ShaderVG_Shape {
          return;
 
       lazyUpdateTransform(_mvpMatrix);
-      Dsdvg_uniform_4f(shape_u_color_fill, _fillR, _fillG, _fillB, _fillA);
+      lazyUpdateColorFill(&sdvg_int_color_fill_ga);
 
       Dsdvg_attrib_offset(shape_a_vertex, 2/*size*/, GL_SHORT, GL_FALSE/*normalize*/, 4/*stride*/, _byteOffset);
       Dsdvg_attrib_enable(shape_a_vertex);
@@ -96,7 +95,6 @@ class TrianglesFillFlatUniform14_2 : public ShaderVG_Shape {
                                           sUI              _byteOffset,
                                           sUI              _numVerts,
                                           Dsdvg_mat4_ref_t _mvpMatrix,
-                                          sF32             _fillR, sF32 _fillG, sF32 _fillB, sF32 _fillA,
                                           sBool            _bNonZero
                                           ) {
 
@@ -110,7 +108,7 @@ class TrianglesFillFlatUniform14_2 : public ShaderVG_Shape {
          return;
 
       lazyUpdateTransform(_mvpMatrix);
-      Dsdvg_uniform_4f(shape_u_color_fill, _fillR, _fillG, _fillB, _fillA);
+      lazyUpdateColorFill(&sdvg_int_color_fill_ga);
 
       Dsdvg_attrib_offset(shape_a_vertex, 2/*size*/, GL_SHORT, GL_FALSE/*normalize*/, 4/*stride*/, _byteOffset);
       Dsdvg_attrib_enable(shape_a_vertex);

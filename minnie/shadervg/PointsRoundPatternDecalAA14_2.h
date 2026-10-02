@@ -157,8 +157,6 @@ class PointsRoundPatternDecalAA14_2 : public ShaderVG_Shape {
                                              sUI              _byteOffset,
                                              sUI              _numVertices,
                                              Dsdvg_mat4_ref_t _mvpMatrix,
-                                             sF32             _fillR,   sF32 _fillG,   sF32 _fillB,   sF32 _fillA,
-                                             sF32             _strokeR, sF32 _strokeG, sF32 _strokeB, sF32 _strokeA,
                                              sF32             _decalAlpha,
                                              sF32             _pointRadius,
                                              sF32             _aaRange,
@@ -182,13 +180,16 @@ class PointsRoundPatternDecalAA14_2 : public ShaderVG_Shape {
             return;
 
          lazyUpdateTransform(_mvpMatrix);
-         Dsdvg_uniform_4f(shape_u_color_fill,   _fillR,   _fillG,   _fillB,   _fillA);
-         Dsdvg_uniform_4f(shape_u_color_stroke, _strokeR, _strokeG, _strokeB, _strokeA);
+         lazyUpdateColorFill(&sdvg_int_color_fill_ga);
+         lazyUpdateColorStroke(&sdvg_int_color_stroke_ga);
+
          Dsdvg_uniform_1f(shape_u_decal_alpha, _decalAlpha);
+
          Dsdvg_uniform_1f(shape_u_point_radius, _pointRadius);
 #ifdef SHADERVG_UNIFORM_ARRAY
          updateUniformOffsetArray(_pointRadius);
 #endif // SHADERVG_UNIFORM_ARRAY
+
          Dsdvg_uniform_1f(shape_u_aa_range, _aaRange);
 #ifdef SHADERVG_DEBUG_FRAG
          if(-1 != shape_u_debug)

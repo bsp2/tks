@@ -491,7 +491,6 @@ class LineStripPatternMiterAA14_2 : public ShaderVG_Shape {
                                            sUI              _numPoints,
                                            sBool            _bSkipLastLineJoint,
                                            Dsdvg_mat4_ref_t _mvpMatrix,
-                                           sF32             _strokeR, sF32 _strokeG, sF32 _strokeB, sF32 _strokeA,
                                            sF32             _strokeW,
                                            sF32             _aaRange,
                                            sF32             _lineMiterLimit,
@@ -516,7 +515,8 @@ class LineStripPatternMiterAA14_2 : public ShaderVG_Shape {
             return;
 
          lazyUpdateTransform(_mvpMatrix);
-         Dsdvg_uniform_4f(shape_u_color_stroke, _strokeR, _strokeG, _strokeB, _strokeA);
+         lazyUpdateColorStroke(&sdvg_int_color_stroke_ga);
+
          Dsdvg_uniform_1f(shape_u_stroke_w, _strokeW);
          Dsdvg_uniform_1f(shape_u_aa_range, _aaRange);
 #ifdef SHADERVG_DEBUG_FRAG
