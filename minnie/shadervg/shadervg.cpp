@@ -965,6 +965,7 @@ sSI            sdvg_int_shape_state_u_transform;
 sSI            sdvg_int_shape_state_u_color_fill;
 sSI            sdvg_int_shape_state_u_color_stroke;
 sdvg_paint_t   sdvg_int_paint;
+sSI            sdvg_int_shape_state_u_paint;
 
 static sUI vao_id = 0u;  // when sdvg_int_b_glcore=1
 
@@ -1126,6 +1127,7 @@ static void loc_reset_shape_states(void) {
    sdvg_int_shape_state_u_transform    = 1;
    sdvg_int_shape_state_u_color_fill   = 1;
    sdvg_int_shape_state_u_color_stroke = 1;
+   sdvg_int_shape_state_u_paint        = 1;
 }
 
 sBool YAC_CALL sdvg_Init(sBool _bGLCore) {
@@ -2657,14 +2659,11 @@ static void loc_DrawLineStripFlatAAVBOPaint(sUI _vboId,
    }
 #endif // SHADERVG_DEBUG_FRAG
 
-   if(PAINT_SOLID != sdvg_int_paint.mode)
-   {
-      _shape->updatePaintUniforms(YAC_FALSE/*bPolygon*/,
-                                  NULL/*mvpMatrix*/,
-                                  0u/*vpX*/, 0u/*vpY*/, 0u/*vpW*/, 0u/*vpH*/,
-                                  NULL/*mvpMatrixUnproject*/
-                                  );
-   }
+   _shape->updatePaintUniforms(YAC_FALSE/*bPolygon*/,
+                               NULL/*mvpMatrix*/,
+                               0u/*vpX*/, 0u/*vpY*/, 0u/*vpW*/, 0u/*vpH*/,
+                               NULL/*mvpMatrixUnproject*/
+                               );
 
    if(_b14_2)
    {
@@ -6349,14 +6348,11 @@ static sSI loc_BindFillShader(ShaderVG_Shape *_shape) {
          Dsdvg_uniform_1f(_shape->shape_u_decal_alpha, decal_alpha);
       }
 
-      if(PAINT_SOLID != sdvg_int_paint.mode)
-      {
-         _shape->updatePaintUniforms(YAC_FALSE/*bPolygon*/,
-                                     NULL/*mvpMatrix*/,
-                                     0u/*vpX*/, 0u/*vpY*/, 0u/*vpW*/, 0u/*vpH*/,
-                                     NULL/*mvpMatrixUnproject*/
-                                     );
-      }
+      _shape->updatePaintUniforms(YAC_FALSE/*bPolygon*/,
+                                  NULL/*mvpMatrix*/,
+                                  0u/*vpX*/, 0u/*vpY*/, 0u/*vpW*/, 0u/*vpH*/,
+                                  NULL/*mvpMatrixUnproject*/
+                                  );
    }
    else
    {
@@ -6743,6 +6739,12 @@ void YAC_CALL sdvg_TransformChanged(void) {
 #endif // SHADERVG_SCRIPT_API
 
    Dsdvg_inc_shape_state(u_transform);
+#ifdef SHADERVG_USE_POLYGON_SHADERS
+   if(PAINT_SOLID != sdvg_int_paint.mode)
+   {
+      Dsdvg_inc_shape_state(u_paint);
+   }
+#endif // SHADERVG_USE_POLYGON_SHADERS
 }
 
 void YAC_CALL sdvg_UpdateTransform(void) {
@@ -6820,6 +6822,12 @@ void YAC_CALL sdvg_BeginFrame(void) {
    }
 
    Dsdvg_inc_shape_state(u_transform);
+#ifdef SHADERVG_USE_POLYGON_SHADERS
+   if(PAINT_SOLID != sdvg_int_paint.mode)
+   {
+      Dsdvg_inc_shape_state(u_paint);
+   }
+#endif // SHADERVG_USE_POLYGON_SHADERS
 }
 
 void YAC_CALL sdvg_Flush(void) {
@@ -7645,6 +7653,7 @@ static sBool BeginDraw(sUI _numVertices, sUI _stride, sUI _mult = 1u) {
 
 void YAC_CALL sdvg_PaintSolid(void) {
    sdvg_int_paint.mode = PAINT_SOLID;
+   Dsdvg_inc_shape_state(u_paint);
 }
 
 void YAC_CALL sdvg_PaintLinear(sF32 _startX, sF32 _startY, sF32 _dirX, sF32 _dirY) {
@@ -7653,6 +7662,7 @@ void YAC_CALL sdvg_PaintLinear(sF32 _startX, sF32 _startY, sF32 _dirX, sF32 _dir
    sdvg_int_paint.start_y = _startY;
    sdvg_int_paint.dir_x   = _dirX;
    sdvg_int_paint.dir_y   = _dirY;
+   Dsdvg_inc_shape_state(u_paint);
 }
 
 void YAC_CALL sdvg_PaintRadial(sF32 _startX, sF32 _startY, sF32 _radiusX, sF32 _radiusY) {
@@ -7663,6 +7673,7 @@ void YAC_CALL sdvg_PaintRadial(sF32 _startX, sF32 _startY, sF32 _radiusX, sF32 _
    sdvg_int_paint.dir_y   = _radiusY;  // (todo) remove
    sdvg_int_paint.size_x  = _radiusX;
    sdvg_int_paint.size_y  = _radiusY;
+   Dsdvg_inc_shape_state(u_paint);
 }
 
 void YAC_CALL sdvg_PaintConic(sF32 _startX, sF32 _startY, sF32 _radiusX, sF32 _radiusY, sF32 _angle01) {
@@ -7674,6 +7685,7 @@ void YAC_CALL sdvg_PaintConic(sF32 _startX, sF32 _startY, sF32 _radiusX, sF32 _r
    sdvg_int_paint.size_x  = _radiusX;
    sdvg_int_paint.size_y  = _radiusY;
    sdvg_int_paint.angle01 = _angle01 + 0.25f/*north*/;
+   Dsdvg_inc_shape_state(u_paint);
 }
 
 void YAC_CALL sdvg_PaintPattern(sF32 _startX, sF32 _startY, sF32 _dirX, sF32 _dirY, sF32 _sizeX, sF32 _sizeY) {
@@ -7684,6 +7696,7 @@ void YAC_CALL sdvg_PaintPattern(sF32 _startX, sF32 _startY, sF32 _dirX, sF32 _di
    sdvg_int_paint.dir_y      = _dirY;
    sdvg_int_paint.size_x     = _sizeX;
    sdvg_int_paint.size_y     = _sizeY;
+   Dsdvg_inc_shape_state(u_paint);
 }
 
 void YAC_CALL sdvg_PaintPatternAlpha(sF32 _startX, sF32 _startY, sF32 _dirX, sF32 _dirY, sF32 _sizeX, sF32 _sizeY) {
@@ -7694,6 +7707,7 @@ void YAC_CALL sdvg_PaintPatternAlpha(sF32 _startX, sF32 _startY, sF32 _dirX, sF3
    sdvg_int_paint.dir_y      = _dirY;
    sdvg_int_paint.size_x     = _sizeX;
    sdvg_int_paint.size_y     = _sizeY;
+   Dsdvg_inc_shape_state(u_paint);
 }
 
 void YAC_CALL sdvg_PaintPatternDecal(sF32 _startX, sF32 _startY, sF32 _dirX, sF32 _dirY, sF32 _sizeX, sF32 _sizeY) {
@@ -7704,6 +7718,7 @@ void YAC_CALL sdvg_PaintPatternDecal(sF32 _startX, sF32 _startY, sF32 _dirX, sF3
    sdvg_int_paint.dir_y      = _dirY;
    sdvg_int_paint.size_x     = _sizeX;
    sdvg_int_paint.size_y     = _sizeY;
+   Dsdvg_inc_shape_state(u_paint);
 }
 
 void YAC_CALL sdvg_PaintPatternDecalAlpha(sF32 _startX, sF32 _startY, sF32 _dirX, sF32 _dirY, sF32 _sizeX, sF32 _sizeY) {
@@ -7714,6 +7729,7 @@ void YAC_CALL sdvg_PaintPatternDecalAlpha(sF32 _startX, sF32 _startY, sF32 _dirX
    sdvg_int_paint.dir_y      = _dirY;
    sdvg_int_paint.size_x     = _sizeX;
    sdvg_int_paint.size_y     = _sizeY;
+   Dsdvg_inc_shape_state(u_paint);
 }
 
 sBool YAC_CALL sdvg_BeginVBO(sUI _numVertices, sUI _stride) {

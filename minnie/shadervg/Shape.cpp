@@ -73,7 +73,6 @@ ShaderVG_Shape::ShaderVG_Shape(void) {
    shape_a_uv         = -1;
 
    shape_u_transform           = -1;
-   shape_state_u_transform     = -2;
    shape_u_last_instance       = -1;
    shape_u_aa                  = -1;
    shape_u_aa_range            = -1;
@@ -98,9 +97,7 @@ ShaderVG_Shape::ShaderVG_Shape(void) {
    shape_u_radius_max          = -1;
    shape_u_point_radius        = -1;
    shape_u_color_fill          = -1;
-   shape_state_u_color_fill    = -2;
    shape_u_color_stroke        = -1;
-   shape_state_u_color_stroke  = -2;
    shape_u_global_alpha        = -1;
    shape_u_decal_alpha         = -1;
    shape_u_sampler             = -1;
@@ -134,6 +131,8 @@ ShaderVG_Shape::ShaderVG_Shape(void) {
    b_draw_inner  = YAC_TRUE;
    b_draw_border = YAC_TRUE;
    b_debug       = YAC_FALSE;
+
+   resetShapeStates();
 }
 
 ShaderVG_Shape::~ShaderVG_Shape() {
@@ -690,6 +689,7 @@ void ShaderVG_Shape::resetShapeStates(void) {
    shape_state_u_transform    = -2;
    shape_state_u_color_fill   = -2;
    shape_state_u_color_stroke = -2;
+   shape_state_u_paint        = -2;
 }
 
 void ShaderVG_Shape::updatePaintUniforms(const sBool _bPolygon,
@@ -697,259 +697,271 @@ void ShaderVG_Shape::updatePaintUniforms(const sBool _bPolygon,
                                          sUI _vpX, sUI _vpY, sUI _vpW, sUI _vpH,
                                          Dsdvg_mat4_ref_t _mvpMatrixUnprojectOrNull
                                          ) {
-   Dpaintprintf("xxx .......................................................... bPolygon=%d\n", _bPolygon);
-   const sdvg_paint_t *paint = &sdvg_int_paint;
+   Dsdvg_uniformprintfvv("[trc] updatePaintUniforms: shape=\"%s\" sdvg_int_shape_state_u_paint=%d shape_state_u_paint=%d\n", getName(), sdvg_int_shape_state_u_paint, shape_state_u_paint);
 
-   sSI loc = shape_u_paint_tex;
-   if(loc >= 0)
+   if(PAINT_SOLID != sdvg_int_paint.mode && shape_state_u_paint != sdvg_int_shape_state_u_paint)
    {
-      Dsdvg_uniform_1i(loc, 0/*tex_unit*/);
-   }
+      Dsdvg_uniformprintfv("[trc] updatePaintUniforms: shape=\"%s\" shape_u_transform=%d sdvg_int_shape_state_u_transform=%d\n", getName(), shape_u_transform, sdvg_int_shape_state_u_transform);
+
+      shape_state_u_paint = sdvg_int_shape_state_u_paint;
+
+      Dpaintprintf("xxx .......................................................... bPolygon=%d\n", _bPolygon);
+      const sdvg_paint_t *paint = &sdvg_int_paint;
+      sSI loc;
+
+#if 0
+      loc = shape_u_paint_tex;
+      if(loc >= 0)
+      {
+         Dsdvg_uniform_1i(loc, 0/*tex_unit*/);
+      }
+#endif
 
 #ifdef SHADERVG_USE_POLYGON_SHADERS
-   sBool bPolygonProject = _bPolygon && (NULL == _mvpMatrixUnprojectOrNull);
+      sBool bPolygonProject = _bPolygon && (NULL == _mvpMatrixUnprojectOrNull);
 #endif // SHADERVG_USE_POLYGON_SHADERS
 
-   sF32 paintStartX;
-   sF32 paintStartY;
-#ifdef SHADERVG_USE_POLYGON_SHADERS
-   if(bPolygonProject)
-#else
-   if(false)
-#endif // SHADERVG_USE_POLYGON_SHADERS
-   {
-#ifdef MINNIE_LIB
-      _mvpMatrixOrNull->project2f(paint->start_x, paint->start_y,
-                                  _vpX, _vpY, _vpW, _vpH,
-                                  paintStartX/*retX*/, paintStartY/*retY*/
-                                  );
-#else
-      Dsdvg_errorprintf("[!!!] Shape::updatePaintUniforms<polygon>: not available in plugin build\n");
-#endif // MINNIE_LIB
-   }
-   else
-   {
-      paintStartX = paint->start_x;
-      paintStartY = paint->start_y;
-   }
-
-   sF32 paintDirX;
-   sF32 paintDirY;
-#ifdef SHADERVG_USE_POLYGON_SHADERS
-   if(bPolygonProject)
-#else
-   if(false)
-#endif // SHADERVG_USE_POLYGON_SHADERS
-   {
-#ifdef MINNIE_LIB
-      _mvpMatrixOrNull->project2f(paint->start_x + paint->dir_x,
-                                  paint->start_y - paint->dir_y,
-                                  _vpX, _vpY, _vpW, _vpH,
-                                  paintDirX/*retX*/, paintDirY/*retY*/
-                                  );
-      paintDirX -= paintStartX;
-      paintDirY -= paintStartY;
-      paintDirY = -paintDirY;
-      // paintDirY = (_vpH - 1 - paintDirY);
-      // paintStartY = (_vpH - 1 - paintStartY);
-      // paintStartY = (_vpH - 1 - paintStartY);
-
-      Dpaintprintf("[trc] polygon paintStart=(%f;%f) paintDir=(%f;%f)\n", paintStartX, paintStartY, paintDirX, paintDirY);
-#else
-      Dsdvg_errorprintf("[!!!] Shape::updatePaintUniforms<polygon>: not available in plugin build\n");
-#endif // MINNIE_LIB
-   }
-   else
-   {
-      paintDirX = paint->dir_x;
-      paintDirY = paint->dir_y;
-   }
-
-   loc = shape_u_paint_start;
-   if(loc >= 0)
-   {
-      Dpaintprintf("[trc] paint_start=(%f;%f) xform=(%f;%f) paint_dir=(%f;%f) xform=(%f;%f) bPolygon=%d\n", paint->start_x, paint->start_y, paintStartX, paintStartY, paint->dir_x, paint->dir_y, paintDirX, paintDirY, _bPolygon);
-      Dsdvg_uniform_2f(loc, paintStartX, paintStartY);
-   }
-
-   loc = shape_u_paint_ndir;
-   if(loc >= 0)
-   {
-      sF32 dx = paintDirX;
-      sF32 dy = paintDirY;
-      sF32 l = sqrtf(dx*dx + dy*dy);
-      if(l > 0.0f)
-      {
-         l = 1.0f / l;
-         dx *= l;
-         dy *= l;
-      }
-      else
-      {
-         dx = 0.0f;
-         dy = 0.0f;
-      }
-      Dpaintprintf("[trc] paint_ndir=(%f; %f)  (orig start=(%f;%f) dir=(%f;%f))\n", dx, dy, paint->start_x, paint->start_y, paint->dir_x, paint->dir_y);
-      // dx = 1.0f;
-      // dy = 0.0f;
-      Dsdvg_uniform_2f(loc, dx, -dy);
-   }
-
-   loc = shape_u_paint_ob_len;
-   if(loc >= 0)
-   {
-      const sF32 dx = paintDirX;
-      const sF32 dy = paintDirY;
-      sF32 l = sqrtf(dx*dx + dy*dy);
-      if(l > 0.0f)
-      {
-         l = 1.0f / l;
-      }
-      Dpaintprintf("[trc] paint_ob_len=%f\n", l);
-      Dsdvg_uniform_1f(loc, l);
-   }
-
-   loc = shape_u_paint_angle01;
-   if(loc >= 0)
-   {
+      sF32 paintStartX;
+      sF32 paintStartY;
 #ifdef SHADERVG_USE_POLYGON_SHADERS
       if(bPolygonProject)
 #else
-      if(false)
+         if(false)
 #endif // SHADERVG_USE_POLYGON_SHADERS
-      {
-#ifdef MINNIE_LIB
-         Vector2f r;
-         Dpaintprintf("xxx rx BEGIN\n");
-         _mvpMatrixOrNull->project2f(paint->start_x + 100.0f,
-                                     paint->start_y + 0.0f,
-                                     _vpX, _vpY, _vpW, _vpH,
-                                     r.x/*retX*/, r.y/*retY*/
-                                     );
-         r.x -= paintStartX;
-         r.y -= paintStartY;
-         r.y = -r.y;
-         Dpaintprintf("xxx r=(%f;%f)\n", r.x, r.y);
-         r.unit();
-         Dpaintprintf("xxx rnorm=(%f;%f)\n", r.x, r.y);
-         sF32 a = atanf(r.y / r.x) * (1.0f / sM_2PIf);
-         Dpaintprintf("[trc] initial a=%f\n", a);
-         if(r.x > 0.0f)
          {
-            if(r.y < 0.0f)
-            {
-               Dpaintprintf("xxx debug a=%f  afix=%f\n", a, 1.0f + a);
-               a = 1.0f + a;
-            }
+#ifdef MINNIE_LIB
+            _mvpMatrixOrNull->project2f(paint->start_x, paint->start_y,
+                                        _vpX, _vpY, _vpW, _vpH,
+                                        paintStartX/*retX*/, paintStartY/*retY*/
+                                        );
+#else
+            Dsdvg_errorprintf("[!!!] Shape::updatePaintUniforms<polygon>: not available in plugin build\n");
+#endif // MINNIE_LIB
          }
          else
          {
-            if(r.y < 0.0f)
+            paintStartX = paint->start_x;
+            paintStartY = paint->start_y;
+         }
+
+      sF32 paintDirX;
+      sF32 paintDirY;
+#ifdef SHADERVG_USE_POLYGON_SHADERS
+      if(bPolygonProject)
+#else
+         if(false)
+#endif // SHADERVG_USE_POLYGON_SHADERS
+         {
+#ifdef MINNIE_LIB
+            _mvpMatrixOrNull->project2f(paint->start_x + paint->dir_x,
+                                        paint->start_y - paint->dir_y,
+                                        _vpX, _vpY, _vpW, _vpH,
+                                        paintDirX/*retX*/, paintDirY/*retY*/
+                                        );
+            paintDirX -= paintStartX;
+            paintDirY -= paintStartY;
+            paintDirY = -paintDirY;
+            // paintDirY = (_vpH - 1 - paintDirY);
+            // paintStartY = (_vpH - 1 - paintStartY);
+            // paintStartY = (_vpH - 1 - paintStartY);
+
+            Dpaintprintf("[trc] polygon paintStart=(%f;%f) paintDir=(%f;%f)\n", paintStartX, paintStartY, paintDirX, paintDirY);
+#else
+            Dsdvg_errorprintf("[!!!] Shape::updatePaintUniforms<polygon>: not available in plugin build\n");
+#endif // MINNIE_LIB
+         }
+         else
+         {
+            paintDirX = paint->dir_x;
+            paintDirY = paint->dir_y;
+         }
+
+      loc = shape_u_paint_start;
+      if(loc >= 0)
+      {
+         Dpaintprintf("[trc] paint_start=(%f;%f) xform=(%f;%f) paint_dir=(%f;%f) xform=(%f;%f) bPolygon=%d\n", paint->start_x, paint->start_y, paintStartX, paintStartY, paint->dir_x, paint->dir_y, paintDirX, paintDirY, _bPolygon);
+         Dsdvg_uniform_2f(loc, paintStartX, paintStartY);
+      }
+
+      loc = shape_u_paint_ndir;
+      if(loc >= 0)
+      {
+         sF32 dx = paintDirX;
+         sF32 dy = paintDirY;
+         sF32 l = sqrtf(dx*dx + dy*dy);
+         if(l > 0.0f)
+         {
+            l = 1.0f / l;
+            dx *= l;
+            dy *= l;
+         }
+         else
+         {
+            dx = 0.0f;
+            dy = 0.0f;
+         }
+         Dpaintprintf("[trc] paint_ndir=(%f; %f)  (orig start=(%f;%f) dir=(%f;%f))\n", dx, dy, paint->start_x, paint->start_y, paint->dir_x, paint->dir_y);
+         // dx = 1.0f;
+         // dy = 0.0f;
+         Dsdvg_uniform_2f(loc, dx, -dy);
+      }
+
+      loc = shape_u_paint_ob_len;
+      if(loc >= 0)
+      {
+         const sF32 dx = paintDirX;
+         const sF32 dy = paintDirY;
+         sF32 l = sqrtf(dx*dx + dy*dy);
+         if(l > 0.0f)
+         {
+            l = 1.0f / l;
+         }
+         Dpaintprintf("[trc] paint_ob_len=%f\n", l);
+         Dsdvg_uniform_1f(loc, l);
+      }
+
+      loc = shape_u_paint_angle01;
+      if(loc >= 0)
+      {
+#ifdef SHADERVG_USE_POLYGON_SHADERS
+         if(bPolygonProject)
+#else
+            if(false)
+#endif // SHADERVG_USE_POLYGON_SHADERS
             {
-               a += 0.5f;
+#ifdef MINNIE_LIB
+               Vector2f r;
+               Dpaintprintf("xxx rx BEGIN\n");
+               _mvpMatrixOrNull->project2f(paint->start_x + 100.0f,
+                                           paint->start_y + 0.0f,
+                                           _vpX, _vpY, _vpW, _vpH,
+                                           r.x/*retX*/, r.y/*retY*/
+                                           );
+               r.x -= paintStartX;
+               r.y -= paintStartY;
+               r.y = -r.y;
+               Dpaintprintf("xxx r=(%f;%f)\n", r.x, r.y);
+               r.unit();
+               Dpaintprintf("xxx rnorm=(%f;%f)\n", r.x, r.y);
+               sF32 a = atanf(r.y / r.x) * (1.0f / sM_2PIf);
+               Dpaintprintf("[trc] initial a=%f\n", a);
+               if(r.x > 0.0f)
+               {
+                  if(r.y < 0.0f)
+                  {
+                     Dpaintprintf("xxx debug a=%f  afix=%f\n", a, 1.0f + a);
+                     a = 1.0f + a;
+                  }
+               }
+               else
+               {
+                  if(r.y < 0.0f)
+                  {
+                     a += 0.5f;
+                  }
+                  else
+                  {
+                     a += 0.5f;
+                  }
+               }
+               // a -= 0.75;
+               // a += 0.25;
+               // a = -a;
+               if(a >= 1.0) a -= 1.0;
+               else if(a < 0.0) a += 1.0;
+               a += paint->angle01;
+               if(a >= 1.0) a -= 1.0;
+               else if(a < 0.0) a += 1.0;
+               Dpaintprintf("[trc] paint_angle01=%f xform=%f a=%f\n", paint->angle01, paint->angle01+a, a);
+               Dsdvg_uniform_1f(loc, a);
+#else
+               Dsdvg_errorprintf("[!!!] Shape::updatePaintUniforms<polygon>: not available in plugin build\n");
+#endif // MINNIE_LIB
             }
             else
             {
-               a += 0.5f;
+               Dpaintprintf("[trc] paint_angle01=%f\n", paint->angle01);
+               Dsdvg_uniform_1f(loc, paint->angle01);
             }
-         }
-          // a -= 0.75;
-          // a += 0.25;
-         // a = -a;
-         if(a >= 1.0) a -= 1.0;
-         else if(a < 0.0) a += 1.0;
-         a += paint->angle01;
-         if(a >= 1.0) a -= 1.0;
-         else if(a < 0.0) a += 1.0;
-         Dpaintprintf("[trc] paint_angle01=%f xform=%f a=%f\n", paint->angle01, paint->angle01+a, a);
-         Dsdvg_uniform_1f(loc, a);
-#else
-         Dsdvg_errorprintf("[!!!] Shape::updatePaintUniforms<polygon>: not available in plugin build\n");
-#endif // MINNIE_LIB
       }
-      else
-      {
-         Dpaintprintf("[trc] paint_angle01=%f\n", paint->angle01);
-         Dsdvg_uniform_1f(loc, paint->angle01);
-      }
-   }
 
-   sF32 paintSizeX;
-   sF32 paintSizeY;
-   sF32 paintObSizeX;
-   sF32 paintObSizeY;
+      sF32 paintSizeX;
+      sF32 paintSizeY;
+      sF32 paintObSizeX;
+      sF32 paintObSizeY;
 #ifdef SHADERVG_USE_POLYGON_SHADERS
-   if(0 && bPolygonProject)
+      if(0 && bPolygonProject)
 #else
-   if(false)
+         if(false)
 #endif // SHADERVG_USE_POLYGON_SHADERS
-   {
+         {
 #if defined(MINNIE_LIB)
-      _mvpMatrixOrNull->project2f(paint->start_x + paint->size_x,
-                                  paint->start_y + paint->size_y,
-                                  _vpX, _vpY, _vpW, _vpH,
-                                  paintSizeX/*retX*/, paintSizeY/*retY*/
-                                  );
-      Dpaintprintf("xxx proj paintSize=(%f;%f)\n", paintSizeX, paintSizeY);
-      paintSizeX -= paintStartX;
-      paintSizeY -= paintStartY;
-      Dpaintprintf("xxx proj rel paintSize=(%f;%f)\n", paintSizeX, paintSizeY);
-      paintObSizeX = (0.0f != paintSizeX) ? (1.0f / paintSizeX) : 0.0f;
-      paintObSizeY = (0.0f != paintSizeY) ? (1.0f / paintSizeY) : 0.0f;
-      Dpaintprintf("[trc] polygon paint->size=(%f;%f) xform=(%f;%f) ob_xform=(%f;%f)\n", paint->size_x, paint->size_y, paintSizeX, paintSizeY, paintObSizeX, paintObSizeY);
+            _mvpMatrixOrNull->project2f(paint->start_x + paint->size_x,
+                                        paint->start_y + paint->size_y,
+                                        _vpX, _vpY, _vpW, _vpH,
+                                        paintSizeX/*retX*/, paintSizeY/*retY*/
+                                        );
+            Dpaintprintf("xxx proj paintSize=(%f;%f)\n", paintSizeX, paintSizeY);
+            paintSizeX -= paintStartX;
+            paintSizeY -= paintStartY;
+            Dpaintprintf("xxx proj rel paintSize=(%f;%f)\n", paintSizeX, paintSizeY);
+            paintObSizeX = (0.0f != paintSizeX) ? (1.0f / paintSizeX) : 0.0f;
+            paintObSizeY = (0.0f != paintSizeY) ? (1.0f / paintSizeY) : 0.0f;
+            Dpaintprintf("[trc] polygon paint->size=(%f;%f) xform=(%f;%f) ob_xform=(%f;%f)\n", paint->size_x, paint->size_y, paintSizeX, paintSizeY, paintObSizeX, paintObSizeY);
 #else
-      Dsdvg_errorprintf("[!!!] Shape::updatePaintUniforms<polygon>: not available in plugin build\n");
+            Dsdvg_errorprintf("[!!!] Shape::updatePaintUniforms<polygon>: not available in plugin build\n");
 #endif // MINNIE_LIB
-   }
-   else
-   {
-      paintSizeX = paint->size_x;
-      paintSizeY = paint->size_y;
-      paintObSizeX = (0.0f != paintSizeX) ? (1.0f / paintSizeX) : 0.0f;
-      paintObSizeY = (0.0f != paintSizeY) ? (1.0f / paintSizeY) : 0.0f;
-   }
+         }
+         else
+         {
+            paintSizeX = paint->size_x;
+            paintSizeY = paint->size_y;
+            paintObSizeX = (0.0f != paintSizeX) ? (1.0f / paintSizeX) : 0.0f;
+            paintObSizeY = (0.0f != paintSizeY) ? (1.0f / paintSizeY) : 0.0f;
+         }
 
-   loc = shape_u_paint_size;
-   if(loc >= 0)
-   {
-      Dpaintprintf("[trc] paint_size=(%f;%f) xform=(%f;%f) u_paint_size=(%f;%f)\n", paint->size_x, paint->size_y, paintSizeX, paintSizeY, paintSizeX, paintSizeY);
-      Dsdvg_uniform_2f(loc, paintSizeX, paintSizeY);
-   }
-
-   loc = shape_u_paint_ob_size;
-   if(loc >= 0)
-   {
-      Dpaintprintf("[trc] paint_size=(%f;%f) xform=(%f;%f) u_paint_ob_size=(%f;%f)\n", paint->size_x, paint->size_y, paintSizeX, paintSizeY, paintObSizeX, paintObSizeY);
-      Dsdvg_uniform_2f(loc, paintObSizeX, paintObSizeY);
-   }
-
-   loc = shape_u_paint_mat_unproject;
-   if(loc >= 0)
-   {
-      if(NULL != _mvpMatrixUnprojectOrNull)
+      loc = shape_u_paint_size;
+      if(loc >= 0)
       {
-         Dpaintprintf("[trc] paint_mat_unproject\n");
-         Dsdvg_uniform_mat4(loc, _mvpMatrixUnprojectOrNull);
+         Dpaintprintf("[trc] paint_size=(%f;%f) xform=(%f;%f) u_paint_size=(%f;%f)\n", paint->size_x, paint->size_y, paintSizeX, paintSizeY, paintSizeX, paintSizeY);
+         Dsdvg_uniform_2f(loc, paintSizeX, paintSizeY);
       }
-      else
-      {
-         Dsdvg_errorprintf("[!!!] paint_mat_unproject required but mvpMatrixUnproject is NULL");
-      }
-   }
 
-   loc = shape_u_paint_vp_unproject;
-   if(loc >= 0)
-   {
-      Dpaintprintf("[trc] paint_vp_unproject loc=%d vp=(%u,%u,%u,%u)\n", loc, _vpX, _vpY, _vpW, _vpH);
-      const sF32 vpWh = _vpW * 0.5f;
-      const sF32 vpHh = _vpH * 0.5f;
-      Dsdvg_uniform_4f(loc,
-                       sF32(_vpX + vpWh),
-                       sF32(_vpY + vpHh),
-                       sF32(1.0f / vpWh),
-                       sF32(1.0f / vpHh)
-                       );
-   }
+      loc = shape_u_paint_ob_size;
+      if(loc >= 0)
+      {
+         Dpaintprintf("[trc] paint_size=(%f;%f) xform=(%f;%f) u_paint_ob_size=(%f;%f)\n", paint->size_x, paint->size_y, paintSizeX, paintSizeY, paintObSizeX, paintObSizeY);
+         Dsdvg_uniform_2f(loc, paintObSizeX, paintObSizeY);
+      }
+
+      loc = shape_u_paint_mat_unproject;
+      if(loc >= 0)
+      {
+         if(NULL != _mvpMatrixUnprojectOrNull)
+         {
+            Dpaintprintf("[trc] paint_mat_unproject\n");
+            Dsdvg_uniform_mat4(loc, _mvpMatrixUnprojectOrNull);
+         }
+         else
+         {
+            Dsdvg_errorprintf("[!!!] paint_mat_unproject required but mvpMatrixUnproject is NULL");
+         }
+      }
+
+      loc = shape_u_paint_vp_unproject;
+      if(loc >= 0)
+      {
+         Dpaintprintf("[trc] paint_vp_unproject loc=%d vp=(%u,%u,%u,%u)\n", loc, _vpX, _vpY, _vpW, _vpH);
+         const sF32 vpWh = _vpW * 0.5f;
+         const sF32 vpHh = _vpH * 0.5f;
+         Dsdvg_uniform_4f(loc,
+                          sF32(_vpX + vpWh),
+                          sF32(_vpY + vpHh),
+                          sF32(1.0f / vpWh),
+                          sF32(1.0f / vpHh)
+                          );
+      }
+   } // !PAINT_SOLID && shape_state_u_paint
 }
 
 sBool ShaderVG_Shape::onOpen(void) {

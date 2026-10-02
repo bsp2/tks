@@ -122,6 +122,7 @@ class ShaderVG_Shape {
    sSI shape_u_paint_ob_size;        // optional
    sSI shape_u_paint_mat_unproject;  // optional (n-polygon shaders)
    sSI shape_u_paint_vp_unproject;   // optional (n-polygon shaders)
+   sSI shape_state_u_paint;
 #ifdef SHADERVG_UNIFORM_ARRAY
    sSI shape_u_a_offset;             // optional
 #endif // SHADERVG_UNIFORM_ARRAY

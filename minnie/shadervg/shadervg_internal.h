@@ -90,6 +90,7 @@ extern sSI            sdvg_int_shape_state_u_transform;
 extern sSI            sdvg_int_shape_state_u_color_fill;
 extern sSI            sdvg_int_shape_state_u_color_stroke;
 extern sdvg_paint_t   sdvg_int_paint;
+extern sSI            sdvg_int_shape_state_u_paint;
 
 // -----------  internal -----------
 void sdvg_int_BindScratchBuffer (void);
