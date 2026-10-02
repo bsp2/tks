@@ -46,11 +46,11 @@ class ShaderVG_Shape;
 #include <stdlib.h>
 #include <new>
 
-extern sBool  sdvg_b_glcore;
-extern GLuint sdvg_int_current_prg;
-extern sSI    sdvg_int_shape_state_u_transform;
+typedef struct sdvg_color4f_s {
+   sF32 r, g, b, a;
+} sdvg_color4f_t;
 
-typedef struct shadervg_paint_s {
+typedef struct sdvg_paint_s {
 #define PAINT_SOLID                0
 #define PAINT_LINEAR               1
 #define PAINT_RADIAL               2
@@ -67,7 +67,12 @@ typedef struct shadervg_paint_s {
    sF32 angle01;  // 0..1 => 0..2PI
    sF32 size_x;   // PAINT_RADIAL/CONIC/PATTERN*
    sF32 size_y;   // PAINT_RADIAL/CONIC/PATTERN*
-} shadervg_paint_t;
+} sdvg_paint_t;
+
+extern sBool        sdvg_int_b_glcore;
+extern GLuint       sdvg_int_current_prg;
+extern sSI          sdvg_int_shape_state_u_transform;
+extern sdvg_paint_t sdvg_int_paint;
 
 // -----------  internal -----------
 void sdvg_int_BindScratchBuffer (void);
