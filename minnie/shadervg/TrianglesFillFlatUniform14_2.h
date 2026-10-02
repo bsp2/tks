@@ -64,10 +64,9 @@ class TrianglesFillFlatUniform14_2 : public ShaderVG_Shape {
       return YAC_FALSE;
    }
 
-   void drawTrianglesFillFlatUniformVBO14_2(sUI              _vboId,
-                                            sUI              _byteOffset,
-                                            sUI              _numVerts,
-                                            Dsdvg_mat4_ref_t _mvpMatrix
+   void drawTrianglesFillFlatUniformVBO14_2(sUI _vboId,
+                                            sUI _byteOffset,
+                                            sUI _numVerts
                                             ) {
       // VBO vertex format (4 bytes per vertex):
       //   +0 s14.2 x
@@ -80,7 +79,7 @@ class TrianglesFillFlatUniform14_2 : public ShaderVG_Shape {
       if(!bindShader())
          return;
 
-      lazyUpdateTransform(_mvpMatrix);
+      lazyUpdateTransform();
       lazyUpdateColorFill(&sdvg_int_color_fill_ga);
 
       Dsdvg_attrib_offset(shape_a_vertex, 2/*size*/, GL_SHORT, GL_FALSE/*normalize*/, 4/*stride*/, _byteOffset);
@@ -91,11 +90,10 @@ class TrianglesFillFlatUniform14_2 : public ShaderVG_Shape {
       Dsdvg_attrib_disable(shape_a_vertex);
    }
 
-   void drawPolygonFillFlatUniformVBO14_2(sUI              _vboId,
-                                          sUI              _byteOffset,
-                                          sUI              _numVerts,
-                                          Dsdvg_mat4_ref_t _mvpMatrix,
-                                          sBool            _bNonZero
+   void drawPolygonFillFlatUniformVBO14_2(sUI   _vboId,
+                                          sUI   _byteOffset,
+                                          sUI   _numVerts,
+                                          sBool _bNonZero
                                           ) {
 
       // VBO vertex format (4 bytes per vertex):
@@ -107,7 +105,7 @@ class TrianglesFillFlatUniform14_2 : public ShaderVG_Shape {
       if(!bindShader())
          return;
 
-      lazyUpdateTransform(_mvpMatrix);
+      lazyUpdateTransform();
       lazyUpdateColorFill(&sdvg_int_color_fill_ga);
 
       Dsdvg_attrib_offset(shape_a_vertex, 2/*size*/, GL_SHORT, GL_FALSE/*normalize*/, 4/*stride*/, _byteOffset);

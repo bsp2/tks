@@ -74,6 +74,14 @@ typedef struct sdvg_paint_s {
 
 extern sBool          sdvg_int_b_glcore;
 extern GLuint         sdvg_int_current_prg;
+#ifdef SHADERVG_SCRIPT_API
+extern YAC_Object *sdvg_int_mvp_matrix;  // _Matrix4f  (row major)
+extern YAC_Object *sdvg_int_mvp_matrix_unproject;  // (todo)
+#else
+// MINNIE_LIB build
+extern Matrix4f *sdvg_int_mvp_matrix;
+extern Matrix4f *sdvg_int_mvp_matrix_unproject;
+#endif // SHADERVG_SCRIPT_API
 extern sdvg_color4f_t sdvg_int_color_fill;
 extern sdvg_color4f_t sdvg_int_color_fill_ga;
 extern sdvg_color4f_t sdvg_int_color_stroke;

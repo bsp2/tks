@@ -240,19 +240,18 @@ class RoundRectFillStrokeAA : public ShaderVG_Shape {
       }
    }
 
-   void drawRoundRectFillStrokeAAVBO32(sUI              _vboId,
-                                       sUI              _byteOffsetInner,
-                                       sUI              _numVertsInner,
-                                       sUI              _byteOffsetBorder,
-                                       sUI              _numVertsBorder,
-                                       sUI              _glPrimTypeBorder,
-                                       Dsdvg_mat4_ref_t _mvpMatrix,
-                                       sF32    _centerX, sF32 _centerY,
-                                       sF32    _sizeX,   sF32 _sizeY,
-                                       sF32    _radiusX, sF32 _radiusY,
-                                       sF32    _strokeW,
-                                       sF32    _aaRange,
-                                       sF32    _aaExp
+   void drawRoundRectFillStrokeAAVBO32(sUI  _vboId,
+                                       sUI  _byteOffsetInner,
+                                       sUI  _numVertsInner,
+                                       sUI  _byteOffsetBorder,
+                                       sUI  _numVertsBorder,
+                                       sUI  _glPrimTypeBorder,
+                                       sF32 _centerX, sF32 _centerY,
+                                       sF32 _sizeX,   sF32 _sizeY,
+                                       sF32 _radiusX, sF32 _radiusY,
+                                       sF32 _strokeW,
+                                       sF32 _aaRange,
+                                       sF32 _aaExp
                                        ) {
 
       sdvg_BindVBO(_vboId);
@@ -273,7 +272,7 @@ class RoundRectFillStrokeAA : public ShaderVG_Shape {
          if(!bindShader())
             return;
 
-         lazyUpdateTransform(_mvpMatrix);
+         lazyUpdateTransform();
          lazyUpdateColorFill(&sdvg_int_color_fill_ga);
          lazyUpdateColorStroke(&sdvg_int_color_stroke_ga);
 
@@ -320,7 +319,6 @@ class RoundRectFillStrokeAA : public ShaderVG_Shape {
    }
 
    void drawRoundRectFillStrokeAA(Dsdvg_buffer_ref_t _scratchBuf,
-                                  Dsdvg_mat4_ref_t _mvpMatrix,
                                   sF32 _centerX, sF32 _centerY,
                                   sF32 _sizeX,   sF32 _sizeY,
                                   sF32 _radiusX, sF32 _radiusY,
@@ -366,7 +364,7 @@ class RoundRectFillStrokeAA : public ShaderVG_Shape {
       if(!bindShader())
          return;
 
-      lazyUpdateTransform(_mvpMatrix);
+      lazyUpdateTransform();
       lazyUpdateColorFill(&sdvg_int_color_fill_ga);
       lazyUpdateColorStroke(&sdvg_int_color_stroke_ga);
 

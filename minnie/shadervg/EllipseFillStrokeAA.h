@@ -248,7 +248,6 @@ class EllipseFillStrokeAA : public ShaderVG_Shape {
                                      sUI              _byteOffsetBorder,
                                      sUI              _numVertsBorder,
                                      sUI              _glPrimTypeBorder,
-                                     Dsdvg_mat4_ref_t _mvpMatrix,
                                      sF32    _centerX, sF32 _centerY,
                                      sF32    _radiusX, sF32 _radiusY,
                                      sF32    _strokeW,
@@ -274,7 +273,7 @@ class EllipseFillStrokeAA : public ShaderVG_Shape {
          if(!bindShader())
             return;
 
-         lazyUpdateTransform(_mvpMatrix);
+         lazyUpdateTransform();
          lazyUpdateColorFill(&sdvg_int_color_fill_ga);
          lazyUpdateColorStroke(&sdvg_int_color_stroke_ga);
 
@@ -323,7 +322,6 @@ class EllipseFillStrokeAA : public ShaderVG_Shape {
    }
 
    void drawEllipseFillStrokeAA(Dsdvg_buffer_ref_t _scratchBuf,
-                                Dsdvg_mat4_ref_t _mvpMatrix,
                                 sF32 _centerX, sF32 _centerY,
                                 sF32 _radiusX, sF32 _radiusY,
                                 sF32 _strokeW,
@@ -381,7 +379,7 @@ class EllipseFillStrokeAA : public ShaderVG_Shape {
       if(!bindShader())
          return;
 
-      lazyUpdateTransform(_mvpMatrix);
+      lazyUpdateTransform();
       lazyUpdateColorFill(&sdvg_int_color_fill_ga);
       lazyUpdateColorStroke(&sdvg_int_color_stroke_ga);
 

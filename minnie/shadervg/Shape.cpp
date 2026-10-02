@@ -693,9 +693,9 @@ void ShaderVG_Shape::resetShapeStates(void) {
 }
 
 void ShaderVG_Shape::updatePaintUniforms(const sBool _bPolygon,
-                                         Dsdvg_mat4_ref_t _mvpMatrix,            // or NULL
+                                         Dsdvg_mat4_ref_t _mvpMatrixOrNull,
                                          sUI _vpX, sUI _vpY, sUI _vpW, sUI _vpH,
-                                         Dsdvg_mat4_ref_t _mvpMatrixUnproject    // or NULL
+                                         Dsdvg_mat4_ref_t _mvpMatrixUnprojectOrNull
                                          ) {
    Dpaintprintf("xxx .......................................................... bPolygon=%d\n", _bPolygon);
    const sdvg_paint_t *paint = &sdvg_int_paint;
@@ -707,7 +707,7 @@ void ShaderVG_Shape::updatePaintUniforms(const sBool _bPolygon,
    }
 
 #ifdef SHADERVG_USE_POLYGON_SHADERS
-   sBool bPolygonProject = _bPolygon && (NULL == _mvpMatrixUnproject);
+   sBool bPolygonProject = _bPolygon && (NULL == _mvpMatrixUnprojectOrNull);
 #endif // SHADERVG_USE_POLYGON_SHADERS
 
    sF32 paintStartX;
@@ -719,10 +719,10 @@ void ShaderVG_Shape::updatePaintUniforms(const sBool _bPolygon,
 #endif // SHADERVG_USE_POLYGON_SHADERS
    {
 #ifdef MINNIE_LIB
-      _mvpMatrix->project2f(paint->start_x, paint->start_y,
-                            _vpX, _vpY, _vpW, _vpH,
-                            paintStartX/*retX*/, paintStartY/*retY*/
-                            );
+      _mvpMatrixOrNull->project2f(paint->start_x, paint->start_y,
+                                  _vpX, _vpY, _vpW, _vpH,
+                                  paintStartX/*retX*/, paintStartY/*retY*/
+                                  );
 #else
       Dsdvg_errorprintf("[!!!] Shape::updatePaintUniforms<polygon>: not available in plugin build\n");
 #endif // MINNIE_LIB
@@ -742,11 +742,11 @@ void ShaderVG_Shape::updatePaintUniforms(const sBool _bPolygon,
 #endif // SHADERVG_USE_POLYGON_SHADERS
    {
 #ifdef MINNIE_LIB
-      _mvpMatrix->project2f(paint->start_x + paint->dir_x,
-                            paint->start_y - paint->dir_y,
-                            _vpX, _vpY, _vpW, _vpH,
-                            paintDirX/*retX*/, paintDirY/*retY*/
-                            );
+      _mvpMatrixOrNull->project2f(paint->start_x + paint->dir_x,
+                                  paint->start_y - paint->dir_y,
+                                  _vpX, _vpY, _vpW, _vpH,
+                                  paintDirX/*retX*/, paintDirY/*retY*/
+                                  );
       paintDirX -= paintStartX;
       paintDirY -= paintStartY;
       paintDirY = -paintDirY;
@@ -821,11 +821,11 @@ void ShaderVG_Shape::updatePaintUniforms(const sBool _bPolygon,
 #ifdef MINNIE_LIB
          Vector2f r;
          Dpaintprintf("xxx rx BEGIN\n");
-         _mvpMatrix->project2f(paint->start_x + 100.0f,
-                               paint->start_y + 0.0f,
-                               _vpX, _vpY, _vpW, _vpH,
-                               r.x/*retX*/, r.y/*retY*/
-                               );
+         _mvpMatrixOrNull->project2f(paint->start_x + 100.0f,
+                                     paint->start_y + 0.0f,
+                                     _vpX, _vpY, _vpW, _vpH,
+                                     r.x/*retX*/, r.y/*retY*/
+                                     );
          r.x -= paintStartX;
          r.y -= paintStartY;
          r.y = -r.y;
@@ -885,11 +885,11 @@ void ShaderVG_Shape::updatePaintUniforms(const sBool _bPolygon,
 #endif // SHADERVG_USE_POLYGON_SHADERS
    {
 #if defined(MINNIE_LIB)
-      _mvpMatrix->project2f(paint->start_x + paint->size_x,
-                            paint->start_y + paint->size_y,
-                            _vpX, _vpY, _vpW, _vpH,
-                            paintSizeX/*retX*/, paintSizeY/*retY*/
-                            );
+      _mvpMatrixOrNull->project2f(paint->start_x + paint->size_x,
+                                  paint->start_y + paint->size_y,
+                                  _vpX, _vpY, _vpW, _vpH,
+                                  paintSizeX/*retX*/, paintSizeY/*retY*/
+                                  );
       Dpaintprintf("xxx proj paintSize=(%f;%f)\n", paintSizeX, paintSizeY);
       paintSizeX -= paintStartX;
       paintSizeY -= paintStartY;
@@ -926,10 +926,10 @@ void ShaderVG_Shape::updatePaintUniforms(const sBool _bPolygon,
    loc = shape_u_paint_mat_unproject;
    if(loc >= 0)
    {
-      if(NULL != _mvpMatrixUnproject)
+      if(NULL != _mvpMatrixUnprojectOrNull)
       {
          Dpaintprintf("[trc] paint_mat_unproject\n");
-         Dsdvg_uniform_mat4(loc, _mvpMatrixUnproject);
+         Dsdvg_uniform_mat4(loc, _mvpMatrixUnprojectOrNull);
       }
       else
       {
@@ -984,12 +984,12 @@ void ShaderVG_Shape::unbindShader(void) {
    shape_shader.unbind();
 }
 
-void ShaderVG_Shape::lazyUpdateTransform(Dsdvg_mat4_ref_t _mvpMatrix) {
+void ShaderVG_Shape::lazyUpdateTransform(void) {
    Dsdvg_uniformprintfvv("[trc] lazyUpdateTransform: shape=\"%s\" sdvg_int_shape_state_u_transform=%d shape_state_u_transform=%d\n", getName(), sdvg_int_shape_state_u_transform, shape_state_u_transform);
    if(shape_state_u_transform != sdvg_int_shape_state_u_transform)
    {
       shape_state_u_transform = sdvg_int_shape_state_u_transform;
-      Dsdvg_uniform_mat4(shape_u_transform, _mvpMatrix);
+      Dsdvg_uniform_mat4(shape_u_transform, sdvg_int_mvp_matrix);
       Dsdvg_uniformprintfv("[trc] lazyUpdateTransform: shape=\"%s\" shape_u_transform=%d sdvg_int_shape_state_u_transform=%d\n", getName(), shape_u_transform, sdvg_int_shape_state_u_transform);
    }
 }
@@ -1022,8 +1022,7 @@ void ShaderVG_Shape::lazyUpdateColorStroke(const sdvg_color4f_t *_c) {
 
 void ShaderVG_Shape::drawTrianglesFillFlatUniformVBO32Paint(sUI              _vboId,
                                                             sUI              _byteOffset,
-                                                            sUI              _numVerts,
-                                                            Dsdvg_mat4_ref_t _mvpMatrix
+                                                            sUI              _numVerts
                                                             ) {
    //
    // VBO vertex format (8 bytes per vertex):
@@ -1035,7 +1034,7 @@ void ShaderVG_Shape::drawTrianglesFillFlatUniformVBO32Paint(sUI              _vb
    if(!bindShader())
       return;
 
-   lazyUpdateTransform(_mvpMatrix);
+   lazyUpdateTransform();
    lazyUpdateColorFill(&sdvg_int_color_fill_ga);
    lazyUpdateColorStroke(&sdvg_int_color_stroke_ga);
 
@@ -1055,8 +1054,7 @@ void ShaderVG_Shape::drawTrianglesFillFlatUniformVBO32Paint(sUI              _vb
 
 void ShaderVG_Shape::drawTrianglesFillFlatUniformVBO14_2Paint(sUI              _vboId,
                                                               sUI              _byteOffset,
-                                                              sUI              _numVerts,
-                                                              Dsdvg_mat4_ref_t _mvpMatrix
+                                                              sUI              _numVerts
                                                               ) {
    //
    // VBO vertex format (4 bytes per vertex):
@@ -1069,7 +1067,7 @@ void ShaderVG_Shape::drawTrianglesFillFlatUniformVBO14_2Paint(sUI              _
    if(!bindShader())
       return;
 
-   lazyUpdateTransform(_mvpMatrix);
+   lazyUpdateTransform();
    lazyUpdateColorFill(&sdvg_int_color_fill_ga);
    lazyUpdateColorStroke(&sdvg_int_color_stroke_ga);
 
@@ -1093,7 +1091,6 @@ void ShaderVG_Shape::drawRectFillAAVBO32Paint(sUI              _vboId,
                                               sUI              _byteOffsetBorder,
                                               sUI              _numVertsBorder,
                                               sUI              _glPrimTypeBorder,
-                                              Dsdvg_mat4_ref_t _mvpMatrix,
                                               sF32             _centerX, sF32 _centerY,
                                               sF32             _sizeX,   sF32 _sizeY,
                                               sF32             _aaRange,
@@ -1118,7 +1115,7 @@ void ShaderVG_Shape::drawRectFillAAVBO32Paint(sUI              _vboId,
       if(!bindShader())
          return;
 
-      lazyUpdateTransform(_mvpMatrix);
+      lazyUpdateTransform();
       lazyUpdateColorFill(&sdvg_int_color_fill_ga);
       lazyUpdateColorStroke(&sdvg_int_color_stroke);  // no global_a
 
@@ -1156,7 +1153,6 @@ void ShaderVG_Shape::drawRectFillAAVBO32Paint(sUI              _vboId,
 }
 
 void ShaderVG_Shape::drawRectFillAAPaint(Dsdvg_buffer_ref_t _scratchBuf,
-                                         Dsdvg_mat4_ref_t _mvpMatrix,
                                          sF32 _centerX, sF32 _centerY,
                                          sF32 _sizeX,   sF32 _sizeY,
                                          sF32 _decalAlpha,
@@ -1209,7 +1205,7 @@ void ShaderVG_Shape::drawRectFillAAPaint(Dsdvg_buffer_ref_t _scratchBuf,
    if(!bindShader())
       return;
 
-   lazyUpdateTransform(_mvpMatrix);
+   lazyUpdateTransform();
    lazyUpdateColorFill(&sdvg_int_color_fill_ga);
    lazyUpdateColorStroke(&sdvg_int_color_stroke);  // no global_a
 
@@ -1276,7 +1272,6 @@ void ShaderVG_Shape::drawRectStrokeAAVBO32Paint(sUI              _vboId,
                                                 sUI              _byteOffsetBorder,
                                                 sUI              _numVertsBorder,
                                                 sUI              _glPrimTypeBorder,
-                                                Dsdvg_mat4_ref_t _mvpMatrix,
                                                 sF32             _centerX, sF32 _centerY,
                                                 sF32             _sizeX,   sF32 _sizeY,
                                                 sBool            _bFillGA,
@@ -1293,7 +1288,7 @@ void ShaderVG_Shape::drawRectStrokeAAVBO32Paint(sUI              _vboId,
       if(!bindShader())
          return;
 
-      lazyUpdateTransform(_mvpMatrix);
+      lazyUpdateTransform();
       lazyUpdateColorFill(_bFillGA ? &sdvg_int_color_fill_ga : &sdvg_int_color_fill);
       lazyUpdateColorStroke(_bStrokeGA ? &sdvg_int_color_stroke_ga : &sdvg_int_color_stroke);
 
@@ -1333,7 +1328,6 @@ void ShaderVG_Shape::drawRectStrokeAAVBO32Paint(sUI              _vboId,
 }
 
 void ShaderVG_Shape::drawRectStrokeAAPaint(Dsdvg_buffer_ref_t _scratchBuf,
-                                           Dsdvg_mat4_ref_t _mvpMatrix,
                                            sF32 _centerX, sF32 _centerY,
                                            sF32 _sizeX,   sF32 _sizeY,
                                            sBool  _bFillGA,
@@ -1352,7 +1346,7 @@ void ShaderVG_Shape::drawRectStrokeAAPaint(Dsdvg_buffer_ref_t _scratchBuf,
    if(!bindShader())
       return;
 
-   lazyUpdateTransform(_mvpMatrix);
+   lazyUpdateTransform();
    lazyUpdateColorFill(_bFillGA ? &sdvg_int_color_fill_ga : &sdvg_int_color_fill);
    lazyUpdateColorStroke(_bStrokeGA ? &sdvg_int_color_stroke_ga : &sdvg_int_color_stroke);
 
@@ -1422,7 +1416,6 @@ void ShaderVG_Shape::drawEllipseFillAAVBO32Paint(sUI              _vboId,
                                                  sUI              _byteOffsetBorder,
                                                  sUI              _numVertsBorder,
                                                  sUI              _glPrimTypeBorder,
-                                                 Dsdvg_mat4_ref_t _mvpMatrix,
                                                  sF32    _centerX, sF32 _centerY,
                                                  sF32    _radiusX, sF32 _radiusY,
                                                  sF32    _aaRange,
@@ -1447,7 +1440,7 @@ void ShaderVG_Shape::drawEllipseFillAAVBO32Paint(sUI              _vboId,
       if(!bindShader())
          return;
 
-      lazyUpdateTransform(_mvpMatrix);
+      lazyUpdateTransform();
       lazyUpdateColorFill(&sdvg_int_color_fill_ga);
       lazyUpdateColorStroke(&sdvg_int_color_stroke);  // no global_a
 
@@ -1488,7 +1481,6 @@ void ShaderVG_Shape::drawEllipseFillAAVBO32Paint(sUI              _vboId,
 }
 
 void ShaderVG_Shape::drawEllipseFillAAPaint(Dsdvg_buffer_ref_t _scratchBuf,
-                                            Dsdvg_mat4_ref_t _mvpMatrix,
                                             sF32 _centerX, sF32 _centerY,
                                             sF32 _radiusX, sF32 _radiusY,
                                             sF32 _decalAlpha,
@@ -1548,7 +1540,7 @@ void ShaderVG_Shape::drawEllipseFillAAPaint(Dsdvg_buffer_ref_t _scratchBuf,
    if(!bindShader())
       return;
 
-   lazyUpdateTransform(_mvpMatrix);
+   lazyUpdateTransform();
    lazyUpdateColorFill(&sdvg_int_color_fill_ga);
    lazyUpdateColorStroke(&sdvg_int_color_stroke);  // no global_a
 
@@ -1641,7 +1633,6 @@ void ShaderVG_Shape::drawEllipseStrokeAAVBO32Paint(sUI              _vboId,
                                                    sUI              _byteOffsetBorder,
                                                    sUI              _numVertsBorder,
                                                    sUI              _glPrimTypeBorder,
-                                                   Dsdvg_mat4_ref_t _mvpMatrix,
                                                    sF32    _centerX, sF32 _centerY,
                                                    sF32    _radiusX, sF32 _radiusY,
                                                    sBool   _bFillGA,
@@ -1659,7 +1650,7 @@ void ShaderVG_Shape::drawEllipseStrokeAAVBO32Paint(sUI              _vboId,
       if(!bindShader())
          return;
 
-      lazyUpdateTransform(_mvpMatrix);
+      lazyUpdateTransform();
       lazyUpdateColorFill(_bFillGA ? &sdvg_int_color_fill_ga : &sdvg_int_color_fill);
       lazyUpdateColorStroke(_bStrokeGA ? &sdvg_int_color_stroke_ga : &sdvg_int_color_stroke);
 
@@ -1715,7 +1706,6 @@ void ShaderVG_Shape::drawEllipseStrokeAAVBO32Paint(sUI              _vboId,
 }
 
 void ShaderVG_Shape::drawEllipseStrokeAAPaint(Dsdvg_buffer_ref_t _scratchBuf,
-                                              Dsdvg_mat4_ref_t _mvpMatrix,
                                               sF32 _centerX, sF32 _centerY,
                                               sF32 _radiusX, sF32 _radiusY,
                                               sBool _bFillGA,
@@ -1747,7 +1737,7 @@ void ShaderVG_Shape::drawEllipseStrokeAAPaint(Dsdvg_buffer_ref_t _scratchBuf,
    if(!bindShader())
       return;
 
-   lazyUpdateTransform(_mvpMatrix);
+   lazyUpdateTransform();
    lazyUpdateColorFill(_bFillGA ? &sdvg_int_color_fill_ga : &sdvg_int_color_fill);
    lazyUpdateColorStroke(_bStrokeGA ? &sdvg_int_color_stroke_ga : &sdvg_int_color_stroke);
 
@@ -1851,7 +1841,6 @@ void ShaderVG_Shape::drawRoundRectFillAAVBO32Paint(sUI              _vboId,
                                                    sUI              _byteOffsetBorder,
                                                    sUI              _numVertsBorder,
                                                    sUI              _glPrimTypeBorder,
-                                                   Dsdvg_mat4_ref_t _mvpMatrix,
                                                    sF32             _centerX, sF32 _centerY,
                                                    sF32             _sizeX,   sF32 _sizeY,
                                                    sF32             _radiusX, sF32 _radiusY,
@@ -1877,7 +1866,7 @@ void ShaderVG_Shape::drawRoundRectFillAAVBO32Paint(sUI              _vboId,
       if(!bindShader())
          return;
 
-      lazyUpdateTransform(_mvpMatrix);
+      lazyUpdateTransform();
       lazyUpdateColorFill(&sdvg_int_color_fill_ga);
       lazyUpdateColorStroke(&sdvg_int_color_stroke);  // no global_a
 
@@ -1919,7 +1908,6 @@ void ShaderVG_Shape::drawRoundRectFillAAVBO32Paint(sUI              _vboId,
 }
 
 void ShaderVG_Shape::drawRoundRectFillAAPaint(Dsdvg_buffer_ref_t _scratchBuf,
-                                              Dsdvg_mat4_ref_t _mvpMatrix,
                                               sF32 _centerX, sF32 _centerY,
                                               sF32 _sizeX,   sF32 _sizeY,
                                               sF32 _radiusX, sF32 _radiusY,
@@ -1966,7 +1954,7 @@ void ShaderVG_Shape::drawRoundRectFillAAPaint(Dsdvg_buffer_ref_t _scratchBuf,
    if(!bindShader())
       return;
 
-   lazyUpdateTransform(_mvpMatrix);
+   lazyUpdateTransform();
    lazyUpdateColorFill(&sdvg_int_color_fill_ga);
    lazyUpdateColorStroke(&sdvg_int_color_stroke);  // no global_a
 
@@ -2039,7 +2027,6 @@ void ShaderVG_Shape::drawRoundRectStrokeAAVBO32Paint(sUI              _vboId,
                                                      sUI              _byteOffsetBorder,
                                                      sUI              _numVertsBorder,
                                                      sUI              _glPrimTypeBorder,
-                                                     Dsdvg_mat4_ref_t _mvpMatrix,
                                                      sF32    _centerX, sF32 _centerY,
                                                      sF32    _sizeX,   sF32 _sizeY,
                                                      sF32    _radiusX, sF32 _radiusY,
@@ -2058,7 +2045,7 @@ void ShaderVG_Shape::drawRoundRectStrokeAAVBO32Paint(sUI              _vboId,
       if(!bindShader())
          return;
 
-      lazyUpdateTransform(_mvpMatrix);
+      lazyUpdateTransform();
       lazyUpdateColorFill(_bFillGA ? &sdvg_int_color_fill_ga : &sdvg_int_color_fill);
       lazyUpdateColorStroke(_bStrokeGA ? &sdvg_int_color_stroke_ga : &sdvg_int_color_stroke);
 
@@ -2112,7 +2099,6 @@ void ShaderVG_Shape::drawRoundRectStrokeAAVBO32Paint(sUI              _vboId,
 }
 
 void ShaderVG_Shape::drawRoundRectStrokeAAPaint(Dsdvg_buffer_ref_t _scratchBuf,
-                                                Dsdvg_mat4_ref_t _mvpMatrix,
                                                 sF32 _centerX, sF32 _centerY,
                                                 sF32 _sizeX,   sF32 _sizeY,
                                                 sF32 _radiusX, sF32 _radiusY,
@@ -2140,7 +2126,7 @@ void ShaderVG_Shape::drawRoundRectStrokeAAPaint(Dsdvg_buffer_ref_t _scratchBuf,
    if(!bindShader())
       return;
 
-   lazyUpdateTransform(_mvpMatrix);
+   lazyUpdateTransform();
    lazyUpdateColorFill(_bFillGA ? &sdvg_int_color_fill_ga : &sdvg_int_color_fill);
    lazyUpdateColorStroke(_bStrokeGA ? &sdvg_int_color_stroke_ga : &sdvg_int_color_stroke);
 
@@ -2223,7 +2209,6 @@ void ShaderVG_Shape::drawRoundRectStrokeAAPaint(Dsdvg_buffer_ref_t _scratchBuf,
 void ShaderVG_Shape::drawPointsRoundAAVBO32Paint(sUI              _vboId,
                                                  sUI              _byteOffset,
                                                  sUI              _numPoints,
-                                                 Dsdvg_mat4_ref_t _mvpMatrix,
                                                  sBool            _bFillGA,
                                                  sBool            _bStrokeGA,
                                                  sF32             _decalAlpha,
@@ -2244,7 +2229,7 @@ void ShaderVG_Shape::drawPointsRoundAAVBO32Paint(sUI              _vboId,
    if(!bindShader())
       return;
 
-   lazyUpdateTransform(_mvpMatrix);
+   lazyUpdateTransform();
    lazyUpdateColorFill(_bFillGA ? &sdvg_int_color_fill_ga : &sdvg_int_color_fill);
    lazyUpdateColorStroke(_bStrokeGA ? &sdvg_int_color_stroke_ga : &sdvg_int_color_stroke);
 
@@ -2301,7 +2286,6 @@ void ShaderVG_Shape::drawPointsRoundAAVBO32Paint(sUI              _vboId,
 void ShaderVG_Shape::drawPointsRoundAAVBO14_2Paint(sUI              _vboId,
                                                    sUI              _byteOffset,
                                                    sUI              _numPoints,
-                                                   Dsdvg_mat4_ref_t _mvpMatrix,
                                                    sBool            _bFillGA,
                                                    sBool            _bStrokeGA,
                                                    sF32             _decalAlpha,
@@ -2322,7 +2306,7 @@ void ShaderVG_Shape::drawPointsRoundAAVBO14_2Paint(sUI              _vboId,
    if(!bindShader())
       return;
 
-   lazyUpdateTransform(_mvpMatrix);
+   lazyUpdateTransform();
    lazyUpdateColorFill(_bFillGA ? &sdvg_int_color_fill_ga : &sdvg_int_color_fill);
    lazyUpdateColorStroke(_bStrokeGA ? &sdvg_int_color_stroke_ga : &sdvg_int_color_stroke);
 

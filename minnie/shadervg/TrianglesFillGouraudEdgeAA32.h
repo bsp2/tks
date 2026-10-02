@@ -109,12 +109,11 @@ class TrianglesFillGouraudEdgeAA32 : public ShaderVG_Shape {
       return YAC_FALSE;
    }
 
-   void drawTrianglesFillGouraudEdgeAAVBO32(sUI              _vboId,
-                                            sUI              _byteOffset,
-                                            sUI              _numVerts,
-                                            Dsdvg_mat4_ref_t _mvpMatrix,
-                                            sBool            _bAA,
-                                            sF32             _alpha
+   void drawTrianglesFillGouraudEdgeAAVBO32(sUI   _vboId,
+                                            sUI   _byteOffset,
+                                            sUI   _numVerts,
+                                            sBool _bAA,
+                                            sF32  _alpha
                                             ) {
       //
       // VBO vertex format (30 bytes per vertex):
@@ -140,7 +139,7 @@ class TrianglesFillGouraudEdgeAA32 : public ShaderVG_Shape {
       if(!bindShader())
          return;
 
-      lazyUpdateTransform(_mvpMatrix);
+      lazyUpdateTransform();
       Dsdvg_uniform_1f(shape_u_aa, _bAA ? 1.0f : 0.0f);
       Dsdvg_uniform_1f(shape_u_global_alpha, _alpha);
 

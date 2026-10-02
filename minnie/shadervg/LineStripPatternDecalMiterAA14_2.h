@@ -495,7 +495,6 @@ class LineStripPatternDecalMiterAA14_2 : public ShaderVG_Shape {
                                                 sUI              _byteOffset,
                                                 sUI              _numPoints,
                                                 sBool            _bSkipLastLineJoint,
-                                                Dsdvg_mat4_ref_t _mvpMatrix,
                                                 sF32             _decalAlpha,
                                                 sF32             _strokeW,
                                                 sF32             _aaRange,
@@ -520,7 +519,7 @@ class LineStripPatternDecalMiterAA14_2 : public ShaderVG_Shape {
          if(!bindShader())
             return;
 
-         lazyUpdateTransform(_mvpMatrix);
+         lazyUpdateTransform();
          lazyUpdateColorFill(&sdvg_int_color_fill_ga);
          lazyUpdateColorStroke(&sdvg_int_color_stroke_ga);
 

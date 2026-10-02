@@ -70,10 +70,9 @@ class TrianglesFillFlatModulate32 : public ShaderVG_Shape {
       return YAC_FALSE;
    }
 
-   void drawTrianglesFillFlatModulateVBO32(sUI              _vboId,
-                                           sUI              _byteOffset,
-                                           sUI              _numVerts,
-                                           Dsdvg_mat4_ref_t _mvpMatrix
+   void drawTrianglesFillFlatModulateVBO32(sUI _vboId,
+                                           sUI _byteOffset,
+                                           sUI _numVerts
                                            ) {
       //
       // VBO vertex format (12 bytes per vertex):
@@ -90,7 +89,7 @@ class TrianglesFillFlatModulate32 : public ShaderVG_Shape {
       if(!bindShader())
          return;
 
-      lazyUpdateTransform(_mvpMatrix);
+      lazyUpdateTransform();
       lazyUpdateColorFill(&sdvg_int_color_fill_ga);
 
       Dsdvg_attrib_offset(shape_a_color,  4/*size*/, GL_UNSIGNED_BYTE, GL_TRUE /*normalize*/, 12/*stride*/, _byteOffset + 0);

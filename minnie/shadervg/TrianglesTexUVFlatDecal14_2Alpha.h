@@ -81,11 +81,10 @@ class TrianglesTexUVFlatDecal14_2Alpha : public ShaderVG_Shape {
       Dsdvg_uniform_1i(shape_u_sampler, 0);
    }
 
-   void drawTrianglesTexUVFlatDecalVBO14_2Alpha(sUI              _vboId,
-                                                sUI              _byteOffset,
-                                                sUI              _numVerts,
-                                                Dsdvg_mat4_ref_t _mvpMatrix,
-                                                sF32             _decalAlpha
+   void drawTrianglesTexUVFlatDecalVBO14_2Alpha(sUI  _vboId,
+                                                sUI  _byteOffset,
+                                                sUI  _numVerts,
+                                                sF32 _decalAlpha
                                                 ) {
       //
       // VBO vertex format (12 bytes per vertex):
@@ -100,7 +99,7 @@ class TrianglesTexUVFlatDecal14_2Alpha : public ShaderVG_Shape {
       if(!bindShader())
          return;
 
-      lazyUpdateTransform(_mvpMatrix);
+      lazyUpdateTransform();
       lazyUpdateColorFill(&sdvg_int_color_fill_ga);
       lazyUpdateColorStroke(&sdvg_int_color_stroke);  // no global_a
 

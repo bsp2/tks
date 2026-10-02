@@ -80,10 +80,9 @@ class TrianglesTexUVGouraud32 : public ShaderVG_Shape {
       Dsdvg_uniform_1i(shape_u_sampler, 0);
    }
 
-   void drawTrianglesTexUVGouraudVBO32(sUI              _vboId,
-                                       sUI              _byteOffset,
-                                       sUI              _numVerts,
-                                       Dsdvg_mat4_ref_t _mvpMatrix
+   void drawTrianglesTexUVGouraudVBO32(sUI _vboId,
+                                       sUI _byteOffset,
+                                       sUI _numVerts
                                        ) {
       //
       // VBO vertex format (20 bytes per vertex):
@@ -102,7 +101,7 @@ class TrianglesTexUVGouraud32 : public ShaderVG_Shape {
       if(!bindShader())
          return;
 
-      lazyUpdateTransform(_mvpMatrix);
+      lazyUpdateTransform();
       lazyUpdateColorFill(&sdvg_int_color_fill_ga);
 
       Dsdvg_attrib_offset(shape_a_uv,     2/*size*/, GL_FLOAT,         GL_FALSE/*normalize*/, 20/*stride*/, _byteOffset +  0);

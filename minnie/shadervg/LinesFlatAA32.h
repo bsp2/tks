@@ -146,7 +146,6 @@ class LinesFlatAA32 : public ShaderVG_Shape {
    void drawLinesFlatAAVBO32(sUI              _vboId,
                              sUI              _byteOffset,
                              sUI              _numPoints,
-                             Dsdvg_mat4_ref_t _mvpMatrix,
                              sF32             _strokeW,
                              sF32             _aaRange
                              ) {
@@ -165,7 +164,7 @@ class LinesFlatAA32 : public ShaderVG_Shape {
       if(!bindShader())
          return;
 
-      lazyUpdateTransform(_mvpMatrix);
+      lazyUpdateTransform();
       lazyUpdateColorStroke(&sdvg_int_color_stroke_ga);
 
       Dsdvg_uniform_1f(shape_u_stroke_w, _strokeW);
