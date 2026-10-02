@@ -84,4 +84,8 @@ class TrianglesFillFlatUniform32PatternDecal : public ShaderVG_Shape {
       return YAC_FALSE;
    }
 
+   void configureConstUniforms(void) {
+      Dsdvg_uniform_1i(shape_u_paint_tex, 0);
+   }
+
 };

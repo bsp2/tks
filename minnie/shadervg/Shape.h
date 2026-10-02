@@ -211,26 +211,26 @@ class ShaderVG_Shape {
    void lazyUpdateColorFill (const sdvg_color4f_t * _c);
    void lazyUpdateColorStroke (const sdvg_color4f_t * _c);
 
-   void drawTrianglesFillFlatUniformVBO32Paint (sUI              _vboId,
-                                                sUI              _byteOffset,
-                                                sUI              _numVerts
+   void drawTrianglesFillFlatUniformVBO32Paint (sUI _vboId,
+                                                sUI _byteOffset,
+                                                sUI _numVerts
                                                 );
 
-   void drawTrianglesFillFlatUniformVBO14_2Paint (sUI              _vboId,
-                                                  sUI              _byteOffset,
-                                                  sUI              _numVerts
+   void drawTrianglesFillFlatUniformVBO14_2Paint (sUI _vboId,
+                                                  sUI _byteOffset,
+                                                  sUI _numVerts
                                                   );
 
-   void drawRectFillAAVBO32Paint (sUI              _vboId,
-                                  sUI              _byteOffsetInner,
-                                  sUI              _numVertsInner,
-                                  sUI              _byteOffsetBorder,
-                                  sUI              _numVertsBorder,
-                                  sUI              _glPrimTypeBorder,
-                                  sF32             _centerX, sF32 _centerY,
-                                  sF32             _sizeX,   sF32 _sizeY,
-                                  sF32             _aaRange,
-                                  sF32             _aaExp
+   void drawRectFillAAVBO32Paint (sUI  _vboId,
+                                  sUI  _byteOffsetInner,
+                                  sUI  _numVertsInner,
+                                  sUI  _byteOffsetBorder,
+                                  sUI  _numVertsBorder,
+                                  sUI  _glPrimTypeBorder,
+                                  sF32 _centerX, sF32 _centerY,
+                                  sF32 _sizeX,   sF32 _sizeY,
+                                  sF32 _aaRange,
+                                  sF32 _aaExp
                                   );
 
    void drawRectFillAAPaint (Dsdvg_buffer_ref_t _scratchBuf,
@@ -241,17 +241,17 @@ class ShaderVG_Shape {
                              sF32 _aaExp
                              );
 
-   void drawRectStrokeAAVBO32Paint (sUI              _vboId,
-                                    sUI              _byteOffsetBorder,
-                                    sUI              _numVertsBorder,
-                                    sUI              _glPrimTypeBorder,
-                                    sF32             _centerX, sF32 _centerY,
-                                    sF32             _sizeX,   sF32 _sizeY,
-                                    sBool            _bFillGA,
-                                    sBool            _bStrokeGA,
-                                    sF32             _strokeW,
-                                    sF32             _aaRange,
-                                    sF32             _aaExp
+   void drawRectStrokeAAVBO32Paint (sUI   _vboId,
+                                    sUI   _byteOffsetBorder,
+                                    sUI   _numVertsBorder,
+                                    sUI   _glPrimTypeBorder,
+                                    sF32  _centerX, sF32 _centerY,
+                                    sF32  _sizeX,   sF32 _sizeY,
+                                    sBool _bFillGA,
+                                    sBool _bStrokeGA,
+                                    sF32  _strokeW,
+                                    sF32  _aaRange,
+                                    sF32  _aaExp
                                     );
 
    void drawRectStrokeAAPaint (Dsdvg_buffer_ref_t _scratchBuf,
@@ -265,16 +265,16 @@ class ShaderVG_Shape {
                                sF32  _aaExp
                                );
 
-   void drawEllipseFillAAVBO32Paint (sUI              _vboId,
-                                     sUI              _byteOffsetInner,
-                                     sUI              _numVertsInner,
-                                     sUI              _byteOffsetBorder,
-                                     sUI              _numVertsBorder,
-                                     sUI              _glPrimTypeBorder,
-                                     sF32    _centerX, sF32 _centerY,
-                                     sF32    _radiusX, sF32 _radiusY,
-                                     sF32    _aaRange,
-                                     sF32    _aaExp
+   void drawEllipseFillAAVBO32Paint (sUI  _vboId,
+                                     sUI  _byteOffsetInner,
+                                     sUI  _numVertsInner,
+                                     sUI  _byteOffsetBorder,
+                                     sUI  _numVertsBorder,
+                                     sUI  _glPrimTypeBorder,
+                                     sF32 _centerX, sF32 _centerY,
+                                     sF32 _radiusX, sF32 _radiusY,
+                                     sF32 _aaRange,
+                                     sF32 _aaExp
                                      );
 
    void drawEllipseFillAAPaint (Dsdvg_buffer_ref_t _scratchBuf,
@@ -285,17 +285,17 @@ class ShaderVG_Shape {
                                 sF32 _aaExp
                                 );
 
-   void drawEllipseStrokeAAVBO32Paint (sUI              _vboId,
-                                       sUI              _byteOffsetBorder,
-                                       sUI              _numVertsBorder,
-                                       sUI              _glPrimTypeBorder,
-                                       sF32    _centerX, sF32 _centerY,
-                                       sF32    _radiusX, sF32 _radiusY,
-                                       sBool   _bFillGA,
-                                       sBool   _bStrokeGA,
-                                       sF32    _strokeW,
-                                       sF32    _aaRange,
-                                       sF32    _aaExp
+   void drawEllipseStrokeAAVBO32Paint (sUI   _vboId,
+                                       sUI   _byteOffsetBorder,
+                                       sUI   _numVertsBorder,
+                                       sUI   _glPrimTypeBorder,
+                                       sF32  _centerX, sF32 _centerY,
+                                       sF32  _radiusX, sF32 _radiusY,
+                                       sBool _bFillGA,
+                                       sBool _bStrokeGA,
+                                       sF32  _strokeW,
+                                       sF32  _aaRange,
+                                       sF32  _aaExp
                                        );
 
    void drawEllipseStrokeAAPaint (Dsdvg_buffer_ref_t _scratchBuf,
@@ -309,17 +309,17 @@ class ShaderVG_Shape {
                                   sF32  _aaExp
                                   );
 
-   void drawRoundRectFillAAVBO32Paint (sUI              _vboId,
-                                       sUI              _byteOffsetInner,
-                                       sUI              _numVertsInner,
-                                       sUI              _byteOffsetBorder,
-                                       sUI              _numVertsBorder,
-                                       sUI              _glPrimTypeBorder,
-                                       sF32             _centerX, sF32 _centerY,
-                                       sF32             _sizeX,   sF32 _sizeY,
-                                       sF32             _radiusX, sF32 _radiusY,
-                                       sF32             _aaRange,
-                                       sF32             _aaExp
+   void drawRoundRectFillAAVBO32Paint (sUI  _vboId,
+                                       sUI  _byteOffsetInner,
+                                       sUI  _numVertsInner,
+                                       sUI  _byteOffsetBorder,
+                                       sUI  _numVertsBorder,
+                                       sUI  _glPrimTypeBorder,
+                                       sF32 _centerX, sF32 _centerY,
+                                       sF32 _sizeX,   sF32 _sizeY,
+                                       sF32 _radiusX, sF32 _radiusY,
+                                       sF32 _aaRange,
+                                       sF32 _aaExp
                                        );
 
    void drawRoundRectFillAAPaint (Dsdvg_buffer_ref_t _scratchBuf,
@@ -331,13 +331,13 @@ class ShaderVG_Shape {
                                   sF32 _aaExp
                                   );
 
-   void drawRoundRectStrokeAAVBO32Paint (sUI              _vboId,
-                                         sUI              _byteOffsetBorder,
-                                         sUI              _numVertsBorder,
-                                         sUI              _glPrimTypeBorder,
-                                         sF32    _centerX, sF32 _centerY,
-                                         sF32    _sizeX,   sF32 _sizeY,
-                                         sF32    _radiusX, sF32 _radiusY,
+   void drawRoundRectStrokeAAVBO32Paint (sUI   _vboId,
+                                         sUI   _byteOffsetBorder,
+                                         sUI   _numVertsBorder,
+                                         sUI   _glPrimTypeBorder,
+                                         sF32  _centerX, sF32 _centerY,
+                                         sF32  _sizeX,   sF32 _sizeY,
+                                         sF32  _radiusX, sF32 _radiusY,
                                          sBool _bFillGA,
                                          sBool _bStrokeGA,
                                          sF32  _strokeW,
@@ -357,24 +357,24 @@ class ShaderVG_Shape {
                                     sF32  _aaExp
                                     );
 
-   void drawPointsRoundAAVBO32Paint (sUI              _vboId,
-                                     sUI              _byteOffset,
-                                     sUI              _numPoints,
-                                     sBool            _bFillGA,
-                                     sBool            _bStrokeGA,
-                                     sF32             _decalAlpha,
-                                     sF32             _pointRadius,
-                                     sF32             _aaRange
+   void drawPointsRoundAAVBO32Paint (sUI   _vboId,
+                                     sUI   _byteOffset,
+                                     sUI   _numPoints,
+                                     sBool _bFillGA,
+                                     sBool _bStrokeGA,
+                                     sF32  _decalAlpha,
+                                     sF32  _pointRadius,
+                                     sF32  _aaRange
                                      );
 
-   void drawPointsRoundAAVBO14_2Paint (sUI              _vboId,
-                                       sUI              _byteOffset,
-                                       sUI              _numPoints,
-                                       sBool            _bFillGA,
-                                       sBool            _bStrokeGA,
-                                       sF32             _decalAlpha,
-                                       sF32             _pointRadius,
-                                       sF32             _aaRange
+   void drawPointsRoundAAVBO14_2Paint (sUI   _vboId,
+                                       sUI   _byteOffset,
+                                       sUI   _numPoints,
+                                       sBool _bFillGA,
+                                       sBool _bStrokeGA,
+                                       sF32  _decalAlpha,
+                                       sF32  _pointRadius,
+                                       sF32  _aaRange
                                        );
 
 

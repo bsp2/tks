@@ -1020,9 +1020,9 @@ void ShaderVG_Shape::lazyUpdateColorStroke(const sdvg_color4f_t *_c) {
    }
 }
 
-void ShaderVG_Shape::drawTrianglesFillFlatUniformVBO32Paint(sUI              _vboId,
-                                                            sUI              _byteOffset,
-                                                            sUI              _numVerts
+void ShaderVG_Shape::drawTrianglesFillFlatUniformVBO32Paint(sUI _vboId,
+                                                            sUI _byteOffset,
+                                                            sUI _numVerts
                                                             ) {
    //
    // VBO vertex format (8 bytes per vertex):
@@ -1052,9 +1052,9 @@ void ShaderVG_Shape::drawTrianglesFillFlatUniformVBO32Paint(sUI              _vb
    Dsdvg_attrib_disable(shape_a_vertex);
 }
 
-void ShaderVG_Shape::drawTrianglesFillFlatUniformVBO14_2Paint(sUI              _vboId,
-                                                              sUI              _byteOffset,
-                                                              sUI              _numVerts
+void ShaderVG_Shape::drawTrianglesFillFlatUniformVBO14_2Paint(sUI _vboId,
+                                                              sUI _byteOffset,
+                                                              sUI _numVerts
                                                               ) {
    //
    // VBO vertex format (4 bytes per vertex):
@@ -1085,16 +1085,16 @@ void ShaderVG_Shape::drawTrianglesFillFlatUniformVBO14_2Paint(sUI              _
    Dsdvg_attrib_disable(shape_a_vertex);
 }
 
-void ShaderVG_Shape::drawRectFillAAVBO32Paint(sUI              _vboId,
-                                              sUI              _byteOffsetInner,
-                                              sUI              _numVertsInner,
-                                              sUI              _byteOffsetBorder,
-                                              sUI              _numVertsBorder,
-                                              sUI              _glPrimTypeBorder,
-                                              sF32             _centerX, sF32 _centerY,
-                                              sF32             _sizeX,   sF32 _sizeY,
-                                              sF32             _aaRange,
-                                              sF32             _aaExp
+void ShaderVG_Shape::drawRectFillAAVBO32Paint(sUI  _vboId,
+                                              sUI  _byteOffsetInner,
+                                              sUI  _numVertsInner,
+                                              sUI  _byteOffsetBorder,
+                                              sUI  _numVertsBorder,
+                                              sUI  _glPrimTypeBorder,
+                                              sF32 _centerX, sF32 _centerY,
+                                              sF32 _sizeX,   sF32 _sizeY,
+                                              sF32 _aaRange,
+                                              sF32 _aaExp
                                               ) {
 
    sdvg_BindVBO(_vboId);
@@ -1268,17 +1268,17 @@ void ShaderVG_Shape::drawRectFillAAPaint(Dsdvg_buffer_ref_t _scratchBuf,
    Dsdvg_attrib_disable(shape_a_vertex);
 }
 
-void ShaderVG_Shape::drawRectStrokeAAVBO32Paint(sUI              _vboId,
-                                                sUI              _byteOffsetBorder,
-                                                sUI              _numVertsBorder,
-                                                sUI              _glPrimTypeBorder,
-                                                sF32             _centerX, sF32 _centerY,
-                                                sF32             _sizeX,   sF32 _sizeY,
-                                                sBool            _bFillGA,
-                                                sBool            _bStrokeGA,
-                                                sF32             _strokeW,
-                                                sF32             _aaRange,
-                                                sF32             _aaExp
+void ShaderVG_Shape::drawRectStrokeAAVBO32Paint(sUI   _vboId,
+                                                sUI   _byteOffsetBorder,
+                                                sUI   _numVertsBorder,
+                                                sUI   _glPrimTypeBorder,
+                                                sF32  _centerX, sF32 _centerY,
+                                                sF32  _sizeX,   sF32 _sizeY,
+                                                sBool _bFillGA,
+                                                sBool _bStrokeGA,
+                                                sF32  _strokeW,
+                                                sF32  _aaRange,
+                                                sF32  _aaExp
                                                 ) {
    sdvg_BindVBO(_vboId);
 
@@ -1410,16 +1410,16 @@ void ShaderVG_Shape::drawRectStrokeAAPaint(Dsdvg_buffer_ref_t _scratchBuf,
    Dsdvg_attrib_disable(shape_a_vertex);
 }
 
-void ShaderVG_Shape::drawEllipseFillAAVBO32Paint(sUI              _vboId,
-                                                 sUI              _byteOffsetInner,
-                                                 sUI              _numVertsInner,
-                                                 sUI              _byteOffsetBorder,
-                                                 sUI              _numVertsBorder,
-                                                 sUI              _glPrimTypeBorder,
-                                                 sF32    _centerX, sF32 _centerY,
-                                                 sF32    _radiusX, sF32 _radiusY,
-                                                 sF32    _aaRange,
-                                                 sF32    _aaExp
+void ShaderVG_Shape::drawEllipseFillAAVBO32Paint(sUI  _vboId,
+                                                 sUI  _byteOffsetInner,
+                                                 sUI  _numVertsInner,
+                                                 sUI  _byteOffsetBorder,
+                                                 sUI  _numVertsBorder,
+                                                 sUI  _glPrimTypeBorder,
+                                                 sF32 _centerX, sF32 _centerY,
+                                                 sF32 _radiusX, sF32 _radiusY,
+                                                 sF32 _aaRange,
+                                                 sF32 _aaExp
                                                  ) {
 
    sdvg_BindVBO(_vboId);
@@ -1629,17 +1629,17 @@ void ShaderVG_Shape::drawEllipseFillAAPaint(Dsdvg_buffer_ref_t _scratchBuf,
    Dsdvg_attrib_disable(shape_a_vertex);
 }
 
-void ShaderVG_Shape::drawEllipseStrokeAAVBO32Paint(sUI              _vboId,
-                                                   sUI              _byteOffsetBorder,
-                                                   sUI              _numVertsBorder,
-                                                   sUI              _glPrimTypeBorder,
-                                                   sF32    _centerX, sF32 _centerY,
-                                                   sF32    _radiusX, sF32 _radiusY,
-                                                   sBool   _bFillGA,
-                                                   sBool   _bStrokeGA,
-                                                   sF32    _strokeW,
-                                                   sF32    _aaRange,
-                                                   sF32    _aaExp
+void ShaderVG_Shape::drawEllipseStrokeAAVBO32Paint(sUI   _vboId,
+                                                   sUI   _byteOffsetBorder,
+                                                   sUI   _numVertsBorder,
+                                                   sUI   _glPrimTypeBorder,
+                                                   sF32  _centerX, sF32 _centerY,
+                                                   sF32  _radiusX, sF32 _radiusY,
+                                                   sBool _bFillGA,
+                                                   sBool _bStrokeGA,
+                                                   sF32  _strokeW,
+                                                   sF32  _aaRange,
+                                                   sF32  _aaExp
                                                    ) {
 
    sdvg_BindVBO(_vboId);
@@ -1835,17 +1835,17 @@ void ShaderVG_Shape::drawEllipseStrokeAAPaint(Dsdvg_buffer_ref_t _scratchBuf,
    Dsdvg_attrib_disable(shape_a_vertex);
 }
 
-void ShaderVG_Shape::drawRoundRectFillAAVBO32Paint(sUI              _vboId,
-                                                   sUI              _byteOffsetInner,
-                                                   sUI              _numVertsInner,
-                                                   sUI              _byteOffsetBorder,
-                                                   sUI              _numVertsBorder,
-                                                   sUI              _glPrimTypeBorder,
-                                                   sF32             _centerX, sF32 _centerY,
-                                                   sF32             _sizeX,   sF32 _sizeY,
-                                                   sF32             _radiusX, sF32 _radiusY,
-                                                   sF32             _aaRange,
-                                                   sF32             _aaExp
+void ShaderVG_Shape::drawRoundRectFillAAVBO32Paint(sUI  _vboId,
+                                                   sUI  _byteOffsetInner,
+                                                   sUI  _numVertsInner,
+                                                   sUI  _byteOffsetBorder,
+                                                   sUI  _numVertsBorder,
+                                                   sUI  _glPrimTypeBorder,
+                                                   sF32 _centerX, sF32 _centerY,
+                                                   sF32 _sizeX,   sF32 _sizeY,
+                                                   sF32 _radiusX, sF32 _radiusY,
+                                                   sF32 _aaRange,
+                                                   sF32 _aaExp
                                                    ) {
 
    sdvg_BindVBO(_vboId);
@@ -2023,18 +2023,18 @@ void ShaderVG_Shape::drawRoundRectFillAAPaint(Dsdvg_buffer_ref_t _scratchBuf,
    Dsdvg_attrib_disable(shape_a_vertex);
 }
 
-void ShaderVG_Shape::drawRoundRectStrokeAAVBO32Paint(sUI              _vboId,
-                                                     sUI              _byteOffsetBorder,
-                                                     sUI              _numVertsBorder,
-                                                     sUI              _glPrimTypeBorder,
-                                                     sF32    _centerX, sF32 _centerY,
-                                                     sF32    _sizeX,   sF32 _sizeY,
-                                                     sF32    _radiusX, sF32 _radiusY,
-                                                     sBool   _bFillGA,
-                                                     sBool   _bStrokeGA,
-                                                     sF32    _strokeW,
-                                                     sF32    _aaRange,
-                                                     sF32    _aaExp
+void ShaderVG_Shape::drawRoundRectStrokeAAVBO32Paint(sUI   _vboId,
+                                                     sUI   _byteOffsetBorder,
+                                                     sUI   _numVertsBorder,
+                                                     sUI   _glPrimTypeBorder,
+                                                     sF32  _centerX, sF32 _centerY,
+                                                     sF32  _sizeX,   sF32 _sizeY,
+                                                     sF32  _radiusX, sF32 _radiusY,
+                                                     sBool _bFillGA,
+                                                     sBool _bStrokeGA,
+                                                     sF32  _strokeW,
+                                                     sF32  _aaRange,
+                                                     sF32  _aaExp
                                                      ) {
 
    sdvg_BindVBO(_vboId);
@@ -2206,14 +2206,14 @@ void ShaderVG_Shape::drawRoundRectStrokeAAPaint(Dsdvg_buffer_ref_t _scratchBuf,
    Dsdvg_attrib_disable(shape_a_vertex);
 }
 
-void ShaderVG_Shape::drawPointsRoundAAVBO32Paint(sUI              _vboId,
-                                                 sUI              _byteOffset,
-                                                 sUI              _numPoints,
-                                                 sBool            _bFillGA,
-                                                 sBool            _bStrokeGA,
-                                                 sF32             _decalAlpha,
-                                                 sF32             _pointRadius,
-                                                 sF32             _aaRange
+void ShaderVG_Shape::drawPointsRoundAAVBO32Paint(sUI   _vboId,
+                                                 sUI   _byteOffset,
+                                                 sUI   _numPoints,
+                                                 sBool _bFillGA,
+                                                 sBool _bStrokeGA,
+                                                 sF32  _decalAlpha,
+                                                 sF32  _pointRadius,
+                                                 sF32  _aaRange
                                                  ) {
    //
    // VBO vertex format (8 bytes per vertex):
@@ -2283,14 +2283,14 @@ void ShaderVG_Shape::drawPointsRoundAAVBO32Paint(sUI              _vboId,
 #endif // SHADERVG_GL_VERTEX_ID
 }
 
-void ShaderVG_Shape::drawPointsRoundAAVBO14_2Paint(sUI              _vboId,
-                                                   sUI              _byteOffset,
-                                                   sUI              _numPoints,
-                                                   sBool            _bFillGA,
-                                                   sBool            _bStrokeGA,
-                                                   sF32             _decalAlpha,
-                                                   sF32             _pointRadius,
-                                                   sF32             _aaRange
+void ShaderVG_Shape::drawPointsRoundAAVBO14_2Paint(sUI   _vboId,
+                                                   sUI   _byteOffset,
+                                                   sUI   _numPoints,
+                                                   sBool _bFillGA,
+                                                   sBool _bStrokeGA,
+                                                   sF32  _decalAlpha,
+                                                   sF32  _pointRadius,
+                                                   sF32  _aaRange
                                                    ) {
    //
    // VBO vertex format (4 bytes per vertex):
@@ -2365,10 +2365,10 @@ void ShaderVG_Shape::drawPointsRoundAAVBO14_2Paint(sUI              _vboId,
 void ShaderVG_Shape::updateUniformOffsetArray(sF32 _pointRadius) const {
    sF32 aOffset[2*6] = {
       -_pointRadius, -_pointRadius,  // LT
-      _pointRadius, -_pointRadius,  // RT
-      _pointRadius,  _pointRadius,  // RB
+       _pointRadius, -_pointRadius,  // RT
+       _pointRadius,  _pointRadius,  // RB
       -_pointRadius, -_pointRadius,  // LT
-      _pointRadius,  _pointRadius,  // RB
+       _pointRadius,  _pointRadius,  // RB
       -_pointRadius,  _pointRadius   // LB
    };
    Dsdvg_uniform_2fv(shape_u_a_offset, 6, aOffset);

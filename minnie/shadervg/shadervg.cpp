@@ -11080,6 +11080,7 @@ void YAC_CALL sdvg_End(void) {
 #if defined(SHADERVG_HW_NPOLYGONS) && defined(GL_TES_npolygons)
                         loc_drawTESDaveNXPolygon(current_draw_vertex_index - 1u/*numVerts*/);
 #elif defined(SHADERVG_STENCIL_POLYGONS)
+                        Dsdvg_tracecallv("xxx POLYGON_AA: draw inner shape->name=\"%s\"\n", current_shape->getName());
                         if(b_fillrule_nonzero)
                            loc_drawStencilPolygonNonZero(current_draw_vertex_index - 1u/*numVerts*/);
                         else
@@ -11097,6 +11098,7 @@ void YAC_CALL sdvg_End(void) {
 #else
                         ShaderVG_Shape *shape = loc_get_default_line_strip_flat_aa_shape_32();
 #endif // SHADERVG_USE_DEFAULT_POLYGON_14_2
+                        Dsdvg_tracecallv("xxx POLYGON_AA: draw outline shape->name=\"%s\" cFillGA=(%f;%f;%f;%f) cStrokeGA=(%f;%f;%f;%f)\n", shape->getName(), sdvg_int_color_fill_ga.r, sdvg_int_color_fill_ga.g, sdvg_int_color_fill_ga.b, sdvg_int_color_fill_ga.a, sdvg_int_color_stroke_ga.r, sdvg_int_color_stroke_ga.g, sdvg_int_color_stroke_ga.b, sdvg_int_color_stroke_ga.a);
                         stroke_w = SHADERVG_POLYGON_AA_STROKE_W;
                         loc_DrawLineStripFlatAAVBOPaint(0u/*vboId*/,
                                                         shape,

@@ -139,6 +139,9 @@ class LineStripFlatAA14_2Linear : public ShaderVG_Shape {
       return YAC_FALSE;
    }
 
-   // (note) see also: shadervg.cpp:loc_DrawLineStripFlatAAVBOPaint()
+   void configureConstUniforms(void) {
+      Dsdvg_uniform_1i(shape_u_paint_tex, 0);
+   }
 
+   // (note) see also: shadervg.cpp:loc_DrawLineStripFlatAAVBOPaint()
 };
