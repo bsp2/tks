@@ -14106,6 +14106,9 @@ sF32 tks_f32_from_f16(sS16 _v) {
    return r.f32;
 }
 
+/* @function mathF16FromF32,float f:int
+Convert 32 to 16 bit floating point value
+*/
 static sSI YAC_CALL APIC_mathF16FromF32(sF32 _x) {
    return tks_f16_from_f32(_x);
 }
@@ -14116,6 +14119,9 @@ static sSI YAC_CALL _APIC_mathF16FromF32(yacmemptr _args) { return APIC_mathF16F
 
 
 
+/* @function mathF32FromF16,int f16:float
+Convert 16 to 32 bit floating point value
+*/
 static sF32 YAC_CALL APIC_mathF32FromF16(sSI _x) {
    return tks_f32_from_f16(sS16(_x));
 }
