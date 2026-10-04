@@ -247,3 +247,34 @@ sBool YAC_VCALL YAC_Integer::yacToString(YAC_String *rs) const {
    rs->fixLength();
    return 1;
 }
+
+sBool YAC_Integer::decZ(sSI _dec) {
+   if(value > 0)
+   {
+      value -= _dec;
+      return (value <= 0);
+   }
+   return YAC_FALSE;
+}
+
+sBool YAC_Integer::decZR(sSI _dec, sSI _resetVal) {
+   if(value > 0)
+      value -= _dec;
+   if(value <= 0)
+   {
+      value += _resetVal;
+      return YAC_TRUE;
+   }
+   return YAC_FALSE;
+}
+
+sBool YAC_Integer::incZR(sSI _inc, sSI _maxVal) {
+   if(value < _maxVal)
+      value += _inc;
+   if(value >= _maxVal)
+   {
+      value -= _maxVal;
+      return YAC_TRUE;
+   }
+   return YAC_FALSE;
+}

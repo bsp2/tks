@@ -43,6 +43,10 @@ public:
 
    void  _getString          (YAC_Value *_r) const;
    void  _New                (sSI, YAC_Value *_r);
+
+   sBool decZ (sSI _dec);
+   sBool decZR (sSI _dec, sSI _resetVal);
+   sBool incZR (sSI _inc, sSI _maxVal);
 };
 
 

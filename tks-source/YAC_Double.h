@@ -45,6 +45,11 @@ public:
     void  _Newf               (sF32 _v, YAC_Value *_r);
     void  _Newi               (sSI _v, YAC_Value *_r);
     void  _News               (YAC_Object *_s, YAC_Value *_r);
+
+   sBool decZ (sF32 _dec);
+   sBool decZR1 (sF32 _dec);
+   sBool incZ1 (sF32 _inc);
+   sBool incZR1 (sF32 _inc);
 };
 
 

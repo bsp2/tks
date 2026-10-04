@@ -7219,6 +7219,29 @@ Create a new Integer object and initialize it with the given value.
 */
    YM //void  _New             (sSI, YAC_Value *_r);
 
+/* @method decZ,float dec:boolean
+Decrement by 'dec'. Return true if value is <= 0.
+@arg dec Decrement
+@return True if value crossed zero threshold.
+*/
+   YM //sBool decZ             (sSI _dec);
+
+/* @method decZR,int dec,int resetVal:boolean
+Decrement by 'dec'. Return true and wrap around to 'resetVal' if value is <= 0.
+@arg dec Decrement
+@arg resetVal Reset value
+@return True if value wrapped around
+*/
+   YM //sBool decZR            (sSI _dec, sSI _resetVal);
+
+/* @method incZR,int inc,int maxVal:boolean
+Increment by 'inc'. Return true and wrap back to 0 if value is >= maxVal.
+@arg inc Increment
+@arg maxVal Reset value
+@return True if value wrapped around
+*/
+   YM //sBool incZR            (sSI _inc, sSI _maxVal);
+
 };
 #include "ying_core_Integer.cpp"
 YAC_C_CORE_POOLED(_Integer, "Integer", YAC_CLID_INTEGER);
@@ -7792,6 +7815,33 @@ Create a new Float object and initialize it with the given value.
 */
    YM //void  _New             (sF32, YAC_Value *_r);
 
+/* @method decZ,float dec:boolean
+Decrement by 'dec' if value is > 0. Return true if value is <= 0.0.
+@arg dec Decrement
+@return True if value crossed zero threshold
+*/
+   YM //sBool decZ             (sF32 _dec);
+
+/* @method decZR1,float dec:boolean
+Decrement by 'dec' if value is > 0. Return true and wrap back to 1 if value is <= 0.0.
+@arg dec Decrement
+@return True if value wrapped around
+*/
+   YM //sBool decZR1           (sF32 _dec);
+
+/* @method incZ1,float dec:boolean
+Increment by 'inc' if value is < 1. Return true if value is >= 1.
+@arg inc Increment
+@return True if value crossed (1) threshold
+*/
+   YM //sBool incZ1            (sF32 _inc);
+
+/* @method incZR1,float dec:boolean
+Increment by 'inc' if value is < 1. Return true and wrap back to 0 if value is >= 1.
+@arg inc Increment
+@return True if value wrapped back to 0
+*/
+   YM //sBool incZR1           (sF32 _inc);
 };
 #include "ying_core_Float.cpp"
 YAC_C_CORE_POOLED(_Float, "Float", YAC_CLID_FLOAT);
@@ -8007,6 +8057,33 @@ The %String will be converted to a 64bit double precision floating point value b
 */
       YM //void  _News            (YAC_Object *_s, YAC_Value *_r);
 
+/* @method decZ,float dec:boolean
+Decrement by 'dec' if value is > 0. Return true if value is <= 0.0.
+@arg dec Decrement
+@return True if value crossed zero threshold
+*/
+   YM //sBool decZ             (sF32 _dec);
+
+/* @method decZR1,float dec:boolean
+Decrement by 'dec' if value is > 0. Return true and wrap back to 1 if value is <= 0.0.
+@arg dec Decrement
+@return True if value wrapped around
+*/
+   YM //sBool decZR1           (sF32 _dec);
+
+/* @method incZ1,float dec:boolean
+Increment by 'inc' if value is < 1. Return true if value is >= 1.
+@arg inc Increment
+@return True if value crossed (1) threshold
+*/
+   YM //sBool incZ1            (sF32 _inc);
+
+/* @method incZR1,float dec:boolean
+Increment by 'inc' if value is < 1. Return true and wrap back to 0 if value is >= 1.
+@arg inc Increment
+@return True if value wrapped back to 0
+*/
+   YM //sBool incZR1           (sF32 _inc);
 };
 #include "ying_core_Double.cpp"
 YAC_C_CORE_POOLED(_Double, "Double", YAC_CLID_DOUBLE);
@@ -9362,7 +9439,7 @@ Try to map a constant integer value to a literal.
 
 Try to map a constant to script class constant name.
 
-@arg vo %ValueObject that the constants are compared with
+@arg vo %Value object that the constants are compared with
 @arg clazz %Class in which to search
 @arg prefix Prefix of constant name
 */
@@ -10972,7 +11049,7 @@ Convert CP1252 extended ASCII string to UTF-8
       YM // void        _cp1252ToUTF8_YAC_RSELF (sBool _bBOM);
 
 
-/* @method hasUTFBOM:boolean
+/* @method hasUTF8BOM:boolean
 Check if string starts with UTF-8 byte order mark (U+FEFF encoded as 0xEF 0xBB 0xBF)
 
 @return True if BOM is present

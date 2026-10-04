@@ -233,3 +233,43 @@ sBool YAC_VCALL YAC_Double::yacToString(YAC_String *rs) const {
    rs->fixLength();
 	return YAC_TRUE;
 }
+
+sBool YAC_Double::decZ(sF32 _dec) {
+   if(value > 0.0)
+   {
+      value -= _dec;
+      return (value <= 0.0);
+   }
+   return YAC_FALSE;
+}
+
+sBool YAC_Double::decZR1(sF32 _dec) {
+   if(value > 0.0)
+      value -= _dec;
+   if(value <= 0.0)
+   {
+      value += 1.0;
+      return YAC_TRUE;
+   }
+   return YAC_FALSE;
+}
+
+sBool YAC_Double::incZ1(sF32 _inc) {
+   if(value < 1.0)
+   {
+      value += _inc;
+      return (value >= 1.0);
+   }
+   return YAC_FALSE;
+}
+
+sBool YAC_Double::incZR1(sF32 _inc) {
+   if(value < 1.0)
+      value += _inc;
+   if(value >= 1.0)
+   {
+      value -= 1.0;
+      return YAC_TRUE;
+   }
+   return YAC_FALSE;
+}

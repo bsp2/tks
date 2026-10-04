@@ -44,6 +44,11 @@ public:
 
    void  _getString          (YAC_Value *_r) const;
    void  _New                (sF32, YAC_Value *_r);
+
+   sBool decZ (sF32 _dec);
+   sBool decZR1 (sF32 _dec);
+   sBool incZ1 (sF32 _inc);
+   sBool incZR1 (sF32 _inc);
 };
 
 
