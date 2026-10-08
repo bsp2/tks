@@ -1788,7 +1788,7 @@ Apply current paint.
 */
 YF void YAC_CALL sdvg_DrawEllipseFillAAVBO32 (sUI _vboId, sUI _byteOffsetInner, sUI _numVertsInner, sUI _byteOffsetBorder, sUI _numVertsBorder, sUI _glPrimTypeBorder, sF32 _centerX, sF32 _centerY, sF32 _radiusX, sF32 _radiusY);
 
-/* @function sdvg_DrawEllipseFillAA,float centerX,float centerY,float sizeX,float sizeY
+/* @function sdvg_DrawEllipseFillAA,float centerX,float centerY,float radiusX,float radiusY
 Draw filled, anti-aliased ellipse via scratch buffer (32 bit float format)
 
 Apply current paint.
@@ -1797,7 +1797,7 @@ Apply current paint.
 @groupref Fill
 @groupref Paint
 */
-YF void YAC_CALL sdvg_DrawEllipseFillAA (sF32 _centerX, sF32 _centerY, sF32 _sizeX, sF32 _sizeY);
+YF void YAC_CALL sdvg_DrawEllipseFillAA (sF32 _centerX, sF32 _centerY, sF32 _radiusX, sF32 _radiusY);
 
 /* @function sdvg_SetupEllipseFillStrokeAAVBO32,Buffer vb,Buffer dl,float centerX,float centerY,float radiusX,float radiusY,float strokeW
 Set up vertex buffer and draw list for filled, stroked, and anti-aliased ellipse (32bit float format)
@@ -1817,14 +1817,14 @@ Draw previously prepared vertex buffer as filled, stroked, and anti-aliased elli
 */
 YF void YAC_CALL sdvg_DrawEllipseFillStrokeAAVBO32 (sUI _vboId, sUI _byteOffsetInner, sUI _numVertsInner, sUI _byteOffsetBorder, sUI _numVertsBorder, sUI _glPrimTypeBorder, sF32 _centerX, sF32 _centerY, sF32 _radiusX, sF32 _radiusY);
 
-/* @function sdvg_DrawEllipseFillStrokeAA,float centerX,float centerY,float sizeX,float sizeY
+/* @function sdvg_DrawEllipseFillStrokeAA,float centerX,float centerY,float radiusX,float radiusY
 Draw filled, stroked, and anti-aliased ellipse via scratch buffer (32 bit float format)
 
 @group Ellipse
 @groupref Fill
 @groupref Stroke
 */
-YF void YAC_CALL sdvg_DrawEllipseFillStrokeAA (sF32 _centerX, sF32 _centerY, sF32 _sizeX, sF32 _sizeY);
+YF void YAC_CALL sdvg_DrawEllipseFillStrokeAA (sF32 _centerX, sF32 _centerY, sF32 _radiusX, sF32 _radiusY);
 
 /* @function sdvg_SetupEllipseStrokeAAVBO32,Buffer vb,Buffer dl,float centerX,float centerY,float radiusX,float radiusY,float strokeW
 Set up vertex buffer and draw list for stroked, and anti-aliased ellipse (32bit float format)
@@ -1845,7 +1845,7 @@ Apply current paint.
 */
 YF void YAC_CALL sdvg_DrawEllipseStrokeAAVBO32 (sUI _vboId, sUI _byteOffsetBorder, sUI _numVertsBorder, sUI _glPrimTypeBorder, sF32 _centerX, sF32 _centerY, sF32 _radiusX, sF32 _radiusY);
 
-/* @function sdvg_DrawEllipseStrokeAA,float centerX,float centerY,float sizeX,float sizeY
+/* @function sdvg_DrawEllipseStrokeAA,float centerX,float centerY,float radiusX,float radiusY
 Draw stroked, anti-aliased ellipse via scratch buffer (32 bit float format)
 
 Apply current paint.
@@ -1854,7 +1854,7 @@ Apply current paint.
 @groupref Stroke
 @groupref Paint
 */
-YF void YAC_CALL sdvg_DrawEllipseStrokeAA (sF32 _centerX, sF32 _centerY, sF32 _sizeX, sF32 _sizeY);
+YF void YAC_CALL sdvg_DrawEllipseStrokeAA (sF32 _centerX, sF32 _centerY, sF32 _radiusX, sF32 _radiusY);
 
 /* @function sdvg_SetupRoundRectFillAAVBO32,Buffer vb,Buffer dl,float centerX,float centerY,float sizeX,float sizeY,float radiusX,float radiusY
 Set up vertex buffer and draw list for filled, and anti-aliased rounded rectangle (32bit float format)

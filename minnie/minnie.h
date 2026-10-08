@@ -384,6 +384,8 @@ typedef sUI MinPaintId;
 #else
 #define Dprintf         if(!MINNIE_PRINTF);else printf
 #endif // SHADERVG_SCRIPT_API
+#define Dprintfv        if( MINNIE_PRINTF);else Dprintf
+#define Dprintfvv       if( MINNIE_PRINTF);else Dprintf
 
 #define Derrorprintf     if(!MINNIE_PRINTF);else Dprintf
 #define Ddebugprintf     if( MINNIE_PRINTF);else Dprintf

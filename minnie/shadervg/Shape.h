@@ -69,7 +69,6 @@ class ShaderVG_Shape {
    sSI shape_a_uv;         // optional
 
    sSI shape_u_transform;
-   sSI shape_state_u_transform;
    sSI shape_u_last_instance;        // optional
    sSI shape_u_aa;                   // optional
    sSI shape_u_aa_range;             // optional for non-AA shader
@@ -94,9 +93,7 @@ class ShaderVG_Shape {
    sSI shape_u_radius_max;           // optional
    sSI shape_u_point_radius;         // optional
    sSI shape_u_color_fill;           // optional
-   sSI shape_state_u_color_fill;
    sSI shape_u_color_stroke;         // optional
-   sSI shape_state_u_color_stroke;
    sSI shape_u_global_alpha;         // optional
    sSI shape_u_decal_alpha;          // optional
    sSI shape_u_sampler;              // optional
@@ -122,10 +119,14 @@ class ShaderVG_Shape {
    sSI shape_u_paint_ob_size;        // optional
    sSI shape_u_paint_mat_unproject;  // optional (n-polygon shaders)
    sSI shape_u_paint_vp_unproject;   // optional (n-polygon shaders)
-   sSI shape_state_u_paint;
 #ifdef SHADERVG_UNIFORM_ARRAY
    sSI shape_u_a_offset;             // optional
 #endif // SHADERVG_UNIFORM_ARRAY
+
+   sSI shape_state_u_transform;
+   sSI shape_state_u_color_fill;
+   sSI shape_state_u_color_stroke;
+   sSI shape_state_u_paint;
 
    // debug:
    sBool b_draw_inner;

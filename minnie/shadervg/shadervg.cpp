@@ -876,6 +876,9 @@ static sUI current_draw_vertex_write_index;
 #ifndef SHADERVG_LINE_JOINTS
 static sUI loc_line_strip_sub_num_points;
 #endif // SHADERVG_LINE_JOINTS
+#ifdef SHADERVG_USE_POLYGON_SHADERS
+static sBool loc_b_update_matrix_unproject;
+#endif // SHADERVG_USE_POLYGON_SHADERS
 
 
 #define DRAW_MODE_NONE                                      0
@@ -2542,6 +2545,19 @@ static sBool loc_UpdateShaderUniforms(sBool _bPolygon) {
 
       if(PAINT_SOLID != sdvg_int_paint.mode)
       {
+#ifdef SHADERVG_USE_POLYGON_SHADERS
+         const sBool bUnproject = _bPolygon && (PAINT_LINEAR != sdvg_int_paint.mode);
+         if(loc_b_update_matrix_unproject) {
+            loc_b_update_matrix_unproject = YAC_FALSE;
+#ifdef SHADERVG_SCRIPT_API
+            // (todo) implement me
+#else
+            minnie_matrix4f_invert(sdvg_int_mvp_matrix, sdvg_int_mvp_matrix_unproject);
+#endif // SHADERVG_SCRIPT_API
+         }
+#else
+         const sBool bUnproject = YAC_FALSE;
+#endif // SHADERVG_USE_POLYGON_SHADERS
          current_shape->updatePaintUniforms(
 #ifdef SHADERVG_USE_POLYGON_SHADERS
                                             _bPolygon,
@@ -2550,7 +2566,7 @@ static sBool loc_UpdateShaderUniforms(sBool _bPolygon) {
 #endif // SHADERVG_USE_POLYGON_SHADERS
                                             _bPolygon ? sdvg_int_mvp_matrix : NULL,
                                             viewport_x, viewport_y, viewport_w, viewport_h,
-                                            (_bPolygon && (PAINT_LINEAR != sdvg_int_paint.mode)) ? sdvg_int_mvp_matrix_unproject : NULL
+                                            bUnproject ? sdvg_int_mvp_matrix_unproject : NULL
                                             );
       }
 
@@ -2836,6 +2852,7 @@ void YAC_CALL sdvg_DrawTrianglesFillFlatUniformVBO32(sUI _vboId, sUI _byteOffset
    //   +0 f32 x
    //   +4 f32 y
    //
+   Dsdvg_tracecall("[trc] sdvg_DrawTrianglesFillFlatUniformVBO32: vboId=%u byteOffset=%u numVerts=%u\n", _vboId, _byteOffset, _numVerts);
    ShaderVG_Shape *shape =
       (NULL != current_shape)
       ? current_shape
@@ -2853,6 +2870,7 @@ void YAC_CALL sdvg_DrawTrianglesFillFlatUniformVBO14_2(sUI _vboId, sUI _byteOffs
    //   +0 s14.2 x
    //   +2 s14.2 y
    //
+   Dsdvg_tracecall("[trc] sdvg_DrawTrianglesFillFlatUniformVBO14_2: vboId=%u byteOffset=%u numVerts=%u\n", _vboId, _byteOffset, _numVerts);
    ShaderVG_Shape *shape =
       (NULL != current_shape)
       ? current_shape
@@ -2874,6 +2892,7 @@ void YAC_CALL sdvg_DrawTrianglesFillFlatVBO32(sUI _vboId, sUI _byteOffset, sUI _
    //   +4 f32 x
    //   +8 f32 y
    //
+   Dsdvg_tracecall("[trc] sdvg_DrawTrianglesFillFlatVBO32: vboId=%u byteOffset=%u numVerts=%u\n", _vboId, _byteOffset, _numVerts);
    triangles_fill_flat_32.drawTrianglesFillFlatVBO32(_vboId,
                                                      _byteOffset,
                                                      _numVerts
@@ -2890,6 +2909,7 @@ void YAC_CALL sdvg_DrawTrianglesFillFlatVBO14_2(sUI _vboId, sUI _byteOffset, sUI
    //   +4 s14.2 x
    //   +6 s14.2 y
    //
+   Dsdvg_tracecall("[trc] sdvg_DrawTrianglesFillFlatVBO14_2: vboId=%u byteOffset=%u numVerts=%u\n", _vboId, _byteOffset, _numVerts);
    triangles_fill_flat_14_2.drawTrianglesFillFlatVBO14_2(_vboId,
                                                          _byteOffset,
                                                          _numVerts
@@ -2906,6 +2926,7 @@ void YAC_CALL sdvg_DrawTrianglesFillFlatModulateVBO32(sUI _vboId, sUI _byteOffse
    //   +4 f32 x
    //   +8 f32 y
    //
+   Dsdvg_tracecall("[trc] sdvg_DrawTrianglesFillFlatModulateVBO32: vboId=%u byteOffset=%u numVerts=%u\n", _vboId, _byteOffset, _numVerts);
    triangles_fill_flat_modulate_32.drawTrianglesFillFlatModulateVBO32(_vboId,
                                                                       _byteOffset,
                                                                       _numVerts
@@ -2922,6 +2943,7 @@ void YAC_CALL sdvg_DrawTrianglesFillFlatModulateVBO14_2(sUI _vboId, sUI _byteOff
    //   +4 s14.2 x
    //   +6 s14.2 y
    //
+   Dsdvg_tracecall("[trc] sdvg_DrawTrianglesFillFlatModulateVBO14_2: vboId=%u byteOffset=%u numVerts=%u\n", _vboId, _byteOffset, _numVerts);
    triangles_fill_flat_modulate_14_2.drawTrianglesFillFlatModulateVBO14_2(_vboId,
                                                                           _byteOffset,
                                                                           _numVerts
@@ -2936,6 +2958,7 @@ void YAC_CALL sdvg_DrawTrianglesFillGouraudVBO32(sUI _vboId, sUI _byteOffset, sU
    //   +3 u8  a
    //   +4 f32 x
    //   +8 f32 y
+   Dsdvg_tracecall("[trc] sdvg_DrawTrianglesFillGouraudVBO32: vboId=%u byteOffset=%u numVerts=%u\n", _vboId, _byteOffset, _numVerts);
    triangles_fill_gouraud_32.drawTrianglesFillGouraudVBO32(_vboId,
                                                            _byteOffset,
                                                            _numVerts
@@ -2952,6 +2975,7 @@ void YAC_CALL sdvg_DrawTrianglesFillGouraudVBO14_2(sUI _vboId, sUI _byteOffset, 
    //   +4 s14.2 x
    //   +6 s14.2 y
    //
+   Dsdvg_tracecall("[trc] sdvg_DrawTrianglesFillGouraudVBO14_2: vboId=%u byteOffset=%u numVerts=%u\n", _vboId, _byteOffset, _numVerts);
    triangles_fill_gouraud_14_2.drawTrianglesFillGouraudVBO14_2(_vboId,
                                                                _byteOffset,
                                                                _numVerts
@@ -2966,6 +2990,7 @@ void YAC_CALL sdvg_DrawTrianglesFillGouraudModulateVBO32(sUI _vboId, sUI _byteOf
    //   +3 u8  a
    //   +4 f32 x
    //   +8 f32 y
+   Dsdvg_tracecall("[trc] sdvg_DrawTrianglesFillGouraudModulateVBO32: vboId=%u byteOffset=%u numVerts=%u\n", _vboId, _byteOffset, _numVerts);
    triangles_fill_gouraud_modulate_32.drawTrianglesFillGouraudModulateVBO32(_vboId,
                                                                             _byteOffset,
                                                                             _numVerts
@@ -2980,6 +3005,7 @@ void YAC_CALL sdvg_DrawTrianglesFillGouraudModulateVBO14_2(sUI _vboId, sUI _byte
    //   +3 u8    a
    //   +4 s14.2 x
    //   +6 s14.2 y
+   Dsdvg_tracecall("[trc] sdvg_DrawTrianglesFillGouraudModulateVBO14_2: vboId=%u byteOffset=%u numVerts=%u\n", _vboId, _byteOffset, _numVerts);
    triangles_fill_gouraud_modulate_14_2.drawTrianglesFillGouraudModulateVBO14_2(_vboId,
                                                                                 _byteOffset,
                                                                                 _numVerts
@@ -2994,6 +3020,7 @@ void YAC_CALL sdvg_DrawTrianglesTexUVFlatVBO32(sUI _vboId, sUI _byteOffset, sUI 
    //     +8  f32 x
    //     +12 f32 y
    //
+   Dsdvg_tracecall("[trc] sdvg_DrawTrianglesTexUVFlatVBO32: vboId=%u byteOffset=%u numVerts=%u\n", _vboId, _byteOffset, _numVerts);
    triangles_tex_uv_flat_32.drawTrianglesTexUVFlatVBO32(_vboId,
                                                         _byteOffset,
                                                         _numVerts
@@ -3008,6 +3035,7 @@ void YAC_CALL sdvg_DrawTrianglesTexUVFlatVBO14_2(sUI _vboId, sUI _byteOffset, sU
    //     +8  s14.2 x
    //     +10 s14.2 y
    //
+   Dsdvg_tracecall("[trc] sdvg_DrawTrianglesTexUVFlatVBO14_2: vboId=%u byteOffset=%u numVerts=%u\n", _vboId, _byteOffset, _numVerts);
    triangles_tex_uv_flat_14_2.drawTrianglesTexUVFlatVBO14_2(_vboId,
                                                             _byteOffset,
                                                             _numVerts
@@ -3026,6 +3054,7 @@ void YAC_CALL sdvg_DrawTrianglesTexUVGouraudVBO32(sUI _vboId, sUI _byteOffset, s
    //     +12 f32 x
    //     +16 f32 y
    //
+   Dsdvg_tracecall("[trc] sdvg_DrawTrianglesTexUVGouraudVBO32: vboId=%u byteOffset=%u numVerts=%u\n", _vboId, _byteOffset, _numVerts);
    triangles_tex_uv_gouraud_32.drawTrianglesTexUVGouraudVBO32(_vboId,
                                                               _byteOffset,
                                                               _numVerts
@@ -3044,6 +3073,7 @@ void YAC_CALL sdvg_DrawTrianglesTexUVGouraudVBO14_2(sUI _vboId, sUI _byteOffset,
    //     +12 s14.2 x
    //     +14 s14.2 y
    //
+   Dsdvg_tracecall("[trc] sdvg_DrawTrianglesTexUVGouraudVBO14_2: vboId=%u byteOffset=%u numVerts=%u\n", _vboId, _byteOffset, _numVerts);
    triangles_tex_uv_gouraud_14_2.drawTrianglesTexUVGouraudVBO14_2(_vboId,
                                                                   _byteOffset,
                                                                   _numVerts
@@ -3058,6 +3088,7 @@ void YAC_CALL sdvg_DrawTrianglesTexUVFlatDecalVBO32(sUI _vboId, sUI _byteOffset,
    //     +8  f32 x
    //     +12 f32 y
    //
+   Dsdvg_tracecall("[trc] sdvg_DrawTrianglesTexUVFlatDecalVBO32: vboId=%u byteOffset=%u numVerts=%u\n", _vboId, _byteOffset, _numVerts);
    triangles_tex_uv_flat_decal_32.drawTrianglesTexUVFlatDecalVBO32(_vboId,
                                                                    _byteOffset,
                                                                    _numVerts,
@@ -3073,6 +3104,7 @@ void YAC_CALL sdvg_DrawTrianglesTexUVFlatDecalVBO14_2(sUI _vboId, sUI _byteOffse
    //     +8  s14.2 x
    //     +10 s14.2 y
    //
+   Dsdvg_tracecall("[trc] sdvg_DrawTrianglesTexUVFlatDecalVBO14_2: vboId=%u byteOffset=%u numVerts=%u\n", _vboId, _byteOffset, _numVerts);
    triangles_tex_uv_flat_decal_14_2.drawTrianglesTexUVFlatDecalVBO14_2(_vboId,
                                                                        _byteOffset,
                                                                        _numVerts,
@@ -3092,6 +3124,7 @@ void YAC_CALL sdvg_DrawTrianglesTexUVGouraudDecalVBO32(sUI _vboId, sUI _byteOffs
    //     +12 f32 x
    //     +16 f32 y
    //
+   Dsdvg_tracecall("[trc] sdvg_DrawTrianglesTexUVGouraudDecalVBO32: vboId=%u byteOffset=%u numVerts=%u\n", _vboId, _byteOffset, _numVerts);
    triangles_tex_uv_gouraud_decal_32.drawTrianglesTexUVGouraudDecalVBO32(_vboId,
                                                                          _byteOffset,
                                                                          _numVerts,
@@ -3111,6 +3144,7 @@ void YAC_CALL sdvg_DrawTrianglesTexUVGouraudDecalVBO14_2(sUI _vboId, sUI _byteOf
    //     +12 s14.2 x
    //     +14 s14.2 y
    //
+   Dsdvg_tracecall("[trc] sdvg_DrawTrianglesTexUVGouraudDecalVBO14_2: vboId=%u byteOffset=%u numVerts=%u\n", _vboId, _byteOffset, _numVerts);
    triangles_tex_uv_gouraud_decal_14_2.drawTrianglesTexUVGouraudDecalVBO14_2(_vboId,
                                                                              _byteOffset,
                                                                              _numVerts,
@@ -3126,6 +3160,7 @@ void YAC_CALL sdvg_DrawTrianglesTexUVFlatVBO32Alpha(sUI _vboId, sUI _byteOffset,
    //     +8  f32 x
    //     +12 f32 y
    //
+   Dsdvg_tracecall("[trc] sdvg_DrawTrianglesTexUVFlatVBO32Alpha: vboId=%u byteOffset=%u numVerts=%u\n", _vboId, _byteOffset, _numVerts);
    triangles_tex_uv_flat_32_alpha.drawTrianglesTexUVFlatVBO32Alpha(_vboId,
                                                                    _byteOffset,
                                                                    _numVerts
@@ -3140,6 +3175,7 @@ void YAC_CALL sdvg_DrawTrianglesTexUVFlatVBO14_2Alpha(sUI _vboId, sUI _byteOffse
    //     +8  s14.2 x
    //     +10 s14.2 y
    //
+   Dsdvg_tracecall("[trc] sdvg_DrawTrianglesTexUVFlatVBO14_2Alpha: vboId=%u byteOffset=%u numVerts=%u\n", _vboId, _byteOffset, _numVerts);
    triangles_tex_uv_flat_14_2_alpha.drawTrianglesTexUVFlatVBO14_2Alpha(_vboId,
                                                                        _byteOffset,
                                                                        _numVerts
@@ -3158,6 +3194,7 @@ void YAC_CALL sdvg_DrawTrianglesTexUVGouraudVBO32Alpha(sUI _vboId, sUI _byteOffs
    //     +12 f32 x
    //     +16 f32 y
    //
+   Dsdvg_tracecall("[trc] sdvg_DrawTrianglesTexUVGouraudVBO32Alpha: vboId=%u byteOffset=%u numVerts=%u\n", _vboId, _byteOffset, _numVerts);
    triangles_tex_uv_gouraud_32_alpha.drawTrianglesTexUVGouraudVBO32Alpha(_vboId,
                                                                          _byteOffset,
                                                                          _numVerts
@@ -3176,6 +3213,7 @@ void YAC_CALL sdvg_DrawTrianglesTexUVGouraudVBO14_2Alpha(sUI _vboId, sUI _byteOf
    //     +12 s14.2 x
    //     +14 s14.2 y
    //
+   Dsdvg_tracecall("[trc] sdvg_DrawTrianglesTexUVGouraudVBO14_2Alpha: vboId=%u byteOffset=%u numVerts=%u\n", _vboId, _byteOffset, _numVerts);
    triangles_tex_uv_gouraud_14_2_alpha.drawTrianglesTexUVGouraudVBO14_2Alpha(_vboId,
                                                                              _byteOffset,
                                                                              _numVerts
@@ -3190,6 +3228,7 @@ void YAC_CALL sdvg_DrawTrianglesTexUVFlatDecalVBO32Alpha(sUI _vboId, sUI _byteOf
    //     +8  f32 x
    //     +12 f32 y
    //
+   Dsdvg_tracecall("[trc] sdvg_DrawTrianglesTexUVFlatDecalVBO32Alpha: vboId=%u byteOffset=%u numVerts=%u\n", _vboId, _byteOffset, _numVerts);
    triangles_tex_uv_flat_decal_32_alpha.drawTrianglesTexUVFlatDecalVBO32Alpha(_vboId,
                                                                               _byteOffset,
                                                                               _numVerts,
@@ -3205,6 +3244,7 @@ void YAC_CALL sdvg_DrawTrianglesTexUVFlatDecalVBO14_2Alpha(sUI _vboId, sUI _byte
    //     +8  s14.2 x
    //     +12 s14.2 y
    //
+   Dsdvg_tracecall("[trc] sdvg_DrawTrianglesTexUVFlatDecalVBO14_2Alpha: vboId=%u byteOffset=%u numVerts=%u\n", _vboId, _byteOffset, _numVerts);
    triangles_tex_uv_flat_decal_14_2_alpha.drawTrianglesTexUVFlatDecalVBO14_2Alpha(_vboId,
                                                                                   _byteOffset,
                                                                                   _numVerts,
@@ -3224,6 +3264,7 @@ void YAC_CALL sdvg_DrawTrianglesTexUVGouraudDecalVBO32Alpha(sUI _vboId, sUI _byt
    //     +12 f32 x
    //     +16 f32 y
    //
+   Dsdvg_tracecall("[trc] sdvg_DrawTrianglesTexUVGouraudDecalVBO32Alpha: vboId=%u byteOffset=%u numVerts=%u\n", _vboId, _byteOffset, _numVerts);
    triangles_tex_uv_gouraud_decal_32_alpha.drawTrianglesTexUVGouraudDecalVBO32Alpha(_vboId,
                                                                                     _byteOffset,
                                                                                     _numVerts,
@@ -3243,6 +3284,7 @@ void YAC_CALL sdvg_DrawTrianglesTexUVGouraudDecalVBO14_2Alpha(sUI _vboId, sUI _b
    //     +12 s14.2 x
    //     +14 s14.2 y
    //
+   Dsdvg_tracecall("[trc] sdvg_DrawTrianglesTexUVGouraudDecalVBO14_2Alpha: vboId=%u byteOffset=%u numVerts=%u\n", _vboId, _byteOffset, _numVerts);
    triangles_tex_uv_gouraud_decal_14_2_alpha.drawTrianglesTexUVGouraudDecalVBO14_2Alpha(_vboId,
                                                                                         _byteOffset,
                                                                                         _numVerts,
@@ -3258,6 +3300,7 @@ void YAC_CALL sdvg_DrawTrianglesTexUVFlatVBO32AlphaSDF(sUI _vboId, sUI _byteOffs
    //     +8  f32 x
    //     +12 f32 y
    //
+   Dsdvg_tracecall("[trc] sdvg_DrawTrianglesTexUVFlatVBO32AlphaSDF: vboId=%u byteOffset=%u numVerts=%u\n", _vboId, _byteOffset, _numVerts);
    triangles_tex_uv_flat_32_alpha_sdf.drawTrianglesTexUVFlatVBO32AlphaSDF(_vboId,
                                                                           _byteOffset,
                                                                           _numVerts,
@@ -3276,6 +3319,7 @@ void YAC_CALL sdvg_DrawTrianglesTexUVFlatVBO14_2AlphaSDF(sUI _vboId, sUI _byteOf
    //     +8  s14.2 x
    //     +10 s14.2 y
    //
+   Dsdvg_tracecall("[trc] sdvg_DrawTrianglesTexUVFlatVBO14_2AlphaSDF: vboId=%u byteOffset=%u numVerts=%u\n", _vboId, _byteOffset, _numVerts);
    triangles_tex_uv_flat_14_2_alpha_sdf.drawTrianglesTexUVFlatVBO14_2AlphaSDF(_vboId,
                                                                               _byteOffset,
                                                                               _numVerts,
@@ -3301,6 +3345,7 @@ void YAC_CALL sdvg_DrawTrianglesFillFlatEdgeAAVBO32(sUI _vboId, sUI _byteOffset,
    //    24 u8  barycentric_s
    //    25 u8  barycentric_t
    //
+   Dsdvg_tracecall("[trc] sdvg_DrawTrianglesFillFlatEdgeAAVBO32: vboId=%u byteOffset=%u numVerts=%u\n", _vboId, _byteOffset, _numVerts);
    triangles_fill_flat_edgeaa_32.drawTrianglesFillFlatEdgeAAVBO32(_vboId,
                                                                   _byteOffset,
                                                                   _numVerts,
@@ -3323,6 +3368,7 @@ void YAC_CALL sdvg_DrawTrianglesFillFlatEdgeAAVBO14_2(sUI _vboId, sUI _byteOffse
    //    20 u8    barycentric_s
    //    21 u8    barycentric_t
    //
+   Dsdvg_tracecall("[trc] sdvg_DrawTrianglesFillFlatEdgeAAVBO14_2: vboId=%u byteOffset=%u numVerts=%u\n", _vboId, _byteOffset, _numVerts);
    triangles_fill_flat_edgeaa_14_2.drawTrianglesFillFlatEdgeAAVBO14_2(_vboId,
                                                                       _byteOffset,
                                                                       _numVerts,
@@ -3349,6 +3395,7 @@ void YAC_CALL sdvg_DrawTrianglesFillGouraudEdgeAAVBO32(sUI _vboId, sUI _byteOffs
    //    28 u8  barycentric_s
    //    29 u8  barycentric_t
    //
+   Dsdvg_tracecall("[trc] sdvg_DrawTrianglesFillGouraudEdgeAAVBO32: vboId=%u byteOffset=%u numVerts=%u\n", _vboId, _byteOffset, _numVerts);
    triangles_fill_gouraud_edgeaa_32.drawTrianglesFillGouraudEdgeAAVBO32(_vboId,
                                                                         _byteOffset,
                                                                         _numVerts,
@@ -3376,6 +3423,7 @@ void YAC_CALL sdvg_DrawTrianglesFillGouraudEdgeAAVBO14_2(sUI _vboId, sUI _byteOf
    //    24 u8  barycentric_s
    //    25 u8  barycentric_t
    //
+   Dsdvg_tracecall("[trc] sdvg_DrawTrianglesFillGouraudEdgeAAVBO14_2: vboId=%u byteOffset=%u numVerts=%u\n", _vboId, _byteOffset, _numVerts);
    triangles_fill_gouraud_edgeaa_14_2.drawTrianglesFillGouraudEdgeAAVBO14_2(_vboId,
                                                                             _byteOffset,
                                                                             _numVerts,
@@ -3392,6 +3440,7 @@ void YAC_CALL sdvg_DrawPolygonFillFlatUniformVBO32(sUI _vboId, sUI _byteOffset, 
    //
    // (note) SHADERVG_STENCIL_POLYGONS: stencil buffer must initially be cleared to 0
    //
+   Dsdvg_tracecall("[trc] sdvg_DrawPolygonFillFlatUniformVBO32: vboId=%u byteOffset=%u numVerts=%u\n", _vboId, _byteOffset, _numVerts);
    triangles_fill_flat_uniform_32.drawPolygonFillFlatUniformVBO32(_vboId,
                                                                   _byteOffset,
                                                                   _numVerts,
@@ -3407,6 +3456,7 @@ void YAC_CALL sdvg_DrawPolygonFillFlatUniformVBO14_2(sUI _vboId, sUI _byteOffset
    //
    // (note) SHADERVG_STENCIL_POLYGONS: stencil buffer must initially be cleared to 0
    //
+   Dsdvg_tracecall("[trc] sdvg_DrawPolygonFillFlatUniformVBO14_2: vboId=%u byteOffset=%u numVerts=%u\n", _vboId, _byteOffset, _numVerts);
    triangles_fill_flat_uniform_14_2.drawPolygonFillFlatUniformVBO14_2(_vboId,
                                                                       _byteOffset,
                                                                       _numVerts,
@@ -3423,6 +3473,7 @@ void YAC_CALL sdvg_DrawPolygonFillFlatUniformAAVBO32(sUI _vboId, sUI _byteOffset
    // (note) AA outlines won't work with non-solid paints
    // (note) SHADERVG_STENCIL_POLYGONS: stencil buffer must initially be cleared to 0
    //
+   Dsdvg_tracecall("[trc] sdvg_DrawPolygonFillFlatUniformAAVBO32: vboId=%u byteOffset=%u numVerts=%u\n", _vboId, _byteOffset, _numVerts);
    if(_numVerts >= (3u + 2u))
    {
       // Draw interior
@@ -3475,7 +3526,7 @@ void YAC_CALL sdvg_DrawPolygonFillFlatUniformAAVBO14_2(sUI _vboId, sUI _byteOffs
    // (note) AA outlines won't work with non-solid paints
    // (note) SHADERVG_STENCIL_POLYGONS: stencil buffer must initially be cleared to 0
    //
-   Dsdvg_debugprintfv("[trc] sdvg_DrawPolygonFillFlatUniformAAVBO14_2: stroke_w_scale=%f Dsdvg_pixel_scl=%f\n", stroke_w_scale, Dsdvg_pixel_scl(1.0f));
+   Dsdvg_tracecall("[trc] sdvg_DrawPolygonFillFlatUniformAAVBO14_2: stroke_w_scale=%f Dsdvg_pixel_scl=%f\n", stroke_w_scale, Dsdvg_pixel_scl(1.0f));
    // Draw interior
    if(_numVerts >= (3u + 2u))
    {
@@ -3532,6 +3583,7 @@ void YAC_CALL sdvg_DrawPolygonFillFlatUniformAAVBO14_2(sUI _vboId, sUI _byteOffs
 
 void YAC_CALL sdvg_PolygonFillFlatUniformVBO32_BeginPass1(sUI _vboId) {
    // Bind VBO, bind shader, update uniforms, enable vertex attribute, setup pass1 stencil test
+   Dsdvg_tracecall("[trc] sdvg_PolygonFillFlatUniformVBO32_BeginPass1: vboId=%u\n", _vboId);
    sdvg_BindVBO(_vboId);
    ShaderVG_Shape *oldShape = current_shape;
    current_shape = loc_get_default_triangles_fill_flat_uniform_shape_32();
@@ -3567,6 +3619,7 @@ void YAC_CALL sdvg_PolygonFillFlatUniformVBO32_BeginPass1(sUI _vboId) {
 
 void YAC_CALL sdvg_PolygonFillFlatUniformVBO14_2_BeginPass1(sUI _vboId) {
    // Bind VBO, bind shader, update uniforms, enable vertex attribute, setup pass1 stencil test
+   Dsdvg_tracecall("[trc] sdvg_PolygonFillFlatUniformVBO14_2_BeginPass1: vboId=%u\n", _vboId);
    sdvg_BindVBO(_vboId);
    ShaderVG_Shape *oldShape = current_shape;
    current_shape = loc_get_default_triangles_fill_flat_uniform_shape_14_2();
@@ -3608,6 +3661,7 @@ void YAC_CALL sdvg_PolygonFillFlatUniformVBO32_DrawPass1(sUI _byteOffset, sUI _n
    //
    // (note) SHADERVG_STENCIL_POLYGONS: stencil buffer must initially be cleared to 0
    //
+   Dsdvg_tracecall("[trc] sdvg_PolygonFillFlatUniformVBO32_DrawPass1: byteOffset=%u numVerts=%u\n", _byteOffset, _numVerts);
    if(_numVerts >= (3u + 0u))
    {
       ShaderVG_Shape *shape = loc_get_default_triangles_fill_flat_uniform_shape_32();
@@ -3630,6 +3684,7 @@ void YAC_CALL sdvg_PolygonFillFlatUniformVBO14_2_DrawPass1(sUI _byteOffset, sUI 
    //
    // (note) SHADERVG_STENCIL_POLYGONS: stencil buffer must initially be cleared to 0
    //
+   Dsdvg_tracecall("[trc] sdvg_PolygonFillFlatUniformVBO14_2_DrawPass1: byteOffset=%u numVerts=%u\n", _byteOffset, _numVerts);
    if(_numVerts >= (3u + 0u))
    {
       ShaderVG_Shape *shape = loc_get_default_triangles_fill_flat_uniform_shape_14_2();
@@ -3645,6 +3700,7 @@ void YAC_CALL sdvg_PolygonFillFlatUniformVBO14_2_DrawPass1(sUI _byteOffset, sUI 
 }
 
 void YAC_CALL sdvg_PolygonFillFlatUniformVBO32_BeginPass2(void) {
+   Dsdvg_tracecall("[trc] sdvg_PolygonFillFlatUniformVBO32_BeginPass2\n");
 #if defined(SHADERVG_HW_NPOLYGONS) && defined(GL_TES_npolygons)
    // (note) nothing to do here
 #elif defined(SHADERVG_STENCIL_POLYGONS)
@@ -3663,6 +3719,7 @@ void YAC_CALL sdvg_PolygonFillFlatUniformVBO32_BeginPass2(void) {
 }
 
 void YAC_CALL sdvg_PolygonFillFlatUniformVBO14_2_BeginPass2(void) {
+   Dsdvg_tracecall("[trc] sdvg_PolygonFillFlatUniformVBO14_2_BeginPass2\n");
 #if defined(SHADERVG_HW_NPOLYGONS) && defined(GL_TES_npolygons)
    // (note) nothing to do here
 #elif defined(SHADERVG_STENCIL_POLYGONS)
@@ -3686,6 +3743,7 @@ void YAC_CALL sdvg_PolygonFillFlatUniformVBO32_DrawPass2(sUI _byteOffset, sUI _n
    //   +0 f32 x
    //   +4 f32 y
    //
+   Dsdvg_tracecall("[trc] sdvg_PolygonFillFlatUniformVBO32_DrawPass2: byteOffset=%u numVerts=%u\n", _byteOffset, _numVerts);
 #if defined(SHADERVG_HW_NPOLYGONS) && defined(GL_TES_npolygons)
    // (note) nothing to do here
 #elif defined(SHADERVG_STENCIL_POLYGONS)
@@ -3706,6 +3764,7 @@ void YAC_CALL sdvg_PolygonFillFlatUniformVBO14_2_DrawPass2(sUI _byteOffset, sUI 
    //   +0 s14.2 x
    //   +2 s14.2 y
    //
+   Dsdvg_tracecall("[trc] sdvg_PolygonFillFlatUniformVBO14_2_DrawPass2: byteOffset=%u numVerts=%u\n", _byteOffset, _numVerts);
 #if defined(SHADERVG_HW_NPOLYGONS) && defined(GL_TES_npolygons)
    // nothing to do here
 #elif defined(SHADERVG_STENCIL_POLYGONS)
@@ -3719,6 +3778,7 @@ void YAC_CALL sdvg_PolygonFillFlatUniformVBO14_2_DrawPass2(sUI _byteOffset, sUI 
 }
 
 void YAC_CALL sdvg_PolygonFillFlatUniformVBO32_DrawPass3_AA(sUI _byteOffset, sUI _numVerts) {
+   Dsdvg_tracecall("[trc] sdvg_PolygonFillFlatUniformVBO32_DrawPass3_AA: byteOffset=%u numVerts=%u\n", _byteOffset, _numVerts);
 #ifdef SHADERVG_GL_VERTEX_ID
    //
    // VBO vertex format (8 bytes per vertex):
@@ -3742,6 +3802,7 @@ void YAC_CALL sdvg_PolygonFillFlatUniformVBO32_DrawPass3_AA(sUI _byteOffset, sUI
 }
 
 void YAC_CALL sdvg_PolygonFillFlatUniformVBO14_2_DrawPass3_AA(sUI _byteOffset, sUI _numVerts) {
+   Dsdvg_tracecall("[trc] sdvg_PolygonFillFlatUniformVBO14_2_DrawPass3_AA: byteOffset=%u numVerts=%u\n", _byteOffset, _numVerts);
 #ifdef SHADERVG_GL_VERTEX_ID
    //
    // VBO vertex format (4 bytes per vertex):
@@ -3766,6 +3827,7 @@ void YAC_CALL sdvg_PolygonFillFlatUniformVBO14_2_DrawPass3_AA(sUI _byteOffset, s
 
 void YAC_CALL sdvg_PolygonFillFlatUniformVBO32_End(void) {
    // Disable vertex attribute and stencil test
+   Dsdvg_tracecall("[trc] sdvg_PolygonFillFlatUniformVBO32_End\n");
    ShaderVG_Shape *shape = loc_get_default_triangles_fill_flat_uniform_shape_32();
    Dsdvg_attrib_disable(shape->shape_a_vertex);
 #if defined(SHADERVG_HW_NPOLYGONS) && defined(GL_TES_npolygons)
@@ -3782,6 +3844,7 @@ void YAC_CALL sdvg_PolygonFillFlatUniformVBO32_End(void) {
 }
 
 void YAC_CALL sdvg_PolygonFillFlatUniformVBO14_2_End(void) {
+   Dsdvg_tracecall("[trc] sdvg_PolygonFillFlatUniformVBO14_2_End\n");
    // Disable vertex attribute and stencil test
    ShaderVG_Shape *shape = loc_get_default_triangles_fill_flat_uniform_shape_14_2();
    Dsdvg_attrib_disable(shape->shape_a_vertex);
@@ -3802,6 +3865,7 @@ void YAC_CALL sdvg_SetupRectFillAAVBO32(YAC_Buffer *_vb, YAC_Buffer *_dl,
                                         sF32 _centerX, sF32 _centerY,
                                         sF32 _sizeX,   sF32 _sizeY
                                         ) {
+   Dsdvg_tracecall("[trc] sdvg_SetupRectFillAAVBO32: center=(%f;%f) size=(%f;%f)\n", _centerX, _centerY, _sizeX, _sizeY);
    // (note) 'size' is actually the radius (area is center-size..center+size)
    const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(SHADERVG_RECT_FILL_AA_SIZE_OFFSET) : 0.0f;
    rect_fill_aa.setupRectFillAAVBO32(_vb, _dl,
@@ -3820,6 +3884,7 @@ void YAC_CALL sdvg_DrawRectFillAAVBO32(sUI _vboId,
                                        sF32 _centerX, sF32 _centerY,
                                        sF32 _sizeX,   sF32 _sizeY
                                        ) {
+   Dsdvg_tracecall("[trc] sdvg_DrawRectFillAAVBO32: vboId=%u byteOffsetInner=%u numVertsInner=%u byteOffsetBorder=%u numVertsBorder=%u glPrimTypeBorder=%u center=(%f;%f) size=(%f;%f)\n", _vboId, _byteOffsetInner, _numVertsInner, _byteOffsetBorder, _numVertsBorder, _glPrimTypeBorder, _centerX, _centerY, _sizeX, _sizeY);
    const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(SHADERVG_RECT_FILL_AA_SIZE_OFFSET) : 0.0f;
    ShaderVG_Shape *shape =
       (NULL != current_shape)
@@ -3842,6 +3907,7 @@ void YAC_CALL sdvg_DrawRectFillAAVBO32(sUI _vboId,
 void YAC_CALL sdvg_DrawRectFillAA(sF32 _centerX, sF32 _centerY,
                                   sF32 _sizeX,   sF32 _sizeY
                                   ) {
+   Dsdvg_tracecall("[trc] sdvg_DrawRectFillAA: center=(%f;%f) size=(%f;%f)\n", _centerX, _centerY, _sizeX, _sizeY);
    const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(SHADERVG_RECT_FILL_AA_SIZE_OFFSET) : 0.0f;
    ShaderVG_Shape *shape =
       (NULL != current_shape)
@@ -3862,6 +3928,7 @@ void YAC_CALL sdvg_SetupRectFillStrokeAAVBO32(YAC_Buffer *_vb, YAC_Buffer *_dl,
                                               sF32 _sizeX,   sF32 _sizeY,
                                               sF32 _strokeW
                                               ) {
+   Dsdvg_tracecall("[trc] sdvg_SetupRectFillStrokeAAVBO32: center=(%f;%f) size=(%f;%f) strokeW=%f\n", _centerX, _centerY, _sizeX, _sizeY, _strokeW);
    // (note) 'size' is actually the radius (area is center-size..center+size)
    const sF32 aaOffSize   = b_aa ? Dsdvg_pixel_scl(SHADERVG_RECT_AA_SIZE_OFFSET)   : 0.0f;
    const sF32 aaOffStroke = b_aa ? Dsdvg_pixel_scl(SHADERVG_RECT_AA_STROKE_OFFSET) : 0.0f;
@@ -3882,6 +3949,7 @@ void YAC_CALL sdvg_DrawRectFillStrokeAAVBO32(sUI _vboId,
                                              sF32 _centerX, sF32 _centerY,
                                              sF32 _sizeX,   sF32 _sizeY
                                              ) {
+   Dsdvg_tracecall("[trc] sdvg_DrawRectFillStrokeAAVBO32: byteOffsetInner=%u numVertsInner=%u byteOffsetBorder=%u numVertsBorder=%u glPrimTypeBorder=%u center=(%f;%f) size=(%f;%f)\n", _byteOffsetInner, _numVertsInner, _byteOffsetBorder, _numVertsBorder, _glPrimTypeBorder, _centerX, _centerY, _sizeX, _sizeY);
    const sF32 aaOffSize   = b_aa ? Dsdvg_pixel_scl(SHADERVG_RECT_AA_SIZE_OFFSET)   : 0.0f;
    const sF32 aaOffStroke = b_aa ? Dsdvg_pixel_scl(SHADERVG_RECT_AA_STROKE_OFFSET) : 0.0f;
    rect_fill_stroke_aa.drawRectFillStrokeAAVBO32(_vboId,
@@ -3901,6 +3969,7 @@ void YAC_CALL sdvg_DrawRectFillStrokeAAVBO32(sUI _vboId,
 void YAC_CALL sdvg_DrawRectFillStrokeAA(sF32 _centerX, sF32 _centerY,
                                         sF32 _sizeX,   sF32 _sizeY
                                         ) {
+   Dsdvg_tracecall("[trc] sdvg_DrawRectFillStrokeAA: center=(%f;%f) size=(%f;%f)\n", _centerX, _centerY, _sizeX, _sizeY);
    const sF32 aaOffSize   = b_aa ? Dsdvg_pixel_scl(SHADERVG_RECT_AA_SIZE_OFFSET)   : 0.0f;
    const sF32 aaOffStroke = b_aa ? Dsdvg_pixel_scl(SHADERVG_RECT_AA_STROKE_OFFSET) : 0.0f;
    rect_fill_stroke_aa.drawRectFillStrokeAA(scratch_buffer,
@@ -3917,6 +3986,7 @@ void YAC_CALL sdvg_SetupRectStrokeAAVBO32(YAC_Buffer *_vb, YAC_Buffer *_dl,
                                           sF32 _sizeX,   sF32 _sizeY,
                                           sF32 _strokeW
                                           ) {
+   Dsdvg_tracecall("[trc] sdvg_SetupRectStrokeAAVBO32: center=(%f;%f) size=(%f;%f) strokeW=%f\n", _centerX, _centerY, _sizeX, _sizeY, _strokeW);
    // (note) 'size' is actually the radius (area is center-size..center+size)
    const sF32 aaOffSize   = b_aa ? Dsdvg_pixel_scl(SHADERVG_RECT_AA_SIZE_OFFSET)   : 0.0f;
    const sF32 aaOffStroke = b_aa ? Dsdvg_pixel_scl(SHADERVG_RECT_AA_STROKE_OFFSET) : 0.0f;
@@ -3935,6 +4005,7 @@ void YAC_CALL sdvg_DrawRectStrokeAAVBO32(sUI _vboId,
                                          sF32 _centerX, sF32 _centerY,
                                          sF32 _sizeX,   sF32 _sizeY
                                          ) {
+   Dsdvg_tracecall("[trc] sdvg_DrawRectStrokeAAVBO32: byteOffsetBorder=%u numVertsBorder=%u glPrimTypeBorder=%u center=(%f;%f) size=(%f;%f)\n", _byteOffsetBorder, _numVertsBorder, _glPrimTypeBorder, _centerX, _centerY, _sizeX, _sizeY);
    const sF32 aaOffSize   = b_aa ? Dsdvg_pixel_scl(SHADERVG_RECT_AA_SIZE_OFFSET)   : 0.0f;
    const sF32 aaOffStroke = b_aa ? Dsdvg_pixel_scl(SHADERVG_RECT_AA_STROKE_OFFSET) : 0.0f;
    sBool bFillGA = YAC_FALSE;
@@ -3961,6 +4032,7 @@ void YAC_CALL sdvg_DrawRectStrokeAAVBO32(sUI _vboId,
 void YAC_CALL sdvg_DrawRectStrokeAA(sF32 _centerX, sF32 _centerY,
                                     sF32 _sizeX,   sF32 _sizeY
                                     ) {
+   Dsdvg_tracecall("[trc] sdvg_DrawRectStrokeAA: center=(%f;%f) size=(%f;%f)\n", _centerX, _centerY, _sizeX, _sizeY);
    const sF32 aaOffSize   = b_aa ? Dsdvg_pixel_scl(SHADERVG_RECT_AA_SIZE_OFFSET)   : 0.0f;
    const sF32 aaOffStroke = b_aa ? Dsdvg_pixel_scl(SHADERVG_RECT_AA_STROKE_OFFSET) : 0.0f;
    sBool bFillGA = YAC_FALSE;
@@ -3986,6 +4058,7 @@ void YAC_CALL sdvg_SetupEllipseFillAAVBO32(YAC_Buffer *_vb, YAC_Buffer *_dl,
                                            sF32 _centerX, sF32 _centerY,
                                            sF32 _radiusX, sF32 _radiusY
                                            ) {
+   Dsdvg_tracecall("[trc] sdvg_SetupEllipseFillAAVBO32: center=(%f;%f) radius=(%f;%f)\n", _centerX, _centerY, _radiusX, _radiusY);
    const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(SHADERVG_ELLIPSE_FILL_AA_SIZE_OFFSET) : 0.0f;
    ellipse_fill_aa.setupEllipseFillAAVBO32(_vb, _dl,
                                            _centerX, _centerY,
@@ -4002,6 +4075,7 @@ void YAC_CALL sdvg_DrawEllipseFillAAVBO32(sUI _vboId,
                                           sF32 _centerX, sF32 _centerY,
                                           sF32 _radiusX, sF32 _radiusY
                                           ) {
+   Dsdvg_tracecall("[trc] sdvg_DrawEllipseFillAAVBO32: byteOffsetInner=%u numVertsInner=%u byteOffsetBorder=%u numVertsBorder=%u glPrimTypeBorder=%u center=(%f;%f) radius=(%f;%f)\n", _byteOffsetInner, _numVertsInner, _byteOffsetBorder, _numVertsBorder, _glPrimTypeBorder, _centerX, _centerY, _radiusX, _radiusY);
    const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(SHADERVG_ELLIPSE_FILL_AA_SIZE_OFFSET) : 0.0f;
    ShaderVG_Shape *shape =
       (NULL != current_shape)
@@ -4022,8 +4096,9 @@ void YAC_CALL sdvg_DrawEllipseFillAAVBO32(sUI _vboId,
 }
 
 void YAC_CALL sdvg_DrawEllipseFillAA(sF32 _centerX, sF32 _centerY,
-                                     sF32 _sizeX,   sF32 _sizeY
+                                     sF32 _radiusX, sF32 _radiusY
                                      ) {
+   Dsdvg_tracecall("[trc] sdvg_DrawEllipseFillAA: center=(%f;%f) radius=(%f;%f)\n", _centerX, _centerY, _radiusX, _radiusY);
    const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(SHADERVG_ELLIPSE_FILL_AA_SIZE_OFFSET) : 0.0f;
    ShaderVG_Shape *shape =
       (NULL != current_shape)
@@ -4032,7 +4107,7 @@ void YAC_CALL sdvg_DrawEllipseFillAA(sF32 _centerX, sF32 _centerY,
       ;
    shape->drawEllipseFillAAPaint(scratch_buffer,
                                  _centerX, _centerY,
-                                 _sizeX + aaOff, _sizeY + aaOff,
+                                 _radiusX + aaOff, _radiusY + aaOff,
                                  decal_alpha,
                                  b_aa ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF,
                                  aa_exp
@@ -4044,6 +4119,7 @@ void YAC_CALL sdvg_SetupEllipseFillStrokeAAVBO32(YAC_Buffer *_vb, YAC_Buffer *_d
                                                  sF32 _radiusX, sF32 _radiusY,
                                                  sF32 _strokeW
                                                  ) {
+   Dsdvg_tracecall("[trc] sdvg_SetupEllipseFillStrokeAAVBO32: center=(%f;%f) radius=(%f;%f)\n", _centerX, _centerY, _radiusX, _radiusY);
    const sF32 aaOffSize   = b_aa ? Dsdvg_pixel_scl(SHADERVG_ELLIPSE_AA_SIZE_OFFSET)   : 0.0f;
    const sF32 aaOffStroke = b_aa ? Dsdvg_pixel_scl(SHADERVG_ELLIPSE_AA_STROKE_OFFSET) : 0.0f;
    ellipse_fill_stroke_aa.setupEllipseFillStrokeAAVBO32(_vb, _dl,
@@ -4062,6 +4138,7 @@ void YAC_CALL sdvg_DrawEllipseFillStrokeAAVBO32(sUI _vboId,
                                                 sF32 _centerX, sF32 _centerY,
                                                 sF32 _radiusX, sF32 _radiusY
                                                 ) {
+   Dsdvg_tracecall("[trc] sdvg_DrawEllipseFillStrokeAAVBO32: byteOffsetInner=%u numVertsInner=%u byteOffsetBorder=%u numVertsBorder=%u glPrimTypeBorder=%u center=(%f;%f) radius=(%f;%f)\n", _byteOffsetInner, _numVertsInner, _byteOffsetBorder, _numVertsBorder, _glPrimTypeBorder, _centerX, _centerY, _radiusX, _radiusY);
    const sF32 aaOffSize   = b_aa ? Dsdvg_pixel_scl(SHADERVG_ELLIPSE_AA_SIZE_OFFSET)   : 0.0f;
    const sF32 aaOffStroke = b_aa ? Dsdvg_pixel_scl(SHADERVG_ELLIPSE_AA_STROKE_OFFSET) : 0.0f;
    ellipse_fill_stroke_aa.drawEllipseFillStrokeAAVBO32(_vboId,
@@ -4079,13 +4156,14 @@ void YAC_CALL sdvg_DrawEllipseFillStrokeAAVBO32(sUI _vboId,
 }
 
 void YAC_CALL sdvg_DrawEllipseFillStrokeAA(sF32 _centerX, sF32 _centerY,
-                                           sF32 _sizeX,   sF32 _sizeY
+                                           sF32 _radiusX, sF32 _radiusY
                                            ) {
+   Dsdvg_tracecall("[trc] sdvg_DrawEllipseFillStrokeAA: center=(%f;%f) radius=(%f;%f)\n", _centerX, _centerY, _radiusX, _radiusY);
    const sF32 aaOffSize   = b_aa ? Dsdvg_pixel_scl(SHADERVG_ELLIPSE_AA_SIZE_OFFSET)   : 0.0f;
    const sF32 aaOffStroke = b_aa ? Dsdvg_pixel_scl(SHADERVG_ELLIPSE_AA_STROKE_OFFSET) : 0.0f;
    ellipse_fill_stroke_aa.drawEllipseFillStrokeAA(scratch_buffer,
                                                   _centerX, _centerY,
-                                                  _sizeX + aaOffSize, _sizeY + aaOffSize,
+                                                  _radiusX + aaOffSize, _radiusY + aaOffSize,
                                                   Dsdvg_pixel_scl(stroke_w * stroke_w_scale) + aaOffStroke,
                                                   b_aa ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF,
                                                   aa_exp
@@ -4097,6 +4175,7 @@ void YAC_CALL sdvg_SetupEllipseStrokeAAVBO32(YAC_Buffer *_vb, YAC_Buffer *_dl,
                                              sF32 _radiusX, sF32 _radiusY,
                                              sF32 _strokeW
                                              ) {
+   Dsdvg_tracecall("[trc] sdvg_SetupEllipseStrokeAAVBO32: center=(%f;%f) radius=(%f;%f) strokeW=%f\n", _centerX, _centerY, _radiusX, _radiusY, _strokeW);
    const sF32 aaOffSize   = b_aa ? Dsdvg_pixel_scl(SHADERVG_ELLIPSE_AA_SIZE_OFFSET)   : 0.0f;
    const sF32 aaOffStroke = b_aa ? Dsdvg_pixel_scl(SHADERVG_ELLIPSE_AA_STROKE_OFFSET) : 0.0f;
    ellipse_stroke_aa.setupEllipseStrokeAAVBO32(_vb, _dl,
@@ -4113,6 +4192,7 @@ void YAC_CALL sdvg_DrawEllipseStrokeAAVBO32(sUI _vboId,
                                             sF32 _centerX, sF32 _centerY,
                                             sF32 _radiusX, sF32 _radiusY
                                             ) {
+   Dsdvg_tracecall("[trc] sdvg_DrawEllipseStrokeAAVBO32: byteOffsetBorder=%u numVertsBorder=%u glPrimTypeBorder=%u center=(%f;%f) radius=(%f;%f)\n", _byteOffsetBorder, _numVertsBorder, _glPrimTypeBorder, _centerX, _centerY, _radiusX, _radiusY);
    const sF32 aaOffSize   = b_aa ? Dsdvg_pixel_scl(SHADERVG_ELLIPSE_AA_SIZE_OFFSET)   : 0.0f;
    const sF32 aaOffStroke = b_aa ? Dsdvg_pixel_scl(SHADERVG_ELLIPSE_AA_STROKE_OFFSET) : 0.0f;
    sBool bFillGA = YAC_FALSE;
@@ -4137,8 +4217,9 @@ void YAC_CALL sdvg_DrawEllipseStrokeAAVBO32(sUI _vboId,
 }
 
 void YAC_CALL sdvg_DrawEllipseStrokeAA(sF32 _centerX, sF32 _centerY,
-                                       sF32 _sizeX, sF32 _sizeY
+                                       sF32 _radiusX, sF32 _radiusY
                                        ) {
+   Dsdvg_tracecall("[trc] sdvg_DrawEllipseStrokeAA: center=(%f;%f) radius=(%f;%f)\n", _centerX, _centerY, _radiusX, _radiusY);
    const sF32 aaOffSize   = b_aa ? Dsdvg_pixel_scl(SHADERVG_ELLIPSE_AA_SIZE_OFFSET)   : 0.0f;
    const sF32 aaOffStroke = b_aa ? Dsdvg_pixel_scl(SHADERVG_ELLIPSE_AA_STROKE_OFFSET) : 0.0f;
    sBool bFillGA = YAC_FALSE;
@@ -4150,7 +4231,7 @@ void YAC_CALL sdvg_DrawEllipseStrokeAA(sF32 _centerX, sF32 _centerY,
       ;
    shape->drawEllipseStrokeAAPaint(scratch_buffer,
                                    _centerX, _centerY,
-                                   _sizeX + aaOffSize, _sizeY + aaOffSize,
+                                   _radiusX + aaOffSize, _radiusY + aaOffSize,
                                    bFillGA,
                                    bStrokeGA,
                                    Dsdvg_pixel_scl(stroke_w * stroke_w_scale) + aaOffStroke,
@@ -4165,6 +4246,7 @@ void YAC_CALL sdvg_SetupRoundRectFillAAVBO32(YAC_Buffer *_vb, YAC_Buffer *_dl,
                                              sF32 _sizeX, sF32 _sizeY,
                                              sF32 _radiusX, sF32 _radiusY
                                              ) {
+   Dsdvg_tracecall("[trc] sdvg_SetupRoundRectFillAAVBO32: center=(%f;%f) size=(%f;%f) radius=(%f;%f)\n", _centerX, _centerY, _sizeX, _sizeY, _radiusX, _radiusY);
    const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(SHADERVG_ROUNDRECT_FILL_AA_SIZE_OFFSET) : 0.0f;
    roundrect_fill_aa.setupRoundRectFillAAVBO32(_vb, _dl,
                                                _centerX, _centerY,
@@ -4184,13 +4266,14 @@ void YAC_CALL sdvg_DrawRoundRectFillAAVBO32(sUI _vboId,
                                             sF32 _sizeX,   sF32 _sizeY,
                                             sF32 _radiusX, sF32 _radiusY
                                             ) {
+   Dsdvg_tracecall("[trc] sdvg_DrawRoundRectFillAAVBO32: byteOffsetInner=%u numVertsInner=%u byteOffsetBorder=%u numVertsBorder=%u glPrimTypeBorder=%u center=(%f;%f) size=(%f;%f) radius=(%f;%f)\n", _byteOffsetInner, _numVertsInner, _byteOffsetBorder, _numVertsBorder, _glPrimTypeBorder, _centerX, _centerY, _sizeX, _sizeY, _radiusX, _radiusY);
    const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(SHADERVG_ROUNDRECT_FILL_AA_SIZE_OFFSET) : 0.0f;
    ShaderVG_Shape *shape =
       (NULL != current_shape)
       ? current_shape
       : loc_get_default_roundrect_fill_aa_shape_32()
       ;
-   Dsdvg_tracecall("[trc] sdvg_DrawRoundRectFillAAVBO32: aa_range=%f Dsdvg_pixel_scl=%f\n", aa_range, Dsdvg_pixel_scl(1.0f));
+   Dsdvg_tracecallv("[trc] sdvg_DrawRoundRectFillAAVBO32: aa_range=%f Dsdvg_pixel_scl=%f\n", aa_range, Dsdvg_pixel_scl(1.0f));
    shape->drawRoundRectFillAAVBO32Paint(_vboId,
                                         _byteOffsetInner,
                                         _numVertsInner,
@@ -4209,6 +4292,7 @@ void YAC_CALL sdvg_DrawRoundRectFillAA(sF32 _centerX, sF32 _centerY,
                                        sF32 _sizeX,   sF32 _sizeY,
                                        sF32 _radiusX, sF32 _radiusY
                                        ) {
+   Dsdvg_tracecall("[trc] sdvg_DrawRoundRectFillAA: center=(%f;%f) size=(%f;%f) radius=(%f;%f)\n", _centerX, _centerY, _sizeX, _sizeY, _radiusX, _radiusY);
    const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(SHADERVG_ROUNDRECT_FILL_AA_SIZE_OFFSET) : 0.0f;
    ShaderVG_Shape *shape =
       (NULL != current_shape)
@@ -4232,6 +4316,7 @@ void YAC_CALL sdvg_SetupRoundRectFillStrokeAAVBO32(YAC_Buffer *_vb, YAC_Buffer *
                                                    sF32 _radiusX, sF32 _radiusY,
                                                    sF32 _strokeW
                                                    ) {
+   Dsdvg_tracecall("[trc] sdvg_SetupRoundRectFillStrokeAAVBO32: center=(%f;%f) size=(%f;%f) radius=(%f;%f) strokeW=%f\n", _centerX, _centerY, _sizeX, _sizeY, _radiusX, _radiusY, _strokeW);
    const sF32 aaOffSize   = b_aa ? Dsdvg_pixel_scl(SHADERVG_ROUNDRECT_AA_SIZE_OFFSET)   : 0.0f;
    const sF32 aaOffStroke = b_aa ? Dsdvg_pixel_scl(SHADERVG_ROUNDRECT_AA_STROKE_OFFSET) : 0.0f;
    roundrect_fill_stroke_aa.setupRoundRectFillStrokeAAVBO32(_vb, _dl,
@@ -4253,6 +4338,7 @@ void YAC_CALL sdvg_DrawRoundRectFillStrokeAAVBO32(sUI _vboId,
                                                   sF32 _sizeX,   sF32 _sizeY,
                                                   sF32 _radiusX, sF32 _radiusY
                                                   ) {
+   Dsdvg_tracecall("[trc] sdvg_DrawRoundRectFillStrokeAAVBO32: byteOffsetInner=%u numVertsInner=%u byteOffsetBorder=%u numVertsBorder=%u glPrimTypeBorder=%u center=(%f;%f) size=(%f;%f) radius=(%f;%f)\n", _byteOffsetInner, _numVertsInner, _byteOffsetBorder, _numVertsBorder, _glPrimTypeBorder, _centerX, _centerY, _sizeX, _sizeY, _radiusX, _radiusY);
    const sF32 aaOffSize   = b_aa ? Dsdvg_pixel_scl(SHADERVG_ROUNDRECT_AA_SIZE_OFFSET)   : 0.0f;
    const sF32 aaOffStroke = b_aa ? Dsdvg_pixel_scl(SHADERVG_ROUNDRECT_AA_STROKE_OFFSET) : 0.0f;
    roundrect_fill_stroke_aa.drawRoundRectFillStrokeAAVBO32(_vboId,
@@ -4274,6 +4360,7 @@ void YAC_CALL sdvg_DrawRoundRectFillStrokeAA(sF32 _centerX, sF32 _centerY,
                                              sF32 _sizeX,   sF32 _sizeY,
                                              sF32 _radiusX, sF32 _radiusY
                                              ) {
+   Dsdvg_tracecall("[trc] sdvg_DrawRoundRectFillStrokeAA: center=(%f;%f) size=(%f;%f) radius=(%f;%f)\n", _centerX, _centerY, _sizeX, _sizeY, _radiusX, _radiusY);
    const sF32 aaOffSize   = b_aa ? Dsdvg_pixel_scl(SHADERVG_ROUNDRECT_AA_SIZE_OFFSET)   : 0.0f;
    const sF32 aaOffStroke = b_aa ? Dsdvg_pixel_scl(SHADERVG_ROUNDRECT_AA_STROKE_OFFSET) : 0.0f;
    roundrect_fill_stroke_aa.drawRoundRectFillStrokeAA(scratch_buffer,
@@ -4292,6 +4379,7 @@ void YAC_CALL sdvg_SetupRoundRectStrokeAAVBO32(YAC_Buffer *_vb, YAC_Buffer *_dl,
                                                sF32 _radiusX, sF32 _radiusY,
                                                sF32 _strokeW
                                                ) {
+   Dsdvg_tracecall("[trc] sdvg_SetupRoundRectStrokeAAVBO32: center=(%f;%f) size=(%f;%f) radius=(%f;%f) strokeW=%f\n", _centerX, _centerY, _sizeX, _sizeY, _radiusX, _radiusY, _strokeW);
    const sF32 aaOffSize   = b_aa ? Dsdvg_pixel_scl(SHADERVG_ROUNDRECT_AA_SIZE_OFFSET)   : 0.0f;
    const sF32 aaOffStroke = b_aa ? Dsdvg_pixel_scl(SHADERVG_ROUNDRECT_AA_STROKE_OFFSET) : 0.0f;
    roundrect_stroke_aa.setupRoundRectStrokeAAVBO32(_vb, _dl,
@@ -4311,6 +4399,7 @@ void YAC_CALL sdvg_DrawRoundRectStrokeAAVBO32(sUI _vboId,
                                               sF32 _sizeX,   sF32 _sizeY,
                                               sF32 _radiusX, sF32 _radiusY
                                               ) {
+   Dsdvg_tracecall("[trc] sdvg_DrawRoundRectStrokeAAVBO32: byteOffsetBorder=%u numVertsBorder=%u glPrimTypeBorder=%u center=(%f;%f) size=(%f;%f) radius=(%f;%f)\n", _byteOffsetBorder, _numVertsBorder, _glPrimTypeBorder, _centerX, _centerY, _sizeX, _sizeY, _radiusX, _radiusY);
    const sF32 aaOffSize   = b_aa ? Dsdvg_pixel_scl(SHADERVG_ROUNDRECT_AA_SIZE_OFFSET)   : 0.0f;
    const sF32 aaOffStroke = b_aa ? Dsdvg_pixel_scl(SHADERVG_ROUNDRECT_AA_STROKE_OFFSET) : 0.0f;
    sBool bFillGA = YAC_FALSE;
@@ -4339,6 +4428,7 @@ void YAC_CALL sdvg_DrawRoundRectStrokeAA(sF32 _centerX, sF32 _centerY,
                                          sF32 _sizeX,   sF32 _sizeY,
                                          sF32 _radiusX, sF32 _radiusY
                                          ) {
+   Dsdvg_tracecall("[trc] sdvg_DrawRoundRectStrokeAA: center=(%f;%f) size=(%f;%f) radius=(%f;%f)\n", _centerX, _centerY, _sizeX, _sizeY, _radiusX, _radiusY);
    const sF32 aaOffSize   = b_aa ? Dsdvg_pixel_scl(SHADERVG_ROUNDRECT_AA_SIZE_OFFSET)   : 0.0f;
    const sF32 aaOffStroke = b_aa ? Dsdvg_pixel_scl(SHADERVG_ROUNDRECT_AA_STROKE_OFFSET) : 0.0f;
    sBool bFillGA = YAC_FALSE;
@@ -4369,6 +4459,7 @@ void YAC_CALL sdvg_DrawLineStripFlatVBO14_2(sUI _vboId, sUI _byteOffset, sUI _nu
    //
    // (note) numSeg = (numPoints - 1)
    //
+   Dsdvg_tracecall("[trc] sdvg_DrawLineStripFlatVBO14_2: vboId=%u byteOffset=%u numPoints=%u\n", _vboId, _byteOffset, _numPoints);
    line_strip_flat_14_2.drawLineStripFlatVBO14_2(_vboId,
                                                  _byteOffset,
                                                  _numPoints,
@@ -4387,6 +4478,7 @@ void YAC_CALL sdvg_DrawLineStripFlatVBO32(sUI _vboId, sUI _byteOffset, sUI _numP
    // (note) numTri           = (numPoints - 1) * 6
    // (note) numBytesPerPoint = 6*10 = 60
    //
+   Dsdvg_tracecall("[trc] sdvg_DrawLineStripFlatVBO32: vboId=%u byteOffset=%u numPoints=%u\n", _vboId, _byteOffset, _numPoints);
    line_strip_flat_32.drawLineStripFlatVBO32(_vboId,
                                              _byteOffset,
                                              _numPoints,
@@ -4402,6 +4494,7 @@ void YAC_CALL sdvg_DrawLineStripFlatAAVBO32(sUI _vboId, sUI _byteOffset, sUI _nu
    //
    // (note) numSeg = (numPoints - 2)
    //
+   Dsdvg_tracecall("[trc] sdvg_DrawLineStripFlatAAVBO32: vboId=%u byteOffset=%u numPoints=%u\n", _vboId, _byteOffset, _numPoints);
    ShaderVG_Shape *shape =
       (NULL != current_shape)
       ? current_shape
@@ -4426,6 +4519,7 @@ void YAC_CALL sdvg_DrawLineStripFlatAAVBO14_2(sUI _vboId, sUI _byteOffset, sUI _
    //
    // (note) numSeg = (numPoints - 2)
    //
+   Dsdvg_tracecall("[trc] sdvg_DrawLineStripFlatAAVBO14_2: vboId=%u byteOffset=%u numPoints=%u\n", _vboId, _byteOffset, _numPoints);
    ShaderVG_Shape *shape =
       (NULL != current_shape)
       ? current_shape
@@ -4451,6 +4545,7 @@ void YAC_CALL sdvg_DrawLineStripPatternVBO32(sUI _vboId, sUI _byteOffset, sUI _n
    //
    // (note) numSeg = (numPoints - 1)
    //
+   Dsdvg_tracecall("[trc] sdvg_DrawLineStripPatternVBO32: vboId=%u byteOffset=%u numPoints=%u\n", _vboId, _byteOffset, _numPoints);
    line_strip_pattern_aa_32.drawLineStripPatternAAVBO32(_vboId,
                                                         _byteOffset,
                                                         _numPoints,
@@ -4472,6 +4567,7 @@ void YAC_CALL sdvg_DrawLineStripPatternVBO14_2(sUI _vboId, sUI _byteOffset, sUI 
    // (note) numTri = (numPoints - 1) * 6
    // (note) numBytesPerPoint = 6*8 = 48
    //
+   Dsdvg_tracecall("[trc] sdvg_DrawLineStripPatternVBO14_2: vboId=%u byteOffset=%u numPoints=%u\n", _vboId, _byteOffset, _numPoints);
    line_strip_pattern_aa_14_2.drawLineStripPatternAAVBO14_2(_vboId,
                                                             _byteOffset,
                                                             _numPoints,
@@ -4491,6 +4587,7 @@ void YAC_CALL sdvg_DrawLineStripPatternDecalVBO32(sUI _vboId, sUI _byteOffset, s
    //
    // (note) numSeg = (numPoints - 1)
    //
+   Dsdvg_tracecall("[trc] sdvg_DrawLineStripPatternDecalVBO32: vboId=%u byteOffset=%u numPoints=%u\n", _vboId, _byteOffset, _numPoints);
    line_strip_pattern_decal_aa_32.drawLineStripPatternDecalAAVBO32(_vboId,
                                                                    _byteOffset,
                                                                    _numPoints,
@@ -4511,6 +4608,7 @@ void YAC_CALL sdvg_DrawLineStripPatternDecalVBO14_2(sUI _vboId, sUI _byteOffset,
    //
    // (note) numSeg = (numPoints - 1)
    //
+   Dsdvg_tracecall("[trc] sdvg_DrawLineStripPatternDecalVBO14_2: vboId=%u byteOffset=%u numPoints=%u\n", _vboId, _byteOffset, _numPoints);
    line_strip_pattern_decal_aa_14_2.drawLineStripPatternDecalAAVBO14_2(_vboId,
                                                                        _byteOffset,
                                                                        _numPoints,
@@ -4531,6 +4629,7 @@ void YAC_CALL sdvg_DrawLineStripPatternAAVBO32(sUI _vboId, sUI _byteOffset, sUI 
    //
    // (note) numSeg = (numPoints - 1)
    //
+   Dsdvg_tracecall("[trc] sdvg_DrawLineStripPatternAAVBO32: vboId=%u byteOffset=%u numPoints=%u\n", _vboId, _byteOffset, _numPoints);
    const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(stroke_w_aa_off) : 0.0f;
    line_strip_pattern_aa_32.drawLineStripPatternAAVBO32(_vboId,
                                                         _byteOffset,
@@ -4552,7 +4651,7 @@ void YAC_CALL sdvg_DrawLineStripPatternAAVBO14_2(sUI _vboId, sUI _byteOffset, sU
    // (note) numSeg = (numPoints - 1)
    //
    const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(stroke_w_aa_off) : 0.0f;
-   Ddebugprintf("xxx sdvg_DrawLineStripPatternAAVBO14_2: stroke_w=%f stroke_w_scale=%f Dsdvg_pixel_scl=%f aaOff=%f\n", stroke_w, stroke_w_scale, Dsdvg_pixel_scl(1.0f), aaOff);
+   Dsdvg_tracecall("[trc] sdvg_DrawLineStripPatternAAVBO14_2: vboId=%u byteOffset=%u numPoints=%u stroke_w=%f stroke_w_scale=%f Dsdvg_pixel_scl=%f aaOff=%f\n", _vboId, _byteOffset, _numPoints, stroke_w, stroke_w_scale, Dsdvg_pixel_scl(1.0f), aaOff);
    line_strip_pattern_aa_14_2.drawLineStripPatternAAVBO14_2(_vboId,
                                                             _byteOffset,
                                                             _numPoints,
@@ -4572,6 +4671,7 @@ void YAC_CALL sdvg_DrawLineStripPatternDecalAAVBO32(sUI _vboId, sUI _byteOffset,
    //
    // (note) numSeg = (numPoints - 1)
    //
+   Dsdvg_tracecall("[trc] sdvg_DrawLineStripPatternDecalAAVBO32: vboId=%u byteOffset=%u numPoints=%u\n", _vboId, _byteOffset, _numPoints);
    const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(stroke_w_aa_off) : 0.0f;
    line_strip_pattern_decal_aa_32.drawLineStripPatternDecalAAVBO32(_vboId,
                                                                    _byteOffset,
@@ -4593,6 +4693,7 @@ void YAC_CALL sdvg_DrawLineStripPatternDecalAAVBO14_2(sUI _vboId, sUI _byteOffse
    //
    // (note) numSeg = (numPoints - 1)
    //
+   Dsdvg_tracecall("[trc] sdvg_DrawLineStripPatternDecalAAVBO14_2: vboId=%u byteOffset=%u numPoints=%u\n", _vboId, _byteOffset, _numPoints);
    const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(stroke_w_aa_off) : 0.0f;
    line_strip_pattern_decal_aa_14_2.drawLineStripPatternDecalAAVBO14_2(_vboId,
                                                                        _byteOffset,
@@ -4615,6 +4716,7 @@ void YAC_CALL sdvg_DrawLineStripFlatBevelVBO32(sUI _vboId, sUI _byteOffset, sUI 
    //
    // (note) numSeg = (numPoints - 1)
    //
+   Dsdvg_tracecall("[trc] sdvg_DrawLineStripFlatBevelVBO32: vboId=%u byteOffset=%u numPoints=%u bSkipLastLineJoint=%d\n", _vboId, _byteOffset, _numPoints, _bSkipLastLineJoint);
    ShaderVG_Shape *shape =
       (NULL != current_shape)
       ? current_shape
@@ -4641,6 +4743,7 @@ void YAC_CALL sdvg_DrawLineStripFlatBevelVBO14_2(sUI _vboId, sUI _byteOffset, sU
    //
    // (note) numSeg = (numPoints - 1)
    //
+   Dsdvg_tracecall("[trc] sdvg_DrawLineStripFlatBevelVBO14_2: vboId=%u byteOffset=%u numPoints=%u bSkipLastLineJoint=%d\n", _vboId, _byteOffset, _numPoints, _bSkipLastLineJoint);
    ShaderVG_Shape *shape =
       (NULL != current_shape)
       ? current_shape
@@ -4667,6 +4770,7 @@ void YAC_CALL sdvg_DrawLineStripFlatBevelAAVBO32(sUI _vboId, sUI _byteOffset, sU
    //
    // (note) numSeg = (numPoints - 2)
    //
+   Dsdvg_tracecall("[trc] sdvg_DrawLineStripFlatBevelAAVBO32: vboId=%u byteOffset=%u numPoints=%u bSkipLastLineJoint=%d\n", _vboId, _byteOffset, _numPoints, _bSkipLastLineJoint);
    ShaderVG_Shape *shape =
       (NULL != current_shape)
       ? current_shape
@@ -4693,6 +4797,7 @@ void YAC_CALL sdvg_DrawLineStripFlatBevelAAVBO14_2(sUI _vboId, sUI _byteOffset, 
    //
    // (note) numSeg = (numPoints - 2)
    //
+   Dsdvg_tracecall("[trc] sdvg_DrawLineStripFlatBevelAAVBO14_2: vboId=%u byteOffset=%u numPoints=%u bSkipLastLineJoint=%d\n", _vboId, _byteOffset, _numPoints, _bSkipLastLineJoint);
    ShaderVG_Shape *shape =
       (NULL != current_shape)
       ? current_shape
@@ -4712,6 +4817,7 @@ void YAC_CALL sdvg_DrawLineStripFlatBevelAAVBO14_2(sUI _vboId, sUI _byteOffset, 
 void YAC_CALL sdvg_DrawLineStripPatternBevelVBO32(sUI _vboId, sUI _byteOffset, sUI _numPoints,
                                                   sBool _bSkipLastLineJoint
                                                   ) {
+   Dsdvg_tracecall("[trc] sdvg_DrawLineStripPatternBevelVBO32: vboId=%u byteOffset=%u numPoints=%u bSkipLastLineJoint=%d\n", _vboId, _byteOffset, _numPoints, _bSkipLastLineJoint);
 #ifdef SHADERVG_LINE_JOINTS
    //
    // VBO vertex format (12 bytes per vertex):
@@ -4740,6 +4846,7 @@ void YAC_CALL sdvg_DrawLineStripPatternBevelVBO32(sUI _vboId, sUI _byteOffset, s
 void YAC_CALL sdvg_DrawLineStripPatternBevelVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numPoints,
                                                     sBool _bSkipLastLineJoint
                                                     ) {
+   Dsdvg_tracecall("[trc] sdvg_DrawLineStripPatternBevelVBO14_2: vboId=%u byteOffset=%u numPoints=%u bSkipLastLineJoint=%d\n", _vboId, _byteOffset, _numPoints, _bSkipLastLineJoint);
 #ifdef SHADERVG_LINE_JOINTS
    //
    // VBO vertex format (6 bytes per vertex):
@@ -4768,6 +4875,7 @@ void YAC_CALL sdvg_DrawLineStripPatternBevelVBO14_2(sUI _vboId, sUI _byteOffset,
 void YAC_CALL sdvg_DrawLineStripPatternBevelAAVBO32(sUI _vboId, sUI _byteOffset, sUI _numPoints,
                                                     sBool _bSkipLastLineJoint
                                                     ) {
+   Dsdvg_tracecall("[trc] sdvg_DrawLineStripPatternBevelAAVBO32: vboId=%u byteOffset=%u numPoints=%u bSkipLastLineJoint=%d\n", _vboId, _byteOffset, _numPoints, _bSkipLastLineJoint);
 #ifdef SHADERVG_LINE_JOINTS
    //
    // VBO vertex format (12 bytes per vertex):
@@ -4797,6 +4905,7 @@ void YAC_CALL sdvg_DrawLineStripPatternBevelAAVBO32(sUI _vboId, sUI _byteOffset,
 void YAC_CALL sdvg_DrawLineStripPatternBevelAAVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numPoints,
                                                       sBool _bSkipLastLineJoint
                                                       ) {
+   Dsdvg_tracecall("[trc] sdvg_DrawLineStripPatternBevelAAVBO14_2: vboId=%u byteOffset=%u numPoints=%u bSkipLastLineJoint=%d\n", _vboId, _byteOffset, _numPoints, _bSkipLastLineJoint);
 #ifdef SHADERVG_LINE_JOINTS
    //
    // VBO vertex format (6 bytes per vertex):
@@ -4826,6 +4935,7 @@ void YAC_CALL sdvg_DrawLineStripPatternBevelAAVBO14_2(sUI _vboId, sUI _byteOffse
 void YAC_CALL sdvg_DrawLineStripPatternDecalBevelVBO32(sUI _vboId, sUI _byteOffset, sUI _numPoints,
                                                        sBool _bSkipLastLineJoint
                                                        ) {
+   Dsdvg_tracecall("[trc] sdvg_DrawLineStripPatternDecalBevelVBO32: vboId=%u byteOffset=%u numPoints=%u bSkipLastLineJoint=%d\n", _vboId, _byteOffset, _numPoints, _bSkipLastLineJoint);
 #ifdef SHADERVG_LINE_JOINTS
    //
    // VBO vertex format (12 bytes per vertex):
@@ -4855,6 +4965,7 @@ void YAC_CALL sdvg_DrawLineStripPatternDecalBevelVBO32(sUI _vboId, sUI _byteOffs
 void YAC_CALL sdvg_DrawLineStripPatternDecalBevelVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numPoints,
                                                          sBool _bSkipLastLineJoint
                                                          ) {
+   Dsdvg_tracecall("[trc] sdvg_DrawLineStripPatternDecalBevelVBO14_2: vboId=%u byteOffset=%u numPoints=%u bSkipLastLineJoint=%d\n", _vboId, _byteOffset, _numPoints, _bSkipLastLineJoint);
 #ifdef SHADERVG_LINE_JOINTS
    //
    // VBO vertex format (6 bytes per vertex):
@@ -4884,6 +4995,7 @@ void YAC_CALL sdvg_DrawLineStripPatternDecalBevelVBO14_2(sUI _vboId, sUI _byteOf
 void YAC_CALL sdvg_DrawLineStripPatternDecalBevelAAVBO32(sUI _vboId, sUI _byteOffset, sUI _numPoints,
                                                          sBool _bSkipLastLineJoint
                                                          ) {
+   Dsdvg_tracecall("[trc] sdvg_DrawLineStripPatternDecalBevelAAVBO32: vboId=%u byteOffset=%u numPoints=%u bSkipLastLineJoint=%d\n", _vboId, _byteOffset, _numPoints, _bSkipLastLineJoint);
 #ifdef SHADERVG_LINE_JOINTS
    //
    // VBO vertex format (12 bytes per vertex):
@@ -4914,6 +5026,7 @@ void YAC_CALL sdvg_DrawLineStripPatternDecalBevelAAVBO32(sUI _vboId, sUI _byteOf
 void YAC_CALL sdvg_DrawLineStripPatternDecalBevelAAVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numPoints,
                                                            sBool _bSkipLastLineJoint
                                                            ) {
+   Dsdvg_tracecall("[trc] sdvg_DrawLineStripPatternDecalBevelAAVBO14_2: vboId=%u byteOffset=%u numPoints=%u bSkipLastLineJoint=%d\n", _vboId, _byteOffset, _numPoints, _bSkipLastLineJoint);
 #ifdef SHADERVG_LINE_JOINTS
    //
    // VBO vertex format (6 bytes per vertex):
@@ -4944,6 +5057,7 @@ void YAC_CALL sdvg_DrawLineStripPatternDecalBevelAAVBO14_2(sUI _vboId, sUI _byte
 void YAC_CALL sdvg_DrawLineStripFlatMiterVBO32(sUI _vboId, sUI _byteOffset, sUI _numPoints,
                                                sBool _bSkipLastLineJoint
                                                ) {
+   Dsdvg_tracecall("[trc] sdvg_DrawLineStripFlatMiterVBO32: vboId=%u byteOffset=%u numPoints=%u bSkipLastLineJoint=%d\n", _vboId, _byteOffset, _numPoints, _bSkipLastLineJoint);
 #ifdef SHADERVG_LINE_JOINTS
    //
    // VBO vertex format (8 bytes per vertex):
@@ -4976,6 +5090,7 @@ void YAC_CALL sdvg_DrawLineStripFlatMiterVBO32(sUI _vboId, sUI _byteOffset, sUI 
 void YAC_CALL sdvg_DrawLineStripFlatMiterVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numPoints,
                                                  sBool _bSkipLastLineJoint
                                                  ) {
+   Dsdvg_tracecall("[trc] sdvg_DrawLineStripFlatMiterVBO14_2: vboId=%u byteOffset=%u numPoints=%u bSkipLastLineJoint=%d\n", _vboId, _byteOffset, _numPoints, _bSkipLastLineJoint);
 #ifdef SHADERVG_LINE_JOINTS
    //
    // VBO vertex format (4 bytes per vertex):
@@ -5008,6 +5123,7 @@ void YAC_CALL sdvg_DrawLineStripFlatMiterVBO14_2(sUI _vboId, sUI _byteOffset, sU
 void YAC_CALL sdvg_DrawLineStripFlatMiterAAVBO32(sUI _vboId, sUI _byteOffset, sUI _numPoints,
                                                  sBool _bSkipLastLineJoint
                                                  ) {
+   Dsdvg_tracecall("[trc] sdvg_DrawLineStripFlatMiterAAVBO32: vboId=%u byteOffset=%u numPoints=%u bSkipLastLineJoint=%d\n", _vboId, _byteOffset, _numPoints, _bSkipLastLineJoint);
 #ifdef SHADERVG_LINE_JOINTS
    //
    // VBO vertex format (8 bytes per vertex):
@@ -5040,6 +5156,7 @@ void YAC_CALL sdvg_DrawLineStripFlatMiterAAVBO32(sUI _vboId, sUI _byteOffset, sU
 void YAC_CALL sdvg_DrawLineStripFlatMiterAAVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numPoints,
                                                    sBool _bSkipLastLineJoint
                                                    ) {
+   Dsdvg_tracecall("[trc] sdvg_DrawLineStripFlatMiterAAVBO14_2: vboId=%u byteOffset=%u numPoints=%u bSkipLastLineJoint=%d\n", _vboId, _byteOffset, _numPoints, _bSkipLastLineJoint);
 #ifdef SHADERVG_LINE_JOINTS
    //
    // VBO vertex format (4 bytes per vertex):
@@ -5072,6 +5189,7 @@ void YAC_CALL sdvg_DrawLineStripFlatMiterAAVBO14_2(sUI _vboId, sUI _byteOffset, 
 void YAC_CALL sdvg_DrawLineStripPatternMiterVBO32(sUI _vboId, sUI _byteOffset, sUI _numPoints,
                                                   sBool _bSkipLastLineJoint
                                                   ) {
+   Dsdvg_tracecall("[trc] sdvg_DrawLineStripPatternMiterVBO32: vboId=%u byteOffset=%u numPoints=%u bSkipLastLineJoint=%d\n", _vboId, _byteOffset, _numPoints, _bSkipLastLineJoint);
 #ifdef SHADERVG_LINE_JOINTS
    //
    // VBO vertex format (12 bytes per vertex):
@@ -5101,6 +5219,7 @@ void YAC_CALL sdvg_DrawLineStripPatternMiterVBO32(sUI _vboId, sUI _byteOffset, s
 void YAC_CALL sdvg_DrawLineStripPatternMiterVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numPoints,
                                                     sBool _bSkipLastLineJoint
                                                     ) {
+   Dsdvg_tracecall("[trc] sdvg_DrawLineStripPatternMiterVBO14_2: vboId=%u byteOffset=%u numPoints=%u bSkipLastLineJoint=%d\n", _vboId, _byteOffset, _numPoints, _bSkipLastLineJoint);
 #ifdef SHADERVG_LINE_JOINTS
    //
    // VBO vertex format (6 bytes per vertex):
@@ -5130,6 +5249,7 @@ void YAC_CALL sdvg_DrawLineStripPatternMiterVBO14_2(sUI _vboId, sUI _byteOffset,
 void YAC_CALL sdvg_DrawLineStripPatternMiterAAVBO32(sUI _vboId, sUI _byteOffset, sUI _numPoints,
                                                     sBool _bSkipLastLineJoint
                                                     ) {
+   Dsdvg_tracecall("[trc] sdvg_DrawLineStripPatternMiterAAVBO32: vboId=%u byteOffset=%u numPoints=%u bSkipLastLineJoint=%d\n", _vboId, _byteOffset, _numPoints, _bSkipLastLineJoint);
 #ifdef SHADERVG_LINE_JOINTS
    //
    // VBO vertex format (12 bytes per vertex):
@@ -5160,6 +5280,7 @@ void YAC_CALL sdvg_DrawLineStripPatternMiterAAVBO32(sUI _vboId, sUI _byteOffset,
 void YAC_CALL sdvg_DrawLineStripPatternMiterAAVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numPoints,
                                                       sBool _bSkipLastLineJoint
                                                       ) {
+   Dsdvg_tracecall("[trc] sdvg_DrawLineStripPatternMiterAAVBO14_2: vboId=%u byteOffset=%u numPoints=%u bSkipLastLineJoint=%d\n", _vboId, _byteOffset, _numPoints, _bSkipLastLineJoint);
 #ifdef SHADERVG_LINE_JOINTS
    //
    // VBO vertex format (6 bytes per vertex):
@@ -5190,6 +5311,7 @@ void YAC_CALL sdvg_DrawLineStripPatternMiterAAVBO14_2(sUI _vboId, sUI _byteOffse
 void YAC_CALL sdvg_DrawLineStripPatternDecalMiterVBO32(sUI _vboId, sUI _byteOffset, sUI _numPoints,
                                                        sBool _bSkipLastLineJoint
                                                        ) {
+   Dsdvg_tracecall("[trc] sdvg_DrawLineStripPatternDecalMiterVBO32: vboId=%u byteOffset=%u numPoints=%u bSkipLastLineJoint=%d\n", _vboId, _byteOffset, _numPoints, _bSkipLastLineJoint);
 #ifdef SHADERVG_LINE_JOINTS
    //
    // VBO vertex format (12 bytes per vertex):
@@ -5220,6 +5342,7 @@ void YAC_CALL sdvg_DrawLineStripPatternDecalMiterVBO32(sUI _vboId, sUI _byteOffs
 void YAC_CALL sdvg_DrawLineStripPatternDecalMiterVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numPoints,
                                                          sBool _bSkipLastLineJoint
                                                          ) {
+   Dsdvg_tracecall("[trc] sdvg_DrawLineStripPatternDecalMiterVBO14_2: vboId=%u byteOffset=%u numPoints=%u bSkipLastLineJoint=%d\n", _vboId, _byteOffset, _numPoints, _bSkipLastLineJoint);
 #ifdef SHADERVG_LINE_JOINTS
    //
    // VBO vertex format (6 bytes per vertex):
@@ -5250,6 +5373,7 @@ void YAC_CALL sdvg_DrawLineStripPatternDecalMiterVBO14_2(sUI _vboId, sUI _byteOf
 void YAC_CALL sdvg_DrawLineStripPatternDecalMiterAAVBO32(sUI _vboId, sUI _byteOffset, sUI _numPoints,
                                                          sBool _bSkipLastLineJoint
                                                          ) {
+   Dsdvg_tracecall("[trc] sdvg_DrawLineStripPatternDecalMiterAAVBO32: vboId=%u byteOffset=%u numPoints=%u bSkipLastLineJoint=%d\n", _vboId, _byteOffset, _numPoints, _bSkipLastLineJoint);
 #ifdef SHADERVG_LINE_JOINTS
    //
    // VBO vertex format (12 bytes per vertex):
@@ -5281,6 +5405,7 @@ void YAC_CALL sdvg_DrawLineStripPatternDecalMiterAAVBO32(sUI _vboId, sUI _byteOf
 void YAC_CALL sdvg_DrawLineStripPatternDecalMiterAAVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numPoints,
                                                            sBool _bSkipLastLineJoint
                                                            ) {
+   Dsdvg_tracecall("[trc] sdvg_DrawLineStripPatternDecalMiterAAVBO14_2: vboId=%u byteOffset=%u numPoints=%u bSkipLastLineJoint=%d\n", _vboId, _byteOffset, _numPoints, _bSkipLastLineJoint);
 #ifdef SHADERVG_LINE_JOINTS
    //
    // VBO vertex format (6 bytes per vertex):
@@ -5317,7 +5442,7 @@ void YAC_CALL sdvg_DrawLinesFlatVBO32(sUI _vboId, sUI _byteOffset, sUI _numPoint
    //
    // (note) numSeg = (numPoints / 2)
    //
-   Dsdvg_tracecallv("[trc] sdvg_DrawLinesFlatVBO32: vboId=%u byteOffset=%u numPoints=%u stroke_w=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, stroke_w, Dsdvg_pixel_scl(stroke_w));
+   Dsdvg_tracecall("[trc] sdvg_DrawLinesFlatVBO32: vboId=%u byteOffset=%u numPoints=%u stroke_w=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, stroke_w, Dsdvg_pixel_scl(stroke_w));
    lines_flat_aa_32.drawLinesFlatAAVBO32(_vboId,
                                          _byteOffset,
                                          _numPoints,
@@ -5334,7 +5459,7 @@ void YAC_CALL sdvg_DrawLinesFlatVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numPoi
    //
    // (note) numSeg = (numPoints / 2)
    //
-   Dsdvg_tracecallv("[trc] sdvg_DrawLinesFlatVBO14_2: vboId=%u byteOffset=%u numPoints=%u stroke_w=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, stroke_w, Dsdvg_pixel_scl(stroke_w * stroke_w_scale));
+   Dsdvg_tracecall("[trc] sdvg_DrawLinesFlatVBO14_2: vboId=%u byteOffset=%u numPoints=%u stroke_w=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, stroke_w, Dsdvg_pixel_scl(stroke_w * stroke_w_scale));
    lines_flat_aa_14_2.drawLinesFlatAAVBO14_2(_vboId,
                                              _byteOffset,
                                              _numPoints,
@@ -5352,7 +5477,7 @@ void YAC_CALL sdvg_DrawLinesFlatAAVBO32(sUI _vboId, sUI _byteOffset, sUI _numPoi
    // (note) numSeg = (numPoints / 2)
    //
    const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(stroke_w_aa_off) : 0.0f;
-   Dsdvg_tracecallv("[trc] sdvg_DrawLinesFlatAAVBO32: vboId=%u byteOffset=%u numPoints=%u stroke_w=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, stroke_w, Dsdvg_pixel_scl(stroke_w * stroke_w_scale));
+   Dsdvg_tracecall("[trc] sdvg_DrawLinesFlatAAVBO32: vboId=%u byteOffset=%u numPoints=%u stroke_w=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, stroke_w, Dsdvg_pixel_scl(stroke_w * stroke_w_scale));
    lines_flat_aa_32.drawLinesFlatAAVBO32(_vboId,
                                          _byteOffset,
                                          _numPoints,
@@ -5370,7 +5495,7 @@ void YAC_CALL sdvg_DrawLinesFlatAAVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numP
    // (note) numSeg = (numPoints / 2)
    //
    const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(stroke_w_aa_off) : 0.0f;
-   Dsdvg_tracecallv("[trc] sdvg_DrawLinesFlatAAVBO14_2: vboId=%u byteOffset=%u numPoints=%u stroke_w=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, stroke_w, Dsdvg_pixel_scl(stroke_w * stroke_w_scale));
+   Dsdvg_tracecall("[trc] sdvg_DrawLinesFlatAAVBO14_2: vboId=%u byteOffset=%u numPoints=%u stroke_w=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, stroke_w, Dsdvg_pixel_scl(stroke_w * stroke_w_scale));
    lines_flat_aa_14_2.drawLinesFlatAAVBO14_2(_vboId,
                                              _byteOffset,
                                              _numPoints,
@@ -5389,7 +5514,7 @@ void YAC_CALL sdvg_DrawLinesGouraudVBO32(sUI _vboId, sUI _byteOffset, sUI _numPo
    //    +4 f32 x
    //    +8 f32 y
    //
-   Dsdvg_tracecallv("[trc] sdvg_DrawLinesGouraudVBO32: vboId=%u byteOffset=%u numPoints=%u stroke_w=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, stroke_w, Dsdvg_pixel_scl(stroke_w * stroke_w_scale));
+   Dsdvg_tracecall("[trc] sdvg_DrawLinesGouraudVBO32: vboId=%u byteOffset=%u numPoints=%u stroke_w=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, stroke_w, Dsdvg_pixel_scl(stroke_w * stroke_w_scale));
    lines_gouraud_aa_32.drawLinesGouraudAAVBO32(_vboId,
                                                _byteOffset,
                                                _numPoints,
@@ -5408,7 +5533,7 @@ void YAC_CALL sdvg_DrawLinesGouraudVBO14_2(sUI _vboId, sUI _byteOffset, sUI _num
    //    +4 s14.2 x
    //    +6 s14.2 y
    //
-   Dsdvg_tracecallv("[trc] sdvg_DrawLinesGouraudVBO14_2: vboId=%u byteOffset=%u numPoints=%u stroke_w=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, stroke_w, Dsdvg_pixel_scl(stroke_w * stroke_w_scale));
+   Dsdvg_tracecall("[trc] sdvg_DrawLinesGouraudVBO14_2: vboId=%u byteOffset=%u numPoints=%u stroke_w=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, stroke_w, Dsdvg_pixel_scl(stroke_w * stroke_w_scale));
    lines_gouraud_aa_14_2.drawLinesGouraudAAVBO14_2(_vboId,
                                                    _byteOffset,
                                                    _numPoints,
@@ -5428,7 +5553,7 @@ void YAC_CALL sdvg_DrawLinesGouraudAAVBO32(sUI _vboId, sUI _byteOffset, sUI _num
    //    +8 f32 y
    //
    const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(stroke_w_aa_off) : 0.0f;
-   Dsdvg_tracecallv("[trc] sdvg_DrawLinesGouraudAAVBO32: vboId=%u byteOffset=%u numPoints=%u stroke_w=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, stroke_w, Dsdvg_pixel_scl(stroke_w * stroke_w_scale));
+   Dsdvg_tracecall("[trc] sdvg_DrawLinesGouraudAAVBO32: vboId=%u byteOffset=%u numPoints=%u stroke_w=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, stroke_w, Dsdvg_pixel_scl(stroke_w * stroke_w_scale));
    lines_gouraud_aa_32.drawLinesGouraudAAVBO32(_vboId,
                                                _byteOffset,
                                                _numPoints,
@@ -5448,7 +5573,7 @@ void YAC_CALL sdvg_DrawLinesGouraudAAVBO14_2(sUI _vboId, sUI _byteOffset, sUI _n
    //    +6 s14.2 y
    //
    const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(stroke_w_aa_off) : 0.0f;
-   Dsdvg_tracecallv("[trc] sdvg_DrawLinesGouraudAAVBO32: vboId=%u byteOffset=%u numPoints=%u stroke_w=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, stroke_w, Dsdvg_pixel_scl(stroke_w * stroke_w_scale));
+   Dsdvg_tracecall("[trc] sdvg_DrawLinesGouraudAAVBO32: vboId=%u byteOffset=%u numPoints=%u stroke_w=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, stroke_w, Dsdvg_pixel_scl(stroke_w * stroke_w_scale));
    lines_gouraud_aa_14_2.drawLinesGouraudAAVBO14_2(_vboId,
                                                    _byteOffset,
                                                    _numPoints,
@@ -5468,7 +5593,7 @@ void YAC_CALL sdvg_DrawLinesPatternVBO32(sUI _vboId, sUI _byteOffset, sUI _numPo
    // (note) numSeg           = (numPoints / 2)
    // (note) numTri           = (numPoints-1) * 2
    //
-   Dsdvg_tracecallv("[trc] sdvg_DrawLinesPatternVBO32: vboId=%u byteOffset=%u numPoints=%u stroke_w=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, stroke_w, Dsdvg_pixel_scl(stroke_w * stroke_w_scale));
+   Dsdvg_tracecall("[trc] sdvg_DrawLinesPatternVBO32: vboId=%u byteOffset=%u numPoints=%u stroke_w=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, stroke_w, Dsdvg_pixel_scl(stroke_w * stroke_w_scale));
    lines_pattern_aa_32.drawLinesPatternAAVBO32(_vboId,
                                                _byteOffset,
                                                _numPoints,
@@ -5490,7 +5615,7 @@ void YAC_CALL sdvg_DrawLinesPatternVBO14_2(sUI _vboId, sUI _byteOffset, sUI _num
    // (note) numSeg           = (numPoints / 2)
    // (note) numTri           = (numPoints-1) * 2
    //
-   Dsdvg_tracecallv("[trc] sdvg_DrawLinesPatternVBO14_2: vboId=%u byteOffset=%u numPoints=%u stroke_w=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, stroke_w, Dsdvg_pixel_scl(stroke_w * stroke_w_scale));
+   Dsdvg_tracecall("[trc] sdvg_DrawLinesPatternVBO14_2: vboId=%u byteOffset=%u numPoints=%u stroke_w=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, stroke_w, Dsdvg_pixel_scl(stroke_w * stroke_w_scale));
    lines_pattern_aa_14_2.drawLinesPatternAAVBO14_2(_vboId,
                                                    _byteOffset,
                                                    _numPoints,
@@ -5513,7 +5638,7 @@ void YAC_CALL sdvg_DrawLinesPatternAAVBO32(sUI _vboId, sUI _byteOffset, sUI _num
    // (note) numTri           = (numPoints-1) * 2
    //
    const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(stroke_w_aa_off) : 0.0f;
-   Dsdvg_tracecallv("[trc] sdvg_DrawLinesPatternAAVBO32: vboId=%u byteOffset=%u numPoints=%u stroke_w=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, stroke_w, Dsdvg_pixel_scl(stroke_w * stroke_w_scale));
+   Dsdvg_tracecall("[trc] sdvg_DrawLinesPatternAAVBO32: vboId=%u byteOffset=%u numPoints=%u stroke_w=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, stroke_w, Dsdvg_pixel_scl(stroke_w * stroke_w_scale));
    lines_pattern_aa_32.drawLinesPatternAAVBO32(_vboId,
                                                _byteOffset,
                                                _numPoints,
@@ -5536,7 +5661,7 @@ void YAC_CALL sdvg_DrawLinesPatternAAVBO14_2(sUI _vboId, sUI _byteOffset, sUI _n
    // (note) numTri           = (numPoints-1) * 2
    //
    const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(stroke_w_aa_off) : 0.0f;
-   Dsdvg_tracecallv("[trc] sdvg_DrawLinesFlatAAVBO14_2: vboId=%u byteOffset=%u numPoints=%u stroke_w=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, stroke_w, Dsdvg_pixel_scl(stroke_w * stroke_w_scale));
+   Dsdvg_tracecall("[trc] sdvg_DrawLinesFlatAAVBO14_2: vboId=%u byteOffset=%u numPoints=%u stroke_w=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, stroke_w, Dsdvg_pixel_scl(stroke_w * stroke_w_scale));
    lines_pattern_aa_14_2.drawLinesPatternAAVBO14_2(_vboId,
                                                    _byteOffset,
                                                    _numPoints,
@@ -5553,7 +5678,7 @@ void YAC_CALL sdvg_DrawPointsSquareVBO32(sUI _vboId, sUI _byteOffset, sUI _numPo
    //   +0 f32 x
    //   +4 f32 y
    //
-   Dsdvg_tracecallv("[trc] sdvg_DrawPointsSquareVBO32: vboId=%u byteOffset=%u numPoints=%u point_radius=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, point_radius, Dsdvg_pixel_scl(point_radius));
+   Dsdvg_tracecall("[trc] sdvg_DrawPointsSquareVBO32: vboId=%u byteOffset=%u numPoints=%u point_radius=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, point_radius, Dsdvg_pixel_scl(point_radius));
    points_square_aa_32.drawPointsSquareAAVBO32(_vboId,
                                                _byteOffset,
                                                _numPoints,
@@ -5568,7 +5693,7 @@ void YAC_CALL sdvg_DrawPointsSquareVBO14_2(sUI _vboId, sUI _byteOffset, sUI _num
    //   +0 s14.2 x
    //   +2 s14.2 y
    //
-   Dsdvg_tracecallv("[trc] sdvg_DrawPointsSquareVBO14_2: vboId=%u byteOffset=%u numPoints=%u point_radius=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, point_radius, Dsdvg_pixel_scl(point_radius));
+   Dsdvg_tracecall("[trc] sdvg_DrawPointsSquareVBO14_2: vboId=%u byteOffset=%u numPoints=%u point_radius=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, point_radius, Dsdvg_pixel_scl(point_radius));
    points_square_aa_14_2.drawPointsSquareAAVBO14_2(_vboId,
                                                    _byteOffset,
                                                    _numPoints,
@@ -5584,7 +5709,7 @@ void YAC_CALL sdvg_DrawPointsSquareAAVBO32(sUI _vboId, sUI _byteOffset, sUI _num
    //   +4 f32 y
    //
    const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(SHADERVG_POINTS_AA_RADIUS_OFFSET) : 0.0f;
-   Dsdvg_tracecallv("[trc] sdvg_DrawPointsSquareAAVBO32: vboId=%u byteOffset=%u numPoints=%u point_radius=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, point_radius, Dsdvg_pixel_scl(point_radius));
+   Dsdvg_tracecall("[trc] sdvg_DrawPointsSquareAAVBO32: vboId=%u byteOffset=%u numPoints=%u point_radius=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, point_radius, Dsdvg_pixel_scl(point_radius));
    points_square_aa_32.drawPointsSquareAAVBO32(_vboId,
                                                _byteOffset,
                                                _numPoints,
@@ -5600,7 +5725,7 @@ void YAC_CALL sdvg_DrawPointsSquareAAVBO14_2(sUI _vboId, sUI _byteOffset, sUI _n
    //   +2 s14.2 y
    //
    const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(SHADERVG_POINTS_AA_RADIUS_OFFSET) : 0.0f;
-   Dsdvg_tracecallv("[trc] sdvg_DrawPointsSquareAAVBO14_2: vboId=%u byteOffset=%u numPoints=%u point_radius=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, point_radius, Dsdvg_pixel_scl(point_radius));
+   Dsdvg_tracecall("[trc] sdvg_DrawPointsSquareAAVBO14_2: vboId=%u byteOffset=%u numPoints=%u point_radius=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, point_radius, Dsdvg_pixel_scl(point_radius));
    points_square_aa_14_2.drawPointsSquareAAVBO14_2(_vboId,
                                                    _byteOffset,
                                                    _numPoints,
@@ -5619,7 +5744,7 @@ void YAC_CALL sdvg_DrawPointsSquareGouraudVBO32(sUI _vboId, sUI _byteOffset, sUI
    //   +4 f32 x
    //   +8 f32 y
    //
-   Dsdvg_tracecallv("[trc] sdvg_DrawPointsSquareGouraudVBO32: vboId=%u byteOffset=%u numPoints=%u point_radius=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, point_radius, Dsdvg_pixel_scl(point_radius));
+   Dsdvg_tracecall("[trc] sdvg_DrawPointsSquareGouraudVBO32: vboId=%u byteOffset=%u numPoints=%u point_radius=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, point_radius, Dsdvg_pixel_scl(point_radius));
    points_square_gouraud_aa_32.drawPointsSquareGouraudAAVBO32(_vboId,
                                                               _byteOffset,
                                                               _numPoints,
@@ -5638,7 +5763,7 @@ void YAC_CALL sdvg_DrawPointsSquareGouraudVBO14_2(sUI _vboId, sUI _byteOffset, s
    //   +4 s14.2 x
    //   +6 s14.2 y
    //
-   Dsdvg_tracecallv("[trc] sdvg_DrawPointsSquareGouraudVBO14_2: vboId=%u byteOffset=%u numPoints=%u point_radius=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, point_radius, Dsdvg_pixel_scl(point_radius));
+   Dsdvg_tracecall("[trc] sdvg_DrawPointsSquareGouraudVBO14_2: vboId=%u byteOffset=%u numPoints=%u point_radius=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, point_radius, Dsdvg_pixel_scl(point_radius));
    points_square_gouraud_aa_14_2.drawPointsSquareGouraudAAVBO14_2(_vboId,
                                                                   _byteOffset,
                                                                   _numPoints,
@@ -5658,7 +5783,7 @@ void YAC_CALL sdvg_DrawPointsSquareGouraudAAVBO32(sUI _vboId, sUI _byteOffset, s
    //   +8 f32 y
    //
    const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(SHADERVG_POINTS_AA_RADIUS_OFFSET) : 0.0f;
-   Dsdvg_tracecallv("[trc] sdvg_DrawPointsSquareGouraudAAVBO32: vboId=%u byteOffset=%u numPoints=%u point_radius=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, point_radius, Dsdvg_pixel_scl(point_radius));
+   Dsdvg_tracecall("[trc] sdvg_DrawPointsSquareGouraudAAVBO32: vboId=%u byteOffset=%u numPoints=%u point_radius=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, point_radius, Dsdvg_pixel_scl(point_radius));
    points_square_gouraud_aa_32.drawPointsSquareGouraudAAVBO32(_vboId,
                                                               _byteOffset,
                                                               _numPoints,
@@ -5678,7 +5803,7 @@ void YAC_CALL sdvg_DrawPointsSquareGouraudAAVBO14_2(sUI _vboId, sUI _byteOffset,
    //   +6 s14.2 y
    //
    const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(SHADERVG_POINTS_AA_RADIUS_OFFSET) : 0.0f;
-   Dsdvg_tracecallv("[trc] sdvg_DrawPointsSquareGouraudAAVBO14_2: vboId=%u byteOffset=%u numPoints=%u point_radius=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, point_radius, Dsdvg_pixel_scl(point_radius));
+   Dsdvg_tracecall("[trc] sdvg_DrawPointsSquareGouraudAAVBO14_2: vboId=%u byteOffset=%u numPoints=%u point_radius=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, point_radius, Dsdvg_pixel_scl(point_radius));
    points_square_gouraud_aa_14_2.drawPointsSquareGouraudAAVBO14_2(_vboId,
                                                                   _byteOffset,
                                                                   _numPoints,
@@ -5693,7 +5818,7 @@ void YAC_CALL sdvg_DrawPointsRoundVBO32(sUI _vboId, sUI _byteOffset, sUI _numPoi
    //   +0 f32 x
    //   +4 f32 y
    //
-   Dsdvg_tracecallv("[trc] sdvg_DrawPointsRoundVBO32: vboId=%u byteOffset=%u numPoints=%u point_radius=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, point_radius, Dsdvg_pixel_scl(point_radius));
+   Dsdvg_tracecall("[trc] sdvg_DrawPointsRoundVBO32: vboId=%u byteOffset=%u numPoints=%u point_radius=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, point_radius, Dsdvg_pixel_scl(point_radius));
    sBool bFillGA = YAC_FALSE;
    sBool bStrokeGA = YAC_TRUE;
    ShaderVG_Shape *shape = loc_get_default_points_round_aa_shape_32(&bFillGA, &bStrokeGA);
@@ -5715,7 +5840,7 @@ void YAC_CALL sdvg_DrawPointsRoundAAVBO32(sUI _vboId, sUI _byteOffset, sUI _numP
    //   +4 f32 y
    //
    const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(SHADERVG_POINTS_AA_RADIUS_OFFSET) : 0.0f;
-   Dsdvg_tracecallv("[trc] sdvg_DrawPointsRoundAAVBO32: vboId=%u byteOffset=%u numPoints=%u point_radius=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, point_radius, Dsdvg_pixel_scl(point_radius));
+   Dsdvg_tracecall("[trc] sdvg_DrawPointsRoundAAVBO32: vboId=%u byteOffset=%u numPoints=%u point_radius=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, point_radius, Dsdvg_pixel_scl(point_radius));
    sBool bFillGA = YAC_FALSE;
    sBool bStrokeGA = YAC_TRUE;
    ShaderVG_Shape *shape = loc_get_default_points_round_aa_shape_32(&bFillGA, &bStrokeGA);
@@ -5736,7 +5861,7 @@ void YAC_CALL sdvg_DrawPointsRoundVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numP
    //   +0 s14.2 x
    //   +2 s14.2 y
    //
-   Dsdvg_tracecallv("[trc] sdvg_DrawPointsRoundVBO14_2: vboId=%u byteOffset=%u numPoints=%u point_radius=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, point_radius, Dsdvg_pixel_scl(point_radius));
+   Dsdvg_tracecall("[trc] sdvg_DrawPointsRoundVBO14_2: vboId=%u byteOffset=%u numPoints=%u point_radius=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, point_radius, Dsdvg_pixel_scl(point_radius));
    sBool bFillGA = YAC_FALSE;
    sBool bStrokeGA = YAC_TRUE;
    ShaderVG_Shape *shape = loc_get_default_points_round_aa_shape_14_2(&bFillGA, &bStrokeGA);
@@ -5758,7 +5883,7 @@ void YAC_CALL sdvg_DrawPointsRoundAAVBO14_2(sUI _vboId, sUI _byteOffset, sUI _nu
    //   +2 s14.2 y
    //
    const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(SHADERVG_POINTS_AA_RADIUS_OFFSET) : 0.0f;
-   Dsdvg_tracecallv("[trc] sdvg_DrawPointsRoundAAVBO14_2: vboId=%u byteOffset=%u numPoints=%u point_radius=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, point_radius, Dsdvg_pixel_scl(point_radius));
+   Dsdvg_tracecall("[trc] sdvg_DrawPointsRoundAAVBO14_2: vboId=%u byteOffset=%u numPoints=%u point_radius=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, point_radius, Dsdvg_pixel_scl(point_radius));
    sBool bFillGA = YAC_FALSE;
    sBool bStrokeGA = YAC_TRUE;
    ShaderVG_Shape *shape = loc_get_default_points_round_aa_shape_14_2(&bFillGA, &bStrokeGA);
@@ -5781,7 +5906,7 @@ void YAC_CALL sdvg_DrawPointsRoundPatternAAVBO32(sUI _vboId, sUI _byteOffset, sU
    //   +8  f32 patternOff
    //
    const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(SHADERVG_POINTS_AA_RADIUS_OFFSET) : 0.0f;
-   Dsdvg_tracecallv("[trc] sdvg_DrawPointsRoundPatternAAVBO32: vboId=%u byteOffset=%u numVertices=%u point_radius=%f (scaled=%f)\n", _vboId, _byteOffset, _numVertices, point_radius, Dsdvg_pixel_scl(point_radius));
+   Dsdvg_tracecall("[trc] sdvg_DrawPointsRoundPatternAAVBO32: vboId=%u byteOffset=%u numVertices=%u point_radius=%f (scaled=%f)\n", _vboId, _byteOffset, _numVertices, point_radius, Dsdvg_pixel_scl(point_radius));
    points_round_pattern_aa_32.drawPointsRoundPatternAAVBO32(_vboId,
                                                             _byteOffset,
                                                             _numVertices,
@@ -5800,7 +5925,7 @@ void YAC_CALL sdvg_DrawPointsRoundPatternAAVBO14_2(sUI _vboId, sUI _byteOffset, 
    //   +4  s14.2 patternOff
    //
    const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(SHADERVG_POINTS_AA_RADIUS_OFFSET) : 0.0f;
-   Dsdvg_tracecallv("[trc] sdvg_DrawPointsRoundPatternAAVBO14_2: vboId=%u byteOffset=%u numVertices=%u point_radius=%f (scaled=%f)\n", _vboId, _byteOffset, _numVertices, point_radius, Dsdvg_pixel_scl(point_radius));
+   Dsdvg_tracecall("[trc] sdvg_DrawPointsRoundPatternAAVBO14_2: vboId=%u byteOffset=%u numVertices=%u point_radius=%f (scaled=%f)\n", _vboId, _byteOffset, _numVertices, point_radius, Dsdvg_pixel_scl(point_radius));
    points_round_pattern_aa_14_2.drawPointsRoundPatternAAVBO14_2(_vboId,
                                                                 _byteOffset,
                                                                 _numVertices,
@@ -5819,7 +5944,7 @@ void YAC_CALL sdvg_DrawPointsRoundPatternDecalAAVBO32(sUI _vboId, sUI _byteOffse
    //   +8  f32 patternOff
    //
    const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(SHADERVG_POINTS_AA_RADIUS_OFFSET) : 0.0f;
-   Dsdvg_tracecallv("[trc] sdvg_DrawPointsRoundPatternDecalAAVBO32: vboId=%u byteOffset=%u numVertices=%u point_radius=%f (scaled=%f)\n", _vboId, _byteOffset, _numVertices, point_radius, Dsdvg_pixel_scl(point_radius));
+   Dsdvg_tracecall("[trc] sdvg_DrawPointsRoundPatternDecalAAVBO32: vboId=%u byteOffset=%u numVertices=%u point_radius=%f (scaled=%f)\n", _vboId, _byteOffset, _numVertices, point_radius, Dsdvg_pixel_scl(point_radius));
    points_round_pattern_decal_aa_32.drawPointsRoundPatternDecalAAVBO32(_vboId,
                                                                        _byteOffset,
                                                                        _numVertices,
@@ -5839,7 +5964,7 @@ void YAC_CALL sdvg_DrawPointsRoundPatternDecalAAVBO14_2(sUI _vboId, sUI _byteOff
    //   +4  s14.2 patternOff
    //
    const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(SHADERVG_POINTS_AA_RADIUS_OFFSET) : 0.0f;
-   Dsdvg_tracecallv("[trc] sdvg_DrawPointsRoundPatternDecalAAVBO14_2: vboId=%u byteOffset=%u numVertices=%u point_radius=%f (scaled=%f)\n", _vboId, _byteOffset, _numVertices, point_radius, Dsdvg_pixel_scl(point_radius));
+   Dsdvg_tracecall("[trc] sdvg_DrawPointsRoundPatternDecalAAVBO14_2: vboId=%u byteOffset=%u numVertices=%u point_radius=%f (scaled=%f)\n", _vboId, _byteOffset, _numVertices, point_radius, Dsdvg_pixel_scl(point_radius));
    points_round_pattern_decal_aa_14_2.drawPointsRoundPatternDecalAAVBO14_2(_vboId,
                                                                            _byteOffset,
                                                                            _numVertices,
@@ -5861,7 +5986,7 @@ void YAC_CALL sdvg_DrawPointsRoundGouraudVBO32(sUI _vboId, sUI _byteOffset, sUI 
    //   +4  f32 x
    //   +8  f32 y
    //
-   Dsdvg_tracecallv("[trc] sdvg_DrawPointsRoundGouraudVBO32: vboId=%u byteOffset=%u numPoints=%u point_radius=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, point_radius, Dsdvg_pixel_scl(point_radius));
+   Dsdvg_tracecall("[trc] sdvg_DrawPointsRoundGouraudVBO32: vboId=%u byteOffset=%u numPoints=%u point_radius=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, point_radius, Dsdvg_pixel_scl(point_radius));
    points_round_gouraud_aa_32.drawPointsRoundGouraudAAVBO32(_vboId,
                                                             _byteOffset,
                                                             _numPoints,
@@ -5880,7 +6005,7 @@ void YAC_CALL sdvg_DrawPointsRoundGouraudVBO14_2(sUI _vboId, sUI _byteOffset, sU
    //   +4  s14.2 x
    //   +6  s14.2 y
    //
-   Dsdvg_tracecallv("[trc] sdvg_DrawPointsRoundGouraudVBO14_2: vboId=%u byteOffset=%u numPoints=%u point_radius=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, point_radius, Dsdvg_pixel_scl(point_radius));
+   Dsdvg_tracecall("[trc] sdvg_DrawPointsRoundGouraudVBO14_2: vboId=%u byteOffset=%u numPoints=%u point_radius=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, point_radius, Dsdvg_pixel_scl(point_radius));
    points_round_gouraud_aa_14_2.drawPointsRoundGouraudAAVBO14_2(_vboId,
                                                                 _byteOffset,
                                                                 _numPoints,
@@ -5900,7 +6025,7 @@ void YAC_CALL sdvg_DrawPointsRoundGouraudAAVBO32(sUI _vboId, sUI _byteOffset, sU
    //   +8  f32 y
    //
    const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(SHADERVG_POINTS_AA_RADIUS_OFFSET) : 0.0f;
-   Dsdvg_tracecallv("[trc] sdvg_DrawPointsRoundGouraudAAVBO32: vboId=%u byteOffset=%u numPoints=%u point_radius=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, point_radius, Dsdvg_pixel_scl(point_radius));
+   Dsdvg_tracecall("[trc] sdvg_DrawPointsRoundGouraudAAVBO32: vboId=%u byteOffset=%u numPoints=%u point_radius=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, point_radius, Dsdvg_pixel_scl(point_radius));
    points_round_gouraud_aa_32.drawPointsRoundGouraudAAVBO32(_vboId,
                                                             _byteOffset,
                                                             _numPoints,
@@ -5920,7 +6045,7 @@ void YAC_CALL sdvg_DrawPointsRoundGouraudAAVBO14_2(sUI _vboId, sUI _byteOffset, 
    //   +6  s14.2 y
    //
    const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(SHADERVG_POINTS_AA_RADIUS_OFFSET) : 0.0f;
-   Dsdvg_tracecallv("[trc] sdvg_DrawPointsRoundGouraudAAVBO14_2: vboId=%u byteOffset=%u numPoints=%u point_radius=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, point_radius, Dsdvg_pixel_scl(point_radius));
+   Dsdvg_tracecall("[trc] sdvg_DrawPointsRoundGouraudAAVBO14_2: vboId=%u byteOffset=%u numPoints=%u point_radius=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, point_radius, Dsdvg_pixel_scl(point_radius));
    points_round_gouraud_aa_14_2.drawPointsRoundGouraudAAVBO14_2(_vboId,
                                                                 _byteOffset,
                                                                 _numPoints,
@@ -6479,7 +6604,7 @@ void YAC_CALL sdvg_SetViewport(sUI _x, sUI _y, sUI _w, sUI _h) {
    viewport_w = sSI(_w);
    viewport_h = sSI(_h);
 
-   Dsdvg_tracecallv("[trc] sdvg_SetViewport: viewport_x=%d y=%d w=%d h=%d\n", viewport_x, viewport_y, viewport_w, viewport_h);
+   Dsdvg_tracecall("[trc] sdvg_SetViewport: viewport_x=%d y=%d w=%d h=%d\n", viewport_x, viewport_y, viewport_w, viewport_h);
 
    Dsdvg_glcall(glViewport(viewport_x, viewport_y,
                            viewport_w, viewport_h
@@ -6505,7 +6630,7 @@ void YAC_CALL sdvg_PushViewport(sUI _x, sUI _y, sUI _w, sUI _h) {
       viewport_w = sSI(_w);
       viewport_h = sSI(_h);
 
-      Dsdvg_tracecallv("[trc] sdvg_PushViewport: viewport_x=%d y=%d w=%d h=%d\n", viewport_x, viewport_y, viewport_w, viewport_h);
+      Dsdvg_tracecall("[trc] sdvg_PushViewport: viewport_x=%d y=%d w=%d h=%d\n", viewport_x, viewport_y, viewport_w, viewport_h);
 
       Dsdvg_glcall(glViewport(viewport_x, viewport_y,
                               viewport_w, viewport_h
@@ -6530,7 +6655,7 @@ void YAC_CALL sdvg_PopViewport(void) {
       viewport_w = viewport_stack[viewport_stacki++];
       viewport_h = viewport_stack[viewport_stacki++];
 
-      Dsdvg_tracecallv("[trc] sdvg_PopViewport: viewport_x=%d y=%d w=%d h=%d\n", viewport_x, viewport_y, viewport_w, viewport_h);
+      Dsdvg_tracecall("[trc] sdvg_PopViewport: viewport_x=%d y=%d w=%d h=%d\n", viewport_x, viewport_y, viewport_w, viewport_h);
 
       Dsdvg_glcall(glViewport(viewport_x, viewport_y,
                               viewport_w, viewport_h
@@ -6567,7 +6692,7 @@ void YAC_CALL sdvg_SetScissor(sUI _x, sUI _y, sUI _w, sUI _h) {
    scissor_w = sSI(_w);
    scissor_h = sSI(_h);
 
-   Dsdvg_tracecallv("[trc] sdvg_SetScissor: scissor_x=%d y=%d w=%d h=%d\n", scissor_x, scissor_y, scissor_w, scissor_h);
+   Dsdvg_tracecall("[trc] sdvg_SetScissor: scissor_x=%d y=%d w=%d h=%d\n", scissor_x, scissor_y, scissor_w, scissor_h);
 
    Dsdvg_glcall(glScissor(scissor_x, scissor_y,
                           scissor_w, scissor_h
@@ -6647,7 +6772,7 @@ void YAC_CALL sdvg_PushScissor(sUI _x, sUI _y, sUI _w, sUI _h) {
       if(scissor_h < 0)
          scissor_h = 0;
 
-      Dsdvg_tracecallv("[trc] sdvg_PushScissor: scissor_x=%d y=%d w=%d h=%d\n", scissor_x, scissor_y, scissor_w, scissor_h);
+      Dsdvg_tracecall("[trc] sdvg_PushScissor: scissor_x=%d y=%d w=%d h=%d\n", scissor_x, scissor_y, scissor_w, scissor_h);
       Dsdvg_glcall(glScissor(scissor_x, scissor_y,
                              scissor_w, scissor_h
                              )
@@ -6667,7 +6792,7 @@ void YAC_CALL sdvg_PopScissor(void) {
       scissor_w = scissor_stack[scissor_stacki++];
       scissor_h = scissor_stack[scissor_stacki++];
 
-      Dsdvg_tracecallv("[trc] sdvg_PopScissor: scissor_x=%d y=%d w=%d h=%d\n", scissor_x, scissor_y, scissor_w, scissor_h);
+      Dsdvg_tracecall("[trc] sdvg_PopScissor: scissor_x=%d y=%d w=%d h=%d\n", scissor_x, scissor_y, scissor_w, scissor_h);
       Dsdvg_glcall(glScissor(scissor_x, scissor_y,
                              scissor_w, scissor_h
                              )
@@ -6692,7 +6817,7 @@ void YAC_CALL sdvg_TransformChanged(void) {
 #ifdef SHADERVG_SCRIPT_API
    // (todo) implement me
 #else
-#if 1
+#if 0
    // debug-print modelview-projection matrix
    for(sUI i = 0u; i < 16u; i++)
    {
@@ -6710,16 +6835,12 @@ void YAC_CALL sdvg_TransformChanged(void) {
 
 #ifdef SHADERVG_USE_POLYGON_SHADERS
    // Unproject matrix (n-polygon radial/conic/pattern paints)
-   //   (todo) postpone until next n-polygon draw that does not use solid or linear gradient
    {
-      // // sF32 vpWh = viewport_w * 0.5f;
-      // // sF32 vpHh = viewport_h * 0.5f;
-      // // sdvg_int_mvp_matrix_unproject->copyFrom(sdvg_int_mvp_matrix);
-      // // minnie_matrix4f_translatef(sdvg_int_mvp_matrix_unproject, -viewport_x - vpWh, -viewport_y - vpHh, 0.0f);
-      // // minnie_matrix4f_scalef(sdvg_int_mvp_matrix_unproject, 1.0f / vpWh, 1.0f / vpHh, 1.0f);
-      minnie_matrix4f_invert(sdvg_int_mvp_matrix, sdvg_int_mvp_matrix_unproject);
+      // (note) postpone until next n-polygon draw that does not use solid or linear gradient
+      // // minnie_matrix4f_invert(sdvg_int_mvp_matrix, sdvg_int_mvp_matrix_unproject);
+      loc_b_update_matrix_unproject = YAC_TRUE;
 
-#if 1
+#if 0
       // debug-print unproject matrix
       for(sUI i = 0u; i < 16u; i++)
       {
@@ -6822,7 +6943,9 @@ void YAC_CALL sdvg_BeginFrame(void) {
    }
 
    Dsdvg_inc_shape_state(u_transform);
+
 #ifdef SHADERVG_USE_POLYGON_SHADERS
+   loc_b_update_matrix_unproject = YAC_TRUE;
    if(PAINT_SOLID != sdvg_int_paint.mode)
    {
       Dsdvg_inc_shape_state(u_paint);
@@ -7033,7 +7156,7 @@ void YAC_CALL sdvg_SetAlphaSDFRange(sF32 _aMin, sF32 _aMax) {
       alpha_sdf_max = (128.0f -  6.0f) / 128.0f;
    }
    alpha_sdf_maxmin_scale = 1.0f / (alpha_sdf_max - alpha_sdf_min);
-   Dsdvg_tracecallv("[trc] sdvg_SetAlphaSDFRange: alpha_sdf min=%f max=%f scale=%f\n", alpha_sdf_min, alpha_sdf_max, alpha_sdf_maxmin_scale);
+   Dsdvg_tracecall("[trc] sdvg_SetAlphaSDFRange: alpha_sdf min=%f max=%f scale=%f\n", alpha_sdf_min, alpha_sdf_max, alpha_sdf_maxmin_scale);
 }
 
 void YAC_CALL sdvg_SetAlphaSDFExp(sF32 _aExp) {
