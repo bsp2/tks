@@ -738,6 +738,7 @@ static void Test_23(sBool _bFill, sBool _bStroke) {
 // ----------------------------------------------------------------------------
 static void Test_26(void) {
    // arc stroke+pattern
+   // Dprintf("xxx Test_26 b_benchmark=%d b_gl_buf_once=%d\n", b_benchmark, b_gl_buf_once);
 
    minSetGeoScale2f(VP_W/454.0f, VP_H/454.0f);
    minSetStrokeScale(stroke_scale * (VP_W / 454.0f));
@@ -1679,6 +1680,9 @@ int main(int argc, char**argv) {
       test_idx = 0;
    }
 
+   if(b_benchmark)
+      b_vsync = YAC_FALSE;
+
    if(hal_window_init(DISPLAY_WIDTH, DISPLAY_HEIGHT))
    {
       (void)hal_window_get_size(&display_width, &display_height);
@@ -1744,7 +1748,7 @@ int main(int argc, char**argv) {
       SelectTest(test_idx);
 
       // Main loop
-      Dprintf("[...] entering event loop\n");
+      Dprintf("[...] entering event loop (b_vsync=%d)\n", b_vsync);
 
       hal_set_swap_interval(b_vsync ? 1 : 0);
 

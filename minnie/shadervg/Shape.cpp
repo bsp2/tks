@@ -1057,11 +1057,13 @@ void ShaderVG_Shape::drawTrianglesFillFlatUniformVBO32Paint(sUI _vboId,
                        );
 
    Dsdvg_attrib_offset(shape_a_vertex, 2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/, 8/*stride*/, _byteOffset);
-   Dsdvg_attrib_enable(shape_a_vertex);
+   Dsdvg_queue_attrib_enable(shape_a_vertex);
+
+   Dsdvg_handle_queued_attrib_enable_and_divisor();
 
    Dsdvg_draw_triangles(0, _numVerts);
 
-   Dsdvg_attrib_disable(shape_a_vertex);
+   Dsdvg_queue_attrib_disable(shape_a_vertex);
 }
 
 void ShaderVG_Shape::drawTrianglesFillFlatUniformVBO14_2Paint(sUI _vboId,
@@ -1090,11 +1092,13 @@ void ShaderVG_Shape::drawTrianglesFillFlatUniformVBO14_2Paint(sUI _vboId,
                        );
 
    Dsdvg_attrib_offset(shape_a_vertex, 2/*size*/, GL_SHORT, GL_FALSE/*normalize*/, 4/*stride*/, _byteOffset);
-   Dsdvg_attrib_enable(shape_a_vertex);
+   Dsdvg_queue_attrib_enable(shape_a_vertex);
+
+   Dsdvg_handle_queued_attrib_enable_and_divisor();
 
    Dsdvg_draw_triangles(0, _numVerts);
 
-   Dsdvg_attrib_disable(shape_a_vertex);
+   Dsdvg_queue_attrib_disable(shape_a_vertex);
 }
 
 void ShaderVG_Shape::drawRectFillAAVBO32Paint(sUI  _vboId,
@@ -1116,6 +1120,9 @@ void ShaderVG_Shape::drawRectFillAAVBO32Paint(sUI  _vboId,
       sSI aVertexFill = sdvg_int_BindFillShader();
 
       Dsdvg_attrib_offset(aVertexFill, 2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/, 0/*stride*/, _byteOffsetInner);
+
+      Dsdvg_handle_queued_attrib_enable_and_divisor();
+
       Dsdvg_draw_arrays_vbo(GL_TRIANGLES, 0, _numVertsInner);
 
       sdvg_int_EndFillShader();
@@ -1156,11 +1163,13 @@ void ShaderVG_Shape::drawRectFillAAVBO32Paint(sUI  _vboId,
                           );
 
       Dsdvg_attrib_offset(shape_a_vertex, 2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/, 0/*stride*/, _byteOffsetBorder);
-      Dsdvg_attrib_enable(shape_a_vertex);
+      Dsdvg_queue_attrib_enable(shape_a_vertex);
+
+      Dsdvg_handle_queued_attrib_enable_and_divisor();
 
       Dsdvg_draw_arrays_vbo(_glPrimTypeBorder, 0, _numVertsBorder);
 
-      Dsdvg_attrib_disable(shape_a_vertex);
+      Dsdvg_queue_attrib_disable(shape_a_vertex);
    }
 }
 
@@ -1208,6 +1217,8 @@ void ShaderVG_Shape::drawRectFillAAPaint(Dsdvg_buffer_ref_t _scratchBuf,
 
       /* Dyac_host_printf("xxx rectfill: scratchBuf.offset=%u size=%u numTris=%u\n", Dstream_get_offset(_scratchBuf), _scratchBuf->size, numTris); */
 
+      Dsdvg_handle_queued_attrib_enable_and_divisor();
+
       Dsdvg_draw_triangles(0, numTris*3);
 
       sdvg_int_EndFillShader();
@@ -1250,7 +1261,7 @@ void ShaderVG_Shape::drawRectFillAAPaint(Dsdvg_buffer_ref_t _scratchBuf,
                        NULL/*mvpMatrixUnproject*/
                        );
 
-   Dsdvg_attrib_enable(shape_a_vertex);
+   Dsdvg_queue_attrib_enable(shape_a_vertex);
 
    if(bSingle)
    {
@@ -1260,6 +1271,8 @@ void ShaderVG_Shape::drawRectFillAAPaint(Dsdvg_buffer_ref_t _scratchBuf,
                       _sizeX * 2.0f,
                       _sizeY * 2.0f
                       );
+
+      Dsdvg_handle_queued_attrib_enable_and_divisor();
 
       Dsdvg_draw_triangle_fan(0, 4);
    }
@@ -1274,10 +1287,12 @@ void ShaderVG_Shape::drawRectFillAAPaint(Dsdvg_buffer_ref_t _scratchBuf,
                              _aaRange
                              );
 
+      Dsdvg_handle_queued_attrib_enable_and_divisor();
+
       Dsdvg_draw_triangles(0, 8*3);
    }
 
-   Dsdvg_attrib_disable(shape_a_vertex);
+   Dsdvg_queue_attrib_disable(shape_a_vertex);
 }
 
 void ShaderVG_Shape::drawRectStrokeAAVBO32Paint(sUI   _vboId,
@@ -1331,11 +1346,13 @@ void ShaderVG_Shape::drawRectStrokeAAVBO32Paint(sUI   _vboId,
 
       Dsdvg_attrib_offset(shape_a_vertex, 2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/, 0/*stride*/, _byteOffsetBorder);
 
-      Dsdvg_attrib_enable(shape_a_vertex);
+      Dsdvg_queue_attrib_enable(shape_a_vertex);
+
+      Dsdvg_handle_queued_attrib_enable_and_divisor();
 
       Dsdvg_draw_arrays_vbo(_glPrimTypeBorder, 0, _numVertsBorder);
 
-      Dsdvg_attrib_disable(shape_a_vertex);
+      Dsdvg_queue_attrib_disable(shape_a_vertex);
    }
 }
 
@@ -1392,7 +1409,7 @@ void ShaderVG_Shape::drawRectStrokeAAPaint(Dsdvg_buffer_ref_t _scratchBuf,
                        NULL/*mvpMatrixUnproject*/
                        );
 
-   Dsdvg_attrib_enable(shape_a_vertex);
+   Dsdvg_queue_attrib_enable(shape_a_vertex);
 
    if(bSingle)
    {
@@ -1402,6 +1419,8 @@ void ShaderVG_Shape::drawRectStrokeAAPaint(Dsdvg_buffer_ref_t _scratchBuf,
                       (_sizeX + _strokeW) * 2.0f,
                       (_sizeY + _strokeW) * 2.0f
                       );
+
+      Dsdvg_handle_queued_attrib_enable_and_divisor();
 
       Dsdvg_draw_triangle_fan(0, 4);
    }
@@ -1416,10 +1435,12 @@ void ShaderVG_Shape::drawRectStrokeAAPaint(Dsdvg_buffer_ref_t _scratchBuf,
                              _aaRange
                              );
 
+      Dsdvg_handle_queued_attrib_enable_and_divisor();
+
       Dsdvg_draw_triangles(0, 8*3);
    }
 
-   Dsdvg_attrib_disable(shape_a_vertex);
+   Dsdvg_queue_attrib_disable(shape_a_vertex);
 }
 
 void ShaderVG_Shape::drawEllipseFillAAVBO32Paint(sUI  _vboId,
@@ -1441,6 +1462,9 @@ void ShaderVG_Shape::drawEllipseFillAAVBO32Paint(sUI  _vboId,
       sSI aVertexFill = sdvg_int_BindFillShader();
 
       Dsdvg_attrib_offset(aVertexFill, 2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/, 0/*stride*/, _byteOffsetInner);
+
+      Dsdvg_handle_queued_attrib_enable_and_divisor();
+
       Dsdvg_draw_triangle_fan_vbo(0, _numVertsInner);
 
       sdvg_int_EndFillShader();
@@ -1484,11 +1508,13 @@ void ShaderVG_Shape::drawEllipseFillAAVBO32Paint(sUI  _vboId,
                           );
 
       Dsdvg_attrib_offset(shape_a_vertex, 2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/, 0/*stride*/, _byteOffsetBorder);
-      Dsdvg_attrib_enable(shape_a_vertex);
+      Dsdvg_queue_attrib_enable(shape_a_vertex);
+
+      Dsdvg_handle_queued_attrib_enable_and_divisor();
 
       Dsdvg_draw_arrays_vbo(_glPrimTypeBorder, 0, _numVertsBorder);
 
-      Dsdvg_attrib_disable(shape_a_vertex);
+      Dsdvg_queue_attrib_disable(shape_a_vertex);
    }
 }
 
@@ -1543,6 +1569,8 @@ void ShaderVG_Shape::drawEllipseFillAAPaint(Dsdvg_buffer_ref_t _scratchBuf,
          a += aStep;
       }
 
+      Dsdvg_handle_queued_attrib_enable_and_divisor();
+
       Dsdvg_draw_triangle_fan(0, numVerts);
 
       sdvg_int_EndFillShader();
@@ -1582,7 +1610,7 @@ void ShaderVG_Shape::drawEllipseFillAAPaint(Dsdvg_buffer_ref_t _scratchBuf,
    }
 #endif // SHADERVG_DEBUG_FRAG
 
-   Dsdvg_attrib_enable(shape_a_vertex);
+   Dsdvg_queue_attrib_enable(shape_a_vertex);
 
    updatePaintUniforms(YAC_FALSE/*bPolygon*/,
                        NULL/*mvpMatrix*/,
@@ -1610,6 +1638,8 @@ void ShaderVG_Shape::drawEllipseFillAAPaint(Dsdvg_buffer_ref_t _scratchBuf,
          Dstream_write_f32(_scratchBuf, x + w);   Dstream_write_f32(_scratchBuf, y + h);
          Dstream_write_f32(_scratchBuf, x);       Dstream_write_f32(_scratchBuf, y + h);
 
+         Dsdvg_handle_queued_attrib_enable_and_divisor();
+
          Dsdvg_draw_triangle_fan(0, numVerts);
       }
       else
@@ -1634,11 +1664,13 @@ void ShaderVG_Shape::drawEllipseFillAAPaint(Dsdvg_buffer_ref_t _scratchBuf,
             a += aStep;
          }
 
+         Dsdvg_handle_queued_attrib_enable_and_divisor();
+
          Dsdvg_draw_triangle_strip(0, numVerts);
       }
    }
 
-   Dsdvg_attrib_disable(shape_a_vertex);
+   Dsdvg_queue_attrib_disable(shape_a_vertex);
 }
 
 void ShaderVG_Shape::drawEllipseStrokeAAVBO32Paint(sUI   _vboId,
@@ -1707,11 +1739,13 @@ void ShaderVG_Shape::drawEllipseStrokeAAVBO32Paint(sUI   _vboId,
                           );
 
       Dsdvg_attrib_offset(shape_a_vertex, 2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/, 0/*stride*/, _byteOffsetBorder);
-      Dsdvg_attrib_enable(shape_a_vertex);
+      Dsdvg_queue_attrib_enable(shape_a_vertex);
+
+      Dsdvg_handle_queued_attrib_enable_and_divisor();
 
       Dsdvg_draw_arrays_vbo(_glPrimTypeBorder, 0, _numVertsBorder);
 
-      Dsdvg_attrib_disable(shape_a_vertex);
+      Dsdvg_queue_attrib_disable(shape_a_vertex);
 
       unbindShader();
    }
@@ -1798,7 +1832,7 @@ void ShaderVG_Shape::drawEllipseStrokeAAPaint(Dsdvg_buffer_ref_t _scratchBuf,
                        NULL/*mvpMatrixUnproject*/
                        );
 
-   Dsdvg_attrib_enable(shape_a_vertex);
+   Dsdvg_queue_attrib_enable(shape_a_vertex);
 
    // Calc border mesh
    if(bSingle)
@@ -1816,6 +1850,8 @@ void ShaderVG_Shape::drawEllipseStrokeAAPaint(Dsdvg_buffer_ref_t _scratchBuf,
       Dstream_write_f32(_scratchBuf, x + w);  Dstream_write_f32(_scratchBuf, y);
       Dstream_write_f32(_scratchBuf, x + w);  Dstream_write_f32(_scratchBuf, y + h);
       Dstream_write_f32(_scratchBuf, x);      Dstream_write_f32(_scratchBuf, y + h);
+
+      Dsdvg_handle_queued_attrib_enable_and_divisor();
 
       Dsdvg_draw_triangle_fan(0, numVerts);
    }
@@ -1841,10 +1877,12 @@ void ShaderVG_Shape::drawEllipseStrokeAAPaint(Dsdvg_buffer_ref_t _scratchBuf,
          a += aStep;
       }
 
+      Dsdvg_handle_queued_attrib_enable_and_divisor();
+
       Dsdvg_draw_triangle_strip(0, numVerts);
    }
 
-   Dsdvg_attrib_disable(shape_a_vertex);
+   Dsdvg_queue_attrib_disable(shape_a_vertex);
 }
 
 void ShaderVG_Shape::drawRoundRectFillAAVBO32Paint(sUI  _vboId,
@@ -1867,6 +1905,9 @@ void ShaderVG_Shape::drawRoundRectFillAAVBO32Paint(sUI  _vboId,
       sSI aVertexFill = sdvg_int_BindFillShader();
 
       Dsdvg_attrib_offset(aVertexFill, 2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/, 0/*stride*/, _byteOffsetInner);
+
+      Dsdvg_handle_queued_attrib_enable_and_divisor();
+
       Dsdvg_draw_triangles_vbo(0, _numVertsInner);
 
       sdvg_int_EndFillShader();
@@ -1911,11 +1952,13 @@ void ShaderVG_Shape::drawRoundRectFillAAVBO32Paint(sUI  _vboId,
                           );
 
       Dsdvg_attrib_offset(shape_a_vertex, 2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/, 0/*stride*/, _byteOffsetBorder);
-      Dsdvg_attrib_enable(shape_a_vertex);
+      Dsdvg_queue_attrib_enable(shape_a_vertex);
+
+      Dsdvg_handle_queued_attrib_enable_and_divisor();
 
       Dsdvg_draw_arrays_vbo(_glPrimTypeBorder, 0, _numVertsBorder);
 
-      Dsdvg_attrib_disable(shape_a_vertex);
+      Dsdvg_queue_attrib_disable(shape_a_vertex);
    }
 }
 
@@ -1956,6 +1999,8 @@ void ShaderVG_Shape::drawRoundRectFillAAPaint(Dsdvg_buffer_ref_t _scratchBuf,
                                            0.0f/*strokeW*/,
                                            _aaRange
                                            );
+
+      Dsdvg_handle_queued_attrib_enable_and_divisor();
 
       Dsdvg_draw_triangles(0, numTris*3);
 
@@ -2003,7 +2048,7 @@ void ShaderVG_Shape::drawRoundRectFillAAPaint(Dsdvg_buffer_ref_t _scratchBuf,
                        NULL/*mvpMatrixUnproject*/
                        );
 
-   Dsdvg_attrib_enable(shape_a_vertex);
+   Dsdvg_queue_attrib_enable(shape_a_vertex);
 
    if(bSingle)
    {
@@ -2013,6 +2058,8 @@ void ShaderVG_Shape::drawRoundRectFillAAPaint(Dsdvg_buffer_ref_t _scratchBuf,
                       _sizeX * 2.0f,
                       _sizeY * 2.0f
                       );
+
+      Dsdvg_handle_queued_attrib_enable_and_divisor();
 
       Dsdvg_draw_triangle_fan(0, 4);
    }
@@ -2029,10 +2076,12 @@ void ShaderVG_Shape::drawRoundRectFillAAPaint(Dsdvg_buffer_ref_t _scratchBuf,
                                             _aaRange
                                             );
 
+      Dsdvg_handle_queued_attrib_enable_and_divisor();
+
       Dsdvg_draw_triangles(0, numTris * 3u);
    }
 
-   Dsdvg_attrib_disable(shape_a_vertex);
+   Dsdvg_queue_attrib_disable(shape_a_vertex);
 }
 
 void ShaderVG_Shape::drawRoundRectStrokeAAVBO32Paint(sUI   _vboId,
@@ -2101,12 +2150,13 @@ void ShaderVG_Shape::drawRoundRectStrokeAAVBO32Paint(sUI   _vboId,
                           );
 
       Dsdvg_attrib_offset(shape_a_vertex, 2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/, 0/*stride*/, _byteOffsetBorder);
+      Dsdvg_queue_attrib_enable(shape_a_vertex);
 
-      Dsdvg_attrib_enable(shape_a_vertex);
+      Dsdvg_handle_queued_attrib_enable_and_divisor();
 
       Dsdvg_draw_arrays_vbo(_glPrimTypeBorder, 0, _numVertsBorder);
 
-      Dsdvg_attrib_disable(shape_a_vertex);
+      Dsdvg_queue_attrib_disable(shape_a_vertex);
    }
 }
 
@@ -2186,7 +2236,7 @@ void ShaderVG_Shape::drawRoundRectStrokeAAPaint(Dsdvg_buffer_ref_t _scratchBuf,
                        NULL/*mvpMatrixUnproject*/
                        );
 
-   Dsdvg_attrib_enable(shape_a_vertex);
+   Dsdvg_queue_attrib_enable(shape_a_vertex);
 
    if(bSingle)
    {
@@ -2196,6 +2246,8 @@ void ShaderVG_Shape::drawRoundRectStrokeAAPaint(Dsdvg_buffer_ref_t _scratchBuf,
                       (_sizeX + _strokeW) * 2.0f,
                       (_sizeY + _strokeW) * 2.0f
                       );
+
+      Dsdvg_handle_queued_attrib_enable_and_divisor();
 
       Dsdvg_draw_triangle_fan(0, 4);
    }
@@ -2212,10 +2264,12 @@ void ShaderVG_Shape::drawRoundRectStrokeAAPaint(Dsdvg_buffer_ref_t _scratchBuf,
                                             _aaRange
                                             );
 
+      Dsdvg_handle_queued_attrib_enable_and_divisor();
+
       Dsdvg_draw_triangles(0, numTris * 3u);
    }
 
-   Dsdvg_attrib_disable(shape_a_vertex);
+   Dsdvg_queue_attrib_disable(shape_a_vertex);
 }
 
 void ShaderVG_Shape::drawPointsRoundAAVBO32Paint(sUI   _vboId,
@@ -2271,27 +2325,30 @@ void ShaderVG_Shape::drawPointsRoundAAVBO32Paint(sUI   _vboId,
 
 #ifdef SHADERVG_GL_VERTEX_ID
    Dsdvg_attrib_offset(shape_a_vertex, 2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/, 8/*stride*/, _byteOffset);
+   Dsdvg_queue_attrib_enable(shape_a_vertex);
+   Dsdvg_queue_attrib_divisor(shape_a_vertex, 1);
 
-   Dsdvg_attrib_enable(shape_a_vertex);
-   Dsdvg_attrib_divisor(shape_a_vertex, 1);
+   Dsdvg_handle_queued_attrib_enable_and_divisor();
 
    const sUI numInstances = _numPoints;
    Dsdvg_draw_triangles_instanced_vbo(6, numInstances);
 
-   Dsdvg_attrib_disable(shape_a_vertex);
-   Dsdvg_attrib_divisor_reset(shape_a_vertex);
+   Dsdvg_queue_attrib_disable(shape_a_vertex);
+   Dsdvg_queue_attrib_divisor_reset(shape_a_vertex);
 #else
    Dsdvg_attrib_offset(shape_a_vertex_id, 1/*size*/, GL_UNSIGNED_SHORT, GL_FALSE/*normalize*/, 10/*stride*/, _byteOffset + 0);
    Dsdvg_attrib_offset(shape_a_vertex,    2/*size*/, GL_FLOAT,          GL_FALSE/*normalize*/, 10/*stride*/, _byteOffset + 2);
 
-   Dsdvg_attrib_enable(shape_a_vertex_id);
-   Dsdvg_attrib_enable(shape_a_vertex);
+   Dsdvg_queue_attrib_enable(shape_a_vertex_id);
+   Dsdvg_queue_attrib_enable(shape_a_vertex);
+
+   Dsdvg_handle_queued_attrib_enable_and_divisor();
 
    const sUI numInstances = _numPoints;
    Dsdvg_draw_triangles_vbo(0u, 6u * numInstances);
 
-   Dsdvg_attrib_disable(shape_a_vertex);
-   Dsdvg_attrib_disable(shape_a_vertex_id);
+   Dsdvg_queue_attrib_disable(shape_a_vertex);
+   Dsdvg_queue_attrib_disable(shape_a_vertex_id);
 #endif // SHADERVG_GL_VERTEX_ID
 }
 
@@ -2350,26 +2407,30 @@ void ShaderVG_Shape::drawPointsRoundAAVBO14_2Paint(sUI   _vboId,
 #ifdef SHADERVG_GL_VERTEX_ID
    Dsdvg_attrib_offset(shape_a_vertex, 2/*size*/, GL_SHORT, GL_FALSE/*normalize*/, 4/*stride*/, _byteOffset);
 
-   Dsdvg_attrib_enable(shape_a_vertex);
-   Dsdvg_attrib_divisor(shape_a_vertex, 1);
+   Dsdvg_queue_attrib_enable(shape_a_vertex);
+   Dsdvg_queue_attrib_divisor(shape_a_vertex, 1);
+
+   Dsdvg_handle_queued_attrib_enable_and_divisor();
 
    const sUI numInstances = _numPoints;
    Dsdvg_draw_triangles_instanced_vbo(6, numInstances);
 
-   Dsdvg_attrib_disable(shape_a_vertex);
-   Dsdvg_attrib_divisor_reset(shape_a_vertex);
+   Dsdvg_queue_attrib_disable(shape_a_vertex);
+   Dsdvg_queue_attrib_divisor_reset(shape_a_vertex);
 #else
    Dsdvg_attrib_offset(shape_a_vertex_id, 1/*size*/, GL_UNSIGNED_SHORT, GL_FALSE/*normalize*/, 6/*stride*/, _byteOffset + 0);
    Dsdvg_attrib_offset(shape_a_vertex,    2/*size*/, GL_SHORT,          GL_FALSE/*normalize*/, 6/*stride*/, _byteOffset + 2);
 
-   Dsdvg_attrib_enable(shape_a_vertex_id);
-   Dsdvg_attrib_enable(shape_a_vertex);
+   Dsdvg_queue_attrib_enable(shape_a_vertex_id);
+   Dsdvg_queue_attrib_enable(shape_a_vertex);
+
+   Dsdvg_handle_queued_attrib_enable_and_divisor();
 
    const sUI numInstances = _numPoints;
    Dsdvg_draw_triangles_vbo(0u, 6u * numInstances);
 
-   Dsdvg_attrib_disable(shape_a_vertex);
-   Dsdvg_attrib_disable(shape_a_vertex_id);
+   Dsdvg_queue_attrib_disable(shape_a_vertex);
+   Dsdvg_queue_attrib_disable(shape_a_vertex_id);
 #endif // SHADERVG_GL_VERTEX_ID
 }
 

@@ -261,6 +261,7 @@ class RoundRectFillStrokeAA : public ShaderVG_Shape {
          sSI aVertexFill = sdvg_int_BindFillShader();
 
          Dsdvg_attrib_offset(aVertexFill, 2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/, 0/*stride*/, _byteOffsetInner);
+         Dsdvg_handle_queued_attrib_enable_and_divisor();
          Dsdvg_draw_triangles_vbo(0, _numVertsInner);
 
          sdvg_int_EndFillShader();
@@ -310,11 +311,13 @@ class RoundRectFillStrokeAA : public ShaderVG_Shape {
 #endif // SHADERVG_DEBUG_FRAG
 
          Dsdvg_attrib_offset(shape_a_vertex, 2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/, 0/*stride*/, _byteOffsetBorder);
-         Dsdvg_attrib_enable(shape_a_vertex);
+         Dsdvg_queue_attrib_enable(shape_a_vertex);
+
+         Dsdvg_handle_queued_attrib_enable_and_divisor();
 
          Dsdvg_draw_arrays_vbo(_glPrimTypeBorder, 0, _numVertsBorder);
 
-         Dsdvg_attrib_disable(shape_a_vertex);
+         Dsdvg_queue_attrib_disable(shape_a_vertex);
       }
    }
 
@@ -354,6 +357,8 @@ class RoundRectFillStrokeAA : public ShaderVG_Shape {
                                               _strokeW,
                                               _aaRange
                                               );
+
+         Dsdvg_handle_queued_attrib_enable_and_divisor();
 
          Dsdvg_draw_triangles(0, numTris * 3u);
 
@@ -401,7 +406,7 @@ class RoundRectFillStrokeAA : public ShaderVG_Shape {
       }
 #endif // SHADERVG_DEBUG_FRAG
 
-      Dsdvg_attrib_enable(shape_a_vertex);
+      Dsdvg_queue_attrib_enable(shape_a_vertex);
 
       if(bSingle)
       {
@@ -411,6 +416,8 @@ class RoundRectFillStrokeAA : public ShaderVG_Shape {
                          (_sizeX + _strokeW) * 2.0f,
                          (_sizeY + _strokeW) * 2.0f
                          );
+
+         Dsdvg_handle_queued_attrib_enable_and_divisor();
 
          Dsdvg_draw_triangle_fan(0, 4);
       }
@@ -427,10 +434,12 @@ class RoundRectFillStrokeAA : public ShaderVG_Shape {
                                                _aaRange
                                                );
 
+         Dsdvg_handle_queued_attrib_enable_and_divisor();
+
          Dsdvg_draw_triangles(0, numTris * 3u);
       }
 
-      Dsdvg_attrib_disable(shape_a_vertex);
+      Dsdvg_queue_attrib_disable(shape_a_vertex);
    }
 
 };

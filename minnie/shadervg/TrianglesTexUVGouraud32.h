@@ -2,7 +2,7 @@
 // ---- file   : TrianglesTexUVGouraud32.h
 // ---- author : Bastian Spiegel <bs@tkscript.de>
 // ---- legal  : Distributed under terms of the MIT license (https://opensource.org/licenses/MIT)
-// ----          Copyright 2025 by bsp
+// ----          Copyright 2025-2026 by bsp
 // ----
 // ----          Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 // ----          associated documentation files (the "Software"), to deal in the Software without restriction, including
@@ -108,15 +108,17 @@ class TrianglesTexUVGouraud32 : public ShaderVG_Shape {
       Dsdvg_attrib_offset(shape_a_color,  4/*size*/, GL_UNSIGNED_BYTE, GL_TRUE /*normalize*/, 20/*stride*/, _byteOffset +  8);
       Dsdvg_attrib_offset(shape_a_vertex, 2/*size*/, GL_FLOAT,         GL_FALSE/*normalize*/, 20/*stride*/, _byteOffset + 12);
 
-      Dsdvg_attrib_enable(shape_a_uv);
-      Dsdvg_attrib_enable(shape_a_color);
-      Dsdvg_attrib_enable(shape_a_vertex);
+      Dsdvg_queue_attrib_enable(shape_a_uv);
+      Dsdvg_queue_attrib_enable(shape_a_color);
+      Dsdvg_queue_attrib_enable(shape_a_vertex);
+
+      Dsdvg_handle_queued_attrib_enable_and_divisor();
 
       Dsdvg_draw_triangles_vbo(0, _numVerts);
 
-      Dsdvg_attrib_disable(shape_a_uv);
-      Dsdvg_attrib_disable(shape_a_color);
-      Dsdvg_attrib_disable(shape_a_vertex);
+      Dsdvg_queue_attrib_disable(shape_a_uv);
+      Dsdvg_queue_attrib_disable(shape_a_color);
+      Dsdvg_queue_attrib_disable(shape_a_vertex);
    }
 
 };

@@ -203,27 +203,29 @@ class LinesGouraudAA32 : public ShaderVG_Shape {
       Dsdvg_attrib_offset(shape_a_vertex,   2/*size*/, GL_FLOAT,         GL_FALSE/*normalize*/, 24/*stride*/, _byteOffset +  4);
       Dsdvg_attrib_offset(shape_a_vertex_n, 2/*size*/, GL_FLOAT,         GL_FALSE/*normalize*/, 24/*stride*/, _byteOffset + 16);
 
-      Dsdvg_attrib_enable(shape_a_color);
-      Dsdvg_attrib_enable(shape_a_color_n);
-      Dsdvg_attrib_enable(shape_a_vertex);
-      Dsdvg_attrib_enable(shape_a_vertex_n);
+      Dsdvg_queue_attrib_enable(shape_a_color);
+      Dsdvg_queue_attrib_enable(shape_a_color_n);
+      Dsdvg_queue_attrib_enable(shape_a_vertex);
+      Dsdvg_queue_attrib_enable(shape_a_vertex_n);
 
-      Dsdvg_attrib_divisor(shape_a_color, 1);
-      Dsdvg_attrib_divisor(shape_a_color_n, 1);
-      Dsdvg_attrib_divisor(shape_a_vertex, 1);
-      Dsdvg_attrib_divisor(shape_a_vertex_n, 1);
+      Dsdvg_queue_attrib_divisor(shape_a_color, 1);
+      Dsdvg_queue_attrib_divisor(shape_a_color_n, 1);
+      Dsdvg_queue_attrib_divisor(shape_a_vertex, 1);
+      Dsdvg_queue_attrib_divisor(shape_a_vertex_n, 1);
+
+      Dsdvg_handle_queued_attrib_enable_and_divisor();
 
       Dsdvg_draw_triangles_instanced_vbo(6, numInstances);
 
-      Dsdvg_attrib_disable(shape_a_color_n);
-      Dsdvg_attrib_disable(shape_a_color);
-      Dsdvg_attrib_disable(shape_a_vertex_n);
-      Dsdvg_attrib_disable(shape_a_vertex);
+      Dsdvg_queue_attrib_disable(shape_a_color_n);
+      Dsdvg_queue_attrib_disable(shape_a_color);
+      Dsdvg_queue_attrib_disable(shape_a_vertex_n);
+      Dsdvg_queue_attrib_disable(shape_a_vertex);
 
-      Dsdvg_attrib_divisor_reset(shape_a_color);
-      Dsdvg_attrib_divisor_reset(shape_a_color_n);
-      Dsdvg_attrib_divisor_reset(shape_a_vertex);
-      Dsdvg_attrib_divisor_reset(shape_a_vertex_n);
+      Dsdvg_queue_attrib_divisor_reset(shape_a_color);
+      Dsdvg_queue_attrib_divisor_reset(shape_a_color_n);
+      Dsdvg_queue_attrib_divisor_reset(shape_a_vertex);
+      Dsdvg_queue_attrib_divisor_reset(shape_a_vertex_n);
 #else
       Dsdvg_attrib_offset(shape_a_vertex_id, 1/*size*/, GL_UNSIGNED_SHORT, GL_FALSE/*normalize*/, 14/*stride*/, _byteOffset +  0);
       Dsdvg_attrib_offset(shape_a_color,     4/*size*/, GL_UNSIGNED_BYTE,  GL_TRUE /*normalize*/, 14/*stride*/, _byteOffset +  2);
@@ -231,19 +233,21 @@ class LinesGouraudAA32 : public ShaderVG_Shape {
       Dsdvg_attrib_offset(shape_a_vertex,    2/*size*/, GL_FLOAT,          GL_FALSE/*normalize*/, 14/*stride*/, _byteOffset +  6);
       Dsdvg_attrib_offset(shape_a_vertex_n,  2/*size*/, GL_FLOAT,          GL_FALSE/*normalize*/, 14/*stride*/, _byteOffset + 90);
 
-      Dsdvg_attrib_enable(shape_a_vertex_id);
-      Dsdvg_attrib_enable(shape_a_color);
-      Dsdvg_attrib_enable(shape_a_color_n);
-      Dsdvg_attrib_enable(shape_a_vertex);
-      Dsdvg_attrib_enable(shape_a_vertex_n);
+      Dsdvg_queue_attrib_enable(shape_a_vertex_id);
+      Dsdvg_queue_attrib_enable(shape_a_color);
+      Dsdvg_queue_attrib_enable(shape_a_color_n);
+      Dsdvg_queue_attrib_enable(shape_a_vertex);
+      Dsdvg_queue_attrib_enable(shape_a_vertex_n);
+
+      Dsdvg_handle_queued_attrib_enable_and_divisor();
 
       Dsdvg_draw_triangles_vbo(0u, numInstances * 12u - 6u);
 
-      Dsdvg_attrib_disable(shape_a_color_n);
-      Dsdvg_attrib_disable(shape_a_color);
-      Dsdvg_attrib_disable(shape_a_vertex_n);
-      Dsdvg_attrib_disable(shape_a_vertex);
-      Dsdvg_attrib_disable(shape_a_vertex_id);
+      Dsdvg_queue_attrib_disable(shape_a_color_n);
+      Dsdvg_queue_attrib_disable(shape_a_color);
+      Dsdvg_queue_attrib_disable(shape_a_vertex_n);
+      Dsdvg_queue_attrib_disable(shape_a_vertex);
+      Dsdvg_queue_attrib_disable(shape_a_vertex_id);
 #endif // SHADERVG_GL_VERTEX_ID
    }
 

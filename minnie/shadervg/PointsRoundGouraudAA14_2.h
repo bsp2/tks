@@ -171,35 +171,39 @@ class PointsRoundGouraudAA14_2 : public ShaderVG_Shape {
       Dsdvg_attrib_offset(shape_a_color,  4/*size*/, GL_UNSIGNED_BYTE,  GL_TRUE/*normalize*/,  8/*stride*/, _byteOffset +  0);
       Dsdvg_attrib_offset(shape_a_vertex, 2/*size*/, GL_SHORT,          GL_FALSE/*normalize*/, 8/*stride*/, _byteOffset +  4);
 
-      Dsdvg_attrib_enable(shape_a_color);
-      Dsdvg_attrib_enable(shape_a_vertex);
+      Dsdvg_queue_attrib_enable(shape_a_color);
+      Dsdvg_queue_attrib_enable(shape_a_vertex);
 
-      Dsdvg_attrib_divisor(shape_a_color, 1);
-      Dsdvg_attrib_divisor(shape_a_vertex, 1);
+      Dsdvg_queue_attrib_divisor(shape_a_color, 1);
+      Dsdvg_queue_attrib_divisor(shape_a_vertex, 1);
+
+      Dsdvg_handle_queued_attrib_enable_and_divisor();
 
       const sUI numInstances = _numPoints;
       Dsdvg_draw_triangles_instanced_vbo(6, numInstances);
 
-      Dsdvg_attrib_disable(shape_a_color);
-      Dsdvg_attrib_disable(shape_a_vertex);
+      Dsdvg_queue_attrib_disable(shape_a_color);
+      Dsdvg_queue_attrib_disable(shape_a_vertex);
 
-      Dsdvg_attrib_divisor_reset(shape_a_color);
-      Dsdvg_attrib_divisor_reset(shape_a_vertex);
+      Dsdvg_queue_attrib_divisor_reset(shape_a_color);
+      Dsdvg_queue_attrib_divisor_reset(shape_a_vertex);
 #else
       Dsdvg_attrib_offset(shape_a_vertex_id, 1/*size*/, GL_UNSIGNED_SHORT, GL_FALSE/*normalize*/, 10/*stride*/, _byteOffset +  0);
       Dsdvg_attrib_offset(shape_a_color,     4/*size*/, GL_UNSIGNED_BYTE,  GL_TRUE/*normalize*/,  10/*stride*/, _byteOffset +  2);
       Dsdvg_attrib_offset(shape_a_vertex,    2/*size*/, GL_SHORT,          GL_FALSE/*normalize*/, 10/*stride*/, _byteOffset +  6);
 
-      Dsdvg_attrib_enable(shape_a_vertex_id);
-      Dsdvg_attrib_enable(shape_a_color);
-      Dsdvg_attrib_enable(shape_a_vertex);
+      Dsdvg_queue_attrib_enable(shape_a_vertex_id);
+      Dsdvg_queue_attrib_enable(shape_a_color);
+      Dsdvg_queue_attrib_enable(shape_a_vertex);
+
+      Dsdvg_handle_queued_attrib_enable_and_divisor();
 
       const sUI numInstances = _numPoints;
       Dsdvg_draw_triangles_vbo(0u, 6u * numInstances);
 
-      Dsdvg_attrib_disable(shape_a_color);
-      Dsdvg_attrib_disable(shape_a_vertex);
-      Dsdvg_attrib_disable(shape_a_vertex_id);
+      Dsdvg_queue_attrib_disable(shape_a_color);
+      Dsdvg_queue_attrib_disable(shape_a_vertex);
+      Dsdvg_queue_attrib_disable(shape_a_vertex_id);
 #endif // SHADERVG_GL_VERTEX_ID
    }
 

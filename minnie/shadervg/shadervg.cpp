@@ -794,38 +794,6 @@ static shadervg_shape_t all_shapes[] = {
 
 #undef X
 
-#ifdef GL_TES_spirv_program_loader
-extern "C" {
-void sdvg_int_find_spirv_program_by_name(const char *_name, const void **retAddr, uint32_t *retSize) {
-   if(!strncmp(_name, "spirv/", 6))
-   {
-      const char *name = _name + 6;
-      int nameLen = strlen(name) - 4/*.prg*/;
-      // // int nameLenOrig = strlen(_name);
-      if(nameLen > 0)
-      {
-         shadervg_shape_t *shapeType = all_shapes;
-         for(sUI i = 0u; i < SHADERVG_NUM_SHAPES; i++, shapeType++)
-         {
-            // Dsdvg_debugprintf("xxx find=\"%s\" compare shapeType->name=\"%s\"\n", name, shapeType->name);
-            if(!strncmp(shapeType->name, name, nameLen))
-            {
-               *retAddr = shapeType->spirv.data;
-               *retSize = shapeType->spirv.size;
-               // Dsdvg_debugprintf("xxx sdvg_int_find_spirv_program_by_name: found name=\"%s\" => *retAddr=%p *retSize=%u\n", name, *retAddr, *retSize);
-               break;
-            }
-         }
-      }
-   }
-   if(0u == *retSize)
-   {
-      Dsdvg_debugprintf("[dbg] sdvg_int_find_spirv_program_by_name: failed to find name=\"%s\"\n", _name);
-   }
-}
-}
-#endif // GL_TES_spirv_program_loader
-
 struct ShaderVG_FBO {
    sUI fbo_id;  // 0=unused
    sUI fbo_msaa_id;  // 0=no MSAA
@@ -969,6 +937,10 @@ sSI            sdvg_int_shape_state_u_color_fill;
 sSI            sdvg_int_shape_state_u_color_stroke;
 sdvg_paint_t   sdvg_int_paint;
 sSI            sdvg_int_shape_state_u_paint;
+sSI            sdvg_int_attrib_enable_mask;
+sSI            sdvg_int_active_attrib_enable_mask;
+sSI            sdvg_int_attrib_divisor_mask;
+sSI            sdvg_int_active_attrib_divisor_mask;
 
 static sUI vao_id = 0u;  // when sdvg_int_b_glcore=1
 
@@ -1132,6 +1104,38 @@ static void loc_reset_shape_states(void) {
    sdvg_int_shape_state_u_color_stroke = 1;
    sdvg_int_shape_state_u_paint        = 1;
 }
+
+#ifdef GL_TES_spirv_program_loader
+extern "C" {
+void sdvg_int_find_spirv_program_by_name(const char *_name, const void **retAddr, uint32_t *retSize) {
+   if(!strncmp(_name, "spirv/", 6))
+   {
+      const char *name = _name + 6;
+      int nameLen = strlen(name) - 4/*.prg*/;
+      // // int nameLenOrig = strlen(_name);
+      if(nameLen > 0)
+      {
+         shadervg_shape_t *shapeType = all_shapes;
+         for(sUI i = 0u; i < SHADERVG_NUM_SHAPES; i++, shapeType++)
+         {
+            // Dsdvg_debugprintf("xxx find=\"%s\" compare shapeType->name=\"%s\"\n", name, shapeType->name);
+            if(!strncmp(shapeType->name, name, nameLen))
+            {
+               *retAddr = shapeType->spirv.data;
+               *retSize = shapeType->spirv.size;
+               // Dsdvg_debugprintf("xxx sdvg_int_find_spirv_program_by_name: found name=\"%s\" => *retAddr=%p *retSize=%u\n", name, *retAddr, *retSize);
+               break;
+            }
+         }
+      }
+   }
+   if(0u == *retSize)
+   {
+      Dsdvg_debugprintf("[dbg] sdvg_int_find_spirv_program_by_name: failed to find name=\"%s\"\n", _name);
+   }
+}
+}
+#endif // GL_TES_spirv_program_loader
 
 sBool YAC_CALL sdvg_Init(sBool _bGLCore) {
    sBool r = YAC_TRUE;
@@ -1335,6 +1339,52 @@ void YAC_CALL sdvg_Exit(void) {
    {
       Dsdvg_debugprintf("[dbg] sdvg_Exit: LEAVE\n");
    }
+}
+
+void sdvg_int_handle_queued_attrib_enable(void) {
+   sSI m = 1;
+   const sSI activeMask = sdvg_int_active_attrib_enable_mask;
+   const sSI newMask = sdvg_int_attrib_enable_mask;
+   const sSI diffMask = activeMask ^ newMask;
+   for(sSI i = 0; i < 16; i++)
+   {
+      if(diffMask & m)
+      {
+         if(newMask & m)
+         {
+            Dsdvg_attrib_enable(i);
+         }
+         else
+         {
+            Dsdvg_attrib_disable(i);
+         }
+      }
+      m = m << 1;
+   }
+   sdvg_int_active_attrib_enable_mask = sdvg_int_attrib_enable_mask;
+}
+
+void sdvg_int_handle_queued_attrib_divisor(void) {
+   sSI m = 1;
+   const sSI activeMask = sdvg_int_active_attrib_divisor_mask;
+   const sSI newMask = sdvg_int_attrib_divisor_mask;
+   const sSI diffMask = activeMask ^ newMask;
+   for(sSI i = 0; i < 16; i++)
+   {
+      if(diffMask & m)
+      {
+         if(newMask & m)
+         {
+            Dsdvg_attrib_divisor(i, 1);
+         }
+         else
+         {
+            Dsdvg_attrib_divisor_reset(i);
+         }
+      }
+      m = m << 1;
+   }
+   sdvg_int_active_attrib_divisor_mask = sdvg_int_attrib_divisor_mask;
 }
 
 sBool YAC_CALL sdvg_GetEnableDebug(void) {
@@ -2584,6 +2634,8 @@ static void loc_drawStencilPolygonEvenOdd(sUI _numVerts) {
    // (note) shader is selected in loc_bind_default_triangles_fill_flat_uniform_shape_*() (or use custom shader)
    // (note) uniforms are set in loc_UpdateShaderUniforms()
 
+   Dsdvg_handle_queued_attrib_enable_and_divisor();
+
    Dsdvg_stencil_poly_even_odd_pass1();
    Dsdvg_draw_triangle_fan_vbo(0, _numVerts);
 
@@ -2597,6 +2649,8 @@ static void loc_drawStencilPolygonNonZero(sUI _numVerts) {
    // (note) for use with sdvg_BeginFilledPolygon()
    // (note) shader is selected in loc_bind_default_triangles_fill_flat_uniform_shape_*() (or use custom shader)
    // (note) uniforms are set in loc_UpdateShaderUniforms()
+
+   Dsdvg_handle_queued_attrib_enable_and_divisor();
 
    Dsdvg_stencil_poly_non_zero_pass1();
    Dsdvg_draw_triangle_fan_vbo(0, _numVerts);
@@ -2623,6 +2677,7 @@ static void loc_drawTESDaveNXPolygon(sUI _numVerts) {
 #endif // SHADERVG_HW_NPOLYGONS_AA
 
    glPolygonBeginTES();
+   Dsdvg_handle_queued_attrib_enable_and_divisor();
    Dsdvg_draw_arrays_vbo(GL_POLYGON_TES, 0, _numVerts);
    glPolygonEndTES();
 
@@ -2729,23 +2784,25 @@ static void loc_DrawLineStripFlatAAVBOPaint(sUI _vboId,
    }
 
 #ifdef SHADERVG_GL_VERTEX_ID
-   Dsdvg_attrib_enable(_shape->shape_a_vertex);
-   Dsdvg_attrib_enable(_shape->shape_a_vertex_n);
+   Dsdvg_queue_attrib_enable(_shape->shape_a_vertex);
+   Dsdvg_queue_attrib_enable(_shape->shape_a_vertex_n);
 
-   Dsdvg_attrib_enable(_shape->shape_a_vertex);
-   Dsdvg_attrib_enable(_shape->shape_a_vertex_n);
+   Dsdvg_queue_attrib_enable(_shape->shape_a_vertex);
+   Dsdvg_queue_attrib_enable(_shape->shape_a_vertex_n);
 
-   Dsdvg_attrib_divisor(_shape->shape_a_vertex, 1);
-   Dsdvg_attrib_divisor(_shape->shape_a_vertex_n, 1);
+   Dsdvg_queue_attrib_divisor(_shape->shape_a_vertex, 1);
+   Dsdvg_queue_attrib_divisor(_shape->shape_a_vertex_n, 1);
 
 #ifdef SHADERVG_LINE_JOINTS
    if(_bBevel || _bMiter)
    {
-      Dsdvg_attrib_enable(_shape->shape_a_vertex_nn);
-      Dsdvg_attrib_divisor(_shape->shape_a_vertex_nn, 1);
+      Dsdvg_queue_attrib_enable(_shape->shape_a_vertex_nn);
+      Dsdvg_queue_attrib_divisor(_shape->shape_a_vertex_nn, 1);
 
       const sSI numInstances = (_numPoints - 2u);
       Dsdvg_uniform_1i(_shape->shape_u_last_instance, sSI(numInstances - sSI(_bSkipLastLineJoint)));
+
+      Dsdvg_handle_queued_attrib_enable_and_divisor();
 
       if(_bBevel)
       {
@@ -2769,36 +2826,40 @@ static void loc_DrawLineStripFlatAAVBOPaint(sUI _vboId,
    else
 #endif // SHADERVG_LINE_JOINTS
    {
+      Dsdvg_handle_queued_attrib_enable_and_divisor();
+
       const sUI numInstances = (_numPoints - 1u);
       Dsdvg_draw_triangles_instanced_vbo(6, numInstances);
    }
 
-   Dsdvg_attrib_disable(_shape->shape_a_vertex_n);
-   Dsdvg_attrib_disable(_shape->shape_a_vertex);
+   Dsdvg_queue_attrib_disable(_shape->shape_a_vertex_n);
+   Dsdvg_queue_attrib_disable(_shape->shape_a_vertex);
 
-   Dsdvg_attrib_divisor_reset(_shape->shape_a_vertex);
-   Dsdvg_attrib_divisor_reset(_shape->shape_a_vertex_n);
+   Dsdvg_queue_attrib_divisor_reset(_shape->shape_a_vertex);
+   Dsdvg_queue_attrib_divisor_reset(_shape->shape_a_vertex_n);
 
 #ifdef SHADERVG_LINE_JOINTS
    if(_bBevel || _bMiter)
    {
-      Dsdvg_attrib_disable(_shape->shape_a_vertex_nn);
-      Dsdvg_attrib_divisor_reset(_shape->shape_a_vertex_nn);
+      Dsdvg_queue_attrib_disable(_shape->shape_a_vertex_nn);
+      Dsdvg_queue_attrib_divisor_reset(_shape->shape_a_vertex_nn);
    }
 #endif // SHADERVG_LINE_JOINTS
 #else
    // GLES2 (possibly with GL_ARB_draw_instanced)
-   Dsdvg_attrib_enable(_shape->shape_a_vertex_id);
-   Dsdvg_attrib_enable(_shape->shape_a_vertex);
-   Dsdvg_attrib_enable(_shape->shape_a_vertex_n);
+   Dsdvg_queue_attrib_enable(_shape->shape_a_vertex_id);
+   Dsdvg_queue_attrib_enable(_shape->shape_a_vertex);
+   Dsdvg_queue_attrib_enable(_shape->shape_a_vertex_n);
 
 #ifdef SHADERVG_LINE_JOINTS
    if(_bBevel || _bMiter)
    {
-      Dsdvg_attrib_enable(_shape->shape_a_vertex_nn);
+      Dsdvg_queue_attrib_enable(_shape->shape_a_vertex_nn);
 
       const sSI numInstances = (_numPoints - 2u);
       Dsdvg_uniform_1i(_shape->shape_u_last_instance, sSI(numInstances - sSI(_bSkipLastLineJoint)));
+
+      Dsdvg_handle_queued_attrib_enable_and_divisor();
 
       if(_bBevel)
       {
@@ -2822,6 +2883,8 @@ static void loc_DrawLineStripFlatAAVBOPaint(sUI _vboId,
    else
 #endif // SHADERVG_LINE_JOINTS
    {
+      Dsdvg_handle_queued_attrib_enable_and_divisor();
+
 #ifdef SHADERVG_LINE_JOINTS
       const sUI numInstances = (_numPoints - 1u);
 #else
@@ -2830,17 +2893,17 @@ static void loc_DrawLineStripFlatAAVBOPaint(sUI _vboId,
       Dsdvg_draw_triangles_vbo(0u, 6u * numInstances);
    }
 
-   Dsdvg_attrib_disable(_shape->shape_a_vertex_n);
-   Dsdvg_attrib_disable(_shape->shape_a_vertex);
+   Dsdvg_queue_attrib_disable(_shape->shape_a_vertex_n);
+   Dsdvg_queue_attrib_disable(_shape->shape_a_vertex);
 
 #ifdef SHADERVG_LINE_JOINTS
-   Dsdvg_attrib_divisor_reset(_shape->shape_a_vertex);
-   Dsdvg_attrib_divisor_reset(_shape->shape_a_vertex_n);
+   Dsdvg_queue_attrib_divisor_reset(_shape->shape_a_vertex);
+   Dsdvg_queue_attrib_divisor_reset(_shape->shape_a_vertex_n);
 
    if(_bBevel || _bMiter)
    {
-      Dsdvg_attrib_disable(_shape->shape_a_vertex_nn);
-      Dsdvg_attrib_divisor_reset(_shape->shape_a_vertex_nn);
+      Dsdvg_queue_attrib_disable(_shape->shape_a_vertex_nn);
+      Dsdvg_queue_attrib_divisor_reset(_shape->shape_a_vertex_nn);
    }
 #endif // SHADERVG_LINE_JOINTS
 #endif // SHADERVG_GL_VERTEX_ID
@@ -3537,7 +3600,7 @@ void YAC_CALL sdvg_DrawPolygonFillFlatUniformAAVBO14_2(sUI _vboId, sUI _byteOffs
       if(loc_UpdateShaderUniforms(YAC_TRUE/*bPolygon*/))
       {
          Dsdvg_attrib_offset(a, 2/*size*/, GL_SHORT, GL_FALSE/*normalize*/, 4, _byteOffset);
-         Dsdvg_attrib_enable(a);
+         Dsdvg_queue_attrib_enable(a);
 
 #if defined(SHADERVG_HW_NPOLYGONS) && defined(GL_TES_npolygons)
          loc_drawTESDaveNXPolygon(_numVerts - 1u);
@@ -3551,7 +3614,7 @@ void YAC_CALL sdvg_DrawPolygonFillFlatUniformAAVBO14_2(sUI _vboId, sUI _byteOffs
 #error SHADERVG_STENCIL_POLYGONS is not enabled and GL_TES_npolygons is not available
 #endif // SHADERVG_HW_NPOLYGONS && GL_TES_npolygons
 
-         Dsdvg_attrib_disable(a);
+         Dsdvg_queue_attrib_disable(a);
       }
       current_shape = oldShape;
 
@@ -3590,7 +3653,7 @@ void YAC_CALL sdvg_PolygonFillFlatUniformVBO32_BeginPass1(sUI _vboId) {
    sSI a = current_shape->bindShaderAndReturnVertexAttrib();
    if(loc_UpdateShaderUniforms(YAC_TRUE/*bPolygon*/))
    {
-      Dsdvg_attrib_enable(a);
+      Dsdvg_queue_attrib_enable(a);
 
 #if defined(SHADERVG_HW_NPOLYGONS) && defined(GL_TES_npolygons)
 #ifdef SHADERVG_HW_NPOLYGONS_AA
@@ -3626,7 +3689,7 @@ void YAC_CALL sdvg_PolygonFillFlatUniformVBO14_2_BeginPass1(sUI _vboId) {
    sSI a = current_shape->bindShaderAndReturnVertexAttrib();
    if(loc_UpdateShaderUniforms(YAC_TRUE/*bPolygon*/))
    {
-      Dsdvg_attrib_enable(a);
+      Dsdvg_queue_attrib_enable(a);
 
 #if defined(SHADERVG_HW_NPOLYGONS) && defined(GL_TES_npolygons)
       glPolygonFillTES(b_fillrule_nonzero ? GL_NON_ZERO_TES : GL_EVEN_ODD_TES);
@@ -3666,6 +3729,7 @@ void YAC_CALL sdvg_PolygonFillFlatUniformVBO32_DrawPass1(sUI _byteOffset, sUI _n
    {
       ShaderVG_Shape *shape = loc_get_default_triangles_fill_flat_uniform_shape_32();
       Dsdvg_attrib_offset(shape->shape_a_vertex, 2/*size*/, GL_SHORT, GL_FALSE/*normalize*/, 4, _byteOffset);
+      Dsdvg_handle_queued_attrib_enable_and_divisor();
 #if defined(SHADERVG_HW_NPOLYGONS) && defined(GL_TES_npolygons)
       Dsdvg_draw_arrays_vbo(GL_POLYGON_TES, 0, _numVerts);
 #elif defined(SHADERVG_STENCIL_POLYGONS)
@@ -3689,6 +3753,7 @@ void YAC_CALL sdvg_PolygonFillFlatUniformVBO14_2_DrawPass1(sUI _byteOffset, sUI 
    {
       ShaderVG_Shape *shape = loc_get_default_triangles_fill_flat_uniform_shape_14_2();
       Dsdvg_attrib_offset(shape->shape_a_vertex, 2/*size*/, GL_SHORT, GL_FALSE/*normalize*/, 4, _byteOffset);
+      Dsdvg_handle_queued_attrib_enable_and_divisor();
 #if defined(SHADERVG_HW_NPOLYGONS) && defined(GL_TES_npolygons)
       Dsdvg_draw_arrays_vbo(GL_POLYGON_TES, 0, _numVerts);
 #elif defined(SHADERVG_STENCIL_POLYGONS)
@@ -3751,6 +3816,7 @@ void YAC_CALL sdvg_PolygonFillFlatUniformVBO32_DrawPass2(sUI _byteOffset, sUI _n
    {
       ShaderVG_Shape *shape = loc_get_default_triangles_fill_flat_uniform_shape_32();
       Dsdvg_attrib_offset(shape->shape_a_vertex, 2/*size*/, GL_SHORT, GL_FALSE/*normalize*/, 4, _byteOffset);
+      Dsdvg_handle_queued_attrib_enable_and_divisor();  // can skip?
       Dsdvg_draw_triangle_fan_vbo(0, _numVerts);
    }
 #else
@@ -3772,6 +3838,7 @@ void YAC_CALL sdvg_PolygonFillFlatUniformVBO14_2_DrawPass2(sUI _byteOffset, sUI 
    {
       ShaderVG_Shape *shape = loc_get_default_triangles_fill_flat_uniform_shape_14_2();
       Dsdvg_attrib_offset(shape->shape_a_vertex, 2/*size*/, GL_SHORT, GL_FALSE/*normalize*/, 4, _byteOffset);
+      Dsdvg_handle_queued_attrib_enable_and_divisor();  // can skip?
       Dsdvg_draw_triangle_fan_vbo(0, _numVerts);
    }
 #endif // SHADERVG_HW_NPOLYGONS && GL_TES_npolygons
@@ -3829,7 +3896,7 @@ void YAC_CALL sdvg_PolygonFillFlatUniformVBO32_End(void) {
    // Disable vertex attribute and stencil test
    Dsdvg_tracecall("[trc] sdvg_PolygonFillFlatUniformVBO32_End\n");
    ShaderVG_Shape *shape = loc_get_default_triangles_fill_flat_uniform_shape_32();
-   Dsdvg_attrib_disable(shape->shape_a_vertex);
+   Dsdvg_queue_attrib_disable(shape->shape_a_vertex);
 #if defined(SHADERVG_HW_NPOLYGONS) && defined(GL_TES_npolygons)
    glPolygonEndTES();
 #ifdef SHADERVG_HW_NPOLYGONS_AA
@@ -3847,7 +3914,7 @@ void YAC_CALL sdvg_PolygonFillFlatUniformVBO14_2_End(void) {
    Dsdvg_tracecall("[trc] sdvg_PolygonFillFlatUniformVBO14_2_End\n");
    // Disable vertex attribute and stencil test
    ShaderVG_Shape *shape = loc_get_default_triangles_fill_flat_uniform_shape_14_2();
-   Dsdvg_attrib_disable(shape->shape_a_vertex);
+   Dsdvg_queue_attrib_disable(shape->shape_a_vertex);
 #if defined(SHADERVG_HW_NPOLYGONS) && defined(GL_TES_npolygons)
    glPolygonEndTES();
 #ifdef SHADERVG_HW_NPOLYGONS_AA
@@ -6466,7 +6533,8 @@ static sSI loc_BindFillShader(ShaderVG_Shape *_shape) {
       _shape->lazyUpdateTransform();
       _shape->lazyUpdateColorFill(&sdvg_int_color_fill_ga);
       _shape->lazyUpdateColorStroke(&sdvg_int_color_stroke);  // no global_a
-      Dsdvg_attrib_enable(aVertexFill);
+
+      Dsdvg_queue_attrib_enable(aVertexFill);
 
       if(-1 != _shape->shape_u_decal_alpha)
       {
@@ -6495,7 +6563,7 @@ sSI sdvg_int_BindFillShader(void) {
 
 void sdvg_int_EndFillShader(void) {
    ShaderVG_Shape *shape = loc_get_default_triangles_fill_flat_uniform_shape_32();
-   Dsdvg_attrib_disable(shape->shape_a_vertex);
+   Dsdvg_queue_attrib_disable(shape->shape_a_vertex);
 }
 
 void sdvg_int_UnbindFillShader(void) {
@@ -6951,6 +7019,16 @@ void YAC_CALL sdvg_BeginFrame(void) {
       Dsdvg_inc_shape_state(u_paint);
    }
 #endif // SHADERVG_USE_POLYGON_SHADERS
+
+   sdvg_int_attrib_enable_mask = 0;
+   sdvg_int_active_attrib_enable_mask = 0;
+   sdvg_int_attrib_divisor_mask = 0;
+   sdvg_int_active_attrib_divisor_mask = 0;
+   for(sSI i = 0; i < 16; i++)
+   {
+      Dsdvg_attrib_disable(i);
+      Dsdvg_attrib_divisor_reset(i);
+   }
 }
 
 void YAC_CALL sdvg_Flush(void) {
@@ -6968,6 +7046,9 @@ void YAC_CALL sdvg_ReturnToGL(void) {
       sdvg_UnmapVBO();
    sdvg_UnbindVBO();
    sdvg_UnbindShader();
+   sdvg_int_attrib_enable_mask = 0;
+   sdvg_int_attrib_divisor_mask = 0;
+   Dsdvg_handle_queued_attrib_enable_and_divisor();
    if(sdvg_int_b_glcore)
       Dsdvg_glcall(glBindVertexArray(vao_id));
 }
@@ -6981,6 +7062,9 @@ void YAC_CALL sdvg_EndFrame(void) {
    Dsdvg_glcall(glUseProgram(0));
    sdvg_int_current_prg = 0u;
    Dsdvg_glcall(glDisable(GL_SCISSOR_TEST));
+   sdvg_int_attrib_enable_mask = 0;
+   sdvg_int_attrib_divisor_mask = 0;
+   Dsdvg_handle_queued_attrib_enable_and_divisor();
 }
 
 #ifdef SHADERVG_SCRIPT_API
@@ -10248,7 +10332,7 @@ void YAC_CALL sdvg_VertexOffset2f(void) {
    {
       sSI a = current_shape->shape_a_vertex;
       Dsdvg_attrib_offset(a, 2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/, current_draw_stride, current_draw_attrib_offset);
-      Dsdvg_attrib_enable(a);
+      Dsdvg_queue_attrib_enable(a);
       if(SHADERVG_MAX_ATTRIB_ENABLES != num_draw_attrib_enables)
       {
          current_draw_attrib_enables[num_draw_attrib_enables++] = a;
@@ -10266,7 +10350,7 @@ void YAC_CALL sdvg_VertexOffset2fi16(void) {
    {
       sSI a = current_shape->shape_a_vertex;
       Dsdvg_attrib_offset(a, 2/*size*/, GL_SHORT, GL_FALSE/*normalize*/, current_draw_stride, current_draw_attrib_offset);
-      Dsdvg_attrib_enable(a);
+      Dsdvg_queue_attrib_enable(a);
       if(SHADERVG_MAX_ATTRIB_ENABLES != num_draw_attrib_enables)
       {
          current_draw_attrib_enables[num_draw_attrib_enables++] = a;
@@ -10287,7 +10371,7 @@ void YAC_CALL sdvg_AttribOffsetf(const char *_name, sUI _size) {
       if(a >= 0)
       {
          Dsdvg_attrib_offset(a, _size, GL_FLOAT, GL_FALSE/*normalize*/, current_draw_stride, current_draw_attrib_offset);
-         Dsdvg_attrib_enable(a);
+         Dsdvg_queue_attrib_enable(a);
          if(SHADERVG_MAX_ATTRIB_ENABLES != num_draw_attrib_enables)
          {
             current_draw_attrib_enables[num_draw_attrib_enables++] = a;
@@ -10329,7 +10413,7 @@ void YAC_CALL sdvg_AttribOffsetARGB(const char *_name) {
       if(a >= 0)
       {
          Dsdvg_attrib_offset(a, 4, GL_UNSIGNED_BYTE, GL_TRUE/*normalize*/, current_draw_stride, current_draw_attrib_offset);
-         Dsdvg_attrib_enable(a);
+         Dsdvg_queue_attrib_enable(a);
          if(SHADERVG_MAX_ATTRIB_ENABLES != num_draw_attrib_enables)
          {
             current_draw_attrib_enables[num_draw_attrib_enables++] = a;
@@ -11155,6 +11239,7 @@ void YAC_CALL sdvg_End(void) {
                   if(loc_UpdateShaderUniforms(YAC_FALSE/*bPolygon*/))
                   {
                      // Dprintf("xxx sdvg_End: call glDrawArrays mode=%d current_draw_vertex_index=%u\n", current_draw_mode, current_draw_vertex_index);
+                     Dsdvg_handle_queued_attrib_enable_and_divisor();
                      Dsdvg_draw_arrays_vbo(GL_TRIANGLES, 0/*first*/, current_draw_vertex_index);
                   }
                   else
@@ -11170,6 +11255,7 @@ void YAC_CALL sdvg_End(void) {
                   if(loc_UpdateShaderUniforms(YAC_FALSE/*bPolygon*/))
                   {
                      // Dprintf("xxx sdvg_End: call glDrawArrays mode=%d current_draw_vertex_index=%u\n", current_draw_mode, current_draw_vertex_index);
+                     Dsdvg_handle_queued_attrib_enable_and_divisor();
                      Dsdvg_draw_arrays_vbo(GL_TRIANGLE_STRIP, 0/*first*/, current_draw_vertex_index);
                   }
                   else
@@ -11185,6 +11271,7 @@ void YAC_CALL sdvg_End(void) {
                   if(loc_UpdateShaderUniforms(YAC_FALSE/*bPolygon*/))
                   {
                      // Dprintf("xxx sdvg_End: call glDrawArrays mode=%d current_draw_vertex_index=%u\n", current_draw_mode, current_draw_vertex_index);
+                     Dsdvg_handle_queued_attrib_enable_and_divisor();
                      Dsdvg_draw_arrays_vbo(GL_TRIANGLE_FAN, 0/*first*/, current_draw_vertex_index);
                   }
                   else
@@ -12156,7 +12243,7 @@ void YAC_CALL sdvg_End(void) {
          for(sUI enableIdx = 0u; enableIdx < num_draw_attrib_enables; enableIdx++)
          {
             sSI a = current_draw_attrib_enables[enableIdx];
-            Dsdvg_attrib_disable(a);
+            Dsdvg_queue_attrib_disable(a);
          }
          num_draw_attrib_enables = 0u;
       }
@@ -12180,6 +12267,8 @@ void YAC_CALL sdvg_DrawFilledRectangle(sF32 _x, sF32 _y, sF32 _w, sF32 _h) {
    Dstream_write_2f(scratch_buffer, _x + _w, _y + _h);
    Dstream_write_2f(scratch_buffer, _x,      _y + _h);
 
+   Dsdvg_handle_queued_attrib_enable_and_divisor();
+
    Dsdvg_draw_triangle_fan(0, 4);
 
    sdvg_int_EndFillShader();
@@ -12198,6 +12287,8 @@ void YAC_CALL sdvg_DrawRectangle(sF32 _x, sF32 _y, sF32 _w, sF32 _h, sF32 _b) {
                                          _w, _h,
                                          _b
                                          );
+
+   Dsdvg_handle_queued_attrib_enable_and_divisor();
 
    Dsdvg_draw_triangles(0, 8*3);
 

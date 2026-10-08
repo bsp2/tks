@@ -534,17 +534,19 @@ class LineStripPatternMiterAA14_2 : public ShaderVG_Shape {
          Dsdvg_attrib_offset(shape_a_pattern,   1/*size*/, GL_SHORT, GL_FALSE/*normalize*/, 6/*stride*/, _byteOffset +   4);
          Dsdvg_attrib_offset(shape_a_pattern_n, 1/*size*/, GL_SHORT, GL_FALSE/*normalize*/, 6/*stride*/, _byteOffset +  10);
 
-         Dsdvg_attrib_enable(shape_a_vertex);
-         Dsdvg_attrib_enable(shape_a_vertex_n);
-         Dsdvg_attrib_enable(shape_a_vertex_nn);
-         Dsdvg_attrib_enable(shape_a_pattern);
-         Dsdvg_attrib_enable(shape_a_pattern_n);
+         Dsdvg_queue_attrib_enable(shape_a_vertex);
+         Dsdvg_queue_attrib_enable(shape_a_vertex_n);
+         Dsdvg_queue_attrib_enable(shape_a_vertex_nn);
+         Dsdvg_queue_attrib_enable(shape_a_pattern);
+         Dsdvg_queue_attrib_enable(shape_a_pattern_n);
 
-         Dsdvg_attrib_divisor(shape_a_vertex, 1);
-         Dsdvg_attrib_divisor(shape_a_vertex_n, 1);
-         Dsdvg_attrib_divisor(shape_a_vertex_nn, 1);
-         Dsdvg_attrib_divisor(shape_a_pattern, 1);
-         Dsdvg_attrib_divisor(shape_a_pattern_n, 1);
+         Dsdvg_queue_attrib_divisor(shape_a_vertex, 1);
+         Dsdvg_queue_attrib_divisor(shape_a_vertex_n, 1);
+         Dsdvg_queue_attrib_divisor(shape_a_vertex_nn, 1);
+         Dsdvg_queue_attrib_divisor(shape_a_pattern, 1);
+         Dsdvg_queue_attrib_divisor(shape_a_pattern_n, 1);
+
+         Dsdvg_handle_queued_attrib_enable_and_divisor();
 
          const sSI numSeg = (_numPoints - 2);
          Dsdvg_uniform_1i(shape_u_last_instance, sSI(numSeg - sSI(_bSkipLastLineJoint)));
@@ -554,17 +556,17 @@ class LineStripPatternMiterAA14_2 : public ShaderVG_Shape {
          Dsdvg_draw_triangles_instanced_vbo(15, numSeg);
 #endif // SHADERVG_HIRES_GEO
 
-         Dsdvg_attrib_disable(shape_a_vertex_nn);
-         Dsdvg_attrib_disable(shape_a_vertex_n);
-         Dsdvg_attrib_disable(shape_a_vertex);
-         Dsdvg_attrib_disable(shape_a_pattern_n);
-         Dsdvg_attrib_disable(shape_a_pattern);
+         Dsdvg_queue_attrib_disable(shape_a_vertex_nn);
+         Dsdvg_queue_attrib_disable(shape_a_vertex_n);
+         Dsdvg_queue_attrib_disable(shape_a_vertex);
+         Dsdvg_queue_attrib_disable(shape_a_pattern_n);
+         Dsdvg_queue_attrib_disable(shape_a_pattern);
 
-         Dsdvg_attrib_divisor_reset(shape_a_vertex);
-         Dsdvg_attrib_divisor_reset(shape_a_vertex_n);
-         Dsdvg_attrib_divisor_reset(shape_a_vertex_nn);
-         Dsdvg_attrib_divisor_reset(shape_a_pattern);
-         Dsdvg_attrib_divisor_reset(shape_a_pattern_n);
+         Dsdvg_queue_attrib_divisor_reset(shape_a_vertex);
+         Dsdvg_queue_attrib_divisor_reset(shape_a_vertex_n);
+         Dsdvg_queue_attrib_divisor_reset(shape_a_vertex_nn);
+         Dsdvg_queue_attrib_divisor_reset(shape_a_pattern);
+         Dsdvg_queue_attrib_divisor_reset(shape_a_pattern_n);
       }
    }
 

@@ -91,13 +91,15 @@ class TrianglesFillGouraud32 : public ShaderVG_Shape {
       Dsdvg_attrib_offset(shape_a_color,  4/*size*/, GL_UNSIGNED_BYTE, GL_TRUE /*normalize*/, 12/*stride*/, _byteOffset + 0);
       Dsdvg_attrib_offset(shape_a_vertex, 2/*size*/, GL_FLOAT,         GL_FALSE/*normalize*/, 12/*stride*/, _byteOffset + 4);
 
-      Dsdvg_attrib_enable(shape_a_vertex);
-      Dsdvg_attrib_enable(shape_a_color);
+      Dsdvg_queue_attrib_enable(shape_a_vertex);
+      Dsdvg_queue_attrib_enable(shape_a_color);
+
+      Dsdvg_handle_queued_attrib_enable_and_divisor();
 
       Dsdvg_draw_triangles(0, _numVerts);
 
-      Dsdvg_attrib_disable(shape_a_color);
-      Dsdvg_attrib_disable(shape_a_vertex);
+      Dsdvg_queue_attrib_disable(shape_a_color);
+      Dsdvg_queue_attrib_disable(shape_a_vertex);
    }
 
 #ifdef SHADERVG_STENCIL_POLYGONS
@@ -126,8 +128,10 @@ class TrianglesFillGouraud32 : public ShaderVG_Shape {
       Dsdvg_attrib_offset(shape_a_color,  4/*size*/, GL_UNSIGNED_BYTE, GL_TRUE /*normalize*/, 12/*stride*/, _byteOffset + 0);
       Dsdvg_attrib_offset(shape_a_vertex, 2/*size*/, GL_FLOAT,         GL_FALSE/*normalize*/, 12/*stride*/, _byteOffset + 4);
 
-      Dsdvg_attrib_enable(shape_a_vertex);
-      Dsdvg_attrib_enable(shape_a_color);
+      Dsdvg_queue_attrib_enable(shape_a_vertex);
+      Dsdvg_queue_attrib_enable(shape_a_color);
+
+      Dsdvg_handle_queued_attrib_enable_and_divisor();
 
       (void)_bNonZero;
       Dsdvg_stencil_poly_even_odd_pass1();
@@ -138,8 +142,8 @@ class TrianglesFillGouraud32 : public ShaderVG_Shape {
 
       Dsdvg_stencil_poly_end();
 
-      Dsdvg_attrib_disable(shape_a_color);
-      Dsdvg_attrib_disable(shape_a_vertex);
+      Dsdvg_queue_attrib_disable(shape_a_color);
+      Dsdvg_queue_attrib_disable(shape_a_vertex);
    }
 #endif // SHADERVG_STENCIL_POLYGONS
 

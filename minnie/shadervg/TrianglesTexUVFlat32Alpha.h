@@ -99,13 +99,15 @@ class TrianglesTexUVFlat32Alpha : public ShaderVG_Shape {
       Dsdvg_attrib_offset(shape_a_uv,     2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/, 16/*stride*/, _byteOffset + 0);
       Dsdvg_attrib_offset(shape_a_vertex, 2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/, 16/*stride*/, _byteOffset + 8);
 
-      Dsdvg_attrib_enable(shape_a_uv);
-      Dsdvg_attrib_enable(shape_a_vertex);
+      Dsdvg_queue_attrib_enable(shape_a_uv);
+      Dsdvg_queue_attrib_enable(shape_a_vertex);
+
+      Dsdvg_handle_queued_attrib_enable_and_divisor();
 
       Dsdvg_draw_triangles_vbo(0, _numVerts);
 
-      Dsdvg_attrib_disable(shape_a_uv);
-      Dsdvg_attrib_disable(shape_a_vertex);
+      Dsdvg_queue_attrib_disable(shape_a_uv);
+      Dsdvg_queue_attrib_disable(shape_a_vertex);
    }
 
 };

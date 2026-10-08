@@ -140,17 +140,19 @@ class TrianglesFillFlatEdgeAA32 : public ShaderVG_Shape {
       Dsdvg_attrib_offset(shape_a_scale,  3/*size*/, GL_FLOAT,         GL_FALSE/*normalize*/, 26/*stride*/, _byteOffset + 12);
       Dsdvg_attrib_offset(shape_a_bc,     2/*size*/, GL_UNSIGNED_BYTE, GL_TRUE /*normalize*/, 26/*stride*/, _byteOffset + 24);
 
-      Dsdvg_attrib_enable(shape_a_vertex);
-      Dsdvg_attrib_enable(shape_a_edge);
-      Dsdvg_attrib_enable(shape_a_scale);
-      Dsdvg_attrib_enable(shape_a_bc);
+      Dsdvg_queue_attrib_enable(shape_a_vertex);
+      Dsdvg_queue_attrib_enable(shape_a_edge);
+      Dsdvg_queue_attrib_enable(shape_a_scale);
+      Dsdvg_queue_attrib_enable(shape_a_bc);
+
+      Dsdvg_handle_queued_attrib_enable_and_divisor();
 
       Dsdvg_draw_triangles(0, _numVerts);
 
-      Dsdvg_attrib_disable(shape_a_bc);
-      Dsdvg_attrib_disable(shape_a_scale);
-      Dsdvg_attrib_disable(shape_a_edge);
-      Dsdvg_attrib_disable(shape_a_vertex);
+      Dsdvg_queue_attrib_disable(shape_a_bc);
+      Dsdvg_queue_attrib_disable(shape_a_scale);
+      Dsdvg_queue_attrib_disable(shape_a_edge);
+      Dsdvg_queue_attrib_disable(shape_a_vertex);
    }
 
 };

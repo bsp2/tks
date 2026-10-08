@@ -118,15 +118,17 @@ class TrianglesTexUVGouraudDecal14_2Alpha : public ShaderVG_Shape {
       Dsdvg_attrib_offset(shape_a_color,  4/*size*/, GL_UNSIGNED_BYTE, GL_TRUE /*normalize*/, 16/*stride*/, _byteOffset +  8);
       Dsdvg_attrib_offset(shape_a_vertex, 2/*size*/, GL_SHORT,         GL_FALSE/*normalize*/, 16/*stride*/, _byteOffset + 12);
 
-      Dsdvg_attrib_enable(shape_a_uv);
-      Dsdvg_attrib_enable(shape_a_color);
-      Dsdvg_attrib_enable(shape_a_vertex);
+      Dsdvg_queue_attrib_enable(shape_a_uv);
+      Dsdvg_queue_attrib_enable(shape_a_color);
+      Dsdvg_queue_attrib_enable(shape_a_vertex);
+
+      Dsdvg_handle_queued_attrib_enable_and_divisor();
 
       Dsdvg_draw_triangles_vbo(0, _numVerts);
 
-      Dsdvg_attrib_disable(shape_a_uv);
-      Dsdvg_attrib_disable(shape_a_color);
-      Dsdvg_attrib_disable(shape_a_vertex);
+      Dsdvg_queue_attrib_disable(shape_a_uv);
+      Dsdvg_queue_attrib_disable(shape_a_color);
+      Dsdvg_queue_attrib_disable(shape_a_vertex);
    }
 
 };

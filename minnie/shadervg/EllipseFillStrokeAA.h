@@ -262,6 +262,7 @@ class EllipseFillStrokeAA : public ShaderVG_Shape {
          sSI aVertexFill = sdvg_int_BindFillShader();
 
          Dsdvg_attrib_offset(aVertexFill, 2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/, 0/*stride*/, _byteOffsetInner);
+         Dsdvg_handle_queued_attrib_enable_and_divisor();
          Dsdvg_draw_triangle_fan_vbo(0, _numVertsInner);
 
          sdvg_int_EndFillShader();
@@ -311,11 +312,13 @@ class EllipseFillStrokeAA : public ShaderVG_Shape {
 
          Dsdvg_attrib_offset(shape_a_vertex, 2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/, 0/*stride*/, _byteOffsetBorder);
 
-         Dsdvg_attrib_enable(shape_a_vertex);
+         Dsdvg_queue_attrib_enable(shape_a_vertex);
+
+         Dsdvg_handle_queued_attrib_enable_and_divisor();
 
          Dsdvg_draw_arrays_vbo(_glPrimTypeBorder, 0, _numVertsBorder);
 
-         Dsdvg_attrib_disable(shape_a_vertex);
+         Dsdvg_queue_attrib_disable(shape_a_vertex);
 
          shape_shader.unbind();
       }
@@ -370,6 +373,8 @@ class EllipseFillStrokeAA : public ShaderVG_Shape {
             a += aStep;
          }
 
+         Dsdvg_handle_queued_attrib_enable_and_divisor();
+
          Dsdvg_draw_triangle_fan(0, numVerts);
 
          sdvg_int_EndFillShader();
@@ -415,7 +420,7 @@ class EllipseFillStrokeAA : public ShaderVG_Shape {
       }
 #endif // SHADERVG_DEBUG_FRAG
 
-      Dsdvg_attrib_enable(shape_a_vertex);
+      Dsdvg_queue_attrib_enable(shape_a_vertex);
 
       // Calc border mesh
       if(b_draw_border || bSingle)
@@ -435,6 +440,8 @@ class EllipseFillStrokeAA : public ShaderVG_Shape {
             Dstream_write_f32(_scratchBuf, x + w);   Dstream_write_f32(_scratchBuf, y);
             Dstream_write_f32(_scratchBuf, x + w);   Dstream_write_f32(_scratchBuf, y + h);
             Dstream_write_f32(_scratchBuf, x);       Dstream_write_f32(_scratchBuf, y + h);
+
+            Dsdvg_handle_queued_attrib_enable_and_divisor();
 
             Dsdvg_draw_triangle_fan(0, numVerts);
          }
@@ -458,11 +465,13 @@ class EllipseFillStrokeAA : public ShaderVG_Shape {
                a += aStep;
             }
 
+            Dsdvg_handle_queued_attrib_enable_and_divisor();
+
             Dsdvg_draw_triangle_strip(0, numVerts);
          }
       }
 
-      Dsdvg_attrib_disable(shape_a_vertex);
+      Dsdvg_queue_attrib_disable(shape_a_vertex);
    }
 
 };

@@ -82,11 +82,14 @@ class TrianglesFillFlatUniform32 : public ShaderVG_Shape {
       lazyUpdateColorFill(&sdvg_int_color_fill_ga);
 
       Dsdvg_attrib_offset(shape_a_vertex, 2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/, 8/*stride*/, _byteOffset);
-      Dsdvg_attrib_enable(shape_a_vertex);
+
+      Dsdvg_queue_attrib_enable(shape_a_vertex);
+
+      Dsdvg_handle_queued_attrib_enable_and_divisor();
 
       Dsdvg_draw_triangles(0, _numVerts);
 
-      Dsdvg_attrib_disable(shape_a_vertex);
+      Dsdvg_queue_attrib_disable(shape_a_vertex);
    }
 
    void drawPolygonFillFlatUniformVBO32(sUI   _vboId,
@@ -109,7 +112,8 @@ class TrianglesFillFlatUniform32 : public ShaderVG_Shape {
       lazyUpdateColorFill(&sdvg_int_color_fill_ga);
 
       Dsdvg_attrib_offset(shape_a_vertex, 2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/, 8/*stride*/, _byteOffset);
-      Dsdvg_attrib_enable(shape_a_vertex);
+
+      Dsdvg_queue_attrib_enable(shape_a_vertex);
 
 #if defined(SHADERVG_HW_NPOLYGONS) && defined(GL_TES_npolygons)
 #ifdef SHADERVG_HW_NPOLYGONS_AA
@@ -136,6 +140,8 @@ class TrianglesFillFlatUniform32 : public ShaderVG_Shape {
          Dsdvg_stencil_poly_even_odd_pass1();
       }
 
+      Dsdvg_handle_queued_attrib_enable_and_divisor();
+
       Dsdvg_draw_triangle_fan_vbo(0, _numVerts);
 
       if(_bNonZero)
@@ -154,7 +160,7 @@ class TrianglesFillFlatUniform32 : public ShaderVG_Shape {
 #error SHADERVG_STENCIL_POLYGONS is not enabled and GL_TES_npolygons is not available
 #endif // SHADERVG_HW_NPOLYGONS && GL_TES_npolygons
 
-      Dsdvg_attrib_disable(shape_a_vertex);
+      Dsdvg_queue_attrib_disable(shape_a_vertex);
    }
 
 };

@@ -91,6 +91,10 @@ extern sSI            sdvg_int_shape_state_u_color_fill;
 extern sSI            sdvg_int_shape_state_u_color_stroke;
 extern sdvg_paint_t   sdvg_int_paint;
 extern sSI            sdvg_int_shape_state_u_paint;
+extern sSI            sdvg_int_attrib_enable_mask;
+extern sSI            sdvg_int_active_attrib_enable_mask;
+extern sSI            sdvg_int_attrib_divisor_mask;
+extern sSI            sdvg_int_active_attrib_divisor_mask;
 
 // -----------  internal -----------
 void sdvg_int_BindScratchBuffer (void);
@@ -123,6 +127,8 @@ void sdvg_int_find_spirv_program_by_name (const char *_name, const void **retAdd
 #endif // GL_TES_spirv_program_loader
 void sdvg_int_debug_print_mem_info (void);
 }
+void sdvg_int_handle_queued_attrib_enable (void);
+void sdvg_int_handle_queued_attrib_divisor (void);
 
 // ----------- OpenGL helper macros -----------
 #ifdef SHADERVG_USE_SCRATCHBUFFERSUBDATA
@@ -150,8 +156,16 @@ void sdvg_int_debug_print_mem_info (void);
 #define Dsdvg_attrib_pointer(a,s,t,n,d,p) Dsdvg_glcall(glVertexAttribPointer(a,s,t,n,d,p))
 #define Dsdvg_attrib_enable(a) Dsdvg_glcall(glEnableVertexAttribArray(a))
 #define Dsdvg_attrib_disable(a) Dsdvg_glcall(glDisableVertexAttribArray(a))
+#define Dsdvg_queue_attrib_enable(a) sdvg_int_attrib_enable_mask |= (1 << (a))
+#define Dsdvg_queue_attrib_disable(a) sdvg_int_attrib_enable_mask &= ~(1 << (a))
+#define Dsdvg_handle_queued_attrib_enable() if(sdvg_int_active_attrib_enable_mask != sdvg_int_attrib_enable_mask) sdvg_int_handle_queued_attrib_enable()
 #define Dsdvg_attrib_divisor(a, n) Dsdvg_glcall(glVertexAttribDivisor((a), (n)))
 #define Dsdvg_attrib_divisor_reset(a) Dsdvg_glcall(glVertexAttribDivisor((a), 0))
+#define Dsdvg_queue_attrib_divisor(a, n) sdvg_int_attrib_divisor_mask |= (1 << (a)); (void)(n)
+#define Dsdvg_queue_attrib_divisor_reset(a) sdvg_int_attrib_divisor_mask &= ~(1 << (a))
+#define Dsdvg_handle_queued_attrib_divisor() if(sdvg_int_active_attrib_divisor_mask != sdvg_int_attrib_divisor_mask) sdvg_int_handle_queued_attrib_divisor()
+#define Dsdvg_handle_queued_attrib_enable_and_divisor() Dsdvg_handle_queued_attrib_enable(); Dsdvg_handle_queued_attrib_divisor()
+
 #define Dsdvg_inc_shape_state(a) sdvg_int_shape_state_##a = ((sdvg_int_shape_state_##a) + 1) & 1073741823
 #define Dsdvg_stencil_poly_even_odd_pass1()                          \
    Dsdvg_glcall(glEnable(GL_STENCIL_TEST));                          \
