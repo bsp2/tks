@@ -1,7 +1,7 @@
 // ----
 // ---- file   : module.tks
 // ---- author : Bastian Spiegel <bs@tkscript.de>
-// ---- legal  : (c) 2021-2025 by Bastian Spiegel.
+// ---- legal  : (c) 2021-2026 by Bastian Spiegel.
 // ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
 // ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
 // ----
@@ -11,7 +11,7 @@
 // ---- changed: 27Mar2021, 29Mar2021, 30Mar2021, 01Apr2021, 12Apr2021, 16Apr2021, 19Apr2021
 // ----          07May2021, 13Nov2021, 27Dec2021, 28Dec2021, 21Feb2022, 08Oct2023, 11Nov2023
 // ----          29Mar2024, 18Sep2024, 08Oct2024, 09Oct2024, 10Oct2024, 11Oct2024, 12Oct2024
-// ----          16Nov2024, 10Oct2025
+// ----          16Nov2024, 10Oct2025, 08Oct2026
 // ----
 // ----
 // ----
@@ -59,6 +59,8 @@ class Module : Control/*Composite*/, ModularCV {
    protected int   drag_start_module_y;
    protected float drag_start_x;
    protected float drag_start_y;
+   protected float drag_start_vp_x;
+   protected float drag_start_vp_y;
 
 
    public method init() {
@@ -82,6 +84,35 @@ class Module : Control/*Composite*/, ModularCV {
       // called after parent_patch / parent_node have been set (Patch::addModule())
       if(!app_lnf.b_dark_modular)
          setLookAndFeelLight();
+   }
+
+   public method getParentEditor() : NodeModularEditor {
+      Layer p <= getParent();
+      while(null != p)
+      {
+         if(p instanceof NodeModularEditor)
+            return p;
+         p <= p.getParent();
+      }
+      return null;
+   }
+
+   public method makeXYVisible(float _x, float _y) {
+      // (note) (x;y) in module coordinate system
+      float x = _x;
+      float y = _y;
+      Layer c <= this;
+      do
+      {
+         if(c instanceof ViewPane)
+            break;
+         x += c.position_x;
+         y += c.position_y;
+         c <= c.parent;
+      }
+      while(null != c);
+      NodeModularEditor editor <= getParentEditor();
+      editor.makeXYVisible(x, y);
    }
 
    public virtual isEditable() : boolean {
@@ -214,7 +245,8 @@ class Module : Control/*Composite*/, ModularCV {
    }
 
    public method setModulePosition(int _x, int _y) {
-      _y = mathClampi(_y, 0, 3);
+      _x = mathClampi(_x, 0, ModularCV.RACK_WIDTH_NUM_UNITS - 1);
+      _y = mathClampi(_y, 0, (ModularCV.RACK_HEIGHT_NUM_MODULES - 1) * ModularCV.RACK_MODULE_HEIGHT_NUM_UNITS);
 
       module_x = _x;
       module_y = _y;
@@ -1005,6 +1037,10 @@ class Module : Control/*Composite*/, ModularCV {
 
          UI.ShowCursor(UIConstants.CURSOR_MOVE);
 
+         NodeModularEditor editor <= getParentEditor();
+         drag_start_vp_x = editor.getViewOffsetX();
+         drag_start_vp_y = editor.getViewOffsetY();
+
          return true;
       }
       return false;
@@ -1017,6 +1053,12 @@ class Module : Control/*Composite*/, ModularCV {
          // trace "xxx drag rel=("+_currentEv.mouse_rel_x+";"+_currentEv.mouse_rel_y+")";
          float dx = _currentEv.mouse_rel_x - drag_start_x;
          float dy = _currentEv.mouse_rel_y - drag_start_y;
+
+         NodeModularEditor editor <= getParentEditor();
+         dx += editor.getViewOffsetX() - drag_start_vp_x;
+         dy += editor.getViewOffsetY() - drag_start_vp_y;
+
+         makeXYVisible(_currentEv.mouse_rel_x, _currentEv.mouse_rel_y);
 
          setModulePosition(drag_start_module_x + int(dx / GetRackUnitWidth()),
                            drag_start_module_y + int((dy + GetRackUnitHeight()*(dy<0 ?-0.5:0.5)) / GetRackUnitHeight())*3
