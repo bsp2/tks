@@ -2978,7 +2978,7 @@ void _HAL::closeView(void) {
    {
       // yac_host->printf("[dbg] HAL::closeView: callOnClose(0)\n");
 
-      callOnClose(YAC_TRUE/*bAllowScriptCbk*/);
+      callOnClose(YAC_FALSE/*bAllowScriptCbk*/);
 
       view_sx           = 0;
       view_sy           = 0;
