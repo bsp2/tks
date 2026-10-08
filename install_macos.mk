@@ -167,7 +167,7 @@ CFLAGS= -Wall
 #
 # C++ compiler flags
 #
-CXXFLAGS= -Wall
+CXXFLAGS= -Wall -fno-exceptions -fno-unwind-tables
 
 
 #
