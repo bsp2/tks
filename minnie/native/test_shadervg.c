@@ -5938,7 +5938,7 @@ void RandAngles(void) {
    ang_w       = loc_randf_sys(2.0f * sM_2PIf);
    ang_h       = loc_randf_sys(2.0f * sM_2PIf);
    ang_c       = loc_randf_sys(sM_2PIf);
-   Dprintf("[...] RandAngles: render_mode=%u/%u  benchmark_frames_left=%u\nradius_sclx = %f;\nradius_scly = %f;\nang_x = %f;\nang_y = %f;\nang_w = %f;\nang_h = %f;\nang_c = %f;\n\n\n", render_mode, NUM_RENDER_MODES-1, benchmark_frames_left, radius_sclx, radius_scly, ang_x, ang_y, ang_w, ang_h, ang_c);
+   Dprintfvv("[...] RandAngles: render_mode=%u/%u  benchmark_frames_left=%u\nradius_sclx = %f;\nradius_scly = %f;\nang_x = %f;\nang_y = %f;\nang_w = %f;\nang_h = %f;\nang_c = %f;\n\n\n", render_mode, NUM_RENDER_MODES-1, benchmark_frames_left, radius_sclx, radius_scly, ang_x, ang_y, ang_w, ang_h, ang_c);
 }
 
 // ---------------------------------------------------------------------------- hal_on_key_down
@@ -6168,6 +6168,10 @@ int main(int argc, char**argv) {
             b_vsync = YAC_FALSE;
             auto_cycle_num_frames = 0u;
             benchmark_start_render_mode = render_mode;
+         }
+         else
+         {
+            argIdx--;
          }
 
          if(++argIdx < argc)
