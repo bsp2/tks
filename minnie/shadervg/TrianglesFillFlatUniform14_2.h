@@ -120,7 +120,7 @@ class TrianglesFillFlatUniform14_2 : public ShaderVG_Shape {
 #endif // SHADERVG_HW_NPOLYGONS_AA
       glPolygonFillTES(_bNonZero ? GL_NON_ZERO_TES : GL_EVEN_ODD_TES);
       glPolygonBeginTES();
-      glDrawArrays(GL_POLYGON_TES, 0, _numVerts);
+      Dsdvg_draw_arrays_vbo(GL_POLYGON_TES, 0, _numVerts);
       glPolygonEndTES();
 #ifdef SHADERVG_HW_NPOLYGONS_AA
       if(b_aa)

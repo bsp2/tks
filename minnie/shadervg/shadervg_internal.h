@@ -184,6 +184,17 @@ void sdvg_int_debug_print_mem_info (void);
 #define Dsdvg_remap_scratch_after_draw while(0)
 #endif // SHADERVG_UNMAP_SCRATCHVBO_DURING_DRAW
 
+#ifdef SHADERVG_SKIP_DRAW
+#define Dsdvg_draw_arrays(t,f,c) while(0 * ((t)*(f)*(c)))
+#define Dsdvg_draw_triangles(f,c) while(0 * ((f)*(c)))
+#define Dsdvg_draw_triangle_fan(f,c) while(0 * ((f)*(c)))
+#define Dsdvg_draw_triangle_strip(f,c) while(0 * ((f)*(c)))
+#define Dsdvg_draw_arrays_vbo(t,f,c) while(0 * ((t)*(f)*(c)))
+#define Dsdvg_draw_triangles_vbo(f,c) while(0 * ((f)*(c)))
+#define Dsdvg_draw_triangle_fan_vbo(f,c) while(0 * ((f)*(c)))
+#define Dsdvg_draw_triangle_strip_vbo(f,c) while(0 * ((f)*(c)))
+#define Dsdvg_draw_triangles_instanced_vbo(c,ic) while(0 * ((c)*(ic)))
+#else
 #ifdef SHADERVG_USE_SCRATCHBUFFERSUBDATA
 #define Dsdvg_draw_arrays(t,f,c) Dupload_scratch_to_vbo; Dsdvg_glcall(glDrawArrays(t,f,c))
 #define Dsdvg_draw_triangles(f,c) Dupload_scratch_to_vbo; Dsdvg_glcall(glDrawArrays(GL_TRIANGLES,f,c))
@@ -203,12 +214,12 @@ void sdvg_int_debug_print_mem_info (void);
 #define Dsdvg_draw_triangle_strip(f,c) Dsdvg_glcall(glDrawArrays(GL_TRIANGLE_STRIP,f,c))
 #endif // SHADERVG_UNMAP_SCRATCHVBO_DURING_DRAW
 #endif // SHADERVG_USE_SCRATCHBUFFERSUBDATA
-
 #define Dsdvg_draw_arrays_vbo(t,f,c) Dsdvg_glcall(glDrawArrays(t,f,c))
 #define Dsdvg_draw_triangles_vbo(f,c) Dsdvg_glcall(glDrawArrays(GL_TRIANGLES,f,c))
 #define Dsdvg_draw_triangle_fan_vbo(f,c) Dsdvg_glcall(glDrawArrays(GL_TRIANGLE_FAN,f,c))
 #define Dsdvg_draw_triangle_strip_vbo(f,c) Dsdvg_glcall(glDrawArrays(GL_TRIANGLE_STRIP,f,c))
 #define Dsdvg_draw_triangles_instanced_vbo(c,ic) Dsdvg_glcall(glDrawArraysInstanced(GL_TRIANGLES, 0, (c), (ic)))
+#endif // SHADERVG_SKIP_DRAW
 
 
 #endif // SHADERVG_INTERNAL_H__

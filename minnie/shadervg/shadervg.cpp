@@ -2607,7 +2607,7 @@ static void loc_drawTESDaveNXPolygon(sUI _numVerts) {
 #endif // SHADERVG_HW_NPOLYGONS_AA
 
    glPolygonBeginTES();
-   glDrawArrays(GL_POLYGON_TES, 0, _numVerts);
+   Dsdvg_draw_arrays_vbo(GL_POLYGON_TES, 0, _numVerts);
    glPolygonEndTES();
 
 #ifdef SHADERVG_HW_NPOLYGONS_AA
@@ -3613,7 +3613,7 @@ void YAC_CALL sdvg_PolygonFillFlatUniformVBO32_DrawPass1(sUI _byteOffset, sUI _n
       ShaderVG_Shape *shape = loc_get_default_triangles_fill_flat_uniform_shape_32();
       Dsdvg_attrib_offset(shape->shape_a_vertex, 2/*size*/, GL_SHORT, GL_FALSE/*normalize*/, 4, _byteOffset);
 #if defined(SHADERVG_HW_NPOLYGONS) && defined(GL_TES_npolygons)
-      glDrawArrays(GL_POLYGON_TES, 0, _numVerts);
+      Dsdvg_draw_arrays_vbo(GL_POLYGON_TES, 0, _numVerts);
 #elif defined(SHADERVG_STENCIL_POLYGONS)
       Dsdvg_draw_triangle_fan_vbo(0, _numVerts);
 #else
@@ -3635,7 +3635,7 @@ void YAC_CALL sdvg_PolygonFillFlatUniformVBO14_2_DrawPass1(sUI _byteOffset, sUI 
       ShaderVG_Shape *shape = loc_get_default_triangles_fill_flat_uniform_shape_14_2();
       Dsdvg_attrib_offset(shape->shape_a_vertex, 2/*size*/, GL_SHORT, GL_FALSE/*normalize*/, 4, _byteOffset);
 #if defined(SHADERVG_HW_NPOLYGONS) && defined(GL_TES_npolygons)
-      glDrawArrays(GL_POLYGON_TES, 0, _numVerts);
+      Dsdvg_draw_arrays_vbo(GL_POLYGON_TES, 0, _numVerts);
 #elif defined(SHADERVG_STENCIL_POLYGONS)
       Dsdvg_draw_triangle_fan_vbo(0, _numVerts);
 #else
@@ -11032,7 +11032,7 @@ void YAC_CALL sdvg_End(void) {
                   if(loc_UpdateShaderUniforms(YAC_FALSE/*bPolygon*/))
                   {
                      // Dprintf("xxx sdvg_End: call glDrawArrays mode=%d current_draw_vertex_index=%u\n", current_draw_mode, current_draw_vertex_index);
-                     Dsdvg_glcall(glDrawArrays(GL_TRIANGLES, 0/*first*/, current_draw_vertex_index));
+                     Dsdvg_draw_arrays_vbo(GL_TRIANGLES, 0/*first*/, current_draw_vertex_index);
                   }
                   else
                   {
@@ -11047,7 +11047,7 @@ void YAC_CALL sdvg_End(void) {
                   if(loc_UpdateShaderUniforms(YAC_FALSE/*bPolygon*/))
                   {
                      // Dprintf("xxx sdvg_End: call glDrawArrays mode=%d current_draw_vertex_index=%u\n", current_draw_mode, current_draw_vertex_index);
-                     Dsdvg_glcall(glDrawArrays(GL_TRIANGLE_STRIP, 0/*first*/, current_draw_vertex_index));
+                     Dsdvg_draw_arrays_vbo(GL_TRIANGLE_STRIP, 0/*first*/, current_draw_vertex_index);
                   }
                   else
                   {
@@ -11062,7 +11062,7 @@ void YAC_CALL sdvg_End(void) {
                   if(loc_UpdateShaderUniforms(YAC_FALSE/*bPolygon*/))
                   {
                      // Dprintf("xxx sdvg_End: call glDrawArrays mode=%d current_draw_vertex_index=%u\n", current_draw_mode, current_draw_vertex_index);
-                     Dsdvg_glcall(glDrawArrays(GL_TRIANGLE_FAN, 0/*first*/, current_draw_vertex_index));
+                     Dsdvg_draw_arrays_vbo(GL_TRIANGLE_FAN, 0/*first*/, current_draw_vertex_index);
                   }
                   else
                   {

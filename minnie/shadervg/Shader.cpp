@@ -204,9 +204,10 @@ sBool ShaderVG_Shader::create(const char *_sVert, const char *_sFrag
 }
 
 void ShaderVG_Shader::bind(void) {
-   Dsdvg_debugprintfv("[trc] ShaderVG_Shader::bind: sdvg_int_current_prg=%u, (new) prg_id=%u\n", sdvg_int_current_prg, prg_id);
+   Dsdvg_debugprintfvv("[trc] ShaderVG_Shader::bind: sdvg_int_current_prg=%u, (new) prg_id=%u\n", sdvg_int_current_prg, prg_id);
    if(sdvg_int_current_prg != prg_id)
    {
+      Dsdvg_debugprintfv("[trc] ShaderVG_Shader::bind: switch from sdvg_int_current_prg=%u to prg_id=%u\n", sdvg_int_current_prg, prg_id);
       Dsdvg_glcall(glUseProgram(prg_id));
       sdvg_int_current_prg = prg_id;
    }
