@@ -3232,9 +3232,13 @@ void _HAL::interruptScreenSaverX11(void) {
    // printf("xxx syswminfo.info.x11.display=%p\n", syswminfo.info.x11.display);
 
    /* see http://www.doctort.org/adam/nerd-notes/x11-fake-keypress-event.html */
-   event.display     = syswminfo.info.x11.display;
-   event.window      = XDefaultRootWindow(syswminfo.info.x11.display);//0/*root*/;//syswminfo.info.window;
-   event.root        = XDefaultRootWindow(syswminfo.info.x11.display);
+   Display *xdisplay = (Display *)::SDL_GetPointerProperty(::SDL_GetWindowProperties(sdl_window),
+                                                           SDL_PROP_WINDOW_X11_DISPLAY_POINTER,
+                                                           NULL
+                                                           );
+   event.display     = xdisplay;
+   event.window      = XDefaultRootWindow(xdisplay);//0/*root*/;//syswminfo.info.window;
+   event.root        = XDefaultRootWindow(xdisplay);
    event.subwindow   = None;
    event.time        = CurrentTime;
    event.x           = 1;
@@ -3376,10 +3380,12 @@ void *_HAL::getNativeWindowHandleInt(void) {
    return (void*)hwnd;
 #elif defined(HAVE_X11)
    // if (SDL_strcmp(SDL_GetCurrentVideoDriver(), "x11") == 0) {
+#if 0
    Display *xdisplay = (Display *)::SDL_GetPointerProperty(::SDL_GetWindowProperties(sdl_window),
                                                            SDL_PROP_WINDOW_X11_DISPLAY_POINTER,
                                                            NULL
                                                            );
+#endif
    Window xwindow = (Window)::SDL_GetNumberProperty(::SDL_GetWindowProperties(sdl_window),
                                                     SDL_PROP_WINDOW_X11_WINDOW_NUMBER,
                                                     0
