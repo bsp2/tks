@@ -7,7 +7,7 @@ TKS_WWW_PATH=http://tkscript.org/files/current/
 # (note) the list of packages to be built is configured in makefile.[macos|linux|msvc]
 
 # download all packages
-TKS_PACKAGES=( eqxmms tkanalogrytm tkbluetooth tkchipmunk tkdist2d tkfileutils tkfreeglut tkfreetype2 tkfreeverb tkmath tkmidi tkmidi_alsa tkmidi_portmidi tkmidipipe tkoldmath tkopengl tkportaudio tkportaudio_alsa tkradiastools tks-build tks-examples tks-source tksamplechain tksampleedit tksampler tksdl tksdl2 tksdl_net tksidplay2 tksmdi tkspeexdsp tksqlite tktriangulate tkminnie tkui tkclap tkvst2 tkvst2_stub tkvst2_nogui tkvst2_macos tkzip yac yingtest  debugtext tkunit dog md minnie org librs libplot libplot-fs graph )
+TKS_PACKAGES=( eqxmms tkanalogrytm tkbluetooth tkchipmunk tkdist2d tkfileutils tkfreeglut tkfreetype2 tkfreeverb tkmath tkmidi tkmidi_alsa tkmidi_portmidi tkmidipipe tkoldmath tkopengl tkportaudio tkportaudio_alsa tkradiastools tks-build tks-examples tks-source tksamplechain tksampleedit tksampler tksdl tksdl2 tksdl3 tksdl_net tksidplay2 tksmdi tkspeexdsp tksqlite tktriangulate tkminnie tkui tkclap tkvst2 tkvst2_stub tkvst2_nogui tkvst2_macos tkzip yac yingtest  debugtext tkunit dog md minnie org librs libplot libplot-fs graph )
 
 # download minimal package selection
 #TKS_PACKAGES=( tkfileutils tkfreetype2 tkmath tkoldmath tkopengl tkportaudio tkportaudio_alsa tks-build tks-examples tks-source tksdl tksdl2 tksdl_net tktriangulate tkui yac yingtest )
