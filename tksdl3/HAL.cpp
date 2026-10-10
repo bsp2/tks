@@ -81,7 +81,6 @@ extern "C" void SDL_SetWindowPosition (SDL_Window * window, int x, int y);
 extern "C" void SDL_GetWindowPosition (SDL_Window * window, int *x, int *y);
 extern "C" void SDL_SetWindowSize (SDL_Window * window, int w, int h);
 extern "C" void SDL_GetWindowSize (SDL_Window * window, int *w, int *h);
-// extern "C" int  SDL_GetWindowWMInfo (SDL_Window * window, SDL_SysWMinfo * info);
 extern "C" void*/*SDL_GLContext SDLCALL*/ SDL_GL_GetCurrentContext (void);
 extern "C" int SDL_GL_MakeCurrent(SDL_Window * window, void */*SDL_GLContext*/ context);
 #endif
@@ -630,7 +629,7 @@ _HAL::_HAL(void) {
    dw_monitorfreq = 0;
 #endif
 
-   audio.dsp_frequency = 44100.0f; // overwritten by AudioDevice::openDSP()
+   audio.dsp_frequency = 48000.0f; // overwritten by AudioDevice::openDSP()
 
    fps.tick_buffer   = 10;
    fps.tick_interval = 1000.0f/60;
@@ -2220,6 +2219,18 @@ sBool _HAL::processSDLEvent(sBool _poll) {
 #endif // YAC_WIN32
 #endif // 0
 
+#if 1
+         case SDL_EVENT_WINDOW_ENTER_FULLSCREEN:
+            // viewOpened(YAC_FALSE/*bResize*/);
+            callOnResize();  // calls onOpen()
+            break;
+
+         case SDL_EVENT_WINDOW_LEAVE_FULLSCREEN:
+            // viewOpened(YAC_FALSE/*bResize*/);
+            callOnResize();  // calls onOpen()
+            break;
+#endif
+
          case SDL_EVENT_QUIT:
             // printf("xxx SDL_EVENT_QUIT: hook_call hook=0x%p\n", &tksdl_hook_close);
 
@@ -2418,6 +2429,7 @@ void _HAL::_eventLoop(void) {
                         {
                            int w = 0, h = 0;
                            ::SDL_GetWindowSize(sdl_window, &w, &h);
+                           // Dyac_host_printf("xxx SDL_GetWindowSize returned w=%d h=%d\n", w, h);
                            view_sx = (sU16)w;
                            view_sy = (sU16)h;
                         }
@@ -2756,6 +2768,14 @@ sBool _HAL::openScreen(sSI _sx, sSI _sy, sSI _z) {
    fs_sx = (sU16)_sx;
    fs_sy = (sU16)_sy;
 
+   if(0 == fs_sx || 0 == fs_sy)
+   {
+      fs_sx = desktop_sx;
+      fs_sy = desktop_sy;
+      _sx = fs_sx;
+      _sy = fs_sy;
+   }
+
    if(!win_sx)
    {
       win_sx = fs_sx;
@@ -2934,7 +2954,7 @@ sBool _HAL::openView(sU16 _sx, sU16 _sy, sU8 _z,
                                    );
 
    if(yac_host->yacGetDebugLevel() >= 2)
-      yac_host->printf("[dbg] tksdl::HAL::openView: SDL_CreateWindow -> sdl_window=%p\n", sdl_window);
+      yac_host->printf("[dbg] tksdl::HAL::openView: SDL_CreateWindow(view_sx=%u view_sy=%u) -> sdl_window=%p\n", view_sx, view_sy, sdl_window);
 
    if(NULL == sdl_window)
    {
@@ -3045,6 +3065,7 @@ void _HAL::closeView(void) {
 }
 
 void _HAL::viewOpened(sBool _bResize) {
+   Dyac_host_printf("[trc] HAL::viewOpened: bResize=%d\n", _bResize);
 
    ignore_resize_timeout = yac_host->yacMilliSeconds() + 1000;
    pending_resize_ms = -1;
@@ -3165,7 +3186,10 @@ sBool _HAL::toggleFullScreen(void) {
    {
       YAC_Value cret;
 
-      //yac_host->printf("xxx tksdl:toggleFullSCreen: fx_sx=%u fs_sy=%u\n", fs_sx, fs_sy);
+      if(Dyac_host_yacGetDebugLevel() > 0)
+      {
+         Dyac_host_printf("[trc] tksdl:toggleFullScreen: fx_sx=%u fs_sy=%u\n", fs_sx, fs_sy);
+      }
       r = openScreen(fs_sx, fs_sy, fs_z);
 
       if(!r)
@@ -3183,7 +3207,7 @@ sBool _HAL::toggleFullScreen(void) {
       }
    }
 
-   callOnResize();
+   // // callOnResize();
 
    return r;
 }
@@ -3228,8 +3252,6 @@ void _HAL::useWindow(sU16 _sx, sU16 _sy) {
 void _HAL::interruptScreenSaverX11(void) {
 #ifdef HAVE_X11
    XKeyEvent event;
-
-   // printf("xxx syswminfo.info.x11.display=%p\n", syswminfo.info.x11.display);
 
    /* see http://www.doctort.org/adam/nerd-notes/x11-fake-keypress-event.html */
    Display *xdisplay = (Display *)::SDL_GetPointerProperty(::SDL_GetWindowProperties(sdl_window),
@@ -3323,7 +3345,6 @@ sSI _HAL::_getEventPolling(void) {
 }
 
 void _HAL::showCursor(sBool _st) {
-   // Dyac_host_printf("xxx _HAL::showCursor(%d)\n", _st);
    if(mouse.show != _st)
    {
       mouse.show = _st;
@@ -3335,16 +3356,12 @@ void _HAL::showCursor(sBool _st) {
 }
 
 void _HAL::setCaption(YAC_String *_s) {
-   // yac_host->printf("xxx HAL::setCaption 1\n");
    viewport_caption.copy(_s);
-   // yac_host->printf("xxx HAL::setCaption 2 b_window_visible=%d\n", b_window_visible);
 
    if(b_window_visible)  // (note) hangs when window is currently hidden
    {
       ::SDL_SetWindowTitle(sdl_window, (const char*)viewport_caption.chars);
    }
-
-   // yac_host->printf("xxx HAL::setCaption LEAVE\n");
 }
 
 sBool _HAL::_enableUNICODE(sSI _bEnabled) {
