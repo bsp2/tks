@@ -57,10 +57,15 @@ static tksdl_hook_t hook_close;
 
 
 static void loc_load_gl_defaults(void) {
-   // yac_host->printf("xxx loc_load_gl_defaults ENTER glGetError=%d\n", glGetError());
+   // Dyac_host_printf("xxx loc_load_gl_defaults ENTER glGetError=%d\n", glGetError());
    tkopengl_lazyinit_tksdl_b_glcore();
    sBool bGLCore = (NULL != tksdl_b_glcore) && *tksdl_b_glcore;
-   sBool bGLCompat = !bGLCore;
+   sBool bGLCompat = (NULL != tksdl_b_glcore) && !bGLCore;
+   // Dyac_host_printf("xxx tksdl_b_glcore=%p bGLCore=%d bGLCompat=%d\n", tksdl_b_glcore, bGLCore, bGLCompat);
+
+   GLenum lastError = glGetError();
+   // Dyac_host_printf("xxx hook 1 lastglError=%d\n", lastError);
+   (void)lastError;
 
    _glDisable(GL_BLEND);
 
