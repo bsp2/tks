@@ -15,7 +15,7 @@
 
 extern YAC_Host *yac_host;
 
-#define Dtrace_call  if(1);else Dyac_host_printf
+#define Dtrace_call  if( 1);else Dyac_host_printf
 
 #include "inc_opengl.h"
 #include "tkopengl.h"
