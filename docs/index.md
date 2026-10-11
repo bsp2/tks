@@ -119,9 +119,9 @@ note: Software written in TkScript may use any license (FOSS, closed source, ..)
 
 |noheader
 |cols=1,1
-| macOS 26 arm64            :|:[tks-macos_arm64.zip](files/current/tks-macos_arm64.zip) (v0.9.92.34, 10Oct2026)
-| Debian GNU/Linux 13 arm64 :|:[tks-aarch64-raspberry.tar.gz](files/current/tks-aarch64-raspberry.tar.gz) (v0.9.92.34, 10Oct2026)
-| Windows 10 x86\_64        :|:[tks.zip](files/current/tks.zip) (v0.9.92.34, 10Oct2026)
+| macOS 26 arm64            :|:[tks-macos_arm64.zip](files/current/tks-macos_arm64.zip) (v0.9.92.34, 11Oct2026)
+| Debian GNU/Linux 13 arm64 :|:[tks-aarch64-raspberry.tar.gz](files/current/tks-aarch64-raspberry.tar.gz) (v0.9.92.34, 11Oct2026)
+| Windows 10 x86\_64        :|:[tks.zip](files/current/tks.zip) (v0.9.92.34, 11Oct2026)
 ].table_noborder
 
 tip: on macOS, copy the extracted the files to `/usr/local/` (optional)
@@ -140,7 +140,7 @@ The latest source-code packages are here:
 - [tkmath](files/current/tkmath.zip), [tkoldmath](files/current/tkoldmath.zip), [tkgmp](files/current/tkgmp.zip)
 - [tkminnie](files/current/minnie.zip)
 - [tkopengl](files/current/tkopengl.zip)
-- [tksdl](files/current/tksdl.zip) (Windows, deprecated), [tksdl12-compat](files/current/tksdl12-compat.zip) (deprecated), [tksdl2](files/current/tksdl2.zip) (Windows, Linux, macOS)
+- [tksdl](files/current/tksdl.zip) (Windows, deprecated), [tksdl12-compat](files/current/tksdl12-compat.zip) (deprecated), [tksdl2](files/current/tksdl2.zip) (Windows, Linux, macOS), [tksdl3](files/current/tksdl3.zip) (Linux, macOS)
 - [tksdl_net](files/current/tksdl_net.zip), [tkbluetooth](files/current/tkbluetooth.zip)
 - [tkmidi](files/current/tkmidi.zip) (Windows), [tkmidi_alsa](files/current/tkmidi_alsa.zip) (Linux), [tkmidi_portmidi](files/current/tkmidi_portmidi.zip) (macOS)
 - [tkmidipipe](files/current/tkmidipipe.zip)
