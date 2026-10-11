@@ -1841,7 +1841,7 @@ sBool _HAL::processSDLEvent(sBool _poll) {
             break;
 
          case SDL_EVENT_TEXT_INPUT:
-            // yac_host->printf("xxx SDL_TEXTINPUT\n");
+            // yac_host->printf("xxx SDL_EVENT_TEXT_INPUT\n");
             {
                sU32 unicode = loc_utf8_to_u32((const sU8*)ev.text.text);
                if(0u != last_vkey)
@@ -3071,6 +3071,8 @@ void _HAL::viewOpened(sBool _bResize) {
    pending_resize_ms = -1;
 
    b_window_visible = YAC_TRUE;
+
+   ::SDL_StartTextInput(sdl_window);
 
 #ifdef YAC_WIN32
    if(lpDD)
