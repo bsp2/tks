@@ -115,6 +115,7 @@ static sU32 last_ticks = 0u;  // 1000 ticks per second
 static sU32 ticks_start = 0u;
 static sUI num_frames_rendered = 0u;
 static sUI total_num_frames_rendered = 0u;
+static sUI total_num_iterations = 0u;
 static sBool b_queued_test_restart = YAC_TRUE;  // auto-resets to false at end of first frame after test restart
 static sUI num_iter         = 1u;
 static sUI auto_exit_frames = 0u;  // auto-exit after <n> frames (benchmark single test)
@@ -1460,10 +1461,18 @@ void hal_on_draw(void) {
 
       sdvg_SetGlobalAlpha(1.0f);
 
-      for(sUI iter = 0u; iter < num_iter; iter++)
+      // One extra iteration to warm-up shader(s)
+      const sUI numIter = (0u == total_num_iterations) ? (num_iter + 1u) : num_iter;
+
+      for(sUI iter = 0u; iter < numIter; iter++)
       {
          minDrawableSetEnableDebug(drawable, sdvg_GetEnableDebug() || ((0u == iter) && (0u == (num_frames_rendered & 255u))));
          minDrawableDraw(drawable);
+
+         if(0u == total_num_iterations++)
+         {
+            ticks_start = hal_get_ticks();
+         }
       }
 
       if(0u == (num_frames_rendered & 255u))
@@ -1501,7 +1510,7 @@ void hal_on_draw(void) {
       MinnieVG_DebugPrintMinnieAndDrawableStats(drawable);
       glFinish();
       sU32 tDelta = hal_get_ticks() - ticks_start;
-      sF32 fps = (sF32)( (1000.0 * auto_exit_frames * num_iter) / tDelta );
+      sF32 fps = (sF32)( (1000.0 * (total_num_iterations - 1u)) / tDelta );
       Dprintf("[...] auto_exit after %u frames / %u millisec => %3.2f fps\n", num_frames_rendered, tDelta, ((sSI)(fps*100))/100.0f);
       hal_window_quit();
    }
@@ -1510,7 +1519,7 @@ void hal_on_draw(void) {
       sUI tDelta = hal_get_ticks() - ticks_start;
       if(tDelta > 0u)
       {
-         sF32 fps = (sF32)((1000.0 * total_num_frames_rendered * num_iter) / tDelta);
+         sF32 fps = (sF32)((1000.0 * (total_num_iterations - 1u)) / tDelta);
          Dprintf("[...] FPS=%f\n", fps);
       }
    }
@@ -1748,9 +1757,9 @@ int main(int argc, char**argv) {
       SelectTest(test_idx);
 
       // Main loop
-      Dprintf("[...] entering event loop (b_vsync=%d)\n", b_vsync);
+      Dprintf("[...] entering event loop (b_vsync=%d b_benchmark=%d)\n", b_vsync, b_benchmark);
 
-      hal_set_swap_interval(b_vsync ? 1 : 0);
+      hal_set_swap_interval((b_vsync && !b_benchmark) ? 1 : 0);
 
       ticks_start = hal_get_ticks();
       hal_window_loop();

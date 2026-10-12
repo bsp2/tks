@@ -94,6 +94,7 @@ static sUI display_height;
 static sU32 last_ticks = 0u;  // 1000 ticks per second
 static sU32 num_frames_rendered = 0u;
 static sUI total_num_frames_rendered = 0u;
+static sUI total_num_iterations = 0u;
 static sU32 ticks_start = 0u;
 
 static sF32 ang_x = 0.0f;
@@ -658,8 +659,8 @@ static sSI diagonal_line_pattern_idx = 0;  // 's' / lctrl-s
 #define BENCHMARK_NUM_FRAMES_BASELINE          10
 #define BENCHMARK_NUM_ITERATIONS_PER_FRAME    100
 #else
-#define BENCHMARK_NUM_FRAMES_BASELINE       10000
-#define BENCHMARK_NUM_ITERATIONS_PER_FRAME  10000
+#define BENCHMARK_NUM_FRAMES_BASELINE        2000
+#define BENCHMARK_NUM_ITERATIONS_PER_FRAME   2000
 #endif // DNX_POKY
 static sSI benchmark_frames_left = BENCHMARK_NUM_FRAMES_BASELINE;
 static sF32 benchmark_ms_start = 0.0f;
@@ -3549,6 +3550,7 @@ static void SelectRenderMode(sSI _mode) {
       buf_vbo.io_offset = 0;
       hal_window_set_title(buf);
       Dprintf("[...] SelectRenderMode: %s\n", buf);
+      total_num_iterations = 0u;
    }
 }
 
@@ -5734,6 +5736,9 @@ void hal_on_draw(void) {
 
    // Dprintf("[trc] b_benchmark=%d auto_exit_frames=%u numIter=%u\n", b_benchmark, auto_exit_frames, numIter);
 
+   // One extra iteration to warm-up shader(s)
+   numIter = (0u == total_num_iterations) ? (numIter + 1u) : numIter;
+
    for(sUI iter = 0u; iter < numIter; iter++)
    {
       // Dprintf("xxx sdvg_SetFramebufferSize: (%u,%u)\n", display_width, display_height);
@@ -5762,6 +5767,14 @@ void hal_on_draw(void) {
 
       sdvg_EndFrame();
 
+      if(render_mode >= 0)
+      {
+         if(0u == total_num_iterations++)
+         {
+            ticks_start = hal_get_ticks();
+            benchmark_ms_start = (float)ticks_start;
+         }
+      }
    } // loop numIter
 
    sF32 spd = b_anim ? b_slomo ? 0.1f : 1.0f : 0.0f;
@@ -5809,7 +5822,7 @@ void hal_on_draw(void) {
          else
          {
             deltaMS = (hal_get_ticks() - benchmark_ms_start);
-            benchmark_ms_avg = deltaMS / ((sF32)BENCHMARK_NUM_FRAMES * numIter);
+            benchmark_ms_avg = deltaMS / ((sF32)(total_num_iterations - 1u));
             // benchmark_ms_avg -= benchmark_ms_avg_baseline;
             Dprintf("[...] benchmark: render mode %d \"%s\" deltaMS=%f ms_avg=%f (%d fps)\n", render_mode, mode_names[render_mode], deltaMS, (((sSI)(100*benchmark_ms_avg))*0.01f), (sSI)(1000.0f/benchmark_ms_avg));
             SelectRenderMode(render_mode + 1);
@@ -5842,7 +5855,7 @@ void hal_on_draw(void) {
       sUI tDelta = hal_get_ticks() - ticks_start;
       if(tDelta > 0u)
       {
-         sF32 fps = (sF32)((1000.0 * total_num_frames_rendered * numIter) / tDelta);
+         sF32 fps = (sF32)((1000.0 * (total_num_iterations - 1u)) / tDelta);
          Dprintf("[...] FPS=%f\n", fps);
       }
    }
@@ -5851,8 +5864,8 @@ void hal_on_draw(void) {
    {
       glFinish();
       sU32 tDelta = hal_get_ticks() - ticks_start;
-      sF32 fps = (sF32)((1000.0 * auto_exit_frames * numIter) / tDelta);
-      Dprintf("[...] auto_exit after %u frames (%u iteration(s)) / %u millisec => %3.2f fps\n", num_frames_rendered, auto_exit_num_iter, tDelta, ((sSI)(fps*100))/100.0f);
+      sF32 fps = (sF32)((1000.0 * (total_num_iterations - 1u)) / tDelta);
+      Dprintf("[...] auto_exit after %u frames (%u iteration(s)) / %u millisec => %3.2f fps\n", num_frames_rendered, total_num_iterations - 1u, tDelta, ((sSI)(fps*100))/100.0f);
       hal_window_quit();
    }
 
@@ -6322,6 +6335,8 @@ int main(int argc, char**argv) {
       {
          hal_set_swap_interval(b_benchmark ? 0 : b_vsync ? 1 : 0);
       }
+
+      Dprintf("[...] entering event loop (b_vsync=%d b_benchmark=%d)\n", b_vsync, b_benchmark);
 
       ticks_start = hal_get_ticks();
       hal_window_loop();
