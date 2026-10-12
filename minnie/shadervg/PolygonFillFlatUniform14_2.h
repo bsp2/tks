@@ -1,0 +1,159 @@
+// ----
+// ---- file   : PolygonFillFlatUniform14_2.h
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : Distributed under terms of the MIT license (https://opensource.org/licenses/MIT)
+// ----          Copyright 2026 by bsp
+// ----
+// ----          Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+// ----          associated documentation files (the "Software"), to deal in the Software without restriction, including
+// ----          without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// ----          copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to
+// ----          the following conditions:
+// ----
+// ----          The above copyright notice and this permission notice shall be included in all copies or substantial
+// ----          portions of the Software.
+// ----
+// ----          THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
+// ----          NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+// ----          IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+// ----          WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+// ----          SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+// ----
+// ---- info   : ShaderVG render utilities
+// ----
+// ----
+// ----
+
+class PolygonFillFlatUniform14_2 : public ShaderVG_Shape {
+
+  public:
+
+   // ------------ vertex shader --------------
+   const char *vs_src =
+      "uniform mat4 u_transform; \n"
+      " \n"
+      "ATTRIBUTE vec2 a_vertex; \n"
+      " \n"
+      "void main(void) { \n"
+      "  gl_Position = u_transform * vec4(a_vertex*0.25,0,1); \n"
+      "} \n"
+      ;
+
+   // ------------ fragment shader ------------
+   const char *fs_src =
+      "uniform vec4 u_color_fill; \n"
+      " \n"
+      "void main(void) { \n"
+      "  OUT_FRAGCOLOR = u_color_fill; \n"
+      "} \n"
+      ;
+
+   sBool validateShapeShader(void) {
+      return
+         (-1 != shape_a_vertex)       &&
+         (-1 != shape_u_transform)    &&
+         (-1 != shape_u_color_fill)
+         ;
+   }
+
+   sBool onOpen(void) {
+      if(createShapeShader(vs_src, fs_src))
+      {
+         return YAC_TRUE;
+      }
+      return YAC_FALSE;
+   }
+
+   void drawPolygonFillFlatUniformVBO14_2(sUI _vboId,
+                                          sUI _byteOffset,
+                                          sUI _numVerts
+                                          ) {
+      // VBO vertex format (4 bytes per vertex):
+      //   +0 s14.2 x
+      //   +2 s14.2 y
+
+      /* Dyac_host_printf("xxx drawPolygonFillFlatVBO14_2: vboId=%u byteOffset=%u numVerts=%u fill=(%f;%f;%f;%f)\n", _vboId, _byteOffset, _numVerts, _fillR, _fillG, _fillB, _fillA); */
+
+      sdvg_BindVBO(_vboId);
+
+      if(!bindShader())
+         return;
+
+      lazyUpdateTransform();
+      lazyUpdateColorFill(&sdvg_int_color_fill_ga);
+
+      Dsdvg_attrib_offset(shape_a_vertex, 2/*size*/, GL_SHORT, GL_FALSE/*normalize*/, 4/*stride*/, _byteOffset);
+      Dsdvg_queue_attrib_enable(shape_a_vertex);
+      Dsdvg_handle_queued_attrib_enable_and_divisor();
+
+      Dsdvg_draw_triangles(0, _numVerts);
+
+      Dsdvg_queue_attrib_disable(shape_a_vertex);
+   }
+
+   void drawPolygonFillFlatUniformVBO14_2(sUI   _vboId,
+                                          sUI   _byteOffset,
+                                          sUI   _numVerts,
+                                          sBool _bNonZero
+                                          ) {
+
+      // VBO vertex format (4 bytes per vertex):
+      //   +0 s14.2 x
+      //   +2 s14.2 y
+
+      sdvg_BindVBO(_vboId);
+
+      if(!bindShader())
+         return;
+
+      lazyUpdateTransform();
+      lazyUpdateColorFill(&sdvg_int_color_fill_ga);
+
+      Dsdvg_attrib_offset(shape_a_vertex, 2/*size*/, GL_SHORT, GL_FALSE/*normalize*/, 4/*stride*/, _byteOffset);
+      Dsdvg_queue_attrib_enable(shape_a_vertex);
+      Dsdvg_handle_queued_attrib_enable_and_divisor();
+
+#if defined(SHADERVG_HW_NPOLYGONS) && defined(GL_TES_npolygons)
+#ifdef SHADERVG_HW_NPOLYGONS_AA
+      if(b_aa)
+         glEnable(GL_POLYGON_AA_TES);
+      else
+         glDisable(GL_POLYGON_AA_TES);
+#endif // SHADERVG_HW_NPOLYGONS_AA
+      glPolygonFillTES(_bNonZero ? GL_NON_ZERO_TES : GL_EVEN_ODD_TES);
+      glPolygonBeginTES();
+      Dsdvg_draw_arrays_vbo(GL_POLYGON_TES, 0, _numVerts);
+      glPolygonEndTES();
+#ifdef SHADERVG_HW_NPOLYGONS_AA
+      if(b_aa)
+         glDisable(GL_POLYGON_AA_TES);
+#endif // SHADERVG_HW_NPOLYGONS_AA
+#elif defined(SHADERVG_STENCIL_POLYGONS)
+      if(_bNonZero)
+      {
+         Dsdvg_stencil_poly_non_zero_pass1();
+      }
+      else
+      {
+         Dsdvg_stencil_poly_even_odd_pass1();
+      }
+      Dsdvg_draw_triangle_fan_vbo(0, _numVerts);
+
+      if(_bNonZero)
+      {
+         Dsdvg_stencil_poly_non_zero_pass2();
+      }
+      else
+      {
+         Dsdvg_stencil_poly_even_odd_pass2();
+      }
+      Dsdvg_draw_triangle_fan_vbo(0, _numVerts);
+
+      Dsdvg_stencil_poly_end();
+#else
+#error SHADERVG_STENCIL_POLYGONS is not enabled and GL_TES_npolygons is not available
+#endif // SHADERVG_HW_NPOLYGONS && GL_TES_npolygons
+
+      Dsdvg_queue_attrib_disable(shape_a_vertex);
+   }
+};

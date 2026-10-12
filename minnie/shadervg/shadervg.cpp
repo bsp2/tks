@@ -149,6 +149,8 @@ static sF32  decal_alpha;
 #include "TrianglesTexUVFlat32AlphaSDF.h"
 #include "TrianglesTexUVFlat14_2AlphaSDF.h"
 #ifdef SHADERVG_USE_POLYGON_SHADERS
+#include "PolygonFillFlatUniform32.h"
+#include "PolygonFillFlatUniform14_2.h"
 #include "PolygonFillFlat32Linear.h"
 #include "PolygonFillFlat14_2Linear.h"
 #include "PolygonFillFlat32Radial.h"
@@ -386,6 +388,8 @@ static TrianglesTexUVGouraudDecal14_2Alpha           triangles_tex_uv_gouraud_de
 static TrianglesTexUVFlat32AlphaSDF                  triangles_tex_uv_flat_32_alpha_sdf;
 static TrianglesTexUVFlat14_2AlphaSDF                triangles_tex_uv_flat_14_2_alpha_sdf;
 #ifdef SHADERVG_USE_POLYGON_SHADERS
+static PolygonFillFlatUniform32                      polygon_fill_flat_uniform_32;
+static PolygonFillFlatUniform14_2                    polygon_fill_flat_uniform_14_2;
 static PolygonFillFlat32Linear                       polygon_fill_flat_32_linear;
 static PolygonFillFlat14_2Linear                     polygon_fill_flat_14_2_linear;
 static PolygonFillFlat32Radial                       polygon_fill_flat_32_radial;
@@ -565,7 +569,7 @@ typedef struct shadervg_shape_s {
 } shadervg_shape_t;
 
 #ifdef SHADERVG_OBJECT_LABELS
-#ifdef GL_TES_spirv_program_loader
+#if defined(GL_TES_spirv_program_loader)
 #define Dshape_type(en,a) { en, &a, #a, { mem_base_##a, mem_size_##a } }
 #else
 #define Dshape_type(en,a) { en, &a, #a }
@@ -627,6 +631,8 @@ static shadervg_shape_t all_shapes[] = {
            Dshape_type(1, triangles_tex_uv_flat_32_alpha_sdf),
            Dshape_type(1, triangles_tex_uv_flat_14_2_alpha_sdf),
 #ifdef SHADERVG_USE_POLYGON_SHADERS
+           Dshape_type(1, polygon_fill_flat_uniform_32),
+           Dshape_type(1, polygon_fill_flat_uniform_14_2),
            Dshape_type(1, polygon_fill_flat_32_linear),
            Dshape_type(1, polygon_fill_flat_14_2_linear),
            Dshape_type(1, polygon_fill_flat_32_radial),
@@ -1346,7 +1352,7 @@ void sdvg_int_handle_queued_attrib_enable(void) {
    const sSI activeMask = sdvg_int_active_attrib_enable_mask;
    const sSI newMask = sdvg_int_attrib_enable_mask;
    const sSI diffMask = activeMask ^ newMask;
-   for(sSI i = 0; i < 16; i++)
+   for(sSI i = 0; i < 8; i++)
    {
       if(diffMask & m)
       {
@@ -2464,14 +2470,14 @@ static ShaderVG_Shape *loc_get_default_points_round_aa_shape_14_2(sBool *_bFillG
    return shape;
 }
 
-#if defined(SHADERVG_USE_POLYGON_SHADERS) && !defined(SHADERVG_USE_DEFAULT_POLYGON_14_2)
+#if defined(SHADERVG_USE_POLYGON_SHADERS)
 static ShaderVG_Shape *loc_get_default_polygon_fill_flat_shape_32(void) {
    ShaderVG_Shape *shape;
    switch(sdvg_int_paint.mode)
    {
       // (todo) implement all paints
       default:
-      case PAINT_SOLID:               shape = &triangles_fill_flat_uniform_32;           break;
+      case PAINT_SOLID:               shape = &polygon_fill_flat_uniform_32;             break;
       case PAINT_LINEAR:              shape = &polygon_fill_flat_32_linear;              break;
       case PAINT_RADIAL:              shape = &polygon_fill_flat_32_radial;              break;
       case PAINT_CONIC:               shape = &polygon_fill_flat_32_conic;               break;
@@ -2482,24 +2488,26 @@ static ShaderVG_Shape *loc_get_default_polygon_fill_flat_shape_32(void) {
    }
    return shape;
 }
+#endif // defined(SHADERVG_USE_POLYGON_SHADERS)
 
+#if defined(SHADERVG_USE_POLYGON_SHADERS) && !defined(SHADERVG_USE_DEFAULT_POLYGON_14_2)
 static void loc_bind_default_polygon_fill_flat_shape_32(void) {
    ShaderVG_Shape *shape = loc_get_default_polygon_fill_flat_shape_32();
    sdvg_int_BindShape(shape);
 }
 #endif // defined(SHADERVG_USE_POLYGON_SHADERS) && !defined(SHADERVG_USE_DEFAULT_POLYGON_14_2)
 
-#if defined(SHADERVG_USE_POLYGON_SHADERS) && defined(SHADERVG_USE_DEFAULT_POLYGON_14_2)
+#if defined(SHADERVG_USE_POLYGON_SHADERS)
 static ShaderVG_Shape *loc_get_default_polygon_fill_flat_shape_14_2(void) {
    ShaderVG_Shape *shape;
    switch(sdvg_int_paint.mode)
    {
       // (todo) implement all paints
       default:
-      case PAINT_SOLID:               shape = &triangles_fill_flat_uniform_14_2;         break;
-      case PAINT_LINEAR:              shape = &polygon_fill_flat_14_2_linear;            break;
-      case PAINT_RADIAL:              shape = &polygon_fill_flat_14_2_radial;            break;
-      case PAINT_CONIC:               shape = &polygon_fill_flat_14_2_conic;             break;
+      case PAINT_SOLID:               shape = &polygon_fill_flat_uniform_14_2;             break;
+      case PAINT_LINEAR:              shape = &polygon_fill_flat_14_2_linear;              break;
+      case PAINT_RADIAL:              shape = &polygon_fill_flat_14_2_radial;              break;
+      case PAINT_CONIC:               shape = &polygon_fill_flat_14_2_conic;               break;
       case PAINT_PATTERN:             shape = &polygon_fill_flat_14_2_pattern;             break;
       case PAINT_PATTERN_ALPHA:       shape = &polygon_fill_flat_14_2_pattern_alpha;       break;
       case PAINT_PATTERN_DECAL:       shape = &polygon_fill_flat_14_2_pattern_decal;       break;
@@ -2507,7 +2515,9 @@ static ShaderVG_Shape *loc_get_default_polygon_fill_flat_shape_14_2(void) {
    }
    return shape;
 }
+#endif // defined(SHADERVG_USE_POLYGON_SHADERS)
 
+#if defined(SHADERVG_USE_POLYGON_SHADERS) && defined(SHADERVG_USE_DEFAULT_POLYGON_14_2)
 static void loc_bind_default_polygon_fill_flat_shape_14_2(void) {
    ShaderVG_Shape *shape = loc_get_default_polygon_fill_flat_shape_14_2();
    sdvg_int_BindShape(shape);
@@ -2676,8 +2686,8 @@ static void loc_drawTESDaveNXPolygon(sUI _numVerts) {
       glDisable(GL_POLYGON_AA_TES);
 #endif // SHADERVG_HW_NPOLYGONS_AA
 
-   glPolygonBeginTES();
    Dsdvg_handle_queued_attrib_enable_and_divisor();
+   glPolygonBeginTES();
    Dsdvg_draw_arrays_vbo(GL_POLYGON_TES, 0, _numVerts);
    glPolygonEndTES();
 
@@ -3504,11 +3514,19 @@ void YAC_CALL sdvg_DrawPolygonFillFlatUniformVBO32(sUI _vboId, sUI _byteOffset, 
    // (note) SHADERVG_STENCIL_POLYGONS: stencil buffer must initially be cleared to 0
    //
    Dsdvg_tracecall("[trc] sdvg_DrawPolygonFillFlatUniformVBO32: vboId=%u byteOffset=%u numVerts=%u\n", _vboId, _byteOffset, _numVerts);
+#if defined(SHADERVG_HW_NPOLYGONS) && defined(GL_TES_npolygons)
+   polygon_fill_flat_uniform_32.drawPolygonFillFlatUniformVBO32(_vboId,
+                                                                _byteOffset,
+                                                                _numVerts,
+                                                                b_fillrule_nonzero/*bNonZero*/
+                                                                );
+#else
    triangles_fill_flat_uniform_32.drawPolygonFillFlatUniformVBO32(_vboId,
                                                                   _byteOffset,
                                                                   _numVerts,
                                                                   b_fillrule_nonzero/*bNonZero*/
                                                                   );
+#endif
 }
 
 void YAC_CALL sdvg_DrawPolygonFillFlatUniformVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numVerts) {
@@ -3520,11 +3538,19 @@ void YAC_CALL sdvg_DrawPolygonFillFlatUniformVBO14_2(sUI _vboId, sUI _byteOffset
    // (note) SHADERVG_STENCIL_POLYGONS: stencil buffer must initially be cleared to 0
    //
    Dsdvg_tracecall("[trc] sdvg_DrawPolygonFillFlatUniformVBO14_2: vboId=%u byteOffset=%u numVerts=%u\n", _vboId, _byteOffset, _numVerts);
+#if defined(SHADERVG_HW_NPOLYGONS) && defined(GL_TES_npolygons)
+   polygon_fill_flat_uniform_14_2.drawPolygonFillFlatUniformVBO14_2(_vboId,
+                                                                    _byteOffset,
+                                                                    _numVerts,
+                                                                    b_fillrule_nonzero/*bNonZero*/
+                                                                    );
+#else
    triangles_fill_flat_uniform_14_2.drawPolygonFillFlatUniformVBO14_2(_vboId,
                                                                       _byteOffset,
                                                                       _numVerts,
                                                                       b_fillrule_nonzero/*bNonZero*/
                                                                       );
+#endif
 }
 
 void YAC_CALL sdvg_DrawPolygonFillFlatUniformAAVBO32(sUI _vboId, sUI _byteOffset, sUI _numVerts) {
@@ -3541,19 +3567,29 @@ void YAC_CALL sdvg_DrawPolygonFillFlatUniformAAVBO32(sUI _vboId, sUI _byteOffset
    {
       // Draw interior
       sdvg_BindVBO(_vboId);
-      loc_bind_default_triangles_fill_flat_uniform_shape_32();
-      sdvg_VertexOffset2f();
+
+      ShaderVG_Shape *oldShape = current_shape;
+      current_shape = loc_get_default_polygon_fill_flat_shape_32();
+      sSI a = current_shape->bindShaderAndReturnVertexAttrib();
+      if(loc_UpdateShaderUniforms(YAC_TRUE/*bPolygon*/))
+      {
+         Dsdvg_attrib_offset(a, 2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/, 8, _byteOffset);
+         Dsdvg_queue_attrib_enable(a);
 
 #if defined(SHADERVG_HW_NPOLYGONS) && defined(GL_TES_npolygons)
-      loc_drawTESDaveNXPolygon(_numVerts - 1u);
+         loc_drawTESDaveNXPolygon(_numVerts - 1u);
 #elif defined(SHADERVG_STENCIL_POLYGONS)
-      if(b_fillrule_nonzero)
-         loc_drawStencilPolygonNonZero(_numVerts - 1u);
-      else
-         loc_drawStencilPolygonEvenOdd(_numVerts - 1u);
+         if(b_fillrule_nonzero)
+            loc_drawStencilPolygonNonZero(_numVerts - 1u);
+         else
+            loc_drawStencilPolygonEvenOdd(_numVerts - 1u);
 #else
 #error SHADERVG_STENCIL_POLYGONS is not enabled and GL_TES_npolygons is not available
 #endif // SHADERVG_HW_NPOLYGONS && GL_TES_npolygons
+
+         Dsdvg_queue_attrib_disable(a);
+      }
+      current_shape = oldShape;
 
 #if defined(SHADERVG_POLYGON_AA_OUTLINES) && defined(SHADERVG_GL_VERTEX_ID)
       // Draw AA outline
@@ -3595,7 +3631,7 @@ void YAC_CALL sdvg_DrawPolygonFillFlatUniformAAVBO14_2(sUI _vboId, sUI _byteOffs
    {
       sdvg_BindVBO(_vboId);
       ShaderVG_Shape *oldShape = current_shape;
-      current_shape = loc_get_default_triangles_fill_flat_uniform_shape_14_2();
+      current_shape = loc_get_default_polygon_fill_flat_shape_14_2();
       sSI a = current_shape->bindShaderAndReturnVertexAttrib();
       if(loc_UpdateShaderUniforms(YAC_TRUE/*bPolygon*/))
       {
@@ -7024,7 +7060,7 @@ void YAC_CALL sdvg_BeginFrame(void) {
    sdvg_int_active_attrib_enable_mask = 0;
    sdvg_int_attrib_divisor_mask = 0;
    sdvg_int_active_attrib_divisor_mask = 0;
-   for(sSI i = 0; i < 16; i++)
+   for(sSI i = 0; i < 8; i++)
    {
       Dsdvg_attrib_disable(i);
       Dsdvg_attrib_divisor_reset(i);
