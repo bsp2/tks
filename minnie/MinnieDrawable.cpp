@@ -155,7 +155,11 @@ void _MinnieDrawable::lazyAllocGL(void) {
       Dsdvg_glcall(glBindBuffer(GL_ARRAY_BUFFER, gl_buf_id));
       Dsdvg_glcall(zglBufferData(GL_ARRAY_BUFFER, buf_gl->size, NULL, GL_STATIC_DRAW));
       Dsdvg_glcall(glBindBuffer(GL_ARRAY_BUFFER, 0)); // remove binding
-      Dyac_host_printf("[dbg] MinnieDrawable::lazyAllocGL: VBO last error is %d\n", Dsdvg_glcall(glGetError()));
+      GLenum lastError = Dsdvg_glcall(glGetError());
+      if(GL_NO_ERROR != lastError)
+      {
+         Dyac_host_printf("[dbg] MinnieDrawable::lazyAllocGL: VBO last error is %d\n", lastError);
+      }
    }
 }
 
