@@ -259,7 +259,7 @@ static void SelectPreviousTest() {
 
 // ---------------------------------------------------------------------------- hal_on_draw
 void hal_on_draw(void) {
-   // trace "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ onDraw";
+   // Dprintf("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ onDraw\n");
 
    sU32 ticks = hal_get_ticks();
    // Dprintf("xxx ticks=%u last_ticks=%u\n", ticks, last_ticks);
@@ -274,6 +274,7 @@ void hal_on_draw(void) {
 
    if(!b_gl_buf_once || !minDrawableIsComplete(drawable))
    {
+      // Dprintf("xxx b_gl_buf_once=%d minDrawableIsComplete(drawable)=%d\n", b_gl_buf_once, minDrawableIsComplete(drawable));
       minSetStrokeScale(stroke_scale);
 
       if(MinnieVG_SetupDrawableFromBuffer(drawable, &fileBuf))
@@ -322,7 +323,7 @@ void hal_on_draw(void) {
 
       for(sUI iter = 0u; iter < numIter; iter++)
       {
-         minDrawableSetEnableDebug(drawable, (0u == iter) && (0u == (num_frames_rendered & 255u)));
+         minDrawableSetEnableDebug(drawable, !b_benchmark && (0u == iter) && (0u == (num_frames_rendered & 255u)));
          minDrawableDraw(drawable);
 
          if(0u == total_num_iterations++)
@@ -331,9 +332,12 @@ void hal_on_draw(void) {
          }
       }
 
-      if(0u == (num_frames_rendered & 255u))
+      if(!b_benchmark)
       {
-         MinnieVG_DebugPrintMinnieAndDrawableStats(drawable);
+         if(0u == (num_frames_rendered & 255u))
+         {
+            MinnieVG_DebugPrintMinnieAndDrawableStats(drawable);
+         }
       }
    }
    else
@@ -372,7 +376,7 @@ void hal_on_draw(void) {
       Dprintf("[...] auto_exit after %u frames / %u millisec => %3.2f fps\n", num_frames_rendered, tDelta, ((sSI)(fps*100))/100.0f);
       hal_window_quit();
    }
-   else if(0u == (num_frames_rendered & 63u))
+   else if(0u == (num_frames_rendered & 63u) && !b_benchmark)
    {
       sUI tDelta = hal_get_ticks() - ticks_start;
       if(tDelta > 0u)

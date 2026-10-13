@@ -1466,7 +1466,7 @@ void hal_on_draw(void) {
 
       for(sUI iter = 0u; iter < numIter; iter++)
       {
-         minDrawableSetEnableDebug(drawable, sdvg_GetEnableDebug() || ((0u == iter) && (0u == (num_frames_rendered & 255u))));
+         minDrawableSetEnableDebug(drawable, !b_benchmark && (sdvg_GetEnableDebug() || ((0u == iter) && (0u == (num_frames_rendered & 255u)))));
          minDrawableDraw(drawable);
 
          if(0u == total_num_iterations++)
@@ -1475,7 +1475,7 @@ void hal_on_draw(void) {
          }
       }
 
-      if(0u == (num_frames_rendered & 255u))
+      if(!b_benchmark && 0u == (num_frames_rendered & 255u))
       {
          MinnieVG_DebugPrintMinnieAndDrawableStats(drawable);
       }
@@ -1507,14 +1507,14 @@ void hal_on_draw(void) {
 
    if(auto_exit_frames > 0u && auto_exit_frames == num_frames_rendered)
    {
-      MinnieVG_DebugPrintMinnieAndDrawableStats(drawable);
       glFinish();
       sU32 tDelta = hal_get_ticks() - ticks_start;
+      MinnieVG_DebugPrintMinnieAndDrawableStats(drawable);
       sF32 fps = (sF32)( (1000.0 * (total_num_iterations - 1u)) / tDelta );
       Dprintf("[...] auto_exit after %u frames / %u millisec => %3.2f fps\n", num_frames_rendered, tDelta, ((sSI)(fps*100))/100.0f);
       hal_window_quit();
    }
-   else if(0u == (num_frames_rendered & 63u))
+   else if(!b_benchmark && 0u == (num_frames_rendered & 63u))
    {
       sUI tDelta = hal_get_ticks() - ticks_start;
       if(tDelta > 0u)
