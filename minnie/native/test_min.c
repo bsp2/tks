@@ -1679,7 +1679,7 @@ int main(int argc, char**argv) {
          if(argc >= 4)
          {
             num_iter = (sUI)atoi(argv[3]);
-            b_benchmark = (num_iter > 1);
+            b_benchmark = (num_iter >= 1);
             b_gl_buf_once = b_benchmark;
          }
       }
