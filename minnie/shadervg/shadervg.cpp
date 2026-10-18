@@ -3569,7 +3569,11 @@ void YAC_CALL sdvg_DrawPolygonFillFlatUniformAAVBO32(sUI _vboId, sUI _byteOffset
       sdvg_BindVBO(_vboId);
 
       ShaderVG_Shape *oldShape = current_shape;
+#if defined(SHADERVG_USE_POLYGON_SHADERS)
       current_shape = loc_get_default_polygon_fill_flat_shape_32();
+#else
+      current_shape = loc_get_default_triangles_fill_flat_uniform_shape_32();
+#endif
       sSI a = current_shape->bindShaderAndReturnVertexAttrib();
       if(loc_UpdateShaderUniforms(YAC_TRUE/*bPolygon*/))
       {
@@ -3631,7 +3635,11 @@ void YAC_CALL sdvg_DrawPolygonFillFlatUniformAAVBO14_2(sUI _vboId, sUI _byteOffs
    {
       sdvg_BindVBO(_vboId);
       ShaderVG_Shape *oldShape = current_shape;
+#if defined(SHADERVG_USE_POLYGON_SHADERS)
       current_shape = loc_get_default_polygon_fill_flat_shape_14_2();
+#else
+      current_shape = loc_get_default_triangles_fill_flat_uniform_shape_14_2();
+#endif
       sSI a = current_shape->bindShaderAndReturnVertexAttrib();
       if(loc_UpdateShaderUniforms(YAC_TRUE/*bPolygon*/))
       {
