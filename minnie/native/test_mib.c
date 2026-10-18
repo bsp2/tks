@@ -328,6 +328,7 @@ void hal_on_draw(void) {
 
          if(0u == total_num_iterations++)
          {
+            glFinish();
             ticks_start = hal_get_ticks();
          }
       }
