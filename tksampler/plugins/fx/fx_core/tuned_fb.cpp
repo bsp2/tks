@@ -19,6 +19,8 @@
 
 #include "../../../plugin.h"
 
+#define ST_DELAY_SIZE  (32768u)
+#define ST_DELAY_MASK  (32767u)
 #include "delay.h"
 #include "biquad.h"
 

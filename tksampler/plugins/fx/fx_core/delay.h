@@ -13,6 +13,7 @@
 #define __ST_DELAY_H__
 
 #ifndef ST_DELAY_SIZE
+#error using default ST_DELAY_SIZE
 // ~743ms @44.1kHz
 #define ST_DELAY_SIZE  (32768u)
 #define ST_DELAY_MASK  (32767u)
