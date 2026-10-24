@@ -40,7 +40,7 @@
 // ----          26Dec2024, 08Jan2025, 08Feb2025, 18Feb2025, 22Feb2025, 15Mar2025, 27Mar2025
 // ----          09Sep2025, 10Sep2025, 11Sep2025, 14Sep2025, 16Sep2025, 17Sep2025, 20Sep2025
 // ----          10Oct2025, 02Jun2026, 31Jul2026, 11Aug2026, 17Sep2026, 19Sep2026, 11Oct2026
-// ----          20Oct2026, 22Oct2026
+// ----          20Oct2026, 22Oct2026, 24Oct2026
 // ----
 // ----
 // ----
@@ -435,11 +435,209 @@ class UI : ActionProvider, UIConstants {
    static boolean b_draw_root_fbo = true;
    static boolean b_draw_post_fbo = false;
 
+   private static Layer *root_layer;
+   private static FBO *root_fbo;
+   private static FBO *post_fbo;  // if b_draw_post_fbo==true
+   namespace static FBO *current_fbo;  // valid during onDraw()  (last beginPaint() FBO)
+
+   // Dialogs, tooltips, toolbars...
+	public static FloatingLayer *[] floating_layers;
+   protected static boolean b_remove_floating_layer_nested;  // see RemoveFloatingLayer() (cornercase recursion issue workaround)
+
+   // If true, shade screen before drawing next floating layer
+   public static boolean b_shade_modal = true;
+
+   // True=sweep layers and determine dirty regions before actually drawing something
+   public static boolean b_transparent_layers = false;
+
+   // True==redraw windows while moving/resizing, False=draw XOR window outline
+   private static boolean b_redraw_windowmoveresize = false;
+
+   // True==always show tooltips near window corner
+   public static boolean b_force_window_corner_tooltips = false;
+
+   public static int tooltip_show_delay        = UIConstants.TOOLTIP_SHOW_DELAY;
+   public static int tooltip_stage2_delay      = UIConstants.TOOLTIP_STAGE2_DELAY;
+   public static int tooltip_fast_open_timeout = UIConstants.TOOLTIP_FAST_OPEN_TIMEOUT;
+   public static int tooltip_fast_open_delay   = UIConstants.TOOLTIP_FAST_OPEN_DELAY;
+
+   // ---- The Layer which currently has the keyboard focus
+   public static Layer *keyboard_layer;
+   public static Layer *previous_keyboard_layer; // xxx Should be a stack??
+   module static int last_key_mod; // Used to query current key.mod state, e.g. in mouse handler
+   module static boolean b_ignore_first_lalt_key = false; // hack to workaround lalt-tab issue
+   module static boolean b_lock_keyboard_focus;
+   module static KeyboardFocusListener *keyboard_focus_listener;
+
+   public static boolean b_triad_key_mode = false; // lctrl-x escape sequence entered
+   public static boolean b_triad_key_lctrl = false; // lctrl pressed
+   public static boolean b_triad_key_waitrelease = false; // wait for triad key release before ending triad key mode
+   public static boolean triad_key_pressed = 0; // last triad key press
+   public static boolean b_triad_key_try_repeat = false; // e.g. lctrl-x c c
+   module static boolean b_triad_key_repeating = false; // also see Layer::wantTriadKeyRepeat()
+   module static boolean b_triad_key_delayed_end = false; // true when key repeat is requested and mode ends not until lctrl is released
+   module static Key triad_key_delayed_end_key;
+   module static TimerAction triadkey_timerAction;
+
+   module static boolean b_allow_keyrepeat;
+   module static Key repeat_key;
+   module static KeyRepeatAction ta_keyrepeat;
+   static int key_repeat_rate_frames;
+   static int key_repeat_rate;
+   static int key_repeat_delay_frames;
+   static int key_repeat_delay;
+   static boolean b_vsync_keyrepeat;
+   static int event_handle_starttime;  // to estimate #frames passed in vsync keyrepeat mode. Also see TimerAction.setTicks
+
+   define int LCTRL_HOLD_MS = 300;  // enable extendedBlockSelectionMode after holding key for more than <n> ms
+   protected static int lctrl_start_ms;
+   module static Layer *lctrl_hold_layer;  // set when LCTRL is pressed, unset when released
+
+   // --- kb focus selection mode
+   private static boolean    b_kbdfocus_selection_mode;
+   private static Layer *[]  kbdfocus_candidates;
+   private static Layer     *kbdfocus_selection_layer;
+   private static boolean    b_kbdfocus_selection_mode_behaviour_hold; // true=must hold down focuskey, false=key toggles
+
+   // --- Global/common char filters
+   public static CharFilterFloat         char_filter_float;
+   public static CharFilterFloatExpr     char_filter_float_expr;
+   public static CharFilterHex           char_filter_hex;
+   public static CharFilterHexShort      char_filter_hex_short;
+   public static CharFilterHexExpr       char_filter_hex_expr;
+   public static CharFilterHexShortExpr  char_filter_hex_short_expr;
+   public static CharFilterBinary255Expr char_filter_binary255_expr;
+   public static CharFilterUFix16        char_filter_ufix16;
+
+   // ---- The Layer which currently is underneath the mouse pointer (enter/leave)
+   public static Layer *mouse_layer;
+   public static Layer *preferred_mouse_layer;  // used by Window resize
+   protected static boolean b_lock_mouse_focus;
+   protected static int mouse_layer_lock_timeout_end_ticks;   // after ScrollPane mousewheel scroll. -1=no lock
+   define int MOUSE_LAYER_LOCK_TIMEOUT_TICKS = 650;
+
+   // ---- The Layer which currently has the mouse focus (focus/unfocus)
+   public static Layer *mousefocus_layer;
+
+   // ---- Frontmost and active floating layer
+   public static FloatingLayer *active_floatinglayer;
+
+   // ---- Freetype font cache
+   private static FontCache font_cache;
+
+   private static IconCache icon_cache;
+
+   private static HashTable cursor_cache;
+   public static boolean b_skip_cursor;  // (hack) workaround for disappearing cursor in fullscreen mode (and potential crash)
+
+   namespace static boolean b_floatparam_mouse_grab = true;
+   namespace static boolean b_slider_mouse_grab = true;
+
+   namespace static boolean b_ignore_next_mouse_release;  // after drag-cancel
+
+
+   // // define int SCISSORS_STACK_SIZE = 32;
+   // // private static IntArray scissors_stack;
+   // // private static int scissors_x, scissors_y, scissors_w, scissors_h;
+   // // private static int scissors_stacki;
+
+   define int QUEUE_MODE_NONE              = 0;
+   define int QUEUE_MODE_FULLSCREEN_TOGGLE = 1;
+   define int QUEUE_MODE_REOPEN            = 2;
+   private static int queued_screenmodechange;
+   private static float queue_orig_px = -1;
+   private static float queue_orig_py;
+   private static float queue_orig_sx;
+   private static float queue_orig_sy;
+
+   // --- Mouse grab
+   public static boolean b_mouse_grab; // true=mouse is grabbed
+   public static int mouse_grab_x;     // grab start
+   public static int mouse_grab_y;     //
+   public static int mouse_grab_relx;  // accumulated delta movement
+   public static int mouse_grab_rely;  //
+
+   private   static MouseEvent last_mouse_ev;  // continously tracks last seen mouse event (e.g. for lmeta-drag)
+   private   static MouseEvent drag_last_mouse_ev;
+   private   static int        drag_start_mouse_button; // used to determine cancel button
+   namespace static Layer     *drag_layer;
+   public    static Layer     *drag_layer_candidate;    // Layer under mouse when LMB was first pressed
+   private   static Point2f    drag_layer_abspos;       // at drag start. used for calculating relative mouse positions.
+   public    static boolean    b_try_drag = false;
+   public    static boolean    b_lmeta_drag = false;    // while forcing mouse-drag with LMETA
+   private   static int        drag_threshold = UIConstants.MOUSE_DRAG_THRESHOLD;
+
+   module static MouseHoldAction mousehold_timerAction;
+   private static MouseEvent mousehold_event;
+   private static Layer *mousehold_layer;  // for onMouseHoldEnd()
+
+   public static boolean b_allow_layout_cache = true;  // false=non-resizable UIs
+
+   // ----
+   // ---- Current/desired size of the viewport (unscaled)
+   // ----
+   public static int viewport_width = 800, viewport_height = 600;
+   public static int buffer_width, buffer_height;  // used for scissor clipping
+   public static int multisample_samples;  // e.g. 4
+   public static int multisample_buffers;  // 1
+   public static int supersample_factor = 1;
+
+   // ---- Zoom / scaling
+   public static float zoom_x = 1.0;
+   public static float zoom_y = 1.0;
+
+   // ---- Font scaling
+   public static float font_scaling = 1.0;
+
+   // ---- Font scaling (TextView / TextEdit pixelfonts) (should be an integer)
+   public static float textview_font_scaling = 1;
+
+   public static boolean b_textview_hidpi_font;
+
+   // ---- Font smoothing (true=use 8bit alpha, false=use 1bit alpha)
+   public static boolean b_font_smoothing;
+
+   // ---- Icon scaling
+   public static float icon_scaling = 1.0;
+
+   // ---- Padding scaling
+   public static float pad_scaling = 1.0;
+
+   // ---- Window border scaling
+   public static float window_border_scaling = 1.0;
+
+   // see TableModel.getMinimumColumnWidthScaled()
+   public static float table_min_col_width_scaling = 1.0;
+
+   protected static float fps_lo;
+   protected static float fps_hi;
+   protected static boolean b_force_high_framerate;
+
+   // true=attach depth buffer to FBOs
+   namespace static boolean b_fbo_depth_buffers;
+
    static boolean b_running;
 
    static boolean b_space_bar_clicks = true;
 
    static int timer_interval_ms = 20;
+
+   static int dbg_composite_count;
+
+   static int frame_counter;
+
+   namespace static Texture *tex_default_fbo_color_grading;
+   namespace static Texture *tex_post_fbo_color_grading;
+
+   namespace static int c32_forced_textcolor;
+   public static boolean b_skip_bevel_border;
+
+   public static StringArray  post_fbo_color_grading_texture_cycle_list;
+   protected static int       post_fbo_color_grading_texture_cycle_list_idx;
+   protected static String    post_fbo_color_grading_texture_cycle_list_directory;
+   protected static Function *post_fbo_color_grading_cycle_cbk;
+   protected static int       post_fbo_color_grading_texture_cycle_list_idx_queued_cbk = -1;
+   public static    float     post_fbo_color_grading_amount = 1.0f;
 
 
    static Debug(String msg) {
@@ -654,32 +852,6 @@ class UI : ActionProvider, UIConstants {
          keyboard_monitor.recursiveOnLookAndFeelChanged();
    }
 
-   private static Layer *root_layer;
-   private static FBO *root_fbo;
-   private static FBO *post_fbo;  // if b_draw_post_fbo==true
-   namespace static FBO *current_fbo;  // valid during onDraw()  (last beginPaint() FBO)
-
-   // Dialogs, tooltips, toolbars...
-	public static FloatingLayer *[] floating_layers;
-   protected static boolean b_remove_floating_layer_nested;  // see RemoveFloatingLayer() (cornercase recursion issue workaround)
-
-   // If true, shade screen before drawing next floating layer
-   public static boolean b_shade_modal = true;
-
-   // True=sweep layers and determine dirty regions before actually drawing something
-   public static boolean b_transparent_layers = false;
-
-   // True==redraw windows while moving/resizing, False=draw XOR window outline
-   private static boolean b_redraw_windowmoveresize = false;
-
-   // True==always show tooltips near window corner
-   public static boolean b_force_window_corner_tooltips = false;
-
-   public static int tooltip_show_delay        = UIConstants.TOOLTIP_SHOW_DELAY;
-   public static int tooltip_stage2_delay      = UIConstants.TOOLTIP_STAGE2_DELAY;
-   public static int tooltip_fast_open_timeout = UIConstants.TOOLTIP_FAST_OPEN_TIMEOUT;
-   public static int tooltip_fast_open_delay   = UIConstants.TOOLTIP_FAST_OPEN_DELAY;
-
    public static SetToolTipShowDelay(int _ms) {
       tooltip_show_delay = mathMaxi(50, _ms);
    }
@@ -727,101 +899,6 @@ class UI : ActionProvider, UIConstants {
    public static SetEnableSpaceBarClicks(boolean _bEnable) {
       b_space_bar_clicks = _bEnable;
    }
-
-   // ---- The Layer which currently has the keyboard focus
-   public static Layer *keyboard_layer;
-   public static Layer *previous_keyboard_layer; // xxx Should be a stack??
-   module static int last_key_mod; // Used to query current key.mod state, e.g. in mouse handler
-   module static boolean b_ignore_first_lalt_key = false; // hack to workaround lalt-tab issue
-   module static boolean b_lock_keyboard_focus;
-   module static KeyboardFocusListener *keyboard_focus_listener;
-
-   public static boolean b_triad_key_mode = false; // lctrl-x escape sequence entered
-   public static boolean b_triad_key_lctrl = false; // lctrl pressed
-   public static boolean b_triad_key_waitrelease = false; // wait for triad key release before ending triad key mode
-   public static boolean triad_key_pressed = 0; // last triad key press
-   public static boolean b_triad_key_try_repeat = false; // e.g. lctrl-x c c
-   module static boolean b_triad_key_repeating = false; // also see Layer::wantTriadKeyRepeat()
-   module static boolean b_triad_key_delayed_end = false; // true when key repeat is requested and mode ends not until lctrl is released
-   module static Key triad_key_delayed_end_key;
-   module static TimerAction triadkey_timerAction;
-
-   module static boolean b_allow_keyrepeat;
-   module static Key repeat_key;
-   module static KeyRepeatAction ta_keyrepeat;
-   static int key_repeat_rate_frames;
-   static int key_repeat_rate;
-   static int key_repeat_delay_frames;
-   static int key_repeat_delay;
-   static boolean b_vsync_keyrepeat;
-   static int event_handle_starttime;  // to estimate #frames passed in vsync keyrepeat mode. Also see TimerAction.setTicks
-
-   // --- kb focus selection mode
-   private static boolean    b_kbdfocus_selection_mode;
-   private static Layer *[]  kbdfocus_candidates;
-   private static Layer     *kbdfocus_selection_layer;
-   private static boolean    b_kbdfocus_selection_mode_behaviour_hold; // true=must hold down focuskey, false=key toggles
-
-   // ---- The Layer which currently is underneath the mouse pointer (enter/leave)
-   public static Layer *mouse_layer;
-   public static Layer *preferred_mouse_layer;  // used by Window resize
-   protected static boolean b_lock_mouse_focus;
-   protected static int mouse_layer_lock_timeout_end_ticks;   // after ScrollPane mousewheel scroll. -1=no lock
-   define int MOUSE_LAYER_LOCK_TIMEOUT_TICKS = 650;
-
-   // ---- The Layer which currently has the mouse focus (focus/unfocus)
-   public static Layer *mousefocus_layer;
-
-   // ---- Frontmost and active floating layer
-   public static FloatingLayer *active_floatinglayer;
-
-   // ---- Freetype font cache
-   private static FontCache font_cache;
-
-   private static IconCache icon_cache;
-
-   private static HashTable cursor_cache;
-   public static boolean b_skip_cursor;  // (hack) workaround for disappearing cursor in fullscreen mode (and potential crash)
-
-   namespace static boolean b_floatparam_mouse_grab = true;
-   namespace static boolean b_slider_mouse_grab = true;
-
-   namespace static boolean b_ignore_next_mouse_release;  // after drag-cancel
-
-
-   // // define int SCISSORS_STACK_SIZE = 32;
-   // // private static IntArray scissors_stack;
-   // // private static int scissors_x, scissors_y, scissors_w, scissors_h;
-   // // private static int scissors_stacki;
-
-   define int QUEUE_MODE_NONE              = 0;
-   define int QUEUE_MODE_FULLSCREEN_TOGGLE = 1;
-   define int QUEUE_MODE_REOPEN            = 2;
-   private static int queued_screenmodechange;
-   private static float queue_orig_px = -1;
-   private static float queue_orig_py;
-   private static float queue_orig_sx;
-   private static float queue_orig_sy;
-
-   // --- Mouse grab
-   public static boolean b_mouse_grab; // true=mouse is grabbed
-   public static int mouse_grab_x;     // grab start
-   public static int mouse_grab_y;     //
-   public static int mouse_grab_relx;  // accumulated delta movement
-   public static int mouse_grab_rely;  //
-
-   // --- Global/common char filters
-   public static CharFilterFloat         char_filter_float;
-   public static CharFilterFloatExpr     char_filter_float_expr;
-   public static CharFilterHex           char_filter_hex;
-   public static CharFilterHexShort      char_filter_hex_short;
-   public static CharFilterHexExpr       char_filter_hex_expr;
-   public static CharFilterHexShortExpr  char_filter_hex_short_expr;
-   public static CharFilterBinary255Expr char_filter_binary255_expr;
-   public static CharFilterUFix16        char_filter_ufix16;
-
-   public static boolean b_allow_layout_cache = true;  // false=non-resizable UIs
-
 
    public static AddFloatingLayer(FloatingLayer _fl) {
       explain "Adds a new layer on top of all other layers. Please notice that the layer (+children) geometry must already be set";
@@ -1363,50 +1440,6 @@ class UI : ActionProvider, UIConstants {
 
    }
 
-
-   // ----
-   // ---- Current/desired size of the viewport (unscaled)
-   // ----
-   public static int viewport_width = 800, viewport_height = 600;
-   public static int buffer_width, buffer_height;  // used for scissor clipping
-   public static int multisample_samples;  // e.g. 4
-   public static int multisample_buffers;  // 1
-   public static int supersample_factor = 1;
-
-   // ---- Zoom / scaling
-   public static float zoom_x = 1.0;
-   public static float zoom_y = 1.0;
-
-   // ---- Font scaling
-   public static float font_scaling = 1.0;
-
-   // ---- Font scaling (TextView / TextEdit pixelfonts) (should be an integer)
-   public static float textview_font_scaling = 1;
-
-   public static boolean b_textview_hidpi_font;
-
-   // ---- Font smoothing (true=use 8bit alpha, false=use 1bit alpha)
-   public static boolean b_font_smoothing;
-
-   // ---- Icon scaling
-   public static float icon_scaling = 1.0;
-
-   // ---- Padding scaling
-   public static float pad_scaling = 1.0;
-
-   // ---- Window border scaling
-   public static float window_border_scaling = 1.0;
-
-   // see TableModel.getMinimumColumnWidthScaled()
-   public static float table_min_col_width_scaling = 1.0;
-
-   protected static float fps_lo;
-   protected static float fps_hi;
-   protected static boolean b_force_high_framerate;
-
-   // true=attach depth buffer to FBOs
-   namespace static boolean b_fbo_depth_buffers;
-
    // ----
    // ---- Parse the given _xml code, create a Window layer
    // ---- and add it to the root_layer children list.
@@ -1742,20 +1775,6 @@ class UI : ActionProvider, UIConstants {
       last_mouseclick_button   = 0;
    }
 
-   private   static MouseEvent last_mouse_ev;  // continously tracks last seen mouse event (e.g. for lmeta-drag)
-   private   static MouseEvent drag_last_mouse_ev;
-   private   static int        drag_start_mouse_button; // used to determine cancel button
-   namespace static Layer     *drag_layer;
-   public    static Layer     *drag_layer_candidate;    // Layer under mouse when LMB was first pressed
-   private   static Point2f    drag_layer_abspos;       // at drag start. used for calculating relative mouse positions.
-   public    static boolean    b_try_drag = false;
-   public    static boolean    b_lmeta_drag = false;    // while forcing mouse-drag with LMETA
-   private   static int        drag_threshold = UIConstants.MOUSE_DRAG_THRESHOLD;
-
-   module static MouseHoldAction mousehold_timerAction;
-   private static MouseEvent mousehold_event;
-   private static Layer *mousehold_layer;  // for onMouseHoldEnd()
-
    // ---- Mouse hold timer expired
    module static HandleMouseHold() {
 
@@ -1801,7 +1820,6 @@ class UI : ActionProvider, UIConstants {
    }
 
    protected static HandleMouseEvent(Layer _layer, MouseEvent _ev) : boolean {
-
       // trace "xxx HandleMouseEvent: layer="+#(_layer)+" mouse_layer="+#(mouse_layer);
 
       int t = SDL.ticks;
@@ -1838,7 +1856,7 @@ class UI : ActionProvider, UIConstants {
       }
 
       // trace "xxx HandleMouseEvent: currentState="+_ev.current_state+" changedState="+_ev.changed_state;
-
+      
       if( (_ev.changed_state&MOUSE_LBUTTON) || (_ev.changed_state&MOUSE_RBUTTON) || (_ev.changed_state&MOUSE_MBUTTON) )
       {
          if( ( (_ev.current_state&MOUSE_LBUTTON) && (_ev.changed_state&MOUSE_LBUTTON) ) ||
@@ -2523,7 +2541,6 @@ class UI : ActionProvider, UIConstants {
 
    static float ondropfiles_x;
    static float ondropfiles_y;
-
    module static OnDropFiles(int x, y, StringArray _fileNames) {
       // trace "xxx UI::OnDropFiles: p=("+x+";"+y+") fileNames="+_fileNames;
 
@@ -2670,6 +2687,8 @@ class UI : ActionProvider, UIConstants {
    }
 
    module static OnMouse(MouseEvent _ev) {
+
+      // trace "xxx UI.OnMouse: drag_layer="+#(drag_layer);
 
       last_mouse_ev = _ev;
 
@@ -2835,11 +2854,12 @@ class UI : ActionProvider, UIConstants {
             }
          }
       }
-
+      
       if(null != l)
       {
          // // boolean bMouseAllowed = !b_mouse_grab && (null == drag_layer);////true;  // 12May2019 not while mouse is grabbed
          boolean bMouseAllowed = !IsMouseFocusLocked();
+         // trace "xxx bMouseAllowed="+bMouseAllowed;
 
          if(bMouseAllowed)
          {
@@ -2898,7 +2918,6 @@ class UI : ActionProvider, UIConstants {
             }
          } // if bMouseAllowed
       }
-
    }
 
    public static GrabMouse(/*MouseEvent _dragStart*/) {
@@ -3003,6 +3022,14 @@ class UI : ActionProvider, UIConstants {
          }
       }
       return false;
+   }
+
+   public static GetHoldLCtrlLayer() : Layer { 
+      return
+         (0 != lctrl_start_ms && (milliSeconds() - lctrl_start_ms) >= LCTRL_HOLD_MS)
+         ? lctrl_hold_layer
+         : null
+         ;
    }
 
    public static GetKeyMod() : int {
@@ -3260,6 +3287,7 @@ class UI : ActionProvider, UIConstants {
    }
 
    // <input source>, <domain>, <forceusunicode>
+   //  (todo) REMOVE
    protected static StringArray macos_input_source_to_domain_table = [
       "Afghan Dari",    "af",      "y",
       "Albanian",       "al",      "n",
@@ -3584,6 +3612,18 @@ class UI : ActionProvider, UIConstants {
       }
 
       // trace "xxx 3 OnKeyboard: k.name="+_k.name+" k.code="+_k.code+" k.mod="+_k.mod+" _k.pressed="+_k.pressed;
+
+      if(VKEY_LCTRL == _k.pressed)
+      {
+         lctrl_start_ms = milliSeconds();
+         lctrl_hold_layer <= keyboard_layer;
+         return true;
+      }
+      else if(VKEY_LCTRL == _k.released)
+      {
+         lctrl_start_ms = 0;
+         lctrl_hold_layer <= null;
+      }
 
       if(b_ui_debug)
       {
@@ -4124,8 +4164,13 @@ class UI : ActionProvider, UIConstants {
       {
          if(!bHandled)
          {
-            if(VKEY_NUMLOCK != _k.code) // hack
+            if(![VKEY_NUMLOCK,
+                 VKEY_LSHIFT, VKEY_LCTRL, VKEY_LMETA, VKEY_LALT,
+                 VKEY_RSHIFT, VKEY_RCTRL, VKEY_RMETA, VKEY_RALT].contains(_k.code)
+               )
+            {
                StartOrContinueKeyRepeat(_k); // 20Aug2014
+            }
          }
       }
 
@@ -4162,6 +4207,7 @@ class UI : ActionProvider, UIConstants {
 
          previous_keyboard_layer <= keyboard_layer;
          keyboard_layer <= null;
+         lctrl_hold_layer <= null;
 
          HandleKeyboardFocusChanged();
       }
@@ -4181,6 +4227,7 @@ class UI : ActionProvider, UIConstants {
                keyboard_layer.onKeyboardFocusLost(_bQuiet);
                // trace "xxx LoseKeyboardFocusIfWithin: 1 unset keyboard_layer";
                keyboard_layer <= null;
+               lctrl_hold_layer <= null;
 
                HandleKeyboardFocusChanged();
             }
@@ -4243,6 +4290,7 @@ class UI : ActionProvider, UIConstants {
 
             // (note) onKeyboardFocusLost() may have changed keyboardfocus again
             keyboard_layer <= _l;
+            lctrl_hold_layer <= null;
 
             if(_l instanceof Layer)
             {
@@ -4287,6 +4335,7 @@ class UI : ActionProvider, UIConstants {
       // Should only be used under very rare circumstances (e.g. NodeTrackerEnvelopeView triadic key handler)
       // trace "xxx SetKeyboardFocusQuiet: set keyboard_layer to l="+#(_l);
       keyboard_layer <= _l;
+      lctrl_hold_layer <= null;
    }
 
    public static IsMouseFocusAllowed(Layer _l) : boolean {
@@ -4822,11 +4871,6 @@ class UI : ActionProvider, UIConstants {
                                   );
    }
 
-
-   static int dbg_composite_count;
-
-   static int frame_counter;
-
    public static SetEnableHideAllOverlays(boolean _bEnabled) {
       b_hide_all_overlays = _bEnabled;
    }
@@ -4850,19 +4894,6 @@ class UI : ActionProvider, UIConstants {
       }
       return deref tex;
    }
-
-   namespace static Texture *tex_default_fbo_color_grading;
-   namespace static Texture *tex_post_fbo_color_grading;
-
-   namespace static int c32_forced_textcolor;
-   public static boolean b_skip_bevel_border;
-
-   public static StringArray  post_fbo_color_grading_texture_cycle_list;
-   protected static int       post_fbo_color_grading_texture_cycle_list_idx;
-   protected static String    post_fbo_color_grading_texture_cycle_list_directory;
-   protected static Function *post_fbo_color_grading_cycle_cbk;
-   protected static int       post_fbo_color_grading_texture_cycle_list_idx_queued_cbk = -1;
-   public static    float     post_fbo_color_grading_amount = 1.0f;
 
    public static SetDefaultFBOColorGrading256x16FromLocalFile(String _localPathname) {
       tex_default_fbo_color_grading <= CreateColorGradingTexture256x16(_localPathname);
