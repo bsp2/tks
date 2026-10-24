@@ -1,7 +1,7 @@
 // ----
 // ---- file   : NSQ_Arranger.tks
 // ---- author : Bastian Spiegel <bs@tkscript.de>
-// ---- legal  : (c) 2020-2025 by Bastian Spiegel.
+// ---- legal  : (c) 2020-2026 by Bastian Spiegel.
 // ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
 // ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
 // ----
@@ -15,7 +15,7 @@
 // ----          23May2021, 02Jun2021, 18Jun2021, 18Mar2022, 07May2022, 24Jun2022, 11Feb2023
 // ----          03Apr2023, 11Jun2023, 23Jun2023, 24Jun2023, 19Sep2023, 03Oct2023, 05Oct2023
 // ----          02Feb2024, 24Mar2024, 04Jan2025, 17Jan2025, 24Jan2025, 28Feb2025, 28May2025
-// ----          07Jun2025, 11Sep2025, 16Sep2025, 17Sep2025, 03Oct2025, 10Oct2025
+// ----          07Jun2025, 11Sep2025, 16Sep2025, 17Sep2025, 03Oct2025, 10Oct2025, 24Oct2026
 // ----
 // ----
 // ----
@@ -154,9 +154,13 @@ class NSQ_Arranger extends Control, ActionProvider {
    define int DRAG_PUNCH_IN  = 3;
    define int DRAG_PUNCH_OUT = 4;
    define int DRAG_SEL       = 5;
+   define int DRAG_PAN       = 6;
    int   drag_mode;
-   float drag_start_mx;
    int   drag_bar_idx;
+   float drag_start_mx;  // DRAG_PAN
+   int   drag_start_view_x;  // DRAG_PAN
+
+   define float DRAG_PAN_SCALE_X = (1 / 16.0);
 
    protected NodeSeqEditor *parent_editor;
    protected NSQ_Tempo *tempo;
@@ -183,7 +187,7 @@ class NSQ_Arranger extends Control, ActionProvider {
    protected Texture tex_checker_4;
    protected Texture tex_checker_5;
 
-   protected boolean b_extended_block_selection_mode;
+   protected boolean b_extended_block_selection_mode;  // 'x'
 
 
    // <ui_init.png>
@@ -314,10 +318,25 @@ class NSQ_Arranger extends Control, ActionProvider {
          seq.view_x = seq.cursor_x - numVisBars + 1;
       else if(seq.cursor_x < seq.view_x)
          seq.view_x = seq.cursor_x;
-      if((oldViewX != seq.view_x) || (oldCursorX != seq.cursor_x))
+      if(oldViewX != seq.view_x || oldCursorX != seq.cursor_x)
       {
          parent_editor.redrawSeq();
          setMasterSongPosToCursor();
+      }
+      if(STConfig.b_node_seq_autoreset_smooth_scroll)
+         seq.scroll_x = 0;
+   }
+
+   // <method.png>
+   public method setViewX(int _x) {
+      // (note) DRAG_PAN
+      int numVisBars = (getSizeX() / BAR_W);
+      _x = mathClampi(_x, 0, NSQ_Track.MAX_BARS-numVisBars);
+      // trace "xxx setViewX("+_x+") cursor_x="+seq.cursor_x;
+      if(_x != seq.view_x)
+      {
+         seq.view_x = _x;
+         parent_editor.redrawSeq();
       }
       if(STConfig.b_node_seq_autoreset_smooth_scroll)
          seq.scroll_x = 0;
@@ -425,7 +444,7 @@ class NSQ_Arranger extends Control, ActionProvider {
    }
 
    // <method.png>
-   public method moveCursorHome(boolean _bSel) {
+   public method moveCursorHome(boolean _bSel, boolean _bLimitDeltaX) {
       NSQ_Pattern pat <= parent_editor.getEditPattern();
       if(null != pat)
       {
@@ -437,7 +456,8 @@ class NSQ_Arranger extends Control, ActionProvider {
             int loopX = -1;
             int selX = seq.sorted_sel_start_x;
             int firstUsedX;
-            firstUsedX = pat.findFirstUsedTrackBarIdx(seq.cursor_y);
+            // // firstUsedX = pat.findFirstUsedTrackBarIdx(seq.cursor_y);
+            firstUsedX = pat.findPreviousBlockStart(seq.cursor_x, seq.cursor_y);
 
             // trace "xxx firstUsedX="+firstUsedX+" selX="+selX;
 
@@ -476,6 +496,13 @@ class NSQ_Arranger extends Control, ActionProvider {
             if(newX == oldX)
                newX = 0;
 
+            if(_bLimitDeltaX && STConfig.node_seq_limit_delta_x > 0.0)
+            {
+               int barLimit = (getSizeX() / BAR_W) * STConfig.node_seq_limit_delta_x;
+               if( (seq.cursor_x - newX) > barLimit )
+                  newX = seq.cursor_x - barLimit;
+            }
+
             setCursorX(newX);
          }
 
@@ -497,7 +524,7 @@ class NSQ_Arranger extends Control, ActionProvider {
    }
 
    // <method.png>
-   public method moveCursorEnd(boolean _bSel) {
+   public method moveCursorEnd(boolean _bSel, boolean _bLimitDeltaX) {
       NSQ_Pattern pat <= parent_editor.getEditPattern();
       if(null != pat)
       {
@@ -509,8 +536,9 @@ class NSQ_Arranger extends Control, ActionProvider {
             int loopX = -1;
             int selX = (-1 != seq.sorted_sel_start_x) ? seq.sorted_sel_end_x : -1;
             int lastUsedX;
-            lastUsedX = pat.findLastUsedTrackBarIdx(seq.cursor_y);
-
+            // // lastUsedX = pat.findLastUsedTrackBarIdx(seq.cursor_y);
+            // // lastUsedX = pat.findNextBlockStartOrEnd(seq.cursor_x, seq.cursor_y);
+            lastUsedX = pat.findNextBlockEnd(seq.cursor_x, seq.cursor_y);
             // trace "xxx lastUsedX="+lastUsedX+" selX="+selX;
 
             if(-1 != lastUsedX)
@@ -556,6 +584,13 @@ class NSQ_Arranger extends Control, ActionProvider {
 
             if(newX == oldX)
                newX = NSQ_Track.MAX_BARS-1;
+
+            if(_bLimitDeltaX && STConfig.node_seq_limit_delta_x > 0.0)
+            {
+               int barLimit = (getSizeX() / BAR_W) * STConfig.node_seq_limit_delta_x;
+               if( (newX - seq.cursor_x) > barLimit )
+                  newX = seq.cursor_x + barLimit;
+            }
 
             setCursorX(newX);
          }
@@ -1549,6 +1584,8 @@ class NSQ_Arranger extends Control, ActionProvider {
    public method copyToClipboard() {
       int numEventsCopied = seq.copyToClipboard();
       Global.Print("Copy "+numEventsCopied+" event"+Utils.GetPluralString(numEventsCopied)+" to clipboard");
+      seq.b_outline_selection = true;
+      UI.CompositeAll();
    }
 
    // <method.png>
@@ -3341,8 +3378,23 @@ class NSQ_Arranger extends Control, ActionProvider {
    }
 
    // <ui_mouse.png>
+   public virtual isMouseFocusLocked() : boolean {
+      return (DRAG_PAN == drag_mode);
+   }
+
+   // <ui_mouse.png>
    public virtual onMouseBeginDrag(MouseEvent _dragStart, MouseEvent _ev) : boolean {
       if(b_debug_drag) trace "xxx NSQ_Arranger::onMouseBeginDrag";
+
+      if(_ev.isRightButtonDown())
+      {
+         drag_start_mx = _dragStart.mouse_rel_x;
+         drag_start_view_x = seq.view_x;
+         drag_mode = DRAG_PAN;
+         UI.GrabMouse();
+         UI.ShowCursor(UIConstants.CURSOR_GRABBED);
+         return true;
+      }
 
       local Integer dragMode;
       int barIdx = getLocatorBarIdxAndDragModeNear(_ev, dragMode);
@@ -3413,6 +3465,11 @@ class NSQ_Arranger extends Control, ActionProvider {
             }
             return true;
          }
+         else if(DRAG_PAN == drag_mode)
+         {
+            setViewX(drag_start_view_x + (drag_start_mx - _currentEv.mouse_rel_x) * DRAG_PAN_SCALE_X);
+            return true;
+         }
       }
 
       if(DRAG_SEL == drag_mode)
@@ -3458,6 +3515,10 @@ class NSQ_Arranger extends Control, ActionProvider {
             setPunchOutToCursor();
             redraw();
          }
+         else if(DRAG_PAN == drag_mode)
+         {
+            UI.UngrabMouse();
+         }
       }
 
       if(DRAG_SEL == drag_mode)
@@ -3466,15 +3527,20 @@ class NSQ_Arranger extends Control, ActionProvider {
          seq.cursor_y = seq.sel_end_y;
       }
 
-      UI.ShowCursor(UIConstants.CURSOR_NORMAL);
+      UI.ShowCursorEx(UIConstants.CURSOR_NORMAL, true/*bForce*/);
       drag_mode = DRAG_NONE;
       UI.CompositeAll();
    }
 
    // <ui_mouse.png>
    public virtual onMouseCancelDrag(MouseEvent _ev) {
+      if(DRAG_PAN == drag_mode)
+      {
+         setViewX(drag_start_view_x);
+         UI.UngrabMouse();
+      }
       drag_mode = DRAG_NONE;
-      UI.ShowCursor(UIConstants.CURSOR_NORMAL);
+      UI.ShowCursorEx(UIConstants.CURSOR_NORMAL, true/*bForce*/);
       UI.CompositeAll();
    }
 
@@ -3926,7 +3992,10 @@ class NSQ_Arranger extends Control, ActionProvider {
          if(-1 != seq.sorted_sel_start_x)
          {
             int c32SelBG = app_lnf.getColor(AppLookAndFeel.COLOR_NODESEQ_ARR_SELECT_BG);
-            int c32SelFG = app_lnf.getColor(AppLookAndFeel.COLOR_NODESEQ_ARR_SELECT_FG);
+            int c32SelFG = seq.b_outline_selection
+               ? app_lnf.getColor(AppLookAndFeel.COLOR_NODESEQ_ARR_SELECT_OUTLINE_FG)
+               : app_lnf.getColor(AppLookAndFeel.COLOR_NODESEQ_ARR_SELECT_FG)
+               ;
             // trace "xxx sorted_sel=("+seq.sorted_sel_start_x+";"+seq.sorted_sel_start_y+")..("+seq.sorted_sel_end_x+";"+seq.sorted_sel_end_y+")";
             cx = (seq.sorted_sel_start_x - seq.view_x) * BAR_W +trackX;
             cy = (seq.sorted_sel_start_y * NSQ_TrackForm.GetTrackSizeY()) +trackY;
@@ -3946,9 +4015,23 @@ class NSQ_Arranger extends Control, ActionProvider {
    }
 
    // <ui_kbd.png>
+   public virtual wantKeyRepeat(Key _k) : boolean {
+      // trace "xxx wantKeyRepeat: k.code="+_k.code+" k.name="+_k.name;
+      if([VKEY_LSHIFT, VKEY_LCTRL].contains(_k.code))
+         return false;
+      return Control::wantKeyRepeat(_k);
+   }
+
+   // <ui_kbd.png>
    public virtual onKey(Key _k) : boolean {
 
-      // trace "xxx _k.pressed="+_k.pressed+" _k.code="+_k.code;
+      // trace "xxx NSQ_Arranger: _k.pressed="+_k.pressed+" _k.code="+_k.code+ " k.name="+_k.name;
+
+      // 1=don't select node with lctrl-lshift-LEFT/RIGHT after holding LCTRL for <n> ms (see UI.LCTRL_HOLD_MS)
+      boolean bExtendedBlockSelectionMode =
+         b_extended_block_selection_mode ||
+         (@(UI.GetHoldLCtrlLayer()) == @(this))
+         ;
 
       if(seq.ui_b_fast_clear && _k.modNone())
       {
@@ -4081,13 +4164,13 @@ class NSQ_Arranger extends Control, ActionProvider {
                {
                   if(_k.modShift())
                   {
-                     if(b_extended_block_selection_mode)
-                        moveCursorHome(true/*bShift*/);
+                     if(bExtendedBlockSelectionMode)
+                        moveCursorHome(true/*bShift*/, true/*bLimitDeltaX*/);
                      else
                         return false;  // reserve key for node navigation
                   }
                   else
-                     moveCursorHome(false/*bShift*/);
+                     moveCursorHome(false/*bShift*/, true/*bLimitDeltaX*/);
                }
                else
                {
@@ -4112,13 +4195,19 @@ class NSQ_Arranger extends Control, ActionProvider {
                {
                   if(_k.modShift())
                   {
-                     if(b_extended_block_selection_mode)
-                        moveCursorEnd(true/*bShift*/);
+                     if(bExtendedBlockSelectionMode)
+                     {
+                        moveCursorEnd(true/*bShift*/, true/*bLimitDeltaX*/);
+                     }
                      else
+                     {
                         return false;  // reserve key for node navigation
+                     }
                   }
                   else
-                     moveCursorEnd(false/*bShift*/);
+                  {
+                     moveCursorEnd(false/*bShift*/, true/*bLimitDeltaX*/);
+                  }
                }
                else
                {
@@ -4164,7 +4253,12 @@ class NSQ_Arranger extends Control, ActionProvider {
                if(_k.modCtrl())
                {
                   if(_k.modShift())
-                     return false; // reserve key for node navigation
+                  {
+                     if(bExtendedBlockSelectionMode)
+                        expandSelectionY(-1);
+                     else
+                        return false; // reserve key for node navigation
+                  }
                   else
                      expandSelectionY(-1);
                }
@@ -4190,7 +4284,12 @@ class NSQ_Arranger extends Control, ActionProvider {
                if(_k.modCtrl())
                {
                   if(_k.modShift())
-                     return false; // reserve key for node navigation
+                  {
+                     if(bExtendedBlockSelectionMode)
+                        expandSelectionY(1);
+                     else
+                        return false; // reserve key for node navigation
+                  }
                   else
                      expandSelectionY(1);
                }
@@ -4608,7 +4707,7 @@ class NSQ_Arranger extends Control, ActionProvider {
                   return true;
 
                case "bar_home":
-                  moveCursorHome(bShift);
+                  moveCursorHome(bShift, false/*bLimitDeltaX*/);
                   return true;
 
                case "bar_next":
@@ -4621,7 +4720,7 @@ class NSQ_Arranger extends Control, ActionProvider {
                   return true;
 
                case "bar_end":
-                  moveCursorEnd(bShift);
+                  moveCursorEnd(bShift, false/*bLimitDeltaX*/);
                   return true;
 
                case "bar_insert":
