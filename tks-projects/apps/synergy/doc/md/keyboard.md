@@ -1043,9 +1043,9 @@ NOTE: The *Query Remote* functions look at the first output entry to determine t
 |                        |+(`lshift - /` on US kbd with `UI.b\_key\_map\_slash\_to\_less==true`)
 | [                      | Half grid note length (`ü` on german kbd)
 | ]                      | Double grid note length (`+` on german kbd)
-| w                      | Arm / Disarm track
+| w                      | Arm / Disarm track or select block under cursor (when auto-record/focus is enabled)
+| lctrl - w              | Select block under cursor or arm / disarm track (when auto-record/focus is enabled)
 | q                      | (Un-)Focus track quantization amount widget
-| lctrl - q              | Freeze quantization (selection or cursor bar)
 | r                      | Move loop to cursor
 | lctrl - x r            | Set right loop locator to cursor
 | s                      | Toggle solo track
