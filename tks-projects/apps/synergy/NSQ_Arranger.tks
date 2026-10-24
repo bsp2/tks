@@ -30,7 +30,6 @@ boolean b_debug_drag = 0;
 
 // <class.png>
 class NSQ_PrgChgFloatParamDialog : FloatingLayer {
-
    NodeSeqEditor *parent_editor;
    FloatParam *fp;
 
@@ -57,7 +56,7 @@ class NSQ_PrgChgFloatParamDialog : FloatingLayer {
       fp.initFloatParam();
       fp.setStepFine(1);    // 01A=>01B
       fp.setStepCoarse(4);  // 01A=>02A
-      fp.setMinMaxValues(0, 127);
+      fp.setMinMaxValues(-1, 127);  // -1=delete
       fp.setUserTable(_options);
       if(NSQ_Track.PRGCHG_DISPLAY_TYPE_PATNR == _uiPrgChgDisplayType)
          fp.setUserStringToValueFxn(NSQ_PrgChgFloatParamDialog.prgchg_to_value);
@@ -68,6 +67,7 @@ class NSQ_PrgChgFloatParamDialog : FloatingLayer {
       fp.setInnerPadLeft(0.0f);
       fp.setPositionX(0.0f);
       fp.setEnableBorders(false);
+      fp.setEmptyValue(-1);
       fp.setValue(_value);
 
       parent_editor <= _editor;
@@ -1626,22 +1626,35 @@ class NSQ_Arranger extends Control, ActionProvider {
       }
    }
 
+   // <method.png>
+   protected method calcCursorAbsPos(Integer _retX, Integer _retY) {
+      local Point2f abspos;
+      calcAbsolutePositionFBO(abspos);
+      float trackX = 2;
+      float trackY = 1 + NSQ_TrackForm.GetTrackSizeY();  // +space for bar label area
+      float sx = getSizeX();
+      float trackSy = NSQ_TrackForm.GetTrackSizeY();
+      _retX = trackX + (seq.cursor_x * BAR_W) - (seq.view_x * BAR_W);
+      _retY = trackY + trackSy * seq.cursor_y;
+      _retX += abspos.x;
+      _retY += abspos.y;
+   }
+
+   // <ui_show.png>
+   protected method editBPMChangeAtBarStart() {
+      Integer x, y;
+      calcCursorAbsPos(x, y);
+      parent_editor.showTempoViewBPMFloatParamDialog(x, y);
+   }
+
    // <ui_show.png>
    protected =replay= method showPrgChgFloatParamDialog() {
       NSQ_Pattern pat <= parent_editor.getEditPattern();
       if(null != pat)
       {
          // Calc layer position
-         Point2f abspos;
-         calcAbsolutePositionFBO(abspos);
-         float trackX = 2;
-         float trackY = 1 + NSQ_TrackForm.GetTrackSizeY();  // +space for bar label area
-         float sx = getSizeX();
-         float trackSy = NSQ_TrackForm.GetTrackSizeY();
-         float x = trackX + (seq.cursor_x * BAR_W) - (seq.view_x * BAR_W);
-         float y = trackY + trackSy * seq.cursor_y;
-         x += abspos.x;
-         y += abspos.y;
+         Integer x, y;
+         calcCursorAbsPos(x, y);
 
          // Find current program change nr
          NSQ_Track track <= pat.getCursorTrack();
@@ -1662,9 +1675,11 @@ class NSQ_Arranger extends Control, ActionProvider {
 
          b_dlg_prgchg_undo = false;
          dlg_prgchg <= new NSQ_PrgChgFloatParamDialog;
+         local StringArray aOpt =  Object(track.uiGetPrgChgOptions());
+         aOpt.insert(0, "");  // -1=delete
          dlg_prgchg.showFP(parent_editor,
                            pc,
-                           track.uiGetPrgChgOptions(),
+                           deref aOpt,
                            track.ui_prgchg_display_type,
                            x, y
                            );
@@ -1676,10 +1691,16 @@ class NSQ_Arranger extends Control, ActionProvider {
       NSQ_Pattern pat <= parent_editor.getEditPattern();
       if(null != pat)
       {
+         // trace "xxx handlePrgChgFloatParamEdited: fp.text=\""+_fp.getText()+"\"";
+         int pc = _fp.getFloatValue();
+         if(pc < 0)
+         {
+            handleDeletePrgChg();
+            return;
+         }
+
          b_dlg_prgchg_undo = true;
          parent_editor.undoBeginMini();
-         int pc = _fp.getFloatValue();
-         // trace "xxx pc="+pc;
 
          // Find current program change nr
          NSQ_Track track <= pat.getCursorTrack();
@@ -1958,12 +1979,11 @@ class NSQ_Arranger extends Control, ActionProvider {
 
       pmb <= spm.addDefaultButton("Set Left Loop Locator", "loop_left");
       pmb.setActive(bHavePattern);
-      pmb.setAccelerators("lctrl-x l", "t");
+      pmb.setAccelerators("lctrl-x l", "");
 
       pmb <= spm.addDefaultButton("Set Right Loop Locator", "loop_right");
       pmb.setActive(bHavePattern);
-      pmb.setAccelerators("lctrl-x r", "y");
-      pmb.setToolTipCaption("'z' on german kbd");
+      pmb.setAccelerators("lctrl-x r", "");
 
       pmb <= spm.addDefaultButton("Move Loop to Cursor", "loop_move");
       pmb.setActive(bHavePattern);
@@ -2109,7 +2129,7 @@ class NSQ_Arranger extends Control, ActionProvider {
 
       // Time Signature submenu
       spm <= PopupMenu.New(pm_ctx);
-      pmb <= pm_ctx.addMenu("Time Signature", deref spm);
+      pmb <= pm_ctx.addMenu("Time Signature + Tempo", deref spm);
 
       pmb <= spm.addDefaultButton("Half Note Length", "sig_half");
       pmb.setActive(bHavePattern);
@@ -2120,6 +2140,11 @@ class NSQ_Arranger extends Control, ActionProvider {
       pmb.setActive(bHavePattern);
       pmb.setAccelerators("", "lshift-]");
       pmb.setToolTipCaption("(note) lshift-+ on german kbd");
+
+      spm.addSeparator();
+      pmb <= spm.addDefaultButton("Edit BPM change at bar start", "edit_bpm");
+      pmb.setActive(bHavePattern);
+      pmb.setAccelerators("", "t");
 
       // MIDI submenu
       spm <= PopupMenu.New(pm_ctx);
@@ -3686,7 +3711,7 @@ class NSQ_Arranger extends Control, ActionProvider {
          cx -= seq.view_x;
          cx *= BAR_W;
          cx += trackX;
-         icon_locator_l.drawIconScaledC32(cx, 5+4,
+         icon_locator_l.drawIconScaledC32(cx, (5+4)*2,
                                           UI.icon_scaling, UI.icon_scaling,
                                           c32LocTint
                                           );
@@ -3697,7 +3722,7 @@ class NSQ_Arranger extends Control, ActionProvider {
          cx *= BAR_W;
          cx += trackX;
          icon_locator_r.setShaderType((icon_locator_r.isMono() && lnf.b_icon_invert_mono) ? Icon.SHADER_INVERTCOLOR : 0);
-         icon_locator_r.drawIconScaledC32(cx - 16*UI.icon_scaling, 5+4,
+         icon_locator_r.drawIconScaledC32(cx - 16*UI.icon_scaling, (5+4)*2,
                                           UI.icon_scaling, UI.icon_scaling,
                                           c32LocTint
                                           );
@@ -4518,7 +4543,7 @@ class NSQ_Arranger extends Control, ActionProvider {
          case 't':
             if(_k.modNone())
             {
-               setLeftLoopLocatorToCursor();
+               editBPMChangeAtBarStart();
                return true;
             }
             break;
@@ -4552,13 +4577,11 @@ class NSQ_Arranger extends Control, ActionProvider {
             }
             break;
 
-         case 'y':  // 'z' on german kbd
-            if(_k.modNone())
-            {
-               setRightLoopLocatorToCursor();
-               return true;
-            }
-            break;
+         // case 'y':  // 'z' on german kbd
+         //    if(_k.modNone())
+         //    {
+         //    }
+         //    break;
 
          case VKEY_DELETE:
             if(parent_editor.isTempoViewVisible() && tempo.haveSelection())
@@ -4943,6 +4966,10 @@ class NSQ_Arranger extends Control, ActionProvider {
 
                case "sig_double":
                   parent_editor.doubleNoteLen();
+                  return true;
+
+               case "edit_bpm":
+                  editBPMChangeAtBarStart();
                   return true;
 
                case "midi_copy":
