@@ -613,6 +613,51 @@ class NSQ_Arranger extends Control, ActionProvider {
    }
 
    // <method.png>
+   public method selectBlockUnderCursor() {
+      NSQ_Pattern pat <= parent_editor.getEditPattern();
+      if(null != pat)
+      {
+         int oldX = seq.cursor_x;
+         int ticksPerBar = pat.getNumTicksPerBar();
+         if(oldX < NSQ_Track.MAX_BARS-1)
+         {
+            local Integer barStart, barEnd;
+            pat.findBlockUnderCursor(seq.cursor_x, seq.cursor_y, barStart, barEnd);
+            // trace "xxx findBlockUnderCursor returned barStart="+barStart+" barEnd="+barEnd;
+            if(barStart >= 0)
+            {
+               setCursorX(barStart);
+               extendSelectionX(barEnd);
+               seq.sortSelection();
+               // trace "xxx seq.sel_start_x="+seq.sel_start_x;
+               // trace "xxx seq.sel_end_x="+seq.sel_end_x;
+               // trace "xxx seq.sorted_sel_start_x="+seq.sorted_sel_start_x;
+               // trace "xxx seq.sorted_sel_end_x="+seq.sorted_sel_end_x;
+
+               setCursorX(oldX);
+
+               seq.ui_track_all_none_cursor_x = -1;
+               seq.ui_track_all_none_cursor_y = -1;
+               b_allow_cycle_loop_sel = true;
+
+               if(NSQ_Tempo.DRAG_NONE == tempo.drag_mode)
+                  seq.tempoSelectNone(false/*bFromTempo*/);
+
+               if(NSQ_Events.DRAG_NONE == evt.drag_mode)
+                  seq.evtSelectNone(false/*bFromEvent*/);
+
+               UI.CompositeAll();
+               Global.PrintFast("Select ["+(barStart+1)+".."+(barEnd+1)+"]");
+            }
+            else
+            {
+               Global.PrintFast("No block under cursor");
+            }
+         }
+      }
+   }
+
+   // <method.png>
    public method expandSelectionY(int _dir) {
       if(_dir < 0)
       {
@@ -2827,6 +2872,14 @@ class NSQ_Arranger extends Control, ActionProvider {
                                                                );
             tempNode.b_skip_rec_undo = false;
 
+            tempNode.edit_clip_start_ticks =
+               haveSelection()
+               ? ((seq.cursor_x - seq.sorted_sel_start_x) * pat.getNumTicksPerBar())
+               : 0
+               ;
+            tempNode.nodeSetRelativeEditOffset(tempNode.edit_clip_start_ticks);
+            Global.Debug2("[trc] NSQ_Arranger::beginTrackerEdit1: tempNode.edit_clip_start_ticks="+tempNode.edit_clip_start_ticks);
+
             // (note) temp editing ends in PageNode::endTrackerEdit() when ESC is pressed (if _bTemp == true)
          }
          else
@@ -4517,11 +4570,6 @@ class NSQ_Arranger extends Control, ActionProvider {
                parent_editor.focusTrackQAmountByIdx(seq.cursor_y);
                return true;
             }
-            else if(_k.modCtrl())
-            {
-               freezeSelectionQuantization();
-               return true;
-            }
             break;
 
          case 'r':
@@ -4564,7 +4612,18 @@ class NSQ_Arranger extends Control, ActionProvider {
          case 'w':
             if(_k.modNone())
             {
-               toggleRecordSelectedTracks();
+               if(seq.ui_b_auto_rec_focus)
+                  selectBlockUnderCursor();
+               else
+                  toggleRecordSelectedTracks();
+               return true;
+            }
+            else if(_k.modCtrl())
+            {
+               if(!seq.ui_b_auto_rec_focus)
+                  selectBlockUnderCursor();
+               else
+                  toggleRecordSelectedTracks();
                return true;
             }
             break;
