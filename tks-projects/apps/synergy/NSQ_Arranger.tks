@@ -16,6 +16,7 @@
 // ----          03Apr2023, 11Jun2023, 23Jun2023, 24Jun2023, 19Sep2023, 03Oct2023, 05Oct2023
 // ----          02Feb2024, 24Mar2024, 04Jan2025, 17Jan2025, 24Jan2025, 28Feb2025, 28May2025
 // ----          07Jun2025, 11Sep2025, 16Sep2025, 17Sep2025, 03Oct2025, 10Oct2025, 24Oct2026
+// ----          25Oct2026
 // ----
 // ----
 // ----
@@ -688,6 +689,248 @@ class NSQ_Arranger extends Control, ActionProvider {
    }
 
    // <method.png>
+   public =replay= method moveSelectionLeft() {
+      NSQ_Pattern pat <= parent_editor.getEditPattern();
+      if(null != pat)
+      {
+         if(!haveSelection())
+            seq.setSelectionToCursor();
+
+         int trackIdx;
+         NSQ_Track *track;
+         boolean bCanMove = (seq.sorted_sel_start_x > 0);
+         IntArray *barFlags;
+         int trackUsedMask = 0;
+         int trackMoveMask = 0;
+
+         // Check if all track bars can be moved
+         trackIdx = 0;
+         while(bCanMove && trackIdx < NodeSeq.NUM_TRACKS)
+         {
+            track <= pat.getTrackByIdx(trackIdx);
+            barFlags <= track.bar_flags;
+            boolean bUsed = false;
+            int x = seq.sorted_sel_start_x;
+            while(x <= seq.sorted_sel_end_x)
+               bUsed |= (0 != barFlags.get(x++));
+            trackUsedMask |= (bUsed << trackIdx);
+            if(seq.sorted_sel_start_y <= trackIdx <= seq.sorted_sel_end_y)
+            {
+               bCanMove = (0 == barFlags.get(seq.sorted_sel_start_x-1));
+               trackMoveMask |= (1 << trackIdx);
+            }
+            trackIdx++;
+         }
+
+         // Global.Debug2("NSQ_Arranger::moveSelectionLeft: bCanMove="+bCanMove);
+
+         if(bCanMove)
+         {
+            parent_editor.undoBegin();
+            int numTicksPerBar = pat.getNumTicksPerBar();
+            int numTracks = seq.sorted_sel_end_y - seq.sorted_sel_start_y + 1;
+            int startX = seq.sorted_sel_start_x;
+            int endX   = seq.sorted_sel_end_x;
+
+            trackIdx = seq.sorted_sel_start_y;
+            while(trackIdx <= seq.sorted_sel_end_y)
+            {
+               track <= pat.getTrackByIdx(trackIdx);
+               track.shiftTime(seq.sorted_sel_start_x, -numTicksPerBar);
+               track.shiftTime(seq.sorted_sel_end_x+1, numTicksPerBar);
+               track.rebuildBarLUT();
+               trackIdx++;
+            }
+
+            // Move loop/punch regions
+            if(NodeSeq.NUM_TRACKS == numTracks || ((trackUsedMask & trackMoveMask) == trackUsedMask))
+            {
+               int startTicks = startX * numTicksPerBar;
+               int endTicks = (endX+1) * numTicksPerBar;
+               boolean bMoveStart, bMoveEnd;
+
+               // trace "xxx startTicks="+startTicks;
+               // trace "xxx endTicks="+endTicks;
+               // trace "xxx pat.loop_start_ticks="+pat.loop_start_ticks;
+               // trace "xxx pat.loop_len_ticks="+pat.loop_len_ticks;
+               // trace "xxx pat.loop_end_ticks="+(pat.loop_start_ticks + pat.loop_len_ticks);
+
+               // Loop
+               bMoveStart = (startTicks <= pat.loop_start_ticks <= endTicks);
+               bMoveEnd   = (startTicks <= (pat.loop_start_ticks + pat.loop_len_ticks) <= endTicks);
+
+               if(bMoveStart && bMoveEnd)
+               {
+                  // Move loop start+end
+                  pat.setLoop(pat.loop_start_ticks - numTicksPerBar, pat.loop_len_ticks);
+               }
+               else if(bMoveStart)
+               {
+                  // Move loop start
+                  pat.setLoop(pat.loop_start_ticks - numTicksPerBar, pat.loop_len_ticks + numTicksPerBar);
+               }
+               else if(bMoveEnd)
+               {
+                  // Move loop end
+                  pat.setLoop(pat.loop_start_ticks, pat.loop_len_ticks - numTicksPerBar);
+               }
+
+               // Punch
+               bMoveStart = (startTicks <= pat.punch_start_ticks <= endTicks);
+               bMoveEnd   = (startTicks <= (pat.punch_start_ticks + pat.punch_len_ticks) <= endTicks);
+
+               if(bMoveStart && bMoveEnd)
+               {
+                  // Move punch in+out
+                  pat.setPunchInOut(pat.punch_start_ticks - numTicksPerBar, pat.punch_len_ticks);
+               }
+               else if(bMoveStart)
+               {
+                  // Move punch in
+                  pat.setPunchInOut(pat.punch_start_ticks - numTicksPerBar, pat.punch_len_ticks + numTicksPerBar);
+               }
+               else if(bMoveEnd)
+               {
+                  // Move punch out
+                  pat.setPunchInOut(pat.punch_start_ticks, pat.punch_len_ticks - numTicksPerBar);
+               }
+            }
+
+            seq.moveSelectionX(-1);
+            setCursorX(seq.cursor_x - 1);
+
+            parent_editor.undoEnd();
+
+            Global.Print("Move selection left");
+            redraw();
+         }
+         // else: no space to move to
+      }
+      else
+      {
+         Global.Warning("No pattern");
+      }
+   }
+
+   // <method.png>
+   public =replay= method moveSelectionRight() {
+      NSQ_Pattern pat <= parent_editor.getEditPattern();
+      if(null != pat)
+      {
+         if(!haveSelection())
+            seq.setSelectionToCursor();
+
+         int trackIdx;
+         NSQ_Track *track;
+         boolean bCanMove = (seq.sorted_sel_end_x + 1) < NSQ_Track.MAX_BARS;
+         IntArray *barFlags;
+         int trackUsedMask = 0;
+         int trackMoveMask = 0;
+
+         // Check if all track bars can be moved
+         trackIdx = 0;
+         while(bCanMove && trackIdx < NodeSeq.NUM_TRACKS)
+         {
+            track <= pat.getTrackByIdx(trackIdx);
+            barFlags <= track.bar_flags;
+            boolean bUsed = false;
+            int x = seq.sorted_sel_start_x;
+            while(x <= seq.sorted_sel_end_x)
+               bUsed |= (0 != barFlags.get(x++));
+            trackUsedMask |= (bUsed << trackIdx);
+            if(seq.sorted_sel_start_y <= trackIdx <= seq.sorted_sel_end_y)
+            {
+               bCanMove = (0 == barFlags.get(seq.sorted_sel_end_x+1));
+               trackMoveMask |= (1 << trackIdx);
+            }
+            trackIdx++;
+         }
+
+         // Global.Debug2("NSQ_Arranger::moveSelectionRight: bCanMove="+bCanMove);
+
+         if(bCanMove)
+         {
+            parent_editor.undoBegin();
+            int numTicksPerBar = pat.getNumTicksPerBar();
+            int numTracks = seq.sorted_sel_end_y - seq.sorted_sel_start_y + 1;
+            int startX = seq.sorted_sel_start_x;
+            int endX   = seq.sorted_sel_end_x;
+
+            trackIdx = seq.sorted_sel_start_y;
+            while(trackIdx <= seq.sorted_sel_end_y)
+            {
+               track <= pat.getTrackByIdx(trackIdx);
+               track.shiftTime(seq.sorted_sel_start_x, numTicksPerBar);
+               track.shiftTime(seq.sorted_sel_end_x + 2, -numTicksPerBar);
+               track.rebuildBarLUT();
+               trackIdx++;
+            }
+
+            // Move loop/punch regions
+            if(NodeSeq.NUM_TRACKS == numTracks || ((trackUsedMask & trackMoveMask) == trackUsedMask))
+            {
+               int startTicks = startX * numTicksPerBar;
+               int endTicks = (endX+1) * numTicksPerBar;
+               boolean bMoveStart, bMoveEnd;
+
+               // Loop
+               bMoveStart = (startTicks <= pat.loop_start_ticks <= endTicks);
+               bMoveEnd   = (startTicks <= (pat.loop_start_ticks + pat.loop_len_ticks) <= endTicks);
+
+               if(bMoveStart && bMoveEnd)
+               {
+                  // Move loop start+end
+                  pat.setLoop(pat.loop_start_ticks + numTicksPerBar, pat.loop_len_ticks);
+               }
+               else if(bMoveStart)
+               {
+                  // Move loop start
+                  pat.setLoop(pat.loop_start_ticks + numTicksPerBar, pat.loop_len_ticks - numTicksPerBar);
+               }
+               else if(bMoveEnd)
+               {
+                  // Move loop end
+                  pat.setLoop(pat.loop_start_ticks, pat.loop_len_ticks + numTicksPerBar);
+               }
+
+               // Punch
+               bMoveStart = (startTicks <= pat.punch_start_ticks <= endTicks);
+               bMoveEnd   = (startTicks <= (pat.punch_start_ticks + pat.punch_len_ticks) <= endTicks);
+
+               if(bMoveStart && bMoveEnd)
+               {
+                  // Move punch in+out
+                  pat.setPunchInOut(pat.punch_start_ticks + numTicksPerBar, pat.punch_len_ticks);
+               }
+               else if(bMoveStart)
+               {
+                  // Move punch in
+                  pat.setPunchInOut(pat.punch_start_ticks + numTicksPerBar, pat.punch_len_ticks - numTicksPerBar);
+               }
+               else if(bMoveEnd)
+               {
+                  // Move punch out
+                  pat.setPunchInOut(pat.punch_start_ticks, pat.punch_len_ticks + numTicksPerBar);
+               }
+            }
+
+            seq.moveSelectionX(1);
+            setCursorX(seq.cursor_x + 1);
+
+            parent_editor.undoEnd();
+
+            Global.Print("Move selection right");
+            redraw();
+         }
+         // else: no space to move to
+      }
+      else
+      {
+         Global.Warning("No pattern");
+      }
+   }
+
+   // <method.png>
    public =replay= method handleDeleteSelection(boolean _bTempo) {
       NSQ_Pattern pat <= parent_editor.getEditPattern();
       if(null != pat)
@@ -716,7 +959,7 @@ class NSQ_Arranger extends Control, ActionProvider {
             numTracks = 1;
          }
 
-         trace "xxx handleDeleteSelection: startX="+startX+" numBars="+numBars;
+         Global.Debug2("NSQ_Arranger::handleDeleteSelection: startX="+startX+" numBars="+numBars);
 
          if(_bTempo)
          {
@@ -2078,6 +2321,10 @@ class NSQ_Arranger extends Control, ActionProvider {
       pmb.setActive(bHavePattern);
       pmb.setAccelerators("", "lctrl-a");
 
+      pmb <= spm.addDefaultButton("Select block under cursor", "sel_block_under_cursor");
+      pmb.setActive(bHavePattern);
+      pmb.setAccelerators("#", "x");
+
       pmb <= spm.addDefaultButton("Copy to Clipboard", "sel_copy");
       pmb.setActive(bHavePattern);
       pmb.setAccelerators("", "lctrl-c");
@@ -2169,7 +2416,7 @@ class NSQ_Arranger extends Control, ActionProvider {
       pmb.setToolTipCaption("(note) lctrl-'-' on german keyboard");
 
       pmb <= spm.addCheckButton("Extended block selection keys", b_extended_block_selection_mode, "sel_toggleext");
-      pmb.setAccelerators("", "x");
+      pmb.setAccelerators("", "lctrl-w");
       pmb.setToolTipCaption("When checked, lctrl-lshift-<cursor left/right> keys are used to extend block selection\n\nWhen unchecked, the keys are used for node navigation [default]");
 
       // Time Signature submenu
@@ -4005,7 +4252,7 @@ class NSQ_Arranger extends Control, ActionProvider {
             cx *= BAR_W;
             cx += trackX;
             icon_locator_l.setShaderType((icon_locator_l.isMono() && lnf.b_icon_invert_mono) ? Icon.SHADER_INVERTCOLOR : 0);
-            icon_locator_l.drawIconScaledC32(cx, 5+4,
+            icon_locator_l.drawIconScaledC32(cx, (5+4)*2,
                                              UI.icon_scaling, UI.icon_scaling,
                                              c32LocDragTint
                                              );
@@ -4017,7 +4264,7 @@ class NSQ_Arranger extends Control, ActionProvider {
             cx *= BAR_W;
             cx += trackX;
             icon_locator_r.setShaderType((icon_locator_r.isMono() && lnf.b_icon_invert_mono) ? Icon.SHADER_INVERTCOLOR : 0);
-            icon_locator_r.drawIconScaledC32(cx - 16*UI.icon_scaling, 5+4,
+            icon_locator_r.drawIconScaledC32(cx - 16*UI.icon_scaling, (5+4)*2,
                                              UI.icon_scaling, UI.icon_scaling,
                                              c32LocDragTint
                                              );
@@ -4101,8 +4348,19 @@ class NSQ_Arranger extends Control, ActionProvider {
    }
 
    // <ui_kbd.png>
-   public virtual onKey(Key _k) : boolean {
+   public virtual wantTriadKeyRepeat(Key _k) : boolean {
+      // (note) UI calls keyboard_layer.wantTriadKeyRepeat()
+      return parent_editor.wantTriadKeyRepeat(_k);
+   }
 
+   // <ui_kbd.png>
+   public virtual onTriadKey(Key _k) : boolean {
+      // (note) UI calls keyboard_layer.onTriadKey()
+      return parent_editor.onTriadKey(_k);
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
       // trace "xxx NSQ_Arranger: _k.pressed="+_k.pressed+" _k.code="+_k.code+ " k.name="+_k.name;
 
       // 1=don't select node with lctrl-lshift-LEFT/RIGHT after holding LCTRL for <n> ms (see UI.LCTRL_HOLD_MS)
@@ -4612,26 +4870,21 @@ class NSQ_Arranger extends Control, ActionProvider {
          case 'w':
             if(_k.modNone())
             {
-               if(seq.ui_b_auto_rec_focus)
-                  selectBlockUnderCursor();
-               else
-                  toggleRecordSelectedTracks();
+               toggleRecordSelectedTracks();
                return true;
             }
             else if(_k.modCtrl())
             {
-               if(!seq.ui_b_auto_rec_focus)
-                  selectBlockUnderCursor();
-               else
-                  toggleRecordSelectedTracks();
+               toggleExtendedBlockSelectionMode();
                return true;
             }
             break;
 
          case 'x':
+         case VKEY_BACKSLASH:  // de: # (next to RETURN)
             if(_k.modNone())
             {
-               toggleExtendedBlockSelectionMode();
+               selectBlockUnderCursor();
                return true;
             }
             break;
@@ -4931,6 +5184,10 @@ class NSQ_Arranger extends Control, ActionProvider {
 
                case "sel_none":
                   selectNoneAtAll();
+                  return true;
+
+               case "sel_block_under_cursor":
+                  selectBlockUnderCursor();
                   return true;
 
                case "sel_export_tracker":
