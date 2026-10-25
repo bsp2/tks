@@ -971,6 +971,7 @@ NOTE: The *Query Remote* functions look at the first output entry to determine t
 |                        |+StepRec Mode: Move recording cursor to next 16th
 | lshift - RIGHT         | Move cursor right and expand selection
 |                        |+StepRec Mode: Move recording cursor to next 32th
+| lctrl - x RIGHT        | Move selection right
 | UP                     | Move cursor up
 |                        |+StepRec Mode: Move recording cursor to previous quarter note
 | lshift - UP            | Move cursor up and expand selection
@@ -981,6 +982,7 @@ NOTE: The *Query Remote* functions look at the first output entry to determine t
 | lctrl - DOWN           | Y-expand selection and move cursor to last track
 | lctrl - LEFT           | Move cursor home
 | lctrl - lshift - LEFT  | Move cursor home and expand selection
+| lctrl - x LEFT         | Move selection left
 | PAGEUP                 | Move cursor left 8 bars
 | lshift - PAGEUP        | Move cursor left 8 bars and expand selection
 | PAGEDOWN               | Move cursor right 8 bars
@@ -1043,8 +1045,8 @@ NOTE: The *Query Remote* functions look at the first output entry to determine t
 |                        |+(`lshift - /` on US kbd with `UI.b\_key\_map\_slash\_to\_less==true`)
 | [                      | Half grid note length (`ü` on german kbd)
 | ]                      | Double grid note length (`+` on german kbd)
-| w                      | Arm / Disarm track or select block under cursor (when auto-record/focus is enabled)
-| lctrl - w              | Select block under cursor or arm / disarm track (when auto-record/focus is enabled)
+| w                      | Arm / Disarm track
+| lctrl - w              | Toggle extended block selection mode (lctrl-lshift-\<cursor\> keys)
 | q                      | (Un-)Focus track quantization amount widget
 | r                      | Move loop to cursor
 | lctrl - x r            | Set right loop locator to cursor
@@ -1063,8 +1065,9 @@ NOTE: The *Query Remote* functions look at the first output entry to determine t
 | lctrl - lshift - DELETE | Delete selected bars including tempo
 | RALT                   | Enable step-recording (momentary switch)
 | lctrl - x RALT         | Toggle step-recording
+| x                      | 
+|+#                      |+Select block under cursor
 | z                      | Toggle step-recording (y on german kbd)
-| x                      | Toggle extended block selection mode (lctrl-lshift-\<cursor\> keys)
 | RCTRL                  | Arm / Disarm node
 | lshift - RCTRL         | Toggle replace / overdub recording mode
 | lctrl - x RCTRL        | Toggle recording pre-count
