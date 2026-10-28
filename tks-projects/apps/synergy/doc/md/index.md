@@ -1,8 +1,8 @@
 % Synergy MIDI Tracker
 % bsp
-% 18-Oct-2026
+% 25-Oct-2026
 >>>
-03Nov2019, 04Nov2019, 05Nov2019, 07Nov2019, 08Nov2019, 09Nov2019, 17Nov2019, 03Apr2020, 04Apr2020, 07May2020, 15Oct2020, 14May2021, 15May2021, 02Jun2021, 03Jun2021, 14Jun2021, 20Jun2021, 25Jul2021, 28Jul2021, 21Aug2021, 27Aug2021, 13Sep2021, 05Oct2021, 15Oct2021, 24Oct2021, 26Oct2021, 28Oct2021, 31Oct2021, 01Nov2021, 13Nov2021, 21Nov2021, 12Dec2021, 19Dec2021, 20Dec2021, 23Dec2021, 31Dec2021, 09Jan2022, 16Jan2022, 13Feb2022, 23Feb2022, 27Feb2022, 18Mar2022, 20Mar2022, 01Apr2022, 03Apr2022, 08Apr2022, 21Apr2022, 23Apr2022, 24Apr2022, 24Jun2022, 31Oct2022, 04Nov2022, 19Nov2022, 25Nov2022, 16Dec2022, 23Dec2022, 01Feb2023, 05Feb2023, 12Feb2023, 15Feb2023, 18Feb2023, 20Feb2023, 26Feb2023, 31Mar2023, 01Apr2023, 03Aug2023, 04Aug2023, 05Aug2023, 17Aug2023, 18Aug2023, 14Dec2023, 15Dec2023, 15Dec2023, 23Nov2024, 28Nov2024, 30Nov2024, 21Dec2024, 23Dec2024, 27May2025, 29May2025, 31May2025, 04Jun2025, 05Jun2025, 03May2026, 26May2026, 01Jun2026, 19Sep2026, 28Sep2026, 13Oct2026, 18Oct2026
+03Nov2019, 04Nov2019, 05Nov2019, 07Nov2019, 08Nov2019, 09Nov2019, 17Nov2019, 03Apr2020, 04Apr2020, 07May2020, 15Oct2020, 14May2021, 15May2021, 02Jun2021, 03Jun2021, 14Jun2021, 20Jun2021, 25Jul2021, 28Jul2021, 21Aug2021, 27Aug2021, 13Sep2021, 05Oct2021, 15Oct2021, 24Oct2021, 26Oct2021, 28Oct2021, 31Oct2021, 01Nov2021, 13Nov2021, 21Nov2021, 12Dec2021, 19Dec2021, 20Dec2021, 23Dec2021, 31Dec2021, 09Jan2022, 16Jan2022, 13Feb2022, 23Feb2022, 27Feb2022, 18Mar2022, 20Mar2022, 01Apr2022, 03Apr2022, 08Apr2022, 21Apr2022, 23Apr2022, 24Apr2022, 24Jun2022, 31Oct2022, 04Nov2022, 19Nov2022, 25Nov2022, 16Dec2022, 23Dec2022, 01Feb2023, 05Feb2023, 12Feb2023, 15Feb2023, 18Feb2023, 20Feb2023, 26Feb2023, 31Mar2023, 01Apr2023, 03Aug2023, 04Aug2023, 05Aug2023, 17Aug2023, 18Aug2023, 14Dec2023, 15Dec2023, 15Dec2023, 23Nov2024, 28Nov2024, 30Nov2024, 21Dec2024, 23Dec2024, 27May2025, 29May2025, 31May2025, 04Jun2025, 05Jun2025, 03May2026, 26May2026, 01Jun2026, 19Sep2026, 28Sep2026, 13Oct2026, 18Oct2026, 25Oct2026
 <<<
 $(var:header)
 
@@ -101,6 +101,22 @@ A detailed changelog is available [here](CHANGELOG.txt).
 
 # Downloads
 
+## macOS
+
+  |cols=100,40
+  |:File
+  | [synergy-miditracker-25Oct2026-macos_arm64-preview.dmg](files/synergy-miditracker-25Oct2026-macos_arm64-preview.dmg) (latest)
+  | [synergy-miditracker-01Jun2026-macos_arm64.dmg](files/synergy-miditracker-01Jun2026-macos_arm64.dmg)
+  ].table_noborder
+
+>>>mac_quarantine
+after copying the app to the `/Applications` folder and opening it (which will fail due to the macOS certificate check), go to `System Settings` => `Privacy & Security` and click `Allow anyway` (first run only).
+<<<
+note: $(buf!mac_quarantine) 
+
+note: tested on arm64 macOS 27
+
+
 ## Windows
 
   |cols=140,40
@@ -112,22 +128,6 @@ A detailed changelog is available [here](CHANGELOG.txt).
 important: when upgrading to a new release, backup your `synergy_config_local.tks` and then replace the default local config
 
 note: tested on x86\_64 Windows 11
-
-
-## macOS
-
-  |cols=100,40
-  |:File
-  | [synergy-miditracker-13Oct2026-macos_arm64-preview.dmg](files/synergy-miditracker-13Oct2026-macos_arm64-preview.dmg) (latest)
-  | [synergy-miditracker-01Jun2026-macos_arm64.dmg](files/synergy-miditracker-01Jun2026-macos_arm64.dmg)
-  ].table_noborder
-
->>>mac_quarantine
-after copying the app to the `/Applications` folder and opening it (which will fail due to the macOS certificate check), go to `System Settings` => `Privacy & Security` and click `Allow anyway` (first run only).
-<<<
-note: $(buf!mac_quarantine) 
-
-note: tested on arm64 macOS 27
 
 
 ## Linux
