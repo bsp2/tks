@@ -16,7 +16,7 @@
 // ----          03Apr2023, 11Jun2023, 23Jun2023, 24Jun2023, 19Sep2023, 03Oct2023, 05Oct2023
 // ----          02Feb2024, 24Mar2024, 04Jan2025, 17Jan2025, 24Jan2025, 28Feb2025, 28May2025
 // ----          07Jun2025, 11Sep2025, 16Sep2025, 17Sep2025, 03Oct2025, 10Oct2025, 24Oct2026
-// ----          25Oct2026
+// ----          25Oct2026, 28Oct2026
 // ----
 // ----
 // ----
@@ -156,10 +156,12 @@ class NSQ_Arranger extends Control, ActionProvider {
    define int DRAG_PUNCH_OUT = 4;
    define int DRAG_SEL       = 5;
    define int DRAG_PAN       = 6;
+   define int DRAG_MOVE_SEL  = 7;
    int   drag_mode;
    int   drag_bar_idx;
    float drag_start_mx;  // DRAG_PAN
    int   drag_start_view_x;  // DRAG_PAN
+   int   drag_last_move_num_bars;  // DRAG_MOVE_SEL
 
    define float DRAG_PAN_SCALE_X = (1 / 16.0);
 
@@ -189,6 +191,9 @@ class NSQ_Arranger extends Control, ActionProvider {
    protected Texture tex_checker_5;
 
    protected boolean b_extended_block_selection_mode;  // 'x'
+
+   define int DOUBLECLICK_LOOP_REGION_TIMEOUT_MS = 750;
+   protected int last_doubleclick_ms;
 
 
    // <ui_init.png>
@@ -2713,6 +2718,22 @@ class NSQ_Arranger extends Control, ActionProvider {
    }
 
    // <method.png>
+   public method isXYWithinSelection(float _x, float _y) : boolean {
+      if(haveSelection())
+      {
+         float trackX = 2;
+         float trackY = 1 + NSQ_TrackForm.GetTrackSizeY();  // +space for bar label area
+         int cursorX = seq.view_x + ((_x - trackX) / BAR_W);
+         int cursorY = (_y - trackY) / NSQ_TrackForm.GetTrackSizeY();
+         return
+            (seq.sorted_sel_start_x <= cursorX <= seq.sorted_sel_end_x) &&
+            (seq.sorted_sel_start_y <= cursorY <= seq.sorted_sel_end_y)
+            ;
+      }
+      return false;
+   }
+
+   // <method.png>
    public method selectBarAndTrackAtXY(float _x, float _y, boolean _bExtendSelection) {
       float trackX = 2;
       float trackY = 1 + NSQ_TrackForm.GetTrackSizeY();  // +space for bar label area
@@ -3550,38 +3571,39 @@ class NSQ_Arranger extends Control, ActionProvider {
    }
 
    // <ui_mouse.png>
+   public virtual blockMouseHold(MouseEvent _ev) : boolean {
+      return true;
+   }
+
+   // // // <ui_mouse.png>
+   // // public virtual onMouseHold(MouseEvent _ev) : boolean {
+   // //    // (note) requires UI.mouse_hold_delay to be higher than ~500ms when using touchpads or this will break mouse-drag(selection)
+   // //    if(_ev.isLeftButtonDown())
+   // //    {
+   // //       selectTrackOrAllOrNone();
+   // //       selectTrackOrAllOrNone();
+   // //    }
+   // //    return Control::onMouseHold(_ev);
+   // // }
+
+   // <ui_mouse.png>
    public virtual onMouseDoubleClick(MouseEvent _ev) : boolean {
 
-      local Integer trackIdx;
-      int barIdx = getBarAndTrackAtXY(_ev.mouse_rel_x, _ev.mouse_rel_y, trackIdx);
-      if(trackIdx >= 0 && barIdx >= 0)
+      selectBarAndTrackAtXY(_ev.mouse_rel_x, _ev.mouse_rel_y, false/*bExtendSelection*/);
+
+      int dt = (milliSeconds() - last_doubleclick_ms);
+      if(dt >= DOUBLECLICK_LOOP_REGION_TIMEOUT_MS)
       {
-         if(seq.sel_start_x <= barIdx <= seq.sel_end_x)
-         {
-            if(seq.sel_start_y <= trackIdx <= seq.sel_end_y)
-            {
-               // already selected, auto-expand
-               selectTrackOrAllOrNone();
-               selectTrackOrAllOrNone();
-               return true;
-            }
-         }
-         if( (seq.cursor_x != barIdx) || (seq.cursor_y != trackIdx) )
-         {
-            // trace "xxx not selected";
-            selectBarAndTrackAtXY(_ev.mouse_rel_x, _ev.mouse_rel_y, false/*bExtendSelection*/);
-            return true;
-         }
-         else
-         {
-            // already the cursor cel, auto-expand
-            selectTrackOrAllOrNone();
-            selectTrackOrAllOrNone();
-            return true;
-         }
+         selectBlockUnderCursor();
+      }
+      else
+      {
+         selectTrackOrAllOrNone();
+         selectTrackOrAllOrNone();
       }
 
-      return false;
+      last_doubleclick_ms = milliSeconds();
+      return true;
    }
 
    // <ui_mouse.png>
@@ -3721,6 +3743,18 @@ class NSQ_Arranger extends Control, ActionProvider {
          return true;
       }
 
+      if(isXYWithinSelection(_ev.mouse_rel_x, _ev.mouse_rel_y))
+      {
+         // trace "xxx DRAG_MOVE_SEL";
+         drag_start_mx = _dragStart.mouse_rel_x;
+         drag_last_move_num_bars = 0;
+         parent_editor.undoBegin();
+         drag_mode = DRAG_MOVE_SEL;
+         UI.CompositeAll();
+         UI.ShowCursor(UIConstants.CURSOR_MOVEX);
+         return true;
+      }
+
       local Integer dragMode;
       int barIdx = getLocatorBarIdxAndDragModeNear(_ev, dragMode);
       if(-1 != barIdx)
@@ -3795,6 +3829,25 @@ class NSQ_Arranger extends Control, ActionProvider {
             setViewX(drag_start_view_x + (drag_start_mx - _currentEv.mouse_rel_x) * DRAG_PAN_SCALE_X);
             return true;
          }
+         else if(DRAG_MOVE_SEL == drag_mode)
+         {
+            float moveDx = _currentEv.mouse_rel_x - drag_start_mx;
+            int moveNumBars = moveDx / NSQ_Arranger.BAR_W;
+            // trace "xxx moveDx="+moveDx+" moveNumBars="+moveNumBars;
+            int moveNumBarsDelta = moveNumBars - drag_last_move_num_bars;
+            drag_last_move_num_bars = moveNumBars;
+            if(moveNumBarsDelta > 0)
+            {
+               loop(moveNumBarsDelta)
+                  moveSelectionRight();
+            }
+            else if(moveNumBarsDelta < 0)
+            {
+               loop(-moveNumBarsDelta)
+                  moveSelectionLeft();
+            }
+            return true;
+         }
       }
 
       if(DRAG_SEL == drag_mode)
@@ -3844,6 +3897,10 @@ class NSQ_Arranger extends Control, ActionProvider {
          {
             UI.UngrabMouse();
          }
+         else if(DRAG_MOVE_SEL == drag_mode)
+         {
+            parent_editor.undoEnd();
+         }
       }
 
       if(DRAG_SEL == drag_mode)
@@ -3863,6 +3920,11 @@ class NSQ_Arranger extends Control, ActionProvider {
       {
          setViewX(drag_start_view_x);
          UI.UngrabMouse();
+      }
+      else if(DRAG_MOVE_SEL == drag_mode)
+      {
+         parent_editor.undoEnd();
+         parent_editor.undo();
       }
       drag_mode = DRAG_NONE;
       UI.ShowCursorEx(UIConstants.CURSOR_NORMAL, true/*bForce*/);
