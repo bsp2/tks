@@ -15,7 +15,7 @@
 // ----          01Dec2022, 18Dec2022, 23Feb2023, 22Jul2023, 29Jul2023, 16Nov2023, 17Nov2023
 // ----          18Nov2023, 02Dec2023, 03Dec2023, 05Jul2024, 07Jul2024, 15Nov2024, 07Jan2025
 // ----          22May2025, 13Jun2025, 18Dec2025, 06Apr2026, 14Apr2026, 16Apr2026, 13Jul2026
-// ----          02Aug2026, 03Aug2026, 09Aug2026
+// ----          02Aug2026, 03Aug2026, 09Aug2026, 29Oct2026
 // ----
 // ----
 // ----
@@ -140,6 +140,7 @@ class SysEx {
    define int SYX_MSGID_TRACK_CHANGED                  = 77;  // OUT    focus track change notification
    define int SYX_MSGID_METRONOME                      = 78;  // OUT    send enable/disable/toggle metronome to seq
    define int SYX_MSGID_METRONOME_ACK                  = 79;  // IN     recv current metronome state
+   define int SYX_MSGID_EDIT_NODE_PATTERN              = 80;  // OUT    send node gid+patnr edit request to seq
 
 
    // (note) https://www.midi.org/specifications/item/manufacturer-id-numbers
@@ -262,6 +263,8 @@ class SysEx {
    static boolean b_queued_recv_ui_window_show;
 
    static int     queued_recv_smp_upload_seq_smp_uid;
+   static int     queued_recv_smp_upload_seq_node_gid;
+   static byte    queued_recv_smp_upload_seq_node_pat_nr;
    static boolean queued_recv_smp_upload_seq_resynth;
    static boolean b_queued_recv_smp_upload_seq;
 
@@ -287,6 +290,11 @@ class SysEx {
 
    static boolean b_queued_recv_metronome_ack_state;   // true/false
    static boolean b_queued_recv_metronome_ack;
+
+   static int     queued_send_edit_node_gid;
+   static int     queued_send_edit_node_pat_nr;
+   static int     queued_send_edit_node_off_16ths;
+   static boolean b_queued_send_edit_node_pattern;
 
 
    // <method_init.png>
@@ -946,8 +954,10 @@ class SysEx {
 
             case SYX_MSGID_SMP_UPLOAD_SEQ:
                raw.offset = 0;
-               queued_recv_smp_upload_seq_smp_uid = raw.i32;
-               queued_recv_smp_upload_seq_resynth = raw.b8;
+               queued_recv_smp_upload_seq_smp_uid     = raw.i32;
+               queued_recv_smp_upload_seq_node_gid    = raw.i32;
+               queued_recv_smp_upload_seq_node_pat_nr = raw.i8;
+               queued_recv_smp_upload_seq_resynth     = raw.b8;
                b_queued_recv_smp_upload_seq = true;
                break;
 
@@ -1340,6 +1350,24 @@ class SysEx {
    }
 
    // <method.png>
+   public =sysexqueue= static QueueSendEditNodePattern(int _nodeGID, byte _patNr, int _off16ths) {
+      queued_send_edit_node_gid       = _nodeGID;
+      queued_send_edit_node_pat_nr    = _patNr;
+      queued_send_edit_node_off_16ths = _off16ths;
+      b_queued_send_edit_node_pattern = true;
+   }
+
+   // <method.png>
+   public static SendEditNodePattern() {
+      send_raw.offset = 0;
+      send_raw.i32 = queued_send_edit_node_gid;
+      send_raw.i8  = queued_send_edit_node_pat_nr;
+      send_raw.i32 = queued_send_edit_node_off_16ths;
+      Send(SYX_MSGID_EDIT_NODE_PATTERN, send_raw/*payload*/);
+      b_queued_send_edit_node_pattern = false;
+   }
+
+   // <method.png>
    public static TestEncodeDecode() {
       Buffer syx;
       Buffer raw;
@@ -1486,6 +1514,9 @@ class SysEx {
 
             if(b_queued_send_metronome)
                SendMetronome();
+
+            if(b_queued_send_edit_node_pattern)
+               SendEditNodePattern();
          }
 
          // Send queued "ModAudio2RPN" events
@@ -1908,6 +1939,8 @@ class SysEx {
       if(b_queued_recv_smp_upload_seq)
       {
          current_project.handleUploadProcSampleSeq(queued_recv_smp_upload_seq_smp_uid,
+                                                   queued_recv_smp_upload_seq_node_gid,
+                                                   queued_recv_smp_upload_seq_node_pat_nr,
                                                    queued_recv_smp_upload_seq_resynth
                                                    );
          b_queued_recv_smp_upload_seq = false;

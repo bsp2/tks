@@ -15,7 +15,7 @@
 // ----          23Feb2023, 22Jul2023, 29Jul2023, 17Nov2023, 18Nov2023, 02Dec2023, 03Dec2023
 // ----          07Jul2024, 15Nov2024, 14Mar2025, 22May2025, 13Jun2025, 18Dec2025, 19Dec2025
 // ----          20Dec2025, 03Jan2026, 06Apr2026, 14Apr2026, 16Apr2026, 25Apr2026, 01May2026
-// ----          11Jul2026, 13Jul2026, 03Aug2026, 09Aug2026
+// ----          11Jul2026, 13Jul2026, 03Aug2026, 09Aug2026, 29Oct2026
 // ----
 // ----
 // ----
@@ -249,6 +249,7 @@ class SysEx {
    define int SYX_MSGID_TRACK_CHANGED                  = 77;  // IN     focus track change notification
    define int SYX_MSGID_METRONOME                      = 78;  // IN     recv enable/disable/toggle metronome from DAW
    define int SYX_MSGID_METRONOME_ACK                  = 79;  // OUT    send current metronome state to DAW
+   define int SYX_MSGID_EDIT_NODE_PATTERN              = 80;  // IN     recv node gid+patnr edit request from DAW
 
 
    // (note) https://www.midi.org/specifications/item/manufacturer-id-numbers
@@ -450,6 +451,8 @@ class SysEx {
    static boolean b_queued_recv_ui_window_show;
 
    static int     queued_send_smp_upload_seq_smp_uid;
+   static int     queued_send_smp_upload_seq_node_gid;
+   static int     queued_send_smp_upload_seq_pat_nr;
    static boolean queued_send_smp_upload_seq_resynth;
    static boolean b_queued_send_smp_upload_seq;
 
@@ -475,6 +478,11 @@ class SysEx {
 
    static boolean b_queued_send_metronome_ack_state;   // true/false
    static boolean b_queued_send_metronome_ack;
+
+   static int     queued_recv_edit_node_gid;
+   static byte    queued_recv_edit_node_pat_nr;
+   static int     queued_recv_edit_node_off_16ths;
+   static boolean b_queued_recv_edit_node_pattern;
 
 
    // <method_init.png>
@@ -1013,6 +1021,13 @@ class SysEx {
                b_queued_recv_metronome_state = raw.s8;
                b_queued_recv_metronome = true;
                break;
+
+            case SYX_MSGID_EDIT_NODE_PATTERN:
+               raw.offset = 0;
+               queued_recv_edit_node_gid       = raw.i32;
+               queued_recv_edit_node_pat_nr    = raw.u8;
+               queued_recv_edit_node_off_16ths = raw.i32;
+               b_queued_recv_edit_node_pattern = true;
          }
       }
 
@@ -1732,9 +1747,11 @@ class SysEx {
    }
 
    // <method.png>
-   public =sysexqueue= static QueueSendSmpUploadSeq(int _smpUID, boolean _bResynthesize) {
-      queued_send_smp_upload_seq_smp_uid = _smpUID;
-      queued_send_smp_upload_seq_resynth = _bResynthesize;
+   public =sysexqueue= static QueueSendSmpUploadSeq(int _smpUID, int _nodeGID, byte _patNr, boolean _bResynthesize) {
+      queued_send_smp_upload_seq_smp_uid  = _smpUID;
+      queued_send_smp_upload_seq_node_gid = _nodeGID;
+      queued_send_smp_upload_seq_pat_nr   = _patNr;
+      queued_send_smp_upload_seq_resynth  = _bResynthesize;
       b_queued_send_smp_upload_seq = true;
    }
 
@@ -1743,6 +1760,8 @@ class SysEx {
       trace "[trc] SysEx::SendSmpUploadSeq: smp_uid="+queued_send_smp_upload_seq_smp_uid;
       send_raw.offset = 0;
       send_raw.i32 = queued_send_smp_upload_seq_smp_uid;
+      send_raw.i32 = queued_send_smp_upload_seq_node_gid;
+      send_raw.i8  = queued_send_smp_upload_seq_pat_nr;
       send_raw.i8  = queued_send_smp_upload_seq_resynth;
       Send(SYX_MSGID_SMP_UPLOAD_SEQ, send_raw/*payload*/);
       b_queued_send_smp_upload_seq = false;
@@ -2306,6 +2325,15 @@ class SysEx {
             root_form.setEnableMetronome(b_queued_recv_metronome_state);
          b_queued_recv_metronome = false;
          QueueSendMetronomeAck(STConfig.b_midi_metronome);
+      }
+
+      if(b_queued_recv_edit_node_pattern)
+      {
+         b_queued_recv_edit_node_pattern = false;
+         Node.TryEditNodePatternByGID(queued_recv_edit_node_gid,
+                                      queued_recv_edit_node_pat_nr,
+                                      queued_recv_edit_node_off_16ths
+                                      );
       }
 
    }
