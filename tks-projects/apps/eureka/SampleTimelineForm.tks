@@ -13,7 +13,7 @@
 // ----          04May2025, 20May2025, 31May2025, 14Jun2025, 15Jun2025, 22Jun2025, 26Jun2025
 // ----          02Jan2026, 03Jan2026, 17Jan2026, 07Apr2026, 14Apr2026, 15Apr2026, 16Apr2026
 // ----          17Apr2026, 10May2026, 11May2026, 10Jul2026, 11Jul2026, 12Jul2026, 13Jul2026
-// ----          03Aug2026, 04Aug2026, 05Aug2026
+// ----          03Aug2026, 04Aug2026, 05Aug2026, 29Oct2026
 // ----
 // ----
 // ----
@@ -38,7 +38,6 @@ class SampleTimelineForm : XMLForm, ActionProvider, SampleViewPlugin {
    Track *parent_track;
    SampleTimeline *sample_timeline;
    SampleTimelineModel *sample_timeline_edit_model;
-
    SampleTimelineEditor *sample_timeline_editor;
 
    protected SplitPane *spl_sample;
@@ -527,6 +526,12 @@ class SampleTimelineForm : XMLForm, ActionProvider, SampleViewPlugin {
          if(b_debug) trace "xxx SampleTimelineForm::showClipDetails:   => current_sample="+#(current_sample);
          if(null != current_sample)
          {
+            if(current_sample.proc_seq_node_gid > 0)
+            {
+               Global.PrintFast("Clip seq pat="+current_sample.getProcSeqNodePatternString());
+               // bPrintDone = true;
+            }
+
             StWaveform wf <= current_sample.waveform;
 
             if(_bSampleView)
@@ -1465,15 +1470,22 @@ class SampleTimelineForm : XMLForm, ActionProvider, SampleViewPlugin {
       // copy timeline selection rectangle to SampleView selection
       int selStart = sample_timeline_editor.kbd_selection_units_start_sorted;
       int selEnd   = sample_timeline_editor.kbd_selection_units_end_sorted;
-      // // trace "[trc] SampleTimelineForm::handleTimelineKbdSelectionChanged: selStart="+selStart+" endEnd="+selEnd;
+      trace "[trc] SampleTimelineForm::handleTimelineKbdSelectionChanged: selStart="+selStart+" endEnd="+selEnd;
+      boolean bPrintDone = false;
 
-      if(selEnd > selStart)
+      if(-1 != selStart && selEnd > selStart)
       {
          if(null != current_sample)
          {
             SampleTimelineModelClip modelClip <= getSelectedModelClip();
             if(null != modelClip)  // should not be null
             {
+               if(current_sample.proc_seq_node_gid > 0)
+               {
+                  Global.PrintFast("Clip seq pat="+current_sample.getProcSeqNodePatternString());
+                  bPrintDone = true;
+               }
+
                StWaveform wf <= current_sample.waveform;
 
                selStart -= modelClip.start;
@@ -1492,6 +1504,8 @@ class SampleTimelineForm : XMLForm, ActionProvider, SampleViewPlugin {
             }
          }
       }
+      if(!bPrintDone)
+         Global.PrintFast("");
       sv_wave.selectNone();
    }
 
@@ -1543,9 +1557,12 @@ class SampleTimelineForm : XMLForm, ActionProvider, SampleViewPlugin {
    protected method handleToggleReplay(boolean _bCursor) {
       if(null != sample_timeline)
       {
-         Global.Debug2("SampleTimelineForm::handleToggleReplay: current_rec_sample="+#(current_rec_sample));
+         boolean bWasPlaying = sample_timeline.b_playing;
+         int stopUnits = sample_timeline.play_pos;
+         Global.Debug2("SampleTimelineForm::handleToggleReplay: current_rec_sample="+#(current_rec_sample)+" stopUnits="+stopUnits);
          if(null != current_rec_sample && replay.b_seq_playing)
          {
+
             // Stop (=> handleStopClipRec())
             replay.toggleSeq(true/*bRec*/);
          }
@@ -1556,6 +1573,10 @@ class SampleTimelineForm : XMLForm, ActionProvider, SampleViewPlugin {
                                          : sample_timeline.loop_start
                                          );
          }
+
+         Global.Debug("SampleTimelineForm::handleToggleReplay: bCursor="+_bCursor+" bWasPlaying="+bWasPlaying+" stopUnits="+stopUnits);
+         if(!_bCursor && bWasPlaying)
+            sample_timeline_editor.timelineCursorSet(stopUnits, false/*bSelect*/);
 
       }
    }
@@ -1875,12 +1896,12 @@ class SampleTimelineForm : XMLForm, ActionProvider, SampleViewPlugin {
       pmb <= pm.addDefaultButton("Toggle replay (loop)",
                                  "replay_toggle_loop"
                                  );
-      pmb.setAccelerators("SPACE", "");
+      pmb.setAccelerators("lctrl-SPACE", "");
 
       pmb <= pm.addDefaultButton("Toggle replay (cursor)",
                                  "replay_toggle_cursor"
                                  );
-      pmb.setAccelerators("lctrl-SPACE", "");
+      pmb.setAccelerators("SPACE", "");
 
       // Loop
       pm.addSeparator();
@@ -2008,11 +2029,6 @@ class SampleTimelineForm : XMLForm, ActionProvider, SampleViewPlugin {
       pmb <= spm.addCheckButton("Draw clip labels", sample_timeline_editor.b_draw_clip_labels, "misc_draw_clip_labels");
       pmb.setAccelerators("l", "");
 
-      // // pmb <= spm.addDefaultButton("Edit clip sample",
-      // //                             "misc_edit_clip_sample"
-      // //                             );
-      // // pmb.setAccelerators("RMB-click", "");
-
 
       // Mode submenu
       pm.addSeparator();
@@ -2076,6 +2092,44 @@ class SampleTimelineForm : XMLForm, ActionProvider, SampleViewPlugin {
                                     "edit_clip_sample"
                                     );
          pmb.setAccelerators("RETURN", "");
+         pm.addSeparator();
+
+         boolean bEditClipSeqDone = false;
+         SampleTimelineEditorClip clip <= sample_timeline_editor.timelineEditGetFirstSelectedClip();
+         if(null != clip)
+         {
+            Sample sample <= clip.getSample();
+            if(null != sample)
+            {
+               if(sample.proc_seq_node_gid > 0)
+               {
+                  pmb <= pm.addDefaultButton("Edit clip seq ("+sample.getProcSeqNodePatternString()+")",
+                                             "edit_clip_seq"
+                                             );
+                  pmb.setAccelerators("lctrl-RETURN", "lctrl-e");
+                  bEditClipSeqDone = true;
+
+                  pmb <= pm.addDefaultButton("Render clip seq ("+sample.getTotalNumProcSeqEvents()+" ev)",
+                                             "render_clip_seq"
+                                             );
+                  pmb.setAccelerators("", "");
+               }
+            }
+         }
+         if(!bEditClipSeqDone)
+         {
+            pmb <= pm.addDefaultButton("Edit clip seq",
+                                       "edit_clip_seq"
+                                       );
+            pmb.setAccelerators("lctrl-RETURN", "");
+            pmb.setActive(false);
+
+            pmb <= pm.addDefaultButton("Render clip seq",
+                                       "render_clip_seq"
+                                       );
+            pmb.setAccelerators("", "");
+            pmb.setActive(false);
+         }
          pm.addSeparator();
       }
 
@@ -2295,7 +2349,7 @@ class SampleTimelineForm : XMLForm, ActionProvider, SampleViewPlugin {
             break;
 
          case VKEY_SPACE:
-            handleToggleReplay(!_k.modNone()/*bCursor*/);
+            handleToggleReplay(_k.modNone()/*bCursor*/);
             return true;
 
          case VKEY_HOME:
@@ -2560,6 +2614,14 @@ class SampleTimelineForm : XMLForm, ActionProvider, SampleViewPlugin {
 
                case "edit_clip_sample":
                   sample_timeline_editor.timelineEditFirstSelectedClip();
+                  return true;
+
+               case "edit_clip_seq":
+                  sample_timeline_editor.timelineEditFirstSelectedClipSeq();
+                  return true;
+
+               case "render_clip_seq":
+                  sample_timeline_editor.renderFirstSelectedClipSeq();
                   return true;
 
                case "loop_set_clips":

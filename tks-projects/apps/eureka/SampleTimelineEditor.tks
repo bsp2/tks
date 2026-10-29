@@ -13,7 +13,7 @@
 // ----          04Apr2025, 05Apr2025, 09Apr2025, 10Apr2025, 01May2025, 04May2025, 06May2025
 // ----          20May2025, 31May2025, 12Jun2025, 14Jun2025, 15Jun2025, 22Jun2025, 13Sep2025
 // ----          14Sep2025, 10Oct2025, 02Jan2026, 03Jan2026, 07Apr2026, 15Apr2026, 10Jul2026
-// ----          12Jul2026, 03Aug2026, 04Aug2026, 05Aug2026
+// ----          12Jul2026, 03Aug2026, 04Aug2026, 05Aug2026, 29Oct2026
 // ----
 // ----
 // ----
@@ -135,6 +135,11 @@ class SampleTimelineEditorClip : TimelineClip {
       f.updateTrackWidgets();
    }
 
+   public method getSample() : Sample {
+      Sample sampleOrNull <= current_project.getSampleByIdx(model_clip.sample_idx);
+      return sampleOrNull;
+   }
+
    public virtual timelineClipEdit(int _mouseRelX, int _mouseRelY, boolean _bSelectClipUnderMouse) {
       // trace "xxx ----------------------- timelineClipEdit --------------------";
       // Select clip
@@ -173,7 +178,7 @@ class SampleTimelineEditorClip : TimelineClip {
       }
 
       // Edit clip sample
-      Sample sampleOrNull <= current_project.getSampleByIdx(model_clip.sample_idx);
+      Sample sampleOrNull <= getSample();
       SampleTimelineEditorTrack editorTrack <= parent_track;
       SampleTimelineModelTrack  modelTrack  <= editorTrack.model_track;
       PageSample.ShowSampleFromTimelineAndSwitchToPage(sampleOrNull,
@@ -181,6 +186,58 @@ class SampleTimelineEditorClip : TimelineClip {
                                                        modelTrack,
                                                        true/*bFromTrack*/
                                                        );
+   }
+
+   public virtual timelineClipEditSeq(int _mouseRelX, int _mouseRelY, boolean _bSelectClipUnderMouse) {
+      // trace "xxx ----------------------- timelineClipEditSeq --------------------";
+      // Select clip
+      // trace "xxx timelineClipEditSeq: cursor_track="+parent_timeline.cursor_track+" cursor_units="+parent_timeline.cursor_units;
+      PageTrack pgTrack <= root_form.pg_track;
+      SampleTimelineForm f <= pgTrack.f_sampletimeline;
+      SampleTimelineEditor parentEditor <= f.sample_timeline_editor;
+      TimelineData parentData <= parentEditor.data;
+      SampleView sv <= f.sv_wave;
+      StWaveform oldWaveform <= sv.getWaveform();
+      float oldSelStartMS = sv.getSelectionStartOffsetMS();
+      float oldSelEndMS   = sv.getSelectionEndOffsetMS();
+      Global.Debug2("SampleTimelineEditorClip::onMouseClick: oldSelStartMS="+oldSelStartMS+" oldSelEndMS="+oldSelEndMS);
+      if(_bSelectClipUnderMouse)
+      {
+         selectClipUnderMouse(_mouseRelX, _mouseRelY);
+      }
+      f.storeEditorState();
+
+      Global.Debug2("SampleTimelineEditorClip::timelineClipEditSeq: oldWaveform="+#(oldWaveform)+" curWaveform="+#(sv.getWaveform())+" bSame="+(@(oldWaveform) == @(sv.getWaveform())));
+
+      if(@(sv.getWaveform()) == @(oldWaveform))
+      {
+         // Restore selection (still showing same waveform)
+         sv.setSelectionMS(oldSelStartMS, oldSelEndMS - oldSelStartMS);
+         Global.Debug2("SampleTimelineEditorClip::timelineClipEditSeq: restore selStartMS="+sv.getSelectionStartOffsetMS()+" selEndMS="+sv.getSelectionEndOffsetMS());
+      }
+
+      // Edit clip sequence
+      Sample sample <= getSample();
+      if(null != sample)
+      {
+         if(sample.proc_seq_node_gid > 0)
+         {
+            // int beats = (parent_timeline.timelineUnitsToBeats(mathMaxi(0, parent_timeline.cursor_units - timelineClipGetStart()))+0.5);
+            int offUnits = mathMaxi(0, parent_timeline.cursor_units - timelineClipGetStart());
+            int off16ths = int((offUnits / (SampleTimelineModel.UNITS_PER_QUARTER / 4.0f))+0.5);
+            Global.Debug("SampleTimelineEditor::timelineClipEditSeq: edit nodeGID="+sample.proc_seq_node_gid+" patNr="+sample.proc_seq_node_pat_nr+" off16ths="+off16ths);
+            SysEx.QueueSendEditNodePattern(sample.proc_seq_node_gid, sample.proc_seq_node_pat_nr, off16ths);
+            root_form.showSynergyWindow(true/*bFocus*/);
+         }
+         else
+         {
+            Global.Warning("No clip sequence");
+         }
+      }
+      else
+      {
+         Global.Warning("No sample");
+      }
    }
 
    protected virtual timelineClipRenderWaveform(float _offX, float _offY, float _sizeX, float _sizeY) {
@@ -762,6 +819,23 @@ class SampleTimelineEditor : Timeline {
       redraw();
    }
 
+   public method renderFirstSelectedClipSeq() {
+      SampleTimelineEditorClip clip <= timelineEditGetFirstSelectedClip();
+      if(null != clip)
+      {
+         Sample sample <= clip.getSample();
+         if(null != sample)
+         {
+            if(sample.src_track_idx >= 0)
+            {
+               sample.renderProceduralTrack();
+               Global.Print("Render clip seq ("+sample.getWaveformNumFrames()+" frames)");
+               UI.RedrawAll();
+            }
+         }
+      }
+   }
+
    public virtual onKey(Key _k) : boolean {
       // trace "xxx _k.pressed="+_k.name;
       switch(_k.pressed)
@@ -774,6 +848,15 @@ class SampleTimelineEditor : Timeline {
             if(_k.modNone() || _k.modShiftOnly())
             {
                handleSetLoop(_k.modShift()/*bPreferRegion*/, true/*bKbdSelectNone*/);
+               return true;
+            }
+            break;
+
+         case 'e':
+         case VKEY_RETURN:
+            if(_k.modCtrlOnly())
+            {
+               timelineEditFirstSelectedClipSeq();
                return true;
             }
             break;
