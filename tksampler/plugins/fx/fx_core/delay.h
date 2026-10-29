@@ -9,8 +9,8 @@
 // ----
 // ----
 
-#ifndef __ST_DELAY_H__
-#define __ST_DELAY_H__
+#ifndef ST_DELAY_H__
+#define ST_DELAY_H__
 
 #ifndef ST_DELAY_SIZE
 #error using default ST_DELAY_SIZE
@@ -83,4 +83,4 @@ struct StDelay {
 };
 
 
-#endif // __ST_DELAY_H__
+#endif // ST_DELAY_H__
