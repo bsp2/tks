@@ -1077,9 +1077,9 @@ void StPluginVoice::noteOn(sBool _bGlide, sUI _note, sF32 _vel) {
 }
 
 void StPluginVoice::setModValue(sUI _modIdx, sF32 _value, sUI _frameOff) {
-   if(_modIdx < 8u)
+   if(NULL != voice)
    {
-      if(NULL != voice)
+      if(_modIdx < voice->info->num_mods)
       {
          voice->info->set_mod_value(voice, _modIdx, _value, _frameOff);
       }
