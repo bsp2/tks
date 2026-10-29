@@ -974,121 +974,127 @@ NOTE: The *Query Remote* functions look at the first output entry to determine t
 | Key Sequence          :|:Description
 | lshift - BACKSPACE         | Clear track
 | lctrl - lshift - BACKSPACE | Clear pattern
-| LEFT                   | Move cursor left
-|                        |+StepRec Mode: Move recording cursor to previous 16th
-| lshift - LEFT          | Move cursor left and expand selection
-|                        |+StepRec Mode: Move recording cursor to previous 32th
-| RIGHT                  | Move cursor right
-|                        |+StepRec Mode: Move recording cursor to next 16th
-| lshift - RIGHT         | Move cursor right and expand selection
-|                        |+StepRec Mode: Move recording cursor to next 32th
-| lctrl - x RIGHT        | Move selection right
-| UP                     | Move cursor up
-|                        |+StepRec Mode: Move recording cursor to previous quarter note
-| lshift - UP            | Move cursor up and expand selection
-| lctrl - UP             | Y-expand selection and move cursor to first track
-| DOWN                   | Move cursor down
-|                        |+StepRec Mode: Move recording cursor to next quarter note
-| lshift - DOWN          | Move cursor down and expand selection
-| lctrl - DOWN           | Y-expand selection and move cursor to last track
-| lctrl - LEFT           | Move cursor home
-| lctrl - lshift - LEFT  | Move cursor home and expand selection
-| lctrl - x LEFT         | Move selection left
-| PAGEUP                 | Move cursor left 8 bars
-| lshift - PAGEUP        | Move cursor left 8 bars and expand selection
-| PAGEDOWN               | Move cursor right 8 bars
-| lshift - PAGEDOWN      | Move cursor right 8 bars and expand selection
-| 1                      | Loop 1 bar
-| 2                      | Loop 2 bars
-| 3                      | Loop 4 bars
-| 4                      | Loop 8 bars
-| a                      | Show context menu
-| lctrl - a              | Select used bars on current track, on all tracks, or select nothing (cycle)
-| lctrl - lshift - a     | Freeze quantization (selection or cursor bar)
-| b                      | Merge performance controllers to bar starts of selected tracks (mw, bc, fc, ex, gp1..8, brightness(74), pitchbend, channel pressure, sustain (hold 1), portamento, sostenuto, soft pedal, legato, hold 2)
-| lctrl - b              | Same as `b` but always start from bar 1 and merge until end of current loop
-| c                      | Loop selection
-| lctrl - c              | Copy selection to clipboard
-| lctrl - x c            | Start output capture (aligned to bar start, stops when replay is stopped)
-| lctrl - x v            | Paste output capture buffer to current pattern  (note: buffer is shared between all nodes)
-| lctrl - x \\ (UK kbd)  | Export selection to output capture buffer
-|                        |+(`lctrl - x <`  on german PC kbd)
-|                        |+(`lctrl - x -` on german kbd with `UI.b\_key\_map\_slash\_to\_less==true`)
-|                        |+(`lctrl - x /` on US kbd with `UI.b\_key\_map\_slash\_to\_less==true`)
-| lshift - F9            | Paste NodeMonitor clipboard to current pattern
-| lctrl - lshift - F9    | Import Standard MIDI File (.mid) (can also be imported via drag'n'drop)
-| d                      | Mute / Unmute track
-| e                      | Set Punch In / Out to selection
-| \'                     | Detail-Edit in Tracker node
-|+                       |+ `ä` on german kbd
-|+                       |+ note: copies `<swing>` autodev b (when used)
-| lctrl - e              | Export selection to Monitor clipboard
-| lctrl - lshift - e     | Export selection to new Tracker node
-| lctrl - x e            | Export pattern to new sub-song (show dialog)
-| f                      | Toggle track focus
-| lshift - f             | MIDI-Filter selection (show dialog)
-| lctrl - f              | Set view to replay position
-| lctrl - lshift -f      | Toggle autoscroll
-| lctrl - x f            | Toggle auto-focus / auto-rec
-| g                      | Set view to replay position
-| i                      | Set Punch In to cursor
-| lctrl - x l            | Set left loop locator to cursor
-| lctrl - j              | Create velocity * modwheel modmatrix/modmatrices for selected track output port(s)
-|                        |+ (modwheel input read from last selected track port)
-| lctrl - lshift - j     | Create modwheel + modwheel2<delta> modmatrix/modmatrices for selected track output port(s)
-|                        |+ (modwheel2 input read from last selected track port. centerpos = no change)
-| k                      | Edit track sound (SysEx, NodeAnalogRytm, or Eureka sample / plugin)
-| lctrl - l              | Create velocity curve modmatrix/modmatrices for selected track output port(s)
-| lctrl - lshift - l     | Create velocity randomization modmatrix/modmatrices for selected track output port(s)
-| lctrl - m              | Mix-Paste clipboard
-| o                      | Set Punch Out to cursor
-| lctrl - o              | Insert output states of selected tracks (MIDI cache)
-| lctrl - lshift -o      | Clear output states of selected tracks (MIDI cache)
-| p                      | Show bar program change dialog
-| lshift - p             | Delete bar program change
-| \\ (UK kbd)            | Insert output states of selected tracks (MIDI cache)
-|                        |+(`<` on german kbd)
-|                        |+(`-` on german kbd with `UI.b\_key\_map\_slash\_to\_less==true`)
-|                        |+(`/` on US kbd with `UI.b\_key\_map\_slash\_to_less==true`)
-| lshift - \\ (UK kbd)   | Clear output states of selected tracks (MIDI cache)
-|                        |+(`lshift - <` on german kbd)
-|                        |+(`lshift - -` on german kbd with `UI.b\_key\_map\_slash\_to\_less==true`)
-|                        |+(`lshift - /` on US kbd with `UI.b\_key\_map\_slash\_to\_less==true`)
-| [                      | Half grid note length (`ü` on german kbd)
-| ]                      | Double grid note length (`+` on german kbd)
-| w                      | Arm / Disarm track
-| lctrl - w              | Toggle extended block selection mode (lctrl-lshift-\<cursor\> keys)
-| q                      | (Un-)Focus track quantization amount widget
-| r                      | Move loop to cursor
-| lctrl - x r            | Set right loop locator to cursor
-| s                      | Toggle solo track
-| t                      | Edit BPM tempo change at bar start
-| lctrl - x h            | Clear undo / redo history
-| lctrl - v              | Paste clipboard (replace)
-| lshift - v             | Paste clipboard (insert)
-| lshift - c             | Copy I/O Port to clipboard
-| lshift - t             | Paste I/O Port from clipboard
-| INSERT                 | Insert bar(s) on selected track(s)
-| lctrl - INSERT         | Insert bar(s) on selected track(s) including tempo
-| DELETE                 | Clear or Delete selected frames, notes, or bars
-| lshift - DELETE        | Delete selected bars
-| lctrl - DELETE         | Delete selected bars including tempo (when selection contains no events)
+| LEFT                    | Move cursor left
+|                         |+StepRec Mode: Move recording cursor to previous 16th
+| lshift - LEFT           | Move cursor left and expand selection
+|                         |+StepRec Mode: Move recording cursor to previous 32th
+| RIGHT                   | Move cursor right
+|                         |+StepRec Mode: Move recording cursor to next 16th
+| lshift - RIGHT          | Move cursor right and expand selection
+|                         |+StepRec Mode: Move recording cursor to next 32th
+| lctrl - x RIGHT         | Move selection right
+| UP                      | Move cursor up
+|                         |+StepRec Mode: Move recording cursor to previous quarter note
+| lshift - UP             | Move cursor up and expand selection
+| lctrl - UP              | Y-expand selection and move cursor to first track
+| DOWN                    | Move cursor down
+|                         |+StepRec Mode: Move recording cursor to next quarter note
+| lshift - DOWN           | Move cursor down and expand selection
+| lctrl - DOWN            | Y-expand selection and move cursor to last track
+| lctrl - LEFT            | Move cursor home
+| lctrl - lshift - LEFT   | Move cursor home and expand selection
+| lctrl - x LEFT          | Move selection left
+| PAGEUP                  | Move cursor left 8 bars
+| lshift - PAGEUP         | Move cursor left 8 bars and expand selection
+| PAGEDOWN                | Move cursor right 8 bars
+| lshift - PAGEDOWN       | Move cursor right 8 bars and expand selection
+| 1                       | Loop 1 bar
+| 2                       | Loop 2 bars
+| 3                       | Loop 4 bars
+| 4                       | Loop 8 bars
+| a                       | Show context menu
+| lctrl - a               | Select used bars on current track, on all tracks, or select nothing (cycle)
+| lctrl - lshift - a      | Freeze quantization (selection or cursor bar)
+| b                       | Merge performance controllers to bar starts of selected tracks (mw, bc, fc, ex, gp1..8, brightness(74), pitchbend, channel pressure, sustain (hold 1), portamento, sostenuto, soft pedal, legato, hold 2)
+| lctrl - b               | Same as `b` but always start from bar 1 and merge until end of current loop
+| c                       | Loop selection
+| lctrl - c               | Copy selection to clipboard
+| lctrl - x c             | Start output capture (aligned to bar start, stops when replay is stopped)
+| lctrl - x v             | Paste output capture buffer to current pattern  (note: buffer is shared between all nodes)
+| lctrl - x \\ (UK kbd)   | Export selection to output capture buffer
+|                         |+(`lctrl - x <`  on german PC kbd)
+|                         |+(`lctrl - x -` on german kbd with `UI.b\_key\_map\_slash\_to\_less==true`)
+|                         |+(`lctrl - x /` on US kbd with `UI.b\_key\_map\_slash\_to\_less==true`)
+| lshift - F9             | Paste NodeMonitor clipboard to current pattern
+| lctrl - lshift - F9     | Import Standard MIDI File (.mid) (can also be imported via drag'n'drop)
+| d                       | Mute / Unmute track
+| e                       | Set Punch In / Out to selection
+| \'                      | Detail-Edit in Tracker node
+|+                        |+ `ä` on german kbd
+|+                        |+ note: copies `<swing>` autodev b (when used)
+| lctrl - e               | Export selection to Monitor clipboard
+| lctrl - lshift - e      | Export selection to new Tracker node
+| lctrl - x e             | Export pattern to new sub-song (show dialog)
+| f                       | Toggle track focus
+| lshift - f              | MIDI-Filter selection (show dialog)
+| lctrl - f               | Set view to replay position
+| lctrl - lshift -f       | Toggle autoscroll
+| lctrl - x f             | Toggle auto-focus / auto-rec
+| g                       | Set view to replay position
+| i                       | Set Punch In to cursor
+| lctrl - x l             | Set left loop locator to cursor
+| lctrl - j               | Create velocity * modwheel modmatrix/modmatrices for selected track output port(s)
+|                         |+ (modwheel input read from last selected track port)
+| lctrl - lshift - j      | Create modwheel + modwheel2<delta> modmatrix/modmatrices for selected track output port(s)
+|                         |+ (modwheel2 input read from last selected track port. centerpos = no change)
+| k                       | Edit track sound (SysEx, NodeAnalogRytm, or Eureka sample / plugin)
+| lctrl - l               | Create velocity curve modmatrix/modmatrices for selected track output port(s)
+| lctrl - lshift - l      | Create velocity randomization modmatrix/modmatrices for selected track output port(s)
+| lctrl - m               | Mix-Paste clipboard
+| o                       | Set Punch Out to cursor
+| lctrl - o               | Insert output states of selected tracks (MIDI cache)
+| lctrl - lshift -o       | Clear output states of selected tracks (MIDI cache)
+| p                       | Show bar program change dialog
+| lshift - p              | Delete bar program change
+| \\ (UK kbd)             | Insert output states of selected tracks (MIDI cache)
+|                         |+(`<` on german kbd)
+|                         |+(`-` on german kbd with `UI.b\_key\_map\_slash\_to\_less==true`)
+|                         |+(`/` on US kbd with `UI.b\_key\_map\_slash\_to_less==true`)
+| lshift - \\ (UK kbd)    | Clear output states of selected tracks (MIDI cache)
+|                         |+(`lshift - <` on german kbd)
+|                         |+(`lshift - -` on german kbd with `UI.b\_key\_map\_slash\_to\_less==true`)
+|                         |+(`lshift - /` on US kbd with `UI.b\_key\_map\_slash\_to\_less==true`)
+| [                       | Half grid note length (`ü` on german kbd)
+| ]                       | Double grid note length (`+` on german kbd)
+| w                       | Arm / Disarm track
+| lctrl - w               | Toggle extended block selection mode (lctrl-lshift-\<cursor\> keys)
+| q                       | (Un-)Focus track quantization amount widget
+| r                       | Move loop to cursor
+| lctrl - x r             | Set right loop locator to cursor
+| s                       | Toggle solo track
+| t                       | Edit BPM tempo change at bar start
+| lctrl - x h             | Clear undo / redo history
+| lctrl - v               | Paste clipboard (replace)
+| lshift - v              | Paste clipboard (insert)
+| lshift - c              | Copy I/O Port to clipboard
+| lshift - t              | Paste I/O Port from clipboard
+| INSERT                  | Insert bar(s) on selected track(s)
+| lctrl - INSERT          | Insert bar(s) on selected track(s) including tempo
+| DELETE                  | Clear or Delete selected frames, notes, or bars
+| lshift - DELETE         | Delete selected bars
+| lctrl - DELETE          | Delete selected bars including tempo (when selection contains no events)
 | lctrl - lshift - DELETE | Delete selected bars including tempo
-| RALT                   | Enable step-recording (momentary switch)
-| lctrl - x RALT         | Toggle step-recording
-| x                      | 
-|+#                      |+Select block under cursor
-| z                      | Toggle step-recording (y on german kbd)
-| RCTRL                  | Arm / Disarm node
-| lshift - RCTRL         | Toggle replace / overdub recording mode
-| lctrl - x RCTRL        | Toggle recording pre-count
-| lctrl - x BACKSPACE    | Toggle ignore-seek-prgchg-mute
-| RSHIFT                 | Start / Stop Recording (auto-arm node)
-| RETURN                 | Synchronized record-restart at next bar (while recording is active)
-|+                       |+OR: Detail-Edit in Tracker node (while recording is NOT active)
-| lctrl - x RETURN       | Reset node last pattern start (editor) song offset to 0 (e.g. after editing node from Arranger, then removing it from Arranger)
-| SPACE                  | Toggle Replay
-| lctrl - SPACE          | Toggle Replay (leave cursor at replay position)
+| RALT                    | Enable step-recording (momentary switch)
+| lctrl - x RALT          | Toggle step-recording
+| x                       | 
+|+#                       |+Select block under cursor
+| z                       | Toggle step-recording (y on german kbd)
+| mouse WHEELUP           | Select previous bar
+| mouse WHEELDOWN         | Select next bar
+| mouse lctrl - WHEELUP   | 
+|+mouse RMB - WHEELUP     |+Zoom in (double note length)
+| mouse lctrl - WHEELDOWN | 
+|+mouse RMB - WHEELDOWN   |+Zoom out (halve note length)
+| RCTRL                   | Arm / Disarm node
+| lshift - RCTRL          | Toggle replace / overdub recording mode
+| lctrl - x RCTRL         | Toggle recording pre-count
+| lctrl - x BACKSPACE     | Toggle ignore-seek-prgchg-mute
+| RSHIFT                  | Start / Stop Recording (auto-arm node)
+| RETURN                  | Synchronized record-restart at next bar (while recording is active)
+|+                        |+OR: Detail-Edit in Tracker node (while recording is NOT active)
+| lctrl - x RETURN        | Reset node last pattern start (editor) song offset to 0 (e.g. after editing node from Arranger, then removing it from Arranger)
+| SPACE                   | Toggle Replay
+| lctrl - SPACE           | Toggle Replay (leave cursor at replay position)
 ].kbd_table Freeform Node Editor: Sequence Tab keyboard shortcuts
 
 
