@@ -37,7 +37,7 @@
 // ----          20May2025, 28May2025, 05Jun2025, 12Jun2025, 13Jun2025, 14Jun2025, 22Dec2025
 // ----          09Jan2026, 13Jan2026, 16Jan2026, 14Feb2026, 09Apr2026, 10Apr2026, 12Apr2026
 // ----          16Apr2026, 19Apr2026, 23Apr2026, 09May2026, 17May2026, 18May2026, 20May2026
-// ----          22May2026, 10Jul2026, 11Jul2026, 07Sep2026, 10Sep2026, 11Sep2026
+// ----          22May2026, 10Jul2026, 11Jul2026, 07Sep2026, 10Sep2026, 11Sep2026, 29Oct2026
 // ----
 // ----
 // ----
@@ -232,6 +232,8 @@ class Sample {
    float      audio_clip_bpm;  // bpm when audio clip was created (meta info, e.g. for timestretching)
 
    int        src_track_idx;   // for procedural samples (capture track output). -1=off
+   int        proc_seq_node_gid;    // Synergy node global id (editor hint)
+   byte       proc_seq_node_pat_nr; // Synergy node pattern nr (0..127)
    MIDIPipeFrame *[] proc_seq_frames;
 
    StSampleBank sample_bank;  // stores StSample instances ("zones")
@@ -1525,6 +1527,8 @@ class Sample {
          markWaveformAsModified();
 
       src_track_idx = _o.src_track_idx;
+      proc_seq_node_gid    = _o.proc_seq_node_gid;
+      proc_seq_node_pat_nr = _o.proc_seq_node_pat_nr;
       PointerArray oSeqFrames <= _o.proc_seq_frames;
       proc_seq_frames.alloc(oSeqFrames.numElements);
       MIDIPipeFrame *oFrame;
@@ -6834,7 +6838,7 @@ class Sample {
    protected method saveStateInt(Stream ofs, boolean _bEditor) {
 
       if(_bEditor)
-         ofs.i16 = 18; // ver
+         ofs.i16 = 19; // ver
 
       // Program id
       ofs.i8 = prg_id;
@@ -6974,6 +6978,10 @@ class Sample {
       MIDIPipeFrame *fr;
       if(_bEditor)
       {
+         // Procedural track Synergy context (v19+)
+         ofs.i32 = proc_seq_node_gid;
+         ofs.i8  = proc_seq_node_pat_nr;
+
          // Procedural track sequence events (v18+)
          ofs.i16 = proc_seq_frames.numElements;
          foreach fr in proc_seq_frames
@@ -6997,7 +7005,9 @@ class Sample {
                // proc_seq MIDI stream
                int seqOff = ofs.offset;
                ofs.i32 = 0;
+
                exportProcSeqSyn(ofs, track);
+
                int seqOffEnd = ofs.offset;
                ofs.offset = seqOff;
                ofs.i32 = seqOffEnd - seqOff - 4/*sizeof(i32)*/;
@@ -9592,6 +9602,13 @@ class Sample {
 
          if(ver >= 18)
          {
+            if(ver >= 19)
+            {
+               // Procedural track Synergy context (v19+)
+               proc_seq_node_gid    = ifs.i32;
+               proc_seq_node_pat_nr = ifs.i8;
+            }
+
             // Procedural track sequence events (v18+)
             int numSeqFrames = ifs.u16;
             proc_seq_frames.free();
@@ -11137,16 +11154,28 @@ class Sample {
    }
 
    // <method.png>
+   public method getProcSeqNodePatternString() : String {
+      StringArray aPatOpt <= SampleTimelineForm.patnr_options;
+      if(proc_seq_node_gid >= 0)
+         return proc_seq_node_gid+":"+aPatOpt.get(proc_seq_node_pat_nr);
+      else
+         return "-";
+   }
+
+   // <method.png>
    public =replay= method renderSourceTrack() {
       boolean bDebug = false;
       Track track <= current_project.getTrackByIdx(src_track_idx);
       if(null != track)
       {
          int wfNumFrames = waveform.numFrames;
+         // trace "xxx renderSourceTrack 1: wfNumFrames="+wfNumFrames;
          if(wfNumFrames > 0)
          {
+            // trace "xxx renderSourceTrack 2";
             if(proc_seq_frames.numElements > 0)
             {
+               // trace "xxx renderSourceTrack 3";
                boolean bOldSuppressUnderrunError = Audio.PushSuppressUnderrunError();
 
                FloatArray faSmp <= waveform.sampleData;
@@ -11354,7 +11383,11 @@ class Sample {
                // no seq frames
             }
          }
-         // else no wav frames
+         else
+         {
+            // no wav frames
+            trace "[~~~] Sample::renderSourceTrack: name=\""+unique_name+"\" src_track_idx="+src_track_idx+" wfNumFrames=0";
+         }
       }
       // else invalid track
    }
