@@ -1,14 +1,14 @@
 // ----
 // ---- file   : tkspeexdsp.cpp
 // ---- author : Bastian Spiegel <bs@tkscript.de>
-// ---- legal  : (c) 2020-2023 by Bastian Spiegel.
+// ---- legal  : (c) 2020-2026 by Bastian Spiegel.
 // ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
 // ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
 // ----
 // ---- info   : libspeexdsp interface
 // ----
 // ---- created: 31Oct2020
-// ---- changed: 31Jul2021, 18Jul2023
+// ---- changed: 31Jul2021, 18Jul2023, 31Oct2026
 // ----
 // ----
 // ----
@@ -140,7 +140,7 @@ void YAC_CALL YAC_Init(YAC_Host *_host) {
    YAC_Init_speexdsp(_host);
 
    if(yac_host->yacGetDebugLevel() > 0)
-      yac_host->printf("tkspeexdsp: init done.\n");
+      Dyac_host_log2("tkspeexdsp: init done.");
 }
 
 void YAC_CALL YAC_Exit(YAC_Host *_host) {

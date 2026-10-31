@@ -383,9 +383,7 @@ TKS_ScriptEngine::TKS_ScriptEngine(void) {
 #endif
    i_return = 0;
 
-   sig_signal       = NULL;
-   sig_segv         = NULL;
-   sig_segvcontinue = NULL;
+   unsetSignalCallbacks();
 
    cached_argc = 0;
    cached_argv = NULL;
@@ -427,8 +425,9 @@ TKS_ScriptEngine::TKS_ScriptEngine(void) {
 TKS_ScriptEngine::~TKS_ScriptEngine() {
 
    freePrintHooks();
+   unsetSignalCallbacks();
 
-   sBool bDebug = (tkscript->configuration.debug_level > 79);
+   sBool bDebug = (tkscript->configuration.debug_level > 79) && (tkscript->configuration.log_level >= 1);
    if(bDebug) ::printf("~TKS_ScriptEngine: freeScriptConstraints()\n");
 
 #ifdef DX_SCRIPTCONSTRAINTS
@@ -510,7 +509,7 @@ TKS_ScriptEngine::~TKS_ScriptEngine() {
    //::printf("::~TKS_ScriptEngine 20\n");
 
 #ifdef TKS_DCON
-   if(configuration.debug_level)
+   if(bDebug)
    {
       ::printf("[...] TKS_ScriptEngine::~TKS_ScriptEngine()\n");
    }
@@ -548,6 +547,23 @@ void TKS_ScriptEngine::freeYacFunctions(void) {
       }
       yac_functions.freeCache();
    }
+}
+
+void TKS_ScriptEngine::unsetSignalCallbacks(void) {
+   sig_signal       = NULL;
+   sig_segv         = NULL;
+   sig_segvcontinue = NULL;
+   sig_loginfo      = NULL;
+   sig_logverbose   = NULL;
+   sig_logsuccess   = NULL;
+   sig_logwarning   = NULL;
+   sig_logerror     = NULL;
+   sig_logfatal     = NULL;
+   sig_logprofile   = NULL;
+   sig_log1         = NULL;
+   sig_log2         = NULL;
+   sig_log3         = NULL;
+   sig_log4         = NULL;
 }
 
 void TKS_ScriptEngine::initProfiler(void) {
@@ -945,16 +961,27 @@ void TKS_ScriptEngine::exportPseudoTokenEntityTree(void) {
    entityTree.addEntity("rgba_4b", TKS_BFUN2_RGBA_4B);
 
    // Builtin procedures
-   entityTree.addEntity("stdout",   TKS_BPROC_STDOUT);
-   entityTree.addEntity("stderr",   TKS_BPROC_STDERR);
-   entityTree.addEntity("dcon",     TKS_BPROC_DCON);
-   entityTree.addEntity("die",      TKS_BPROC_DIE);
-   entityTree.addEntity("print",    TKS_BPROC_PRINT);
-   entityTree.addEntity("trace",    TKS_BPROC_TRACE);
-   entityTree.addEntity("dtrace",   TKS_BPROC_DTRACE);
-   entityTree.addEntity("stdflush", TKS_BPROC_STDFLUSH);
-   entityTree.addEntity("clamp",    TKS_BPROC_CLAMP);
-   entityTree.addEntity("wrap",     TKS_BPROC_WRAP);
+   entityTree.addEntity("stdout",     TKS_BPROC_STDOUT);
+   entityTree.addEntity("stderr",     TKS_BPROC_STDERR);
+   entityTree.addEntity("dcon",       TKS_BPROC_DCON);
+   entityTree.addEntity("die",        TKS_BPROC_DIE);
+   entityTree.addEntity("print",      TKS_BPROC_PRINT);
+   entityTree.addEntity("trace",      TKS_BPROC_TRACE);
+   entityTree.addEntity("dtrace",     TKS_BPROC_DTRACE);
+   entityTree.addEntity("stdflush",   TKS_BPROC_STDFLUSH);
+   entityTree.addEntity("clamp",      TKS_BPROC_CLAMP);
+   entityTree.addEntity("wrap",       TKS_BPROC_WRAP);
+   entityTree.addEntity("loginfo",    TKS_BPROC_LOGINFO);     // [...]
+   entityTree.addEntity("logverbose", TKS_BPROC_LOGVERBOSE);  // [:::]
+   entityTree.addEntity("logsuccess", TKS_BPROC_LOGSUCCESS);  // [+++]
+   entityTree.addEntity("logwarning", TKS_BPROC_LOGWARNING);  // [~~~]
+   entityTree.addEntity("logerror",   TKS_BPROC_LOGERROR);    // [---]
+   entityTree.addEntity("logfatal",   TKS_BPROC_LOGFATAL);    // [!!!]
+   entityTree.addEntity("logprofile", TKS_BPROC_LOGPROFILE);  // [pro]
+   entityTree.addEntity("log1",       TKS_BPROC_LOG1);  // [dbg]
+   // entityTree.addEntity("log2",       TKS_BPROC_LOG2);  // [trc]    == TKS_BFUN_LOG2
+   entityTree.addEntity("log3",       TKS_BPROC_LOG3);  // [>>>]
+   entityTree.addEntity("log4",       TKS_BPROC_LOG4);  // [***]
 
    entityTree.exportToC("autogen_tks_pseudotoken_entitytree_lookup.cpp", "tks_get_pseudotoken_id_by_name");
    printf("[...] wrote \"autogen_tks_pseudotoken_entitytree_lookup.cpp\"\n");
@@ -1202,24 +1229,78 @@ void TKS_ScriptEngine::callPrintHooks(YAC_String *_s) {
    b_iterating_print_hooks = YAC_FALSE;
 }
 
-void TKS_ScriptEngine::print(const char *_s, sSI _sid) {
-   // (note) called by e.g. PTN_PrintStat (trace, print, stdout, stderr, die)
+void TKS_ScriptEngine::callOnLog(void *_fxn, const char *_s, const char *_defPrefix) {
+   if(NULL != _fxn)
+   {
+      void *ctx = yacContextGetDefault();
+      YAC_String s; s.visit(_s);
+      YAC_Value args[1]; args[0].initString(&s, 0);
+      yac_host->yacEvalFunction(ctx, _fxn, 1, args);
+   }
+   else
+   {
+      ::printf("%s%s\n", _defPrefix, _s);
+   }
+}
+
+void TKS_ScriptEngine::printTarget(const char *_s, sSI _target) {
+   // (note) always prints a line (=> 's' should NOT end with linefeed)
+   switch(_target)
+   {
+      case TKS_PRINT_TARGET_DCON:    // 0: debug console
+      case TKS_PRINT_TARGET_STDOUT:  // 1: stdout
+         tks_fputs(_s);
+         break;
+      case TKS_PRINT_TARGET_STDERR:  // 2: stderr
+      case TKS_PRINT_TARGET_DIE:     // 3: die
+         tks_fputs2(_s);
+         break;
+      case TKS_PRINT_TARGET_LOGINFO:     // 4: loginfo
+         callOnLog(sig_loginfo,    _s, "[...] ");
+         break;
+      case TKS_PRINT_TARGET_LOGVERBOSE:  // 5: logverbose
+         callOnLog(sig_logverbose, _s, "[:::] ");
+         break;
+      case TKS_PRINT_TARGET_LOGSUCCESS:  // 6: logsuccess
+         callOnLog(sig_logsuccess, _s, "[+++] ");
+         break;
+      case TKS_PRINT_TARGET_LOGWARNING:  // 7: logwarning
+         callOnLog(sig_logwarning, _s, "[~~~] ");
+         break;
+      case TKS_PRINT_TARGET_LOGERROR:    // 8: logerror
+         callOnLog(sig_logerror,   _s, "[---] ");
+         break;
+      case TKS_PRINT_TARGET_LOGFATAL:    // 9: logfatal
+         callOnLog(sig_logfatal,   _s, "[!!!] ");
+         break;
+      case TKS_PRINT_TARGET_LOGPROFILE:  // 10: logprofile
+         callOnLog(sig_logprofile, _s, "[pro] ");
+         break;
+      case TKS_PRINT_TARGET_LOG1:        // 11: log1
+         callOnLog(sig_log1, _s, "[dbg] ");
+         break;
+      case TKS_PRINT_TARGET_LOG2:        // 12: log2
+         callOnLog(sig_log2, _s, "[trc] ");
+         break;
+      case TKS_PRINT_TARGET_LOG3:        // 13: log3
+         callOnLog(sig_log3, _s, "[>>>] ");
+         break;
+      case TKS_PRINT_TARGET_LOG4:        // 14: log4
+         callOnLog(sig_log4, _s, "[***] ");
+         break;
+   }
+}
+
+void TKS_ScriptEngine::print(const char *_s, sSI _target) {
+   // (note) called by e.g. PTN_PrintStat (trace, print, stdout, stderr, die,
+   //                                      loginfo, logverbose, logsuccess, logwarning, logerror, logfatal, logprofile,
+   //                                      log1, log2, log3, log4)
    lockMtxPrint();
    if(_s)
    {
       if(NULL == print_hooks || configuration.debug_level > 0)
       {
-         switch(_sid)
-         {
-            case 0: // CONSOLE, STDOUT
-            case 1:
-               tks_fputs(_s);
-               break;
-            case 2: // STDERR
-            case 3: // DIE
-               tks_fputs2(_s);
-               break;
-         }
+         printTarget(_s, _target);
       }
 
       if(NULL != print_hooks &&  !b_iterating_print_hooks)
@@ -1235,37 +1316,42 @@ void TKS_ScriptEngine::print(const char *_s, sSI _sid) {
    unlockMtxPrint();
 }
 
+static char loc_printf_buf[128*1024];
+
+void TKS_ScriptEngine::buf_va_sprintf(const char *_fmt, va_list va) {
+#ifdef YAC_VC
+   _vsnprintf((char*)loc_printf_buf, sizeof(loc_printf_buf), _fmt, va);
+#else
+#ifdef HAVE_VSNPRINTF
+   vsnprintf((char*)loc_printf_buf, sizeof(loc_printf_buf), _fmt, va);
+#else
+#warning "compiling without VSNPRINTF() support\n"
+   vsprintf((char*)loc_printf_buf, _fmt, va);
+#endif // HAVE_VSNPRINTF
+#endif // YAC_VC
+}
+
+#define Dbuf_va_sprintf \
+   va_list va; va_start(va, _fmt);              \
+   buf_va_sprintf(_fmt, va);                    \
+   va_end(va);
+
 void TKS_ScriptEngine::printf(const char *_fmt, ...) {
    if(configuration.b_enableprint && _fmt)
    {
       lockMtxPrint();
-
-      static char buf[128*1024];
-      va_list va;
-      va_start(va, _fmt);
-#ifdef YAC_VC
-      _vsnprintf((char*)buf, 128*1024, _fmt, va);
-#else
-#ifdef HAVE_VSNPRINTF
-      vsnprintf((char*)buf, 128*1024, _fmt, va);
-#else
-#warning "compiling without VSNPRINTF() support\n"
-      vsprintf((char*)buf, _fmt, va);
-#endif
-#endif
-      ////vsprintf(buf,/*, sizeof(buf)/sizeof(char),*/ _fmt, va);
-      va_end(va);
+      Dbuf_va_sprintf;
 
       if(NULL == print_hooks || configuration.debug_level > 0)
       {
-         ::fputs(buf, stdout);
+         ::fputs(loc_printf_buf, stdout);
       }
 
       if(NULL != print_hooks && !b_iterating_print_hooks)
       {
          b_iterating_print_hooks = YAC_TRUE;
          YAC_String s;
-         s.visit(buf);
+         s.visit(loc_printf_buf);
          callPrintHooks(&s);
          b_iterating_print_hooks = YAC_FALSE;
       }
@@ -1816,7 +1902,7 @@ void TKS_ScriptEngine::compileRun(sBool _bRunInBG, sBool _bTSL) {
 
 #ifdef TKS_DCON
          if(configuration.debug_level > 0u)
-            TKS_ScriptEngine::printf("[...] TKS_ScriptEngine::compileRun() finished.\n");
+            yacLog1("TKS_ScriptEngine::compileRun() finished.\n");
 #endif
       }
 
@@ -1824,14 +1910,14 @@ void TKS_ScriptEngine::compileRun(sBool _bRunInBG, sBool _bTSL) {
    else
    {
 #ifdef TKS_DCON
-      TKS_ScriptEngine::printf("[---] failed to compile chapter \"%s\".\n", tkx.current_chapter_name.chars);
+      yacLogError("failed to compile chapter \"%s\".\n", tkx.current_chapter_name.chars);
 #endif
       Dtkscompiler->parse_error = 1;
       if(0u == tkscript->ptn_error_code)
       {
          tkscript->ptn_error_code = PTNERR_ANYERR; // disables destructors
       }
-      //////Dtkscompiler->no_destructors = 1;
+      // // // Dtkscompiler->no_destructors = 1;
    }
 }
 
@@ -1886,7 +1972,7 @@ sBool TKS_ScriptEngine::loadLocalTSL(YAC_String *_libName) {
       {
          tkscript->ptn_error_code = PTNERR_ANYERR; // disables destructors
       }
-      //////Dtkscompiler->no_destructors = 1;
+      // // // Dtkscompiler->no_destructors = 1;
    }
    // yac_host->printf("xxx loadLocalTSL 4\n");
 
@@ -4375,9 +4461,123 @@ sBool TKS_ScriptEngine::yacThreadIsMain(void) {
 #endif // TKS_SKIP_API_THREAD
 }
 
+sSI TKS_ScriptEngine::yacGetLogLevel(void) {
+   return configuration.log_level;
+}
 
-YAC_String            *tks_empty_string;
-yacmemptr              tksvm_zero_args;
+void TKS_ScriptEngine::yacLogInfo(const char *_fmt, ...) {
+   if(configuration.b_log_info)
+   {
+      lockMtxPrint();
+      Dbuf_va_sprintf;
+      printTarget(loc_printf_buf, TKS_PRINT_TARGET_LOGINFO);
+      unlockMtxPrint();
+   }
+}
+
+void TKS_ScriptEngine::yacLogVerbose(const char *_fmt, ...) {
+   if(configuration.b_log_verbose)
+   {
+      lockMtxPrint();
+      Dbuf_va_sprintf;
+      printTarget(loc_printf_buf, TKS_PRINT_TARGET_LOGVERBOSE);
+      unlockMtxPrint();
+   }
+}
+
+void TKS_ScriptEngine::yacLogSuccess(const char *_fmt, ...) {
+   if(configuration.b_log_success)
+   {
+      lockMtxPrint();
+      Dbuf_va_sprintf;
+      printTarget(loc_printf_buf, TKS_PRINT_TARGET_LOGSUCCESS);
+      unlockMtxPrint();
+   }
+}
+
+void TKS_ScriptEngine::yacLogWarning(const char *_fmt, ...) {
+   if(configuration.b_log_warning)
+   {
+      lockMtxPrint();
+      Dbuf_va_sprintf;
+      printTarget(loc_printf_buf, TKS_PRINT_TARGET_LOGWARNING);
+      unlockMtxPrint();
+   }
+}
+
+void TKS_ScriptEngine::yacLogError(const char *_fmt, ...) {
+   if(configuration.b_log_error)
+   {
+      lockMtxPrint();
+      Dbuf_va_sprintf;
+      printTarget(loc_printf_buf, TKS_PRINT_TARGET_LOGERROR);
+      unlockMtxPrint();
+   }
+}
+
+void TKS_ScriptEngine::yacLogFatal(const char *_fmt, ...) {
+   if(configuration.b_log_fatal)
+   {
+      lockMtxPrint();
+      Dbuf_va_sprintf;
+      printTarget(loc_printf_buf, TKS_PRINT_TARGET_LOGFATAL);
+      unlockMtxPrint();
+   }
+}
+
+void TKS_ScriptEngine::yacLogProfile(const char *_fmt, ...) {
+   if(configuration.b_log_profile)
+   {
+      lockMtxPrint();
+      Dbuf_va_sprintf;
+      printTarget(loc_printf_buf, TKS_PRINT_TARGET_LOGPROFILE);
+      unlockMtxPrint();
+   }
+}
+
+void TKS_ScriptEngine::yacLog1(const char *_fmt, ...) {
+   if(configuration.b_log_debug && configuration.log_level >= 1)
+   {
+      lockMtxPrint();
+      Dbuf_va_sprintf;
+      printTarget(loc_printf_buf, TKS_PRINT_TARGET_LOG1);
+      unlockMtxPrint();
+   }
+}
+
+void TKS_ScriptEngine::yacLog2(const char *_fmt, ...) {
+   if(configuration.b_log_debug && configuration.log_level >= 2)
+   {
+      lockMtxPrint();
+      Dbuf_va_sprintf;
+      printTarget(loc_printf_buf, TKS_PRINT_TARGET_LOG2);
+      unlockMtxPrint();
+   }
+}
+
+void TKS_ScriptEngine::yacLog3(const char *_fmt, ...) {
+   if(configuration.b_log_debug && configuration.log_level >= 3)
+   {
+      lockMtxPrint();
+      Dbuf_va_sprintf;
+      printTarget(loc_printf_buf, TKS_PRINT_TARGET_LOG3);
+      unlockMtxPrint();
+   }
+}
+
+void TKS_ScriptEngine::yacLog4(const char *_fmt, ...) {
+   if(configuration.b_log_debug && configuration.log_level >= 4)
+   {
+      lockMtxPrint();
+      Dbuf_va_sprintf;
+      printTarget(loc_printf_buf, TKS_PRINT_TARGET_LOG4);
+      unlockMtxPrint();
+   }
+}
+
+
+YAC_String *tks_empty_string;
+yacmemptr tksvm_zero_args;
 
 #ifdef DX_TRACEFUNCTIONCALLS
 TKS_FunctionCallStackEntry  *tks_fcallstack;

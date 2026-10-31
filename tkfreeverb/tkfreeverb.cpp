@@ -115,10 +115,9 @@ sF32 Freeverb::getMode(void) {
 
 
 
-
 // ---------------------------------------------------------------------------- YAC_Init
 void YAC_CALL YAC_Init(YAC_Host *_host) {
-	yac_host=_host;
+	yac_host = _host;
 
    YAC_Init_freeverb(_host);
 }

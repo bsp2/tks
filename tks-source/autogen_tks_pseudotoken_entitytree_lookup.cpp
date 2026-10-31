@@ -104,7 +104,10 @@ sUI tks_get_pseudotoken_id_by_name(YAC_String *_s) {
          else if(s[0]=='l') {
             if(s[1]=='o') {
                if(s[2]=='g') {
-                  if(s[3]=='2')return 28;
+                  if(s[3]=='1')return 145;
+                  else if(s[3]=='2')return 28;
+                  else if(s[3]=='3')return 147;
+                  else if(s[3]=='4')return 148;
                }
             }
          }
@@ -239,7 +242,20 @@ sUI tks_get_pseudotoken_id_by_name(YAC_String *_s) {
          }
          break;
       case 7:
-         if(s[0]=='r') {
+         if(s[0]=='l') {
+            if(s[1]=='o') {
+               if(s[2]=='g') {
+                  if(s[3]=='i') {
+                     if(s[4]=='n') {
+                        if(s[5]=='f') {
+                           if(s[6]=='o')return 138;
+                        }
+                     }
+                  }
+               }
+            }
+         }
+         else if(s[0]=='r') {
             if(s[1]=='g') {
                if(s[2]=='b') {
                   if(s[3]=='a') {
@@ -254,7 +270,31 @@ sUI tks_get_pseudotoken_id_by_name(YAC_String *_s) {
          }
          break;
       case 8:
-         if(s[0]=='s') {
+         if(s[0]=='l') {
+            if(s[1]=='o') {
+               if(s[2]=='g') {
+                  if(s[3]=='e') {
+                     if(s[4]=='r') {
+                        if(s[5]=='r') {
+                           if(s[6]=='o') {
+                              if(s[7]=='r')return 142;
+                           }
+                        }
+                     }
+                  }
+                  else if(s[3]=='f') {
+                     if(s[4]=='a') {
+                        if(s[5]=='t') {
+                           if(s[6]=='a') {
+                              if(s[7]=='l')return 143;
+                           }
+                        }
+                     }
+                  }
+               }
+            }
+         }
+         else if(s[0]=='s') {
             if(s[1]=='t') {
                if(s[2]=='d') {
                   if(s[3]=='f') {
@@ -277,6 +317,66 @@ sUI tks_get_pseudotoken_id_by_name(YAC_String *_s) {
                         if(s[5]=='a') {
                            if(s[6]=='m') {
                               if(s[7]=='e')return 26;
+                           }
+                        }
+                     }
+                  }
+               }
+            }
+         }
+         break;
+      case 10:
+         if(s[0]=='l') {
+            if(s[1]=='o') {
+               if(s[2]=='g') {
+                  if(s[3]=='p') {
+                     if(s[4]=='r') {
+                        if(s[5]=='o') {
+                           if(s[6]=='f') {
+                              if(s[7]=='i') {
+                                 if(s[8]=='l') {
+                                    if(s[9]=='e')return 144;
+                                 }
+                              }
+                           }
+                        }
+                     }
+                  }
+                  else if(s[3]=='s') {
+                     if(s[4]=='u') {
+                        if(s[5]=='c') {
+                           if(s[6]=='c') {
+                              if(s[7]=='e') {
+                                 if(s[8]=='s') {
+                                    if(s[9]=='s')return 140;
+                                 }
+                              }
+                           }
+                        }
+                     }
+                  }
+                  else if(s[3]=='v') {
+                     if(s[4]=='e') {
+                        if(s[5]=='r') {
+                           if(s[6]=='b') {
+                              if(s[7]=='o') {
+                                 if(s[8]=='s') {
+                                    if(s[9]=='e')return 139;
+                                 }
+                              }
+                           }
+                        }
+                     }
+                  }
+                  else if(s[3]=='w') {
+                     if(s[4]=='a') {
+                        if(s[5]=='r') {
+                           if(s[6]=='n') {
+                              if(s[7]=='i') {
+                                 if(s[8]=='n') {
+                                    if(s[9]=='g')return 141;
+                                 }
+                              }
                            }
                         }
                      }

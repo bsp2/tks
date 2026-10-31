@@ -167,7 +167,9 @@ void YAC_CALL YAC_Init(YAC_Host *_host) {
    Dyac_std_exid_resolve;
 
    YAC_Init_test(_host);
-   yac_host->printf("init done.\n");
+
+	if(Dyac_host_yacGetDebugLevel() > 1)
+      Dyac_host_log2("yingtest: init done.");
 }
 
 void YAC_CALL YAC_Exit(YAC_Host *_host) {

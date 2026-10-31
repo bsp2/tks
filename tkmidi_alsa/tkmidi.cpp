@@ -1,11 +1,14 @@
 /// tkmidi.cpp
 ///
-/// (c) 2006-2014 Bastian Spiegel <bs@tkscript.de>
+/// (c) 2006-2026 Bastian Spiegel <bs@tkscript.de>
 ///     - Distributed under terms of the Lesser GNU General Public License (LGPL).
 ///       See COPYING and <http://www.gnu.org/licenses/licenses.html#LGPL> for further information.
 ///
 ///
-/// changed: 08Sep2006, 04Feb2014, 05Feb2014
+/// created: 08Sep2006
+/// changed: 04Feb2014, 05Feb2014, 31Oct2026
+///
+///
 ///
 
 #include <pthread.h>
@@ -56,7 +59,7 @@ void YAC_CALL YAC_Exit(YAC_Host *_host) {
 
 	if(yac_host->yacGetDebugLevel() > 0)
    {
-      yac_host->printf("tkmidi::YAC_Exit ENTER.\n");
+      Dyac_host_log2("tkmidi::YAC_Exit ENTER.");
    }
 
    MIDIIn::FreeAlsaDeviceInfos();
@@ -66,9 +69,9 @@ void YAC_CALL YAC_Exit(YAC_Host *_host) {
 
    yac_host->yacMutexDestroy(mtx_miditimer);
 
-	if(yac_host->yacGetDebugLevel() > 0)
+	if(Dyac_host_yacGetDebugLevel() > 0)
    {
-      yac_host->printf("tkmidi::YAC_Exit LEAVE.\n");
+      Dyac_host_log2("tkmidi::YAC_Exit LEAVE.");
    }
 }
 

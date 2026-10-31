@@ -28,6 +28,7 @@
 /// created: 06May2008
 /// changed: 07May2008, 08May2008, 12Jun2018, 13Jun2018, 14Jun2018, 18Jun2018, 19Jul2018
 ///          19Sep2021, 22Sep2021, 23Sep2021, 24Sep2021, 21Dec2024, 03Apr2026, 04Apr2026
+///          31Oct2026
 ///
 ///
 ///
@@ -3084,14 +3085,14 @@ void YAC_CALL YAC_Init(YAC_Host *_host) {
 void YAC_CALL YAC_Exit(YAC_Host *_host) {
    if(yac_host->yacGetDebugLevel() > 0)
    {
-      yac_host->printf("[...] tkchipmunk::YAC_Exit() beg.\n");
+      Dyac_host_log2("tkchipmunk::YAC_Exit() begin.");
    }
 
    YAC_Exit_cp(_host);
 
    if(yac_host->yacGetDebugLevel() > 0)
    {
-      yac_host->printf("[...] tkchipmunk::YAC_Exit() end.\n");
+      Dyac_host_log2("tkchipmunk::YAC_Exit() end.");
    }
 
    //printf("xxx oc_cpvect=%d\n", oc_cpvect);

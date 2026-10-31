@@ -352,6 +352,9 @@ static void ST_PLUGIN_API loc_process_replace(st_plugin_voice_t  *_voice,
 }
 
 static st_plugin_shared_t *ST_PLUGIN_API loc_shared_new(st_plugin_info_t *_info) {
+#ifdef SKIP_WAVE_MULTIPLIER
+   return NULL;
+#endif
    wave_multiplier_delay4_shared_t *ret = (wave_multiplier_delay4_shared_t *)malloc(sizeof(wave_multiplier_delay4_shared_t));
    if(NULL != ret)
    {

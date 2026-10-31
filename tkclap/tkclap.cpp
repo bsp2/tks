@@ -1,12 +1,12 @@
 /// tkclap.cpp
 ///
-/// (c) 2024-2025 Bastian Spiegel <bs@tkscript.de>
+/// (c) 2024-2026 Bastian Spiegel <bs@tkscript.de>
 ///     - Distributed under terms of the Lesser GNU General Public License (LGPL).
 ///       See COPYING and <http://www.gnu.org/licenses/licenses.html#LGPL> for further information.
 ///
 ///
 /// created: 01Jul2024
-/// changed: 05Jul2024, 19Apr2026
+/// changed: 05Jul2024, 19Apr2026, 31Oct2026
 ///
 ///
 ///
@@ -48,7 +48,7 @@ void YAC_CALL YAC_Init(YAC_Host *_host) {
 	yac_host = _host;
 
 	if(yac_host->yacGetDebugLevel())
-      yac_host->printf("[dbg] tkclap::YAC_Init called.\n");
+      Dyac_host_log2("tkclap::YAC_Init called.");
 
    YAC_Init_clap(_host);
 

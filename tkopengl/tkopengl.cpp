@@ -320,7 +320,7 @@ void YAC_CALL YAC_Init(YAC_Host *_host) {
    loc_shared_export();
 
 	if(yac_host->yacGetDebugLevel() > 1)
-		yac_host->yacPrint("[dbg] tkopengl::YAC_Init() finished.\n");
+		Dyac_host_log2("tkopengl::YAC_Init() finished.");
 
    // Add tksdl viewport open/close hooks
    tkopengl_hook_install();
@@ -340,7 +340,7 @@ void YAC_CALL YAC_Exit(YAC_Host *_host) {
 	YAC_Exit_OpenGL  (_host);
 
 	if(yac_host->yacGetDebugLevel() > 1)
-		yac_host->yacPrint("[dbg] tkopengl::YAC_Exit() finished.\n");
+		Dyac_host_log2("tkopengl::YAC_Exit() finished.");
 }
 
 sUI YAC_CALL YAC_Version(void) {

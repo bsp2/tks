@@ -18,7 +18,16 @@
 
 
 TKS_Configuration::TKS_Configuration(void) {
-   debug_level                   = 0;
+   debug_level                   = 0u;
+   log_level                     = -1;
+   b_log_info                    = YAC_TRUE;
+   b_log_verbose                 = YAC_TRUE;
+   b_log_success                 = YAC_TRUE;
+   b_log_warning                 = YAC_TRUE;
+   b_log_error                   = YAC_TRUE;
+   b_log_fatal                   = YAC_TRUE;
+   b_log_profile                 = YAC_TRUE;
+   b_log_debug                   = YAC_TRUE;
    b_forceint                    = YAC_FALSE;
    b_checkbounds                 = YAC_TRUE;
    b_autoresizearrays            = YAC_TRUE;
@@ -57,14 +66,15 @@ TKS_Configuration::TKS_Configuration(void) {
    {
       plugin_path.alloc(256);
       HKEY hkey;
-      LONG r=::RegOpenKeyEx(HKEY_LOCAL_MACHINE, TEXT("Software\\TKS"),
-         0, KEY_QUERY_VALUE, &hkey);
+      LONG r = ::RegOpenKeyEx(HKEY_LOCAL_MACHINE, TEXT("Software\\TKS"),
+                              0, KEY_QUERY_VALUE, &hkey
+                              );
 
       if(ERROR_SUCCESS == r)
       {
          DWORD dwType, dwSize;
-         dwType=REG_SZ;
-         dwSize=255;
+         dwType = REG_SZ;
+         dwSize = 255;
          ::RegQueryValueEx(hkey, TEXT("TKS_PLUGIN_PATH"), 0, &dwType, (PBYTE)plugin_path.chars/*&m_szPluginPath*/, &dwSize);
          ::RegCloseKey(hkey);
          plugin_path.fixLength();
@@ -75,22 +85,24 @@ TKS_Configuration::TKS_Configuration(void) {
 	{
 	  HKEY hkey;
      // Try to read from local user settings
-	  LONG r=::RegOpenKeyEx(HKEY_CURRENT_USER, TEXT("Software\\Cygnus Solutions\\Cygwin\\mounts v2\\/usr/lib"),
-                           0, KEY_QUERY_VALUE, &hkey);
+	  LONG r = ::RegOpenKeyEx(HKEY_CURRENT_USER, TEXT("Software\\Cygnus Solutions\\Cygwin\\mounts v2\\/usr/lib"),
+                             0, KEY_QUERY_VALUE, &hkey
+                             );
 
      if(ERROR_SUCCESS != r)
      {
         // Try to read from global system settings (if cygwin was installed as root)
-        r=::RegOpenKeyEx(HKEY_LOCAL_MACHINE, TEXT("Software\\Cygnus Solutions\\Cygwin\\mounts v2\\/usr/lib"),
-                              0, KEY_QUERY_VALUE, &hkey);
+        r = ::RegOpenKeyEx(HKEY_LOCAL_MACHINE, TEXT("Software\\Cygnus Solutions\\Cygwin\\mounts v2\\/usr/lib"),
+                           0, KEY_QUERY_VALUE, &hkey
+                           );
      }
 
 	  if(ERROR_SUCCESS == r)
      {
         cygwin_usrlib.alloc(256);
         DWORD dwType, dwSize;
-        dwType=REG_SZ;
-        dwSize=255;
+        dwType = REG_SZ;
+        dwSize = 255;
         ::RegQueryValueEx(hkey, TEXT("native"), 0, &dwType, (PBYTE)cygwin_usrlib.chars, &dwSize);
         ::RegCloseKey(hkey);
         cygwin_usrlib.fixLength();
@@ -119,14 +131,19 @@ TKS_Configuration::TKS_Configuration(void) {
 		module_path.alloc(256);
 		HKEY hkey;
 		LONG r=::RegOpenKeyEx(HKEY_LOCAL_MACHINE, TEXT("Software\\TKS"),
-		0, KEY_QUERY_VALUE, &hkey);
+                            0, KEY_QUERY_VALUE, &hkey
+                            );
 
 		if(ERROR_SUCCESS == r)
 		{
 			DWORD dwType, dwSize;
-			dwType=REG_SZ;
-			dwSize=255;
-			::RegQueryValueEx(hkey, TEXT("TKS_MODULE_PATH"), 0, &dwType, (PBYTE)module_path.chars/*&m_szPluginPath*/, &dwSize);
+			dwType = REG_SZ;
+			dwSize = 255;
+			::RegQueryValueEx(hkey, TEXT("TKS_MODULE_PATH"),
+                           0, &dwType,
+                           (PBYTE)module_path.chars/*&m_szPluginPath*/,
+                           &dwSize
+                           );
 			::RegCloseKey(hkey);
 			module_path.fixLength();
 		}
@@ -154,9 +171,13 @@ TKS_Configuration::TKS_Configuration(void) {
 		if(ERROR_SUCCESS == r)
 		{
 			DWORD dwType, dwSize;
-			dwType=REG_SZ;
-			dwSize=255;
-			::RegQueryValueEx(hkey, TEXT("TKS_LIBRARY_PATH"), 0, &dwType, (PBYTE)library_path.chars/*&m_szPluginPath*/, &dwSize);
+			dwType = REG_SZ;
+			dwSize = 255;
+			::RegQueryValueEx(hkey, TEXT("TKS_LIBRARY_PATH"),
+                           0, &dwType,
+                           (PBYTE)library_path.chars/*&m_szPluginPath*/,
+                           &dwSize
+                           );
 			::RegCloseKey(hkey);
 			library_path.fixLength();
 		}
@@ -177,15 +198,20 @@ TKS_Configuration::TKS_Configuration(void) {
 	{
 		application_path.alloc(256);
 		HKEY hkey;
-		LONG r=::RegOpenKeyEx(HKEY_LOCAL_MACHINE, TEXT("Software\\TKS"),
-		0, KEY_QUERY_VALUE, &hkey);
+		LONG r = ::RegOpenKeyEx(HKEY_LOCAL_MACHINE, TEXT("Software\\TKS"),
+                              0, KEY_QUERY_VALUE, &hkey
+                              );
 
 		if(ERROR_SUCCESS == r)
 		{
 			DWORD dwType, dwSize;
-			dwType=REG_SZ;
-			dwSize=255;
-			::RegQueryValueEx(hkey, TEXT("TKS_APPLICATION_PATH"), 0, &dwType, (PBYTE)application_path.chars/*&m_szPluginPath*/, &dwSize);
+			dwType = REG_SZ;
+			dwSize = 255;
+			::RegQueryValueEx(hkey, TEXT("TKS_APPLICATION_PATH"),
+                           0, &dwType,
+                           (PBYTE)application_path.chars/*&m_szPluginPath*/,
+                           &dwSize
+                           );
 			::RegCloseKey(hkey);
 			application_path.fixLength();
 		}
@@ -240,4 +266,15 @@ void TKS_Configuration::lazySetFallbackPaths(void) {
       application_path.yacCopy(&tkscript->configuration.tks_exe_dir);  // use exe dir + "/applications/"
       application_path.append("/applications/");
    }
+}
+
+void TKS_Configuration::logAll(sBool _bEnable) {
+   b_log_info    = _bEnable;
+   b_log_verbose = _bEnable;
+   b_log_success = _bEnable;
+   b_log_warning = _bEnable;
+   b_log_error   = _bEnable;
+   b_log_fatal   = _bEnable;
+   b_log_profile = _bEnable;
+   b_log_debug   = _bEnable;
 }

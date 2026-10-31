@@ -23,13 +23,15 @@ Dyac_std_exid_impl;
 
 // ---------------------------------------------------------------------------- YAC_Init
 void YAC_CALL YAC_Init(YAC_Host *_host) {
-	yac_host=_host;
+	yac_host = _host;
 
    // Resolve "standard" exception IDs
    Dyac_std_exid_resolve;
 
    YAC_Init_tkbluetooth(_host);
-   yac_host->printf("tkbluetooth init done.\n");
+
+	if(yac_host->yacGetDebugLevel())
+      Dyac_host_log2("tkbluetooth init done.");
 }
 
 void YAC_CALL YAC_Exit(YAC_Host *_host) {

@@ -14,13 +14,19 @@ YAC_Host *yac_host;
 #include "ying_tkgmp.cpp"
 
 void YAC_CALL YAC_Init(YAC_Host *_host) {
-	yac_host=_host;
+	yac_host = _host;
+
 	YAC_Init_tkgmp(_host);
-	yac_host->printf("[tkgmp] Initialised.\n");
+
+	if(Dyac_host_yacGetDebugLevel() > 1)
+      Dyac_host_log2("tkgmp::YAC_Init called.\n");
 }
 
 void YAC_CALL YAC_Exit(YAC_Host *_host) {
 	YAC_Exit_tkgmp(_host);
+
+	if(Dyac_host_yacGetDebugLevel() > 1)
+      Dyac_host_log2("tkgmp::YAC_Exit called.\n");
 }
 
 #include "BigInt.cpp"

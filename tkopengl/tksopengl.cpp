@@ -68,14 +68,14 @@ extern YAC_Host *yac_host;
 #define Ddbghaveext(a, n) \
       if(yac_host->yacGetDebugLevel() > 0)\
       {\
-         yac_host->printf("[dbg]      " n " extension: %s\n",\
-                          ((a##_xref) != NULL) ? "FOUND" : "!!NOT PRESENT!!");\
+         Dyac_host_log1("     " n " extension: %s",\
+                        ((a##_xref) != NULL) ? "FOUND" : "!!NOT PRESENT!!"); \
       }\
       (void)0
 
 #define Dcheckext(a) if(NULL == a##_xref) \
    {                                                                    \
-      yac_host->printf("[---] tkopengl: unresolved extension function \"%s\" called.\n", #a); \
+      Dyac_host_logerror("tkopengl: unresolved extension function \"%s\" called.", #a); \
       last_gl_error = GL_INVALID_OPERATION;                             \
    }                                                                    \
    else
@@ -84,7 +84,7 @@ extern YAC_Host *yac_host;
 
 #define Dcompat(a) if(tkopengl_b_glcore) \
    {                                                                    \
-      yac_host->printf("[---] tkopengl: illegal call to compatibility-profile function \"%s\" in core-profile context\n", #a); \
+      Dyac_host_logerror("tkopengl: illegal call to compatibility-profile function \"%s\" in core-profile context", #a); \
       last_gl_error = GL_INVALID_OPERATION;                             \
    }                                                                    \
    else
@@ -335,7 +335,7 @@ void YAC_CALL _zglLoadExtensions(void) {
    {
       if(yac_host->yacGetDebugLevel() > 0)
       {
-         yac_host->printf("[dbg] tkopengl::zglLoadExtensions:\n");
+         Dyac_host_log1("tkopengl::zglLoadExtensions:");
       }
 
       // Buffer objects
@@ -501,15 +501,15 @@ void YAC_CALL _zglLoadExtensions(void) {
       Dglesbuiltin(glUseProgram);
       Dglesbuiltin(glBindAttribLocation);
       Dglesbuiltin(glGetAttribLocation);
-      ////Dglesbuiltin(glBindFragDataLocation);
-      ////Dglesbuiltin(glBindFragDataLocationIndexed);
-      ////Dglesbuiltin(glGetFragDataLocation);
-      ////Dglesbuiltin(glGetFragDataIndex);
+      // // Dglesbuiltin(glBindFragDataLocation);
+      // // Dglesbuiltin(glBindFragDataLocationIndexed);
+      // // Dglesbuiltin(glGetFragDataLocation);
+      // // Dglesbuiltin(glGetFragDataIndex);
       Dglesbuiltin(glVertexAttrib1f);
       Dglesbuiltin(glVertexAttrib2f);
       Dglesbuiltin(glVertexAttrib3f);
       Dglesbuiltin(glVertexAttrib4f);
-      ////Dglesbuiltin(glVertexAttrib4Nub);
+      // // Dglesbuiltin(glVertexAttrib4Nub);
       Dglesbuiltin(glVertexAttrib2fv);
       Dglesbuiltin(glVertexAttrib3fv);
       Dglesbuiltin(glVertexAttrib4fv);

@@ -1,14 +1,14 @@
 // ----
 // ---- file   : tkzip.cpp
 // ---- author : Bastian Spiegel <bs@tkscript.de>
-// ---- legal  : (c) 2020-2025 by Bastian Spiegel.
+// ---- legal  : (c) 2020-2026 by Bastian Spiegel.
 // ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
 // ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
 // ----
 // ---- info   : libzip interface
 // ----
 // ---- created: 04Jan2020
-// ---- changed: 10Jan2020
+// ---- changed: 10Jan2020, 31Oct2026
 // ----
 // ----
 // ----
@@ -397,11 +397,14 @@ void YAC_CALL YAC_Init(YAC_Host *_host) {
    YAC_Init_zip(_host);
 
    if(yac_host->yacGetDebugLevel() > 0)
-      yac_host->printf("tkzip: init done.\n");
+      Dyac_host_log2("tkzip: init done.");
 }
 
 void YAC_CALL YAC_Exit(YAC_Host *_host) {
    YAC_Exit_zip(_host);
+
+   if(yac_host->yacGetDebugLevel() > 0)
+      Dyac_host_log2("tkzip: exit done.");
 }
 
 

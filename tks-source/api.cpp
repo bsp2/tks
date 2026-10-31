@@ -11621,9 +11621,89 @@ YC class _Configuration : public TKS_ConfigurationInter {
 public:
    YAC(_Configuration);
 
+/* @method setLogLevel,int level
+
+Set the TkScript log level.
+
+Level 0 disables all log messages (default).
+Level 1 enables debug messages [dbg].
+Level 2 enables verbose debug messages [trc].
+Level 3 enables very verbose messages [>>>].
+Level 4 enables very, very verbose debug messages [***].
+
+@arg level Log level (0..4)
+*/
+   YM //void setLogLevel (sSI);
+
+/* @method getLogLevel:int
+
+Return the current TkScript log level.
+
+@return Current log level (0..4)
+*/
+   YM //sSI  getLogLevel (void);
+
+/* @method getEnableLogInfo:boolean
+Query if info log messages are enabled.
+
+@return Info log message status
+*/
+   YM //sBool getEnableLogInfo (void);
+
+/* @method getEnableLogVerbose:boolean
+Query if verbose log messages are enabled.
+
+@return Verbose log message status
+*/
+   YM //sBool getEnableLogVerbose (void);
+
+/* @method getEnableLogSuccess:boolean
+Query if success log messages are enabled.
+
+@return Success log message status
+*/
+   YM //sBool getEnableLogSuccess (void);
+
+/* @method getEnableLogWarning:boolean
+Query if warning log messages are enabled.
+
+@return Warning log message status
+*/
+   YM //sBool getEnableLogWarning (void);
+
+/* @method getEnableLogError:boolean
+Query if error log messages are enabled.
+
+@return Error log message status
+*/
+   YM //sBool getEnableLogError (void);
+
+/* @method getEnableLogFatal:boolean
+Query if fatal log messages are enabled.
+
+@return Fatal log message status
+*/
+   YM //sBool getEnableLogFatal (void);
+
+/* @method getEnableLogDebug:boolean
+Query if debug log messages are enabled.
+
+@return Debug log message status
+*/
+   YM //sBool getEnableLogDebug (void);
+
+/* @method getEnableLogProfile:boolean
+Query if profile log messages are enabled.
+
+@return Profile log message status
+*/
+   YM //sBool getEnableLogProfile (void);
+
 /* @method setDebugLevel,int level
 
 Set the TkScript debug level.
+
+This affects the granularity of the log messages.
 
 @arg level Debug level (0..99)
 */

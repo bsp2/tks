@@ -1,12 +1,12 @@
 /// tkvst.cpp
 ///
-/// (c) 2010-2024 Bastian Spiegel <bs@tkscript.de>
+/// (c) 2010-2026 Bastian Spiegel <bs@tkscript.de>
 ///     - Distributed under terms of the Lesser GNU General Public License (LGPL).
 ///       See COPYING and <http://www.gnu.org/licenses/licenses.html#LGPL> for further information.
 ///
 ///
 /// created: 01Oct2010
-/// changed: 02Oct2010, 06Oct2010, 10Oct2010, 13Oct2010, 05Feb2023, 01Jul2024
+/// changed: 02Oct2010, 06Oct2010, 10Oct2010, 13Oct2010, 05Feb2023, 01Jul2024, 31Oct2026
 ///
 ///
 ///
@@ -41,10 +41,10 @@ void tkvst2_set_song_pos_ppq(sF32 _songPosPPQ, sBool _bPlaying) {
 }
 void YAC_CALL YAC_Init(YAC_Host *_host) {
 	yac_host = _host;
-   
-	if(yac_host->yacGetDebugLevel()) 
-      yac_host->printf("[dbg] tkvst2::YAC_Init called.\n");
-   
+
+	if(yac_host->yacGetDebugLevel())
+      Dyac_host_log2("tkvst2::YAC_Init called.");
+
    YAC_Init_vst2(_host);
 
    for(sUI i = 0u; i < VST2PLUGIN_NUM_SIGNALS; i++)

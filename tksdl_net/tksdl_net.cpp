@@ -1,6 +1,6 @@
 /// tksdl_net.cpp
 ///
-/// (c) 2001-2009 by Bastian Spiegel <bs@tkscript.de>
+/// (c) 2001-2026 by Bastian Spiegel <bs@tkscript.de>
 ///     - Distributed under terms of the Lesser GNU General Public License (LGPL).
 ///       See COPYING and <http://www.gnu.org/licenses/licenses.html#LGPL> for further information.
 ///
@@ -42,10 +42,10 @@ YAC_Host *yac_host;
 
 // ---------------------------------------------------------------------------
 void YAC_CALL YAC_Init(YAC_Host *_host) {
-	yac_host=_host;
+	yac_host = _host;
 
-	if(_host->yacGetDebugLevel()) 
-	  _host->printf("[dbg] tksdl_net::YAC_Init called.\n");
+	if(Dyac_host_yacGetDebugLevel() > 1)
+      Dyac_host_log2("tksdl_net::YAC_Init called.");
 
 #ifdef YAC_GLOBAL_NEWDELETE
    _host->printf("[dbg] tksdl_net: yac_global_newdelete_counter=%d\n", yac_host->yacNewDeleteGetCounter());
@@ -55,25 +55,24 @@ void YAC_CALL YAC_Init(YAC_Host *_host) {
 
 	YAC_Init_network(_host);
 
-	if(yac_host->yacGetDebugLevel())
-		yac_host->yacPrint("[dbg] tksdl_net::YAC_Init() finished.\n");
+	if(Dyac_host_yacGetDebugLevel() > 1)
+		Dyac_host_log2("tksdl_net::YAC_Init() finished.");
 }
 
 void YAC_CALL YAC_Exit(YAC_Host *_host) {
-   sBool bDebug=yac_host->yacGetDebugLevel()>0;
+   sBool bDebug = (Dyac_host_yacGetDebugLevel() > 1);
 	if(bDebug)
-		yac_host->yacPrint("[dbg] tksdl_net::YAC_Exit() called.\n");
+		Dyac_host_log2("tksdl_net::YAC_Exit() called.");
 
    YAC_Exit_network      (_host);
 
 	::SDLNet_Quit();
 
-	if(yac_host->yacGetDebugLevel())
-		yac_host->yacPrint("[dbg] tksdl_net::YAC_Exit() finished.\n");
+	if(bDebug)
+		Dyac_host_log2("tksdl_net::YAC_Exit() finished.");
 
 }
 
 sUI YAC_CALL YAC_Version(void) {
 	return 0x00090226;
 }
-

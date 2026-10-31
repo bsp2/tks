@@ -121,24 +121,24 @@ void YAC_CALL YAC_Exit(YAC_Host *_host) {
    sBool bDebug = (yac_host->yacGetDebugLevel() > 1);
 
 	if(bDebug)
-		yac_host->yacPrint("[dbg] tksdl::YAC_Exit() called.\n");
+		Dyac_host_log3("tksdl::YAC_Exit() called.");
 
    if(bDebug)
-      yac_host->yacPrint("[dbg] tksdl: exit audio.\n");
+      Dyac_host_log3("tksdl: exit audio.");
    YAC_Exit_audio        (_host);
 
    if(bDebug)
-      yac_host->yacPrint("[dbg] tksdl: exit hal1.\n");
+      Dyac_host_log3("tksdl: exit hal1.");
    YAC_Exit_hal1         (_host);
 
    if(bDebug)
-      yac_host->yacPrint("[dbg] tksdl: exit hal.\n");
+      Dyac_host_log3("tksdl: exit hal.");
    YAC_Exit_hal          (_host);
 
 	::SDL_Quit();
 
 	if(bDebug)
-		yac_host->yacPrint("[dbg] tksdl::YAC_Exit() finished.\n");
+		Dyac_host_log2("tksdl::YAC_Exit() finished.");
 
 }
 

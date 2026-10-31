@@ -1,4 +1,4 @@
-// 01Aug2008, 12Apr2010, 09Jul2021, 10Jul2021, 11Jul2021, 18Jun2022
+// 01Aug2008, 12Apr2010, 09Jul2021, 10Jul2021, 11Jul2021, 18Jun2022, 31Oct2026
 
 // (note) [09Jul2021] sending CC is faster but does not work when all timbres listen to the same MIDI ch (but play different voices)
 //         => send everthing via sysex param change messages
@@ -20,18 +20,23 @@ YAC_Host *yac_host;
 void YAC_CALL YAC_Init(YAC_Host *_host) {
 	yac_host=_host;
    YAC_Init_tkradiastools(_host);
-   // yac_host->printf("tkradiastools: init done.\n");
+
+	if(yac_host->yacGetDebugLevel() > 0)
+		Dyac_host_log2("tkradiastools::YAC_Init() done.");
 }
 
 void YAC_CALL YAC_Exit(YAC_Host *_host) {
    YAC_Exit_tkradiastools(_host);
+
+	if(yac_host->yacGetDebugLevel() > 0)
+		Dyac_host_log2("tkradiastools::YAC_Exit() done.");
 }
 
 
 // State fields, updated in tkradiastools_update_program_timbre/tkradiastools_update_drumkit_timbre
-static sU8 *prog_state; 
+static sU8 *prog_state;
 static sU8 *prog_data;
-static sU8 *drumkit_state; 
+static sU8 *drumkit_state;
 static sU8 *drumkit_data;
 static YAC_Buffer *out;
 static YAC_Buffer *cc;
@@ -60,7 +65,7 @@ static sBool b_force;
 //-----------------------------------------------------------------------------
 #if 0
 static void change_program_parameter(sU8 _paramGroup, sU16 _paramIdLSBSubIdLSB, sS16 _paramValue) {
-   
+
    ////trace "Korg_Radias_ChangeParameter(group="+_paramGroup+" paramId="+_paramIdLSBSubIdLSB+" value="+_paramValue+")";
    out->yacStreamWriteI8( 0xF0 );
    out->yacStreamWriteI8( 0x42 ); // Korg Id
@@ -71,7 +76,7 @@ static void change_program_parameter(sU8 _paramGroup, sU16 _paramIdLSBSubIdLSB, 
    out->yacStreamWriteI8( 0 );
    out->yacStreamWriteI8( _paramIdLSBSubIdLSB&127 ); // Parameter Sub Id MSB
    out->yacStreamWriteI8( 0 );
-   out->yacStreamWriteI8( _paramValue&127 ); 
+   out->yacStreamWriteI8( _paramValue&127 );
    out->yacStreamWriteI8( (_paramValue>>7)&127 );
    out->yacStreamWriteI8( 0xF7 );
    ////trace "out:";
@@ -83,7 +88,7 @@ static void change_program_parameter(sU8 _paramGroup, sU16 _paramIdLSBSubIdLSB, 
 static void update_program_timbre_add_pc(sU16 _paramIdSubId, sS16 _paramValue) {
    sU16 id = (_paramIdSubId>>8)&255;
    sU16 subId = _paramIdSubId&255;
-   
+
    out->yacStreamWriteI8( 0xF0 );
    out->yacStreamWriteI8( 0x42 ); // Korg Id
    out->yacStreamWriteI8( 0x30 | RADIAS_DEVICE_NR );
@@ -93,7 +98,7 @@ static void update_program_timbre_add_pc(sU16 _paramIdSubId, sS16 _paramValue) {
    out->yacStreamWriteI8( (id>>7)&127 ); // Parameter Id MSB
    out->yacStreamWriteI8( subId&127 ); // Parameter Sub Id LSB
    out->yacStreamWriteI8( (subId>>7)&127 ); // Parameter Sub Id MSB
-   out->yacStreamWriteI8( _paramValue&127 ); 
+   out->yacStreamWriteI8( _paramValue&127 );
    out->yacStreamWriteI8( (_paramValue>>7)&127 );
    out->yacStreamWriteI8( 0xF7 );
 }
@@ -131,13 +136,13 @@ static void update_program_timbre_sbyte(int _off, int _pcOff) {
 #if 0
 static void update_program_timbre_cc(sSI _timbre, sSI _off, sU8 _ctl) {
    //explain "Verify that controller change is really necessary and send it to the device if it is.";
-   
+
    sU8 sv = prog_state[_off];
    sU8 dv = prog_data[_off];
    ////yac_host->printf("xxx update_program_timbre_cc off=%d ctl=%d sv=%d dv=%d\n", _off, _ctl, sv, dv);
    if(b_force || (sv != dv))
    {
-      if(cc->io_offset == 0) 
+      if(cc->io_offset == 0)
       {
          cc->yacStreamWriteI8( 0xB0 | (_timbre+1) );
       }
@@ -152,8 +157,8 @@ static void update_program_timbre_cc(sSI _timbre, sSI _off, sU8 _ctl) {
 #if 0
 static void update_program_timbre_cc2(sSI _timbre, sU8 _val, sU8 _ctl) {
    //explain "Send controller change to the device.";
-   
-   if(cc->io_offset == 0) 
+
+   if(cc->io_offset == 0)
    {
       cc->yacStreamWriteI8( 0xB0 | (_timbre+1) );
    }
@@ -269,10 +274,10 @@ static void update_ifx(sSI off, sSI pcOff) {
    prog_state[off] = dv;
    if( (dv&0x80) ) // Fx enabled ?
    {
-      sU8 fxType = (dv&0x3f); 
+      sU8 fxType = (dv&0x3f);
       if(fxType>30) // should never happen (OS update ??)
       {
-         fxType=30; 
+         fxType=30;
       }
 
       if(b_force || ( (sv&0x3F) != (dv&0x3f) ) )
@@ -285,7 +290,7 @@ static void update_ifx(sSI off, sSI pcOff) {
 
       // dummy byte
       off++;
-         
+
       // Fx knob1 assign
       sv = prog_state[off];
       dv = prog_data[off];
@@ -294,7 +299,7 @@ static void update_ifx(sSI off, sSI pcOff) {
          update_program_timbre_add_pc(pcOff+0x02, (dv&0x3f));
       }
       off++;
-         
+
       // Fx knob2 assign
       sv = prog_state[off];
       dv = prog_data[off];
@@ -310,7 +315,7 @@ static void update_ifx(sSI off, sSI pcOff) {
          update_program_timbre_ifxparam(off, pcOff+0x10+paramIdx, fxType, paramIdx);
          off++;
       }
-         
+
    }
 }
 
@@ -345,10 +350,10 @@ static void update_mfx(sSI off, sSI pcOff) {
    prog_state[off] = dv;
    if( (dv&0x80) ) // Fx enabled ?
    {
-      sU8 fxType = (dv&0x3f); 
+      sU8 fxType = (dv&0x3f);
       if(fxType>30) // should never happen (OS update ??)
       {
-         fxType=30; 
+         fxType=30;
       }
 
       if(b_force || ( (sv&0x3F) != (dv&0x3f) ) )
@@ -367,14 +372,14 @@ static void update_mfx(sSI off, sSI pcOff) {
          update_program_timbre_add_pc(pcOff+0x02, (dv&0x3f));
       }
       off++;
-         
+
       // Fx Parameters 1..20
       for(sSI paramIdx = 0; paramIdx < 20; paramIdx++)
       {
          update_program_timbre_mfxparam(off, pcOff+0x0100+paramIdx, fxType, paramIdx);
          off++;
       }
-         
+
    }
 }
 
@@ -491,7 +496,7 @@ static void update_vocoder(sSI off, sSI pcOff) {
 
       // // Timbre 1 Select
       // update_program_timbre_add_pc(pcOff+0x0314, (dv&0x01)   );
-      
+
       // InSrc1 Timbre Select
       update_program_timbre_add_pc(pcOff+0x0314, (dv&0x03)   );
    }
@@ -506,9 +511,9 @@ static void update_program_timbre(sSI _timbre, sBool _bSendFX) {
    int off = 48 + (RADIAS_TIMBREDATASIZE * _timbre); // byte offset in program dump (decoded!)
    sU8 sv;
    sU8 dv;
-   
+
    // TABLE 2 : TIMBRE PARAMETER
-   
+
    // Timbre SW, Sub Output select, Arpg/Sseq Assign
    sv = prog_state[off];
    dv = prog_data[off];
@@ -530,17 +535,17 @@ static void update_program_timbre(sSI _timbre, sBool _bSendFX) {
       prog_state[off] = dv;
    }
    off++;
-   
+
    // Dummy byte (1)
    off++;
-   
+
    // Out Balance
    update_program_timbre_byte(off, pcOff+0x0004);
    off++;
-   
+
    // Dummy byte (3)
    off++;
-   
+
    // Midi Ch
    sv = prog_state[off];
    dv = prog_data[off];
@@ -549,7 +554,7 @@ static void update_program_timbre(sSI _timbre, sBool _bSendFX) {
       update_program_timbre_byte(off, pcOff+0x0100);
    }
    off++;
-   
+
    // Pitch bend, .. filters
    sv = prog_state[off];
    dv = prog_data[off];
@@ -590,15 +595,15 @@ static void update_program_timbre(sSI _timbre, sBool _bSendFX) {
       prog_state[off] = dv;
    }
    off++;
-   
+
    // Key Window Bottom
    update_program_timbre_byte(off, pcOff+0x0200);
    off++;
-   
+
    // Key Window Top
    update_program_timbre_byte(off, pcOff+0x0201);
    off++;
-   
+
    // Unison switch, Unison Voice
    sv = prog_state[off];
    dv = prog_data[off];
@@ -616,24 +621,24 @@ static void update_program_timbre(sSI _timbre, sBool _bSendFX) {
       prog_state[off] = dv;
    }
    off++;
-   
+
    // Unison Detune
    update_program_timbre_byte(off, pcOff+0x0302);
    off++;
-   
+
    // Unison Spread
    update_program_timbre_byte(off, pcOff+0x0303);
    off++;
-   
+
    // Bend Range
    update_program_timbre_sbyte(off, pcOff+0x0400);
    off++;
-   
+
    // Portamento Time
    update_program_timbre_byte(off, pcOff+0x0401);
    // update_program_timbre_cc(_timbre, off, 5);
    off++;
-   
+
    // Portamento Curve, ..
    sv = prog_state[off];
    dv = prog_data[off];
@@ -646,13 +651,13 @@ static void update_program_timbre(sSI _timbre, sBool _bSendFX) {
       prog_state[off] = dv;
    }
    off++;
-   
+
    // Dummy byte (14)
    off++;
-   
+
    // Dummy byte (15)
    off++;
-   
+
 
 
    //
@@ -663,15 +668,15 @@ static void update_program_timbre(sSI _timbre, sBool _bSendFX) {
    pcOff += 0x0500;
 
 
-   
+
    // Program name (SKIP)
    off += 12;
-   
+
    // Dummy bytes (12..15)
    off += 4;
-   
+
    ////trace "xxx off = "+off;
-   
+
    // Voice assign mode, trigger mode, priority
    sv = prog_state[off];
    dv = prog_data[off];
@@ -692,26 +697,26 @@ static void update_program_timbre(sSI _timbre, sBool _bSendFX) {
       prog_state[off] = dv;
    }
    off++;
-   
+
    // Dummy byte (17)
    off++;
-   
+
    // Analog Tuning
    update_program_timbre_byte(off, pcOff+0x0013);
    off++;
-   
+
    // Transpose
    update_program_timbre_sbyte(off, pcOff+0x0014);
    off++;
-   
+
    // Detune
    update_program_timbre_sbyte(off, pcOff+0x0015);
    off++;
-   
+
    // Vibrato Int
    update_program_timbre_sbyte(off, pcOff+0x0016);
    off++;
-   
+
    // Osc1 Bus Select, Mod, Wave Type
    sv = prog_state[off];
    dv = prog_data[off];
@@ -734,7 +739,7 @@ static void update_program_timbre(sSI _timbre, sBool _bSendFX) {
       prog_state[off] = dv;
    }
    off++;
-   
+
    // Osc1 Waveform CTRL1
    //update_program_timbre_byte(prog_data, off, pcOff+0x0019);
    sU8 waveType = (prog_state[off-1]&0x0F);
@@ -742,20 +747,20 @@ static void update_program_timbre(sSI _timbre, sBool _bSendFX) {
    if( (waveType == 7) || ((waveType <=3) && (oscMod==3)) )
    {
       // param becomes signed when wavetype == 7 (DrumPCM) or (wavetype <= 3 (Sine) and Osc Mod==VPM). argh.
-      update_program_timbre_sbyte(off, pcOff+0x0019); 
+      update_program_timbre_sbyte(off, pcOff+0x0019);
    }
    else
    {
       update_program_timbre_byte(off, pcOff+0x0019);
    }
    off++;
-   
+
    // Osc1 Waveform CTRL2
    //update_program_timbre_byte(prog_data, off, pcOff+0x001A);
    if( (waveType >= 4) || ((waveType <= 3) && (oscMod==3)) )
    {
       // param becomes signed when wavetype is >=4 (Formant) or (wavetype <= 3 (Sine) and Osc Mod==VPM). argh.
-      update_program_timbre_sbyte(off, pcOff+0x001A); 
+      update_program_timbre_sbyte(off, pcOff+0x001A);
    }
    else
    {
@@ -763,15 +768,15 @@ static void update_program_timbre(sSI _timbre, sBool _bSendFX) {
       // update_program_timbre_cc(_timbre, off, 17);
    }
    off++;
-   
+
    // Osc1 DWGS Wave Select
    update_program_timbre_byte(off, pcOff+0x001B);
    off++;
-   
+
    // Osc1 PCM Wave Select
    update_program_timbre_byte(off, pcOff+0x001C);
    off++;
-   
+
    // Osc2 Mod Select, Wave Type
    sv = prog_state[off];
    dv = prog_data[off];
@@ -793,37 +798,37 @@ static void update_program_timbre(sSI _timbre, sBool _bSendFX) {
          // $40..$5F : Tri
          // $60..$7F : Sin
          update_program_timbre_add_pc(pcOff+0x0020, (dv&0x03)>>0);
-         // update_program_timbre_cc2(_timbre, (dv&0x03)*0x20, 18); 
+         // update_program_timbre_cc2(_timbre, (dv&0x03)*0x20, 18);
       }
       prog_state[off] = dv;
    }
    off++;
-   
+
    // Osc2 Semitone
    update_program_timbre_sbyte(off, pcOff+0x0022);
    // update_program_timbre_cc(_timbre, off, 20);
    off++;
-   
+
    // Osc2 Tune
    update_program_timbre_sbyte(off, pcOff+0x0023);
    // update_program_timbre_cc(_timbre, off, 21);
    off++;
-   
+
    // Mixer Osc1 Level
    update_program_timbre_byte(off, pcOff+0x0028);
    // update_program_timbre_cc(_timbre, off, 23);
    off++;
-   
+
    // Mixer Osc2 Level
    update_program_timbre_byte(off, pcOff+0x0029);
    // update_program_timbre_cc(_timbre, off, 24);
    off++;
-   
+
    // Mixer Noise Level
    update_program_timbre_byte(off, pcOff+0x002A);
    // update_program_timbre_cc(_timbre, off, 25);
    off++;
-   
+
    // Filter Link SW, Filter2 Type, Filter Routing. Important: Send Filter Routing First!!!!!!
    sv = prog_state[off];
    dv = prog_data[off];
@@ -866,65 +871,65 @@ static void update_program_timbre(sSI _timbre, sBool _bSendFX) {
       prog_state[off] = dv;
    }
    off++;
-   
+
    // Filter1 Balance
    update_program_timbre_byte(off, pcOff+0x0031);
    // update_program_timbre_cc(_timbre, off, 27);
    off++;
-   
+
    // Filter1 Cutoff
    update_program_timbre_byte(off, pcOff+0x0032);
    // update_program_timbre_cc(_timbre, off, 74);
    off++;
-   
+
    // Filter1 Resonance
    update_program_timbre_byte(off, pcOff+0x0033);
    // update_program_timbre_cc(_timbre, off, 71);
    off++;
-   
+
    // F1 EG1 Intensity
    update_program_timbre_sbyte(off, pcOff+0x0034);
    // update_program_timbre_cc(_timbre, off, 79);
    off++;
-   
+
    // F1 Keyboard Track
    update_program_timbre_sbyte(off, pcOff+0x0035);
    // update_program_timbre_cc(_timbre, off, 28);
    off++;
-   
+
    // F1 Velocity Sens
    update_program_timbre_sbyte(off, pcOff+0x0036);
    off++;
-   
+
    // Filter2 Cutoff
    update_program_timbre_byte(off, pcOff+0x0042);
    // update_program_timbre_cc(_timbre, off, 30);
    off++;
-   
+
    // Filter2 Resonance
    update_program_timbre_byte(off, pcOff+0x0043);
    // update_program_timbre_cc(_timbre, off, 68);
    off++;
-   
+
    // F2 EG1 Intensity
    update_program_timbre_sbyte(off, pcOff+0x0044);
    // update_program_timbre_cc(_timbre, off, 69);
    off++;
-   
+
    // F2 Keyboard Track
    update_program_timbre_sbyte(off, pcOff+0x0045);
    // update_program_timbre_cc(_timbre, off, 82);
    off++;
-   
+
    // F2 Velocity Sens
    update_program_timbre_sbyte(off, pcOff+0x0046);
    off++;
-   
+
    // Amp Level
    update_program_timbre_byte(off, pcOff+0x0050);
    // update_program_timbre_cc(_timbre, off, 7);
    off++;
-   
+
    // Amp Drive/WS, Mod Type
    sv = prog_state[off];
    dv = prog_data[off];
@@ -963,7 +968,7 @@ static void update_program_timbre(sSI _timbre, sBool _bSendFX) {
       prog_state[off] = dv;
    }
    off++;
-   
+
    // Amp WaveShape Type
    sv = prog_state[off];
    dv = prog_data[off];
@@ -976,45 +981,45 @@ static void update_program_timbre(sSI _timbre, sBool _bSendFX) {
       prog_state[off] = dv;
    }
    off++;
-   
+
    // Amp Driver/Shaper
    update_program_timbre_byte(off, pcOff+0x0054);
    // update_program_timbre_cc(_timbre, off, 83);
    off++;
-   
+
    // Amp PanPot   xxx signed ?
    update_program_timbre_byte(off, pcOff+0x0055);
    // update_program_timbre_cc(_timbre, off, 10);
    off++;
-   
+
    // Amp KeyTrack
    update_program_timbre_sbyte(off, pcOff+0x0056);
    off++;
-   
+
    // Amp Punch Level
    update_program_timbre_byte(off, pcOff+0x0057);
    off++;
-   
+
    // EG1 Attack Time
    update_program_timbre_byte(off, pcOff+0x0060);
    // update_program_timbre_cc(_timbre, off, 85);
    off++;
-   
+
    // EG1 Decay Time
    update_program_timbre_byte(off, pcOff+0x0061);
    // update_program_timbre_cc(_timbre, off, 86);
    off++;
-   
+
    // EG1 Sustain Level
    update_program_timbre_byte(off, pcOff+0x0062);
    // update_program_timbre_cc(_timbre, off, 87);
    off++;
-   
+
    // EG1 Release Time
    update_program_timbre_byte(off, pcOff+0x0063);
    // update_program_timbre_cc(_timbre, off, 88);
    off++;
-   
+
    // EG1 Curve
    sv = prog_state[off];
    dv = prog_data[off];
@@ -1027,39 +1032,39 @@ static void update_program_timbre(sSI _timbre, sBool _bSendFX) {
       prog_state[off] = dv;
    }
    off++;
-   
+
    // EG1 LevelVelocitySens
    update_program_timbre_sbyte(off, pcOff+0x0065);
    off++;
-   
+
    // EG1 TimeVelocitySens
    update_program_timbre_sbyte(off, pcOff+0x0066);
    off++;
-   
+
    // EG1 TimeKeyTrack
    update_program_timbre_sbyte(off, pcOff+0x0067);
    off++;
-   
+
    // EG2 Attack Time
    update_program_timbre_byte(off, pcOff+0x0070);
    // update_program_timbre_cc(_timbre, off, 73);
    off++;
-   
+
    // EG2 Decay Time
    update_program_timbre_byte(off, pcOff+0x0071);
    // update_program_timbre_cc(_timbre, off, 75);
    off++;
-   
+
    // EG2 Sustain Level
    update_program_timbre_byte(off, pcOff+0x0072);
    // update_program_timbre_cc(_timbre, off, 70);
    off++;
-   
+
    // EG2 Release Time
    update_program_timbre_byte(off, pcOff+0x0073);
    // update_program_timbre_cc(_timbre, off, 72);
    off++;
-   
+
    // EG2 Curve
    sv = prog_state[off];
    dv = prog_data[off];
@@ -1072,35 +1077,35 @@ static void update_program_timbre(sSI _timbre, sBool _bSendFX) {
       prog_state[off] = dv;
    }
    off++;
-   
+
    // EG2 LevelVelocitySens
    update_program_timbre_sbyte(off, pcOff+0x0075);
    off++;
-   
+
    // EG2 TimeVelocitySens
    update_program_timbre_sbyte(off, pcOff+0x0076);
    off++;
-   
+
    // EG2 TimeKeyTrack
    update_program_timbre_sbyte(off, pcOff+0x0077);
    off++;
-   
+
    // EG3 Attack Time
    update_program_timbre_byte(off, pcOff+0x0080);
    off++;
-   
+
    // EG3 Decay Time
    update_program_timbre_byte(off, pcOff+0x0081);
    off++;
-   
+
    // EG3 Sustain Level
    update_program_timbre_byte(off, pcOff+0x0082);
    off++;
-   
+
    // EG3 Release Time
    update_program_timbre_byte(off, pcOff+0x0083);
    off++;
-   
+
    // EG3 Curve
    sv = prog_state[off];
    dv = prog_data[off];
@@ -1113,19 +1118,19 @@ static void update_program_timbre(sSI _timbre, sBool _bSendFX) {
       prog_state[off] = dv;
    }
    off++;
-   
+
    // EG3 LevelVelocitySens
    update_program_timbre_sbyte(off, pcOff+0x0085);
    off++;
-   
+
    // EG3 TimeVelocitySens
    update_program_timbre_sbyte(off, pcOff+0x0086);
    off++;
-   
+
    // EG3 TimeKeyTrack
    update_program_timbre_sbyte(off, pcOff+0x0087);
    off++;
-   
+
    // LFO1 Wave
    sv = prog_state[off];
    dv = prog_data[off];
@@ -1143,11 +1148,11 @@ static void update_program_timbre(sSI _timbre, sBool _bSendFX) {
       prog_state[off] = dv;
    }
    off++;
-   
+
    // LFO1 Shape
    update_program_timbre_sbyte(off, pcOff+0x0091);
    off++;
-   
+
    // LFO1 Frequency
    // When Tempo Sync is "OFF".
    //   00~07 : 0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08,
@@ -1176,7 +1181,7 @@ static void update_program_timbre(sSI _timbre, sBool _bSendFX) {
    update_program_timbre_byte(off, pcOff+0x0092);
    // update_program_timbre_cc(_timbre, off, 90);
    off++;
-   
+
    // LFO1 Tempo Sync, Key Sync, Init Phase
    sv = prog_state[off];
    dv = prog_data[off];
@@ -1197,7 +1202,7 @@ static void update_program_timbre(sSI _timbre, sBool _bSendFX) {
       prog_state[off] = dv;
    }
    off++;
-   
+
    // LFO1 Sync Note
    sv = prog_state[off];
    dv = prog_data[off];
@@ -1210,7 +1215,7 @@ static void update_program_timbre(sSI _timbre, sBool _bSendFX) {
       prog_state[off] = dv;
    }
    off++;
-   
+
    // LFO2 Wave
    sv = prog_state[off];
    dv = prog_data[off];
@@ -1228,16 +1233,16 @@ static void update_program_timbre(sSI _timbre, sBool _bSendFX) {
       prog_state[off] = dv;
    }
    off++;
-   
+
    // LFO2 Shape
    update_program_timbre_sbyte(off, pcOff+0x00A1);
    off++;
-   
+
    // LFO2 Frequency
    update_program_timbre_byte(off, pcOff+0x00A2);
    // update_program_timbre_cc(_timbre, off, 76);
    off++;
-   
+
    // LFO2 Tempo Sync, Key Sync, Init Phase
    sv = prog_state[off];
    dv = prog_data[off];
@@ -1258,7 +1263,7 @@ static void update_program_timbre(sSI _timbre, sBool _bSendFX) {
       prog_state[off] = dv;
    }
    off++;
-   
+
    // LFO2 Sync Note
    sv = prog_state[off];
    dv = prog_data[off];
@@ -1271,80 +1276,80 @@ static void update_program_timbre(sSI _timbre, sBool _bSendFX) {
       prog_state[off] = dv;
    }
    off++;
-   
+
    // Patch1 Source
    update_program_timbre_byte(off, pcOff+0x0100);
    off++;
-   
+
    // Patch1 Destination
    update_program_timbre_byte(off, pcOff+0x0101);
    off++;
-   
+
    // Patch1 Intensity
    update_program_timbre_sbyte(off, pcOff+0x0102);
    // update_program_timbre_cc(_timbre, off, 103);
    off++;
-   
+
    // Patch2 Source
    update_program_timbre_byte(off, pcOff+0x0104);
    off++;
-   
+
    // Patch2 Destination
    update_program_timbre_byte(off, pcOff+0x0105);
    off++;
-   
+
    // Patch2 Intensity
    update_program_timbre_sbyte(off, pcOff+0x0106);
    // update_program_timbre_cc(_timbre, off, 104);
    off++;
-   
+
    // Patch3 Source
    update_program_timbre_byte(off, pcOff+0x0108);
    off++;
-   
+
    // Patch3 Destination
    update_program_timbre_byte(off, pcOff+0x0109);
    off++;
-   
+
    // Patch3 Intensity
    update_program_timbre_sbyte(off, pcOff+0x010A);
    // update_program_timbre_cc(_timbre, off, 105);
    off++;
-   
+
    // Patch4 Source
    update_program_timbre_byte(off, pcOff+0x010C);
    off++;
-   
+
    // Patch4 Destination
    update_program_timbre_byte(off, pcOff+0x010D);
    off++;
-   
+
    // Patch4 Intensity
    update_program_timbre_sbyte(off, pcOff+0x010E);
    // update_program_timbre_cc(_timbre, off, 106);
    off++;
-   
+
    // Patch5 Source
    update_program_timbre_byte(off, pcOff+0x0110);
    off++;
-   
+
    // Patch5 Destination
    update_program_timbre_byte(off, pcOff+0x0111);
    off++;
-   
+
    // Patch5 Intensity
    update_program_timbre_sbyte(off, pcOff+0x0112);
    // update_program_timbre_cc(_timbre, off, 107);
    off++;
-   
+
    // Patch6 Source
    update_program_timbre_byte(off, pcOff+0x0114);
    off++;
-   
+
    // Patch6 Destination
    update_program_timbre_byte(off, pcOff+0x0115);
    off++;
-   
+
    // Patch6 Intensity
    update_program_timbre_sbyte(off, pcOff+0x0116);
    // update_program_timbre_cc(_timbre, off, 108);
@@ -1381,19 +1386,19 @@ static void update_program_timbre(sSI _timbre, sBool _bSendFX) {
    // Insert FX, EQ Hi Gain
    update_program_timbre_sbyte(off, pcOff+0x0963);
    off++;
-   
+
 }
 
 
 
-void YAC_CALL tkradiastools_update_program_timbre(YAC_Object *_progState, 
-                                                  YAC_Object *_progData, 
-                                                  sSI _timbreNr, 
+void YAC_CALL tkradiastools_update_program_timbre(YAC_Object *_progState,
+                                                  YAC_Object *_progData,
+                                                  sSI _timbreNr,
                                                   sSI _bSendFX,
-                                                  YAC_Object *_out, 
+                                                  YAC_Object *_out,
                                                   YAC_Object *_cc,
                                                   sBool _bForce
-                                                  ) 
+                                                  )
 {
    if(YAC_BCHK(_progState, YAC_CLID_BUFFER))
    {
@@ -1454,429 +1459,429 @@ void YAC_CALL tkradiastools_update_program_timbre(YAC_Object *_progState,
 static void copy_program_timbre(sU8 *_progState, sU8 *_progData, sSI _timbreNr) {
 
    // Just copy the relevant bytes from _progData to _progState
-   
+
    int pcOff = 0x1000 * (_timbreNr + 1); // Parameter change offset
    int off = 48 + (RADIAS_TIMBREDATASIZE * _timbreNr); // byte offset in program dump (decoded!)
-   
+
    // TABLE 2 : TIMBRE PARAMETER
-   
+
    // Timbre SW, Sub Output select, Arpg/Sseq Assign
    _progState[off] = _progData[off];
    off++;
-   
+
    // Dummy byte (1)
    off++;
-   
+
    // Out Balance
    _progState[off] = _progData[off];
    off++;
-   
+
    // Dummy byte (3)
    off++;
-   
+
    // Midi Ch (SKIP)
    off++;
-   
+
    // Pitch bend, .. filters
    _progState[off] = _progData[off];
    off++;
-   
+
    // Key Window Bottom
    _progState[off] = _progData[off];
    off++;
-   
+
    // Key Window Top
    _progState[off] = _progData[off];
    off++;
-   
+
    // Unison switch, Unison Voice
    _progState[off] = _progData[off];
    off++;
-   
+
    // Unison Detune
    _progState[off] = _progData[off];
    off++;
-   
+
    // Unison Spread
    _progState[off] = _progData[off];
    off++;
-   
+
    // Bend Range
    _progState[off] = _progData[off];
    off++;
-   
+
    // Portamento Time
    _progState[off] = _progData[off];
    off++;
-   
+
    // Portamento Curve, ..
    _progState[off] = _progData[off];
    off++;
-   
+
    // Dummy byte (14)
    off++;
-   
+
    // Dummy byte (15)
    off++;
-   
+
    // TABLE 7 : TIMBRE PROGRAM PARAMETER (16..RADIAS_TIMBREDATASIZE(228))
    pcOff += 0x0500;
-   
+
    // Program name (SKIP)
    off += 12;
-   
+
    // Dummy bytes (12..15)
    off += 4;
-   
+
    ////trace "xxx off = "+off;
-   
+
    // Voice assign mode, trigger mode, priority
    _progState[off] = _progData[off];
    off++;
-   
+
    // Dummy byte (17)
    off++;
-   
+
    // Analog Tuning
    _progState[off] = _progData[off];
    off++;
-   
+
    // Transpose
    _progState[off] = _progData[off];
    off++;
-   
+
    // Detune
    _progState[off] = _progData[off];
    off++;
-   
+
    // Vibrato Int
    _progState[off] = _progData[off];
    off++;
-   
+
    // Osc1 Bus Select, Mod, Wave Type
    _progState[off] = _progData[off];
    off++;
-   
+
    // Osc1 Waveform CTRL1
    _progState[off] = _progData[off];
    off++;
-   
+
    // Osc1 Waveform CTRL2
    _progState[off] = _progData[off];
    off++;
-   
+
    // Osc1 DWGS Wave Select
    _progState[off] = _progData[off];
    off++;
-   
+
    // Osc1 PCM Wave Select
    _progState[off] = _progData[off];
    off++;
-   
+
    // Osc2 Mod Select, Wave Type
    _progState[off] = _progData[off];
    off++;
-   
+
    // Osc2 Semitone
    _progState[off] = _progData[off];
    off++;
-   
+
    // Osc2 Tune
    _progState[off] = _progData[off];
    off++;
-   
+
    // Mixer Osc1 Level
    _progState[off] = _progData[off];
    off++;
-   
+
    // Mixer Osc2 Level
    _progState[off] = _progData[off];
    off++;
-   
+
    // Mixer Noise Level
    _progState[off] = _progData[off];
    off++;
-   
+
    // Filter Link SW, Filter2 Type, Filter Routing. Important: Send Filter Routing First!!!!!!
    _progState[off] = _progData[off];
    off++;
-   
+
    // Filter1 Balance
    _progState[off] = _progData[off];
    off++;
-   
+
    // Filter1 Cutoff
    _progState[off] = _progData[off];
    off++;
-   
+
    // Filter1 Resonance
    _progState[off] = _progData[off];
    off++;
-   
+
    // F1 EG1 Intensity
    _progState[off] = _progData[off];
    off++;
-   
+
    // F1 Keyboard Track
    _progState[off] = _progData[off];
    off++;
-   
+
    // F1 Velocity Sens
    _progState[off] = _progData[off];
    off++;
-   
+
    // Filter2 Cutoff
    _progState[off] = _progData[off];
    off++;
-   
+
    // Filter2 Resonance
    _progState[off] = _progData[off];
    off++;
-   
+
    // F2 EG1 Intensity
    _progState[off] = _progData[off];
    off++;
-   
+
    // F2 Keyboard Track
    _progState[off] = _progData[off];
    off++;
-   
+
    // F2 Velocity Sens
    _progState[off] = _progData[off];
    off++;
-   
+
    // Amp Level
    _progState[off] = _progData[off];
    off++;
-   
+
    // Amp Drive/WS, Mod Type
    _progState[off] = _progData[off];
    off++;
-   
+
    // Amp WaveShape Type
    _progState[off] = _progData[off];
    off++;
-   
+
    // Amp Driver/Shaper
    _progState[off] = _progData[off];
    off++;
-   
+
    // Amp PanPot   xxx signed ?
    _progState[off] = _progData[off];
    off++;
-   
+
    // Amp KeyTrack
    _progState[off] = _progData[off];
    off++;
-   
+
    // Amp Punch Level
    _progState[off] = _progData[off];
    off++;
-   
+
    // EG1 Attack Time
    _progState[off] = _progData[off];
    off++;
-   
+
    // EG1 Decay Time
    _progState[off] = _progData[off];
    off++;
-   
+
    // EG1 Sustain Level
    _progState[off] = _progData[off];
    off++;
-   
+
    // EG1 Release Time
    _progState[off] = _progData[off];
    off++;
-   
+
    // EG1 Curve
    _progState[off] = _progData[off];
    off++;
-   
+
    // EG1 LevelVelocitySens
    _progState[off] = _progData[off];
    off++;
-   
+
    // EG1 TimeVelocitySens
    _progState[off] = _progData[off];
    off++;
-   
+
    // EG1 TimeKeyTrack
    _progState[off] = _progData[off];
    off++;
-   
+
    // EG2 Attack Time
    _progState[off] = _progData[off];
    off++;
-   
+
    // EG2 Decay Time
    _progState[off] = _progData[off];
    off++;
-   
+
    // EG2 Sustain Level
    _progState[off] = _progData[off];
    off++;
-   
+
    // EG2 Release Time
    _progState[off] = _progData[off];
    off++;
-   
+
    // EG2 Curve
    _progState[off] = _progData[off];
    off++;
-   
+
    // EG2 LevelVelocitySens
    _progState[off] = _progData[off];
    off++;
-   
+
    // EG2 TimeVelocitySens
    _progState[off] = _progData[off];
    off++;
-   
+
    // EG2 TimeKeyTrack
    _progState[off] = _progData[off];
    off++;
-   
+
    // EG3 Attack Time
    _progState[off] = _progData[off];
    off++;
-   
+
    // EG3 Decay Time
    _progState[off] = _progData[off];
    off++;
-   
+
    // EG3 Sustain Level
    _progState[off] = _progData[off];
    off++;
-   
+
    // EG3 Release Time
    _progState[off] = _progData[off];
    off++;
-   
+
    // EG3 Curve
    _progState[off] = _progData[off];
    off++;
-   
+
    // EG3 LevelVelocitySens
    _progState[off] = _progData[off];
    off++;
-   
+
    // EG3 TimeVelocitySens
    _progState[off] = _progData[off];
    off++;
-   
+
    // EG3 TimeKeyTrack
    _progState[off] = _progData[off];
    off++;
-   
+
    // LFO1 Wave
    _progState[off] = _progData[off];
    off++;
-   
+
    // LFO1 Shape
    _progState[off] = _progData[off];
    off++;
-   
+
    // LFO1 Frequency
    _progState[off] = _progData[off];
    off++;
-   
+
    // LFO1 Tempo Sync, Key Sync, Init Phase
    _progState[off] = _progData[off];
    off++;
-   
+
    // LFO1 Sync Note
    _progState[off] = _progData[off];
    off++;
-   
+
    // LFO2 Wave
    _progState[off] = _progData[off];
    off++;
-   
+
    // LFO2 Shape
    _progState[off] = _progData[off];
    off++;
-   
+
    // LFO2 Frequency
    _progState[off] = _progData[off];
    off++;
-   
+
    // LFO2 Tempo Sync, Key Sync, Init Phase
    _progState[off] = _progData[off];
    off++;
-   
+
    // LFO2 Sync Note
    _progState[off] = _progData[off];
    off++;
-   
+
    // Patch1 Source
    _progState[off] = _progData[off];
    off++;
-   
+
    // Patch1 Destination
    _progState[off] = _progData[off];
    off++;
-   
+
    // Patch1 Intensity
    _progState[off] = _progData[off];
    off++;
-   
+
    // Patch2 Source
    _progState[off] = _progData[off];
    off++;
-   
+
    // Patch2 Destination
    _progState[off] = _progData[off];
    off++;
-   
+
    // Patch2 Intensity
    _progState[off] = _progData[off];
    off++;
-   
+
    // Patch3 Source
    _progState[off] = _progData[off];
    off++;
-   
+
    // Patch3 Destination
    _progState[off] = _progData[off];
    off++;
-   
+
    // Patch3 Intensity
    _progState[off] = _progData[off];
    off++;
-   
+
    // Patch4 Source
    _progState[off] = _progData[off];
    off++;
-   
+
    // Patch4 Destination
    _progState[off] = _progData[off];
    off++;
-   
+
    // Patch4 Intensity
    _progState[off] = _progData[off];
    off++;
-   
+
    // Patch5 Source
    _progState[off] = _progData[off];
    off++;
-   
+
    // Patch5 Destination
    _progState[off] = _progData[off];
    off++;
-   
+
    // Patch5 Intensity
    _progState[off] = _progData[off];
    off++;
-   
+
    // Patch6 Source
    _progState[off] = _progData[off];
    off++;
-   
+
    // Patch6 Destination
    _progState[off] = _progData[off];
    off++;
-   
+
    // Patch6 Intensity
    _progState[off] = _progData[off];
    off++;
@@ -2093,7 +2098,7 @@ static void copy_program_timbre(sU8 *_progState, sU8 *_progData, sSI _timbreNr) 
 
 }
 
-void tkradiastools_copy_program_timbre(YAC_Object *_progState, YAC_Object *_progData, sSI _timbreNr) 
+void tkradiastools_copy_program_timbre(YAC_Object *_progState, YAC_Object *_progData, sSI _timbreNr)
 {
    if(YAC_BCHK(_progState, YAC_CLID_BUFFER))
    {
@@ -2145,7 +2150,7 @@ void tkradiastools_copy_program_timbre(YAC_Object *_progState, YAC_Object *_prog
 static void update_drumtimbre_add_pc(sU16 _paramIdSubId, sS16 _paramValue)  {
    sU16 id = (_paramIdSubId>>8)&255;
    sU16 subId = _paramIdSubId&255;
-   
+
    out->yacStreamWriteI8( 0xF0 );
    out->yacStreamWriteI8( 0x42 ); // Korg Id
    out->yacStreamWriteI8( 0x30 | RADIAS_DEVICE_NR );
@@ -2155,7 +2160,7 @@ static void update_drumtimbre_add_pc(sU16 _paramIdSubId, sS16 _paramValue)  {
    out->yacStreamWriteI8( (id>>7)&127 ); // Parameter Id MSB
    out->yacStreamWriteI8( subId&127 ); // Parameter Sub Id LSB
    out->yacStreamWriteI8( (subId>>7)&127 ); // Parameter Sub Id MSB
-   out->yacStreamWriteI8( _paramValue&127 ); 
+   out->yacStreamWriteI8( _paramValue&127 );
    out->yacStreamWriteI8( (_paramValue>>7)&127 );
    out->yacStreamWriteI8( 0xF7 );
 }
@@ -2196,19 +2201,19 @@ static void update_drumkit_timbre(sSI _timbre) {
    int off = 52 + (104 * _timbre); // byte offset in drumkit data dump (decoded!)
    sU8 sv;
    sU8 dv;
-   
+
    // TABLE 11 : DRUMKIT PARAMETER
-   
+
    // TABLE 7 : TIMBRE PROGRAM PARAMETER
-   
+
    // Program name (SKIP)
    off += 12;
-   
+
    // Dummy bytes (12..15)
    off += 4;
-   
+
    ////trace "xxx off = "+off;
-   
+
    // Voice assign mode, trigger mode, priority
    sv = drumkit_state[off];
 //    dv = drumkit_data[off];
@@ -2230,26 +2235,26 @@ static void update_drumkit_timbre(sSI _timbre) {
 //       drumkit_state[off] = dv;
 //    }
    off++;
-   
+
    // Dummy byte (17)
    off++;
-   
+
    // Analog Tuning
    update_drumtimbre_byte(off, pcOff+0x0013);
    off++;
-   
+
    // Transpose
    update_drumtimbre_sbyte(off, pcOff+0x0014);
    off++;
-   
+
    // Detune
    update_drumtimbre_sbyte(off, pcOff+0x0015);
    off++;
-   
+
    // Vibrato Int
    update_drumtimbre_sbyte(off, pcOff+0x0016);
    off++;
-   
+
    // Osc1 Bus Select, Mod, Wave Type
    sv = drumkit_state[off];
    dv = drumkit_data[off];
@@ -2272,14 +2277,14 @@ static void update_drumkit_timbre(sSI _timbre) {
       drumkit_state[off] = dv;
    }
    off++;
-   
+
    // Osc1 Waveform CTRL1
    sU8 waveType = (drumkit_state[off-1]&0x0F);
    sU8 oscMod = (drumkit_state[off-1]&0x30)>>4;
    if( (waveType == 7) || ((waveType <=3) && (oscMod==3)) )
    {
       // param becomes signed when wavetype == 7 (DrumPCM) or (wavetype <= 3 (Sine) and Osc Mod==VPM). argh.
-      update_drumtimbre_sbyte(off, pcOff+0x0019); 
+      update_drumtimbre_sbyte(off, pcOff+0x0019);
    }
    else
    {
@@ -2287,12 +2292,12 @@ static void update_drumkit_timbre(sSI _timbre) {
    }
    /////updateDrumTimbre_CC(_timbre, off, 15);
    off++;
-   
+
    // Osc1 Waveform CTRL2
    if( (waveType >= 4) || ((waveType <= 3) && (oscMod==3)) )
    {
       // param becomes signed when wavetype is >=4 (Formant) or (wavetype <= 3 (Sine) and Osc Mod==VPM). argh.
-      update_drumtimbre_sbyte(off, pcOff+0x001A); 
+      update_drumtimbre_sbyte(off, pcOff+0x001A);
    }
    else
    {
@@ -2300,15 +2305,15 @@ static void update_drumkit_timbre(sSI _timbre) {
    }
    ////updateDrumTimbre_CC(_timbre, off, 17);
    off++;
-   
+
    // Osc1 DWGS Wave Select
    update_drumtimbre_byte(off, pcOff+0x001B);
    off++;
-   
+
    // Osc1 PCM Wave Select
    update_drumtimbre_byte(off, pcOff+0x001C);
    off++;
-   
+
    // Osc2 Mod Select, Wave Type
    sv = drumkit_state[off];
    dv = drumkit_data[off];
@@ -2335,37 +2340,37 @@ static void update_drumkit_timbre(sSI _timbre) {
          // $54..$61 : Synth PCM
          // $62..$6F : Drum PCM
          // $70..$7F : Audio In
-         ////updateDrumTimbre_CC2(_timbre, (dv&0x03)*14, 18); 
+         ////updateDrumTimbre_CC2(_timbre, (dv&0x03)*14, 18);
       }
       drumkit_state[off] = dv;
    }
    off++;
-   
+
    // Osc2 Semitone
    update_drumtimbre_sbyte(off, pcOff+0x0022);
    ////updateDrumTimbre_CC(_timbre, drumkit_data, off, 20);
    off++;
-   
+
    // Osc2 Tune
    update_drumtimbre_sbyte(off, pcOff+0x0023);
    ////updateDrumTimbre_CC(_timbre, drumkit_data, off, 21);
    off++;
-   
+
    // Mixer Osc1 Level
    update_drumtimbre_byte(off, pcOff+0x0028);
    ////updateDrumTimbre_CC(_timbre, drumkit_data, off, 23);
    off++;
-   
+
    // Mixer Osc2 Level
    update_drumtimbre_byte(off, pcOff+0x0029);
    ////updateDrumTimbre_CC(_timbre, drumkit_data, off, 24);
    off++;
-   
+
    // Mixer Noise Level
    update_drumtimbre_byte(off, pcOff+0x002A);
    ////updateDrumTimbre_CC(_timbre, drumkit_data, off, 25);
    off++;
-   
+
    // Filter Link SW, Filter2 Type, Filter Routing. Important: Send filter routing first!!
    sv = drumkit_state[off];
    dv = drumkit_data[off];
@@ -2408,65 +2413,65 @@ static void update_drumkit_timbre(sSI _timbre) {
       drumkit_state[off] = dv;
    }
    off++;
-   
+
    // Filter1 Balance
    update_drumtimbre_byte(off, pcOff+0x0031);
    ////updateDrumTimbre_CC(_timbre, drumkit_data, off, 27);
    off++;
-   
+
    // Filter1 Cutoff
    update_drumtimbre_byte(off, pcOff+0x0032);
    ////updateDrumTimbre_CC(_timbre, drumkit_data, off, 74);
    off++;
-   
+
    // Filter1 Resonance
    update_drumtimbre_byte(off, pcOff+0x0033);
    ////updateDrumTimbre_CC(_timbre, drumkit_data, off, 71);
    off++;
-   
+
    // F1 EG1 Intensity
    update_drumtimbre_sbyte(off, pcOff+0x0034);
    ////updateDrumTimbre_CC(_timbre, drumkit_data, off, 79);
    off++;
-   
+
    // F1 Keyboard Track
    update_drumtimbre_sbyte(off, pcOff+0x0035);
    ////updateDrumTimbre_CC(_timbre, drumkit_data, off, 28);
    off++;
-   
+
    // F1 Velocity Sens
    update_drumtimbre_sbyte(off, pcOff+0x0036);
    off++;
-   
+
    // Filter2 Cutoff
    update_drumtimbre_byte(off, pcOff+0x0042);
    ////updateDrumTimbre_CC(_timbre, off, 30);
    off++;
-   
+
    // Filter2 Resonance
    update_drumtimbre_byte(off, pcOff+0x0043);
    ////updateDrumTimbre_CC(_timbre, off, 68);
    off++;
-   
+
    // F2 EG1 Intensity
    update_drumtimbre_sbyte(off, pcOff+0x0044);
    ////updateDrumTimbre_CC(_timbre, off, 69);
    off++;
-   
+
    // F2 Keyboard Track
    update_drumtimbre_sbyte(off, pcOff+0x0045);
    ////updateDrumTimbre_CC(_timbre, off, 82);
    off++;
-   
+
    // F2 Velocity Sens
    update_drumtimbre_sbyte(off, pcOff+0x0046);
    off++;
-   
+
    // Amp Level
    update_drumtimbre_byte(off, pcOff+0x0050);
    ////updateDrumTimbre_CC(_timbre, off, 7);
    off++;
-   
+
    // Amp Drive/WS, Mod Type
    sv = drumkit_state[off];
    dv = drumkit_data[off];
@@ -2505,7 +2510,7 @@ static void update_drumkit_timbre(sSI _timbre) {
       drumkit_state[off] = dv;
    }
    off++;
-   
+
    // Amp WaveShape Type
    sv = drumkit_state[off];
    dv = drumkit_data[off];
@@ -2518,45 +2523,45 @@ static void update_drumkit_timbre(sSI _timbre) {
       drumkit_state[off] = dv;
    }
    off++;
-   
+
    // Amp Driver/Shaper
    update_drumtimbre_byte(off, pcOff+0x0054);
    ////updateDrumTimbre_CC(_timbre, off, 83);
    off++;
-   
+
    // Amp PanPot   xxx signed ?
    update_drumtimbre_byte(off, pcOff+0x0055);
    ////updateDrumTimbre_CC(_timbre, off, 10);
    off++;
-   
+
    // Amp KeyTrack
    update_drumtimbre_sbyte(off, pcOff+0x0056);
    off++;
-   
+
    // Amp Punch Level
    update_drumtimbre_byte(off, pcOff+0x0057);
    off++;
-   
+
    // EG1 Attack Time
    update_drumtimbre_byte(off, pcOff+0x0060);
    ////updateDrumTimbre_CC(_timbre, off, 85);
    off++;
-   
+
    // EG1 Decay Time
    update_drumtimbre_byte(off, pcOff+0x0061);
    ////updateDrumTimbre_CC(_timbre, off, 86);
    off++;
-   
+
    // EG1 Sustain Level
    update_drumtimbre_byte(off, pcOff+0x0062);
    ////updateDrumTimbre_CC(_timbre, off, 87);
    off++;
-   
+
    // EG1 Release Time
    update_drumtimbre_byte(off, pcOff+0x0063);
    ////updateDrumTimbre_CC(_timbre, off, 88);
    off++;
-   
+
    // EG1 Curve
    sv = drumkit_state[off];
    dv = drumkit_data[off];
@@ -2569,39 +2574,39 @@ static void update_drumkit_timbre(sSI _timbre) {
       drumkit_state[off] = dv;
    }
    off++;
-   
+
    // EG1 LevelVelocitySens
    update_drumtimbre_sbyte(off, pcOff+0x0065);
    off++;
-   
+
    // EG1 TimeVelocitySens
    update_drumtimbre_sbyte(off, pcOff+0x0066);
    off++;
-   
+
    // EG1 TimeKeyTrack
    update_drumtimbre_sbyte(off, pcOff+0x0067);
    off++;
-   
+
    // EG2 Attack Time
    update_drumtimbre_byte(off, pcOff+0x0070);
    ////updateDrumTimbre_CC(_timbre, off, 73);
    off++;
-   
+
    // EG2 Decay Time
    update_drumtimbre_byte(off, pcOff+0x0071);
    ////updateDrumTimbre_CC(_timbre, off, 75);
    off++;
-   
+
    // EG2 Sustain Level
    update_drumtimbre_byte(off, pcOff+0x0072);
    ////updateDrumTimbre_CC(_timbre, off, 70);
    off++;
-   
+
    // EG2 Release Time
    update_drumtimbre_byte(off, pcOff+0x0073);
    ////updateDrumTimbre_CC(_timbre, off, 72);
    off++;
-   
+
    // EG2 Curve
    sv = drumkit_state[off];
    dv = drumkit_data[off];
@@ -2614,35 +2619,35 @@ static void update_drumkit_timbre(sSI _timbre) {
       drumkit_state[off] = dv;
    }
    off++;
-   
+
    // EG2 LevelVelocitySens
    update_drumtimbre_sbyte(off, pcOff+0x0075);
    off++;
-   
+
    // EG2 TimeVelocitySens
    update_drumtimbre_sbyte(off, pcOff+0x0076);
    off++;
-   
+
    // EG2 TimeKeyTrack
    update_drumtimbre_sbyte(off, pcOff+0x0077);
    off++;
-   
+
    // EG3 Attack Time
    update_drumtimbre_byte(off, pcOff+0x0080);
    off++;
-   
+
    // EG3 Decay Time
    update_drumtimbre_byte(off, pcOff+0x0081);
    off++;
-   
+
    // EG3 Sustain Level
    update_drumtimbre_byte(off, pcOff+0x0082);
    off++;
-   
+
    // EG3 Release Time
    update_drumtimbre_byte(off, pcOff+0x0083);
    off++;
-   
+
    // EG3 Curve
    sv = drumkit_state[off];
    dv = drumkit_data[off];
@@ -2655,19 +2660,19 @@ static void update_drumkit_timbre(sSI _timbre) {
       drumkit_state[off] = dv;
    }
    off++;
-   
+
    // EG3 LevelVelocitySens
    update_drumtimbre_sbyte(off, pcOff+0x0085);
    off++;
-   
+
    // EG3 TimeVelocitySens
    update_drumtimbre_sbyte(off, pcOff+0x0086);
    off++;
-   
+
    // EG3 TimeKeyTrack
    update_drumtimbre_sbyte(off, pcOff+0x0087);
    off++;
-   
+
    // LFO1 Wave
    sv = drumkit_state[off];
    dv = drumkit_data[off];
@@ -2685,11 +2690,11 @@ static void update_drumkit_timbre(sSI _timbre) {
       drumkit_state[off] = dv;
    }
    off++;
-   
+
    // LFO1 Shape
    update_drumtimbre_sbyte(off, pcOff+0x0091);
    off++;
-   
+
    // LFO1 Frequency
    update_drumtimbre_byte(off, pcOff+0x0092);
    // When Tempo Sync is "OFF".
@@ -2718,7 +2723,7 @@ static void update_drumkit_timbre(sSI _timbre) {
    //   1C~23 : 3/4 44~4B : 3/16 6C~73 : 1/24
    ////updateDrumTimbre_CC(_timbre, off, 90);
    off++;
-   
+
    // LFO1 Tempo Sync, Key Sync, Init Phase
    sv = drumkit_state[off];
    dv = drumkit_data[off];
@@ -2739,7 +2744,7 @@ static void update_drumkit_timbre(sSI _timbre) {
       drumkit_state[off] = dv;
    }
    off++;
-   
+
    // LFO1 Sync Note
    sv = drumkit_state[off];
    dv = drumkit_data[off];
@@ -2752,7 +2757,7 @@ static void update_drumkit_timbre(sSI _timbre) {
       drumkit_state[off] = dv;
    }
    off++;
-   
+
    // LFO2 Wave
    sv = drumkit_state[off];
    dv = drumkit_data[off];
@@ -2770,16 +2775,16 @@ static void update_drumkit_timbre(sSI _timbre) {
       drumkit_state[off] = dv;
    }
    off++;
-   
+
    // LFO2 Shape
    update_drumtimbre_sbyte(off, pcOff+0x00A1);
    off++;
-   
+
    // LFO2 Frequency
    update_drumtimbre_byte(off, pcOff+0x00A2);
    ////updateDrumTimbre_CC(_timbre, off, 76);
    off++;
-   
+
    // LFO2 Tempo Sync, Key Sync, Init Phase
    sv = drumkit_state[off];
    dv = drumkit_data[off];
@@ -2800,7 +2805,7 @@ static void update_drumkit_timbre(sSI _timbre) {
       drumkit_state[off] = dv;
    }
    off++;
-   
+
    // LFO2 Sync Note
    sv = drumkit_state[off];
    dv = drumkit_data[off];
@@ -2813,80 +2818,80 @@ static void update_drumkit_timbre(sSI _timbre) {
       drumkit_state[off] = dv;
    }
    off++;
-   
+
    // Patch1 Source
    update_drumtimbre_byte(off, pcOff+0x0100);
    off++;
-   
+
    // Patch1 Destination
    update_drumtimbre_byte(off, pcOff+0x0101);
    off++;
-   
+
    // Patch1 Intensity
    update_drumtimbre_byte(off, pcOff+0x0102);
    ////updateDrumTimbre_CC(_timbre, off, 103);
    off++;
-   
+
    // Patch2 Source
    update_drumtimbre_byte(off, pcOff+0x0104);
    off++;
-   
+
    // Patch2 Destination
    update_drumtimbre_byte(off, pcOff+0x0105);
    off++;
-   
+
    // Patch2 Intensity
    update_drumtimbre_sbyte(off, pcOff+0x0106);
    ////updateDrumTimbre_CC(_timbre, off, 104);
    off++;
-   
+
    // Patch3 Source
    update_drumtimbre_byte(off, pcOff+0x0108);
    off++;
-   
+
    // Patch3 Destination
    update_drumtimbre_byte(off, pcOff+0x0109);
    off++;
-   
+
    // Patch3 Intensity
    update_drumtimbre_sbyte(off, pcOff+0x010A);
    ////updateDrumTimbre_CC(_timbre, off, 105);
    off++;
-   
+
    // Patch4 Source
    update_drumtimbre_byte(off, pcOff+0x010C);
    off++;
-   
+
    // Patch4 Destination
    update_drumtimbre_byte(off, pcOff+0x010D);
    off++;
-   
+
    // Patch4 Intensity
    update_drumtimbre_sbyte(off, pcOff+0x010E);
    ////updateDrumTimbre_CC(_timbre, off, 106);
    off++;
-   
+
    // Patch5 Source
    update_drumtimbre_byte(off, pcOff+0x0110);
    off++;
-   
+
    // Patch5 Destination
    update_drumtimbre_byte(off, pcOff+0x0111);
    off++;
-   
+
    // Patch5 Intensity
    update_drumtimbre_sbyte(off, pcOff+0x0112);
    ////updateDrumTimbre_CC(_timbre, off, 107);
    off++;
-   
+
    // Patch6 Source
    update_drumtimbre_byte(off, pcOff+0x0114);
    off++;
-   
+
    // Patch6 Destination
    update_drumtimbre_byte(off, pcOff+0x0115);
    off++;
-   
+
    // Patch6 Intensity
    update_drumtimbre_sbyte(off, pcOff+0x0116);
    ////updateDrumTimbre_CC(_timbre, off, 108);
@@ -2895,12 +2900,12 @@ static void update_drumkit_timbre(sSI _timbre) {
 
 
 
-void YAC_CALL tkradiastools_update_drumkit_timbre(YAC_Object *_drumkitState, 
-                                                  YAC_Object *_drumkitData, 
-                                                  sSI _timbreNr, 
+void YAC_CALL tkradiastools_update_drumkit_timbre(YAC_Object *_drumkitState,
+                                                  YAC_Object *_drumkitData,
+                                                  sSI _timbreNr,
                                                   YAC_Object *_out,
                                                   sBool _bForce
-                                                  ) 
+                                                  )
 {
    if(YAC_BCHK(_drumkitState, YAC_CLID_BUFFER))
    {
@@ -2955,459 +2960,459 @@ void YAC_CALL tkradiastools_update_drumkit_timbre(YAC_Object *_drumkitState,
 static void copy_drumkit_timbre(sU8 *_drumkitState, sSI _dstTimbreNr, sU8 *_drumkitData, sSI _srcTimbreNr) {
 
    // Just copy the relevant bytes from _drumkitData to _drumkitState
-   
+
    /////int pcOff = 0x1000 + 0x0200 * _timbreNr; // Parameter change offset
    int doff = 52 + (104 * _dstTimbreNr); // byte offset in drumkit state dump (decoded!)
    int soff = 52 + (104 * _srcTimbreNr); // byte offset in drumkit data dump (decoded!)
 
-   
+
    // TABLE 11 : DRUMKIT PARAMETER
-   
+
    // Program name (SKIP)
    doff += 12;
    soff += 12;
-   
+
    // Dummy bytes (12..15)
    doff += 4;
    soff += 4;
-   
-   
+
+
    // TABLE 2 : TIMBRE PARAMETER
-   
+
    // Voice assign mode, trigger mode, priority
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // Dummy byte (17)
    soff++;
    doff++;
-   
+
    // Analog Tuning
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // Transpose
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // Detune
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // Vibrato Int
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // Osc1 Bus Select, Mod, Wave Type
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // Osc1 Waveform CTRL1
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // Osc1 Waveform CTRL2
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // Osc1 DWGS Wave Select
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // Osc1 PCM Wave Select
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // Osc2 Mod Select, Wave Type
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // Osc2 Semitone
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // Osc2 Tune
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // Mixer Osc1 Level
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // Mixer Osc2 Level
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // Mixer Noise Level
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // Filter Link SW, Filter2 Type, Filter Routing. Important: Send Filter Routing First!!!!!!
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // Filter1 Balance
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // Filter1 Cutoff
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // Filter1 Resonance
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // F1 EG1 Intensity
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // F1 Keyboard Track
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // F1 Velocity Sens
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // Filter2 Cutoff
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // Filter2 Resonance
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // F2 EG1 Intensity
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // F2 Keyboard Track
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // F2 Velocity Sens
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // Amp Level
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // Amp Drive/WS, Mod Type
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // Amp WaveShape Type
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // Amp Driver/Shaper
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // Amp PanPot   xxx signed ?
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // Amp KeyTrack
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // Amp Punch Level
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // EG1 Attack Time
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // EG1 Decay Time
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // EG1 Sustain Level
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // EG1 Release Time
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // EG1 Curve
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // EG1 LevelVelocitySens
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // EG1 TimeVelocitySens
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // EG1 TimeKeyTrack
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // EG2 Attack Time
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // EG2 Decay Time
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // EG2 Sustain Level
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // EG2 Release Time
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // EG2 Curve
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // EG2 LevelVelocitySens
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // EG2 TimeVelocitySens
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // EG2 TimeKeyTrack
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // EG3 Attack Time
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // EG3 Decay Time
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // EG3 Sustain Level
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // EG3 Release Time
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // EG3 Curve
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // EG3 LevelVelocitySens
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // EG3 TimeVelocitySens
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // EG3 TimeKeyTrack
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // LFO1 Wave
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // LFO1 Shape
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // LFO1 Frequency
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // LFO1 Tempo Sync, Key Sync, Init Phase
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // LFO1 Sync Note
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // LFO2 Wave
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // LFO2 Shape
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // LFO2 Frequency
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // LFO2 Tempo Sync, Key Sync, Init Phase
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // LFO2 Sync Note
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // Patch1 Source
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // Patch1 Destination
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // Patch1 Intensity
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // Patch2 Source
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // Patch2 Destination
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // Patch2 Intensity
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // Patch3 Source
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // Patch3 Destination
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // Patch3 Intensity
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // Patch4 Source
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // Patch4 Destination
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // Patch4 Intensity
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // Patch5 Source
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // Patch5 Destination
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // Patch5 Intensity
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // Patch6 Source
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // Patch6 Destination
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
    soff++;
-   
+
    // Patch6 Intensity
    _drumkitState[doff] = _drumkitData[soff];
    doff++;
@@ -3415,7 +3420,7 @@ static void copy_drumkit_timbre(sU8 *_drumkitState, sSI _dstTimbreNr, sU8 *_drum
 }
 
 
-void tkradiastools_copy_drumkit_timbre(YAC_Object *_drumkitState, sSI _dstTimbreNr, YAC_Object *_drumkitData, sSI _srcTimbreNr) 
+void tkradiastools_copy_drumkit_timbre(YAC_Object *_drumkitState, sSI _dstTimbreNr, YAC_Object *_drumkitData, sSI _srcTimbreNr)
 {
    if(YAC_BCHK(_drumkitState, YAC_CLID_BUFFER))
    {
@@ -3470,27 +3475,27 @@ static void update_program(sBool _bSendFX) {
    if(b_force || (sv != dv))
    {
       if(b_force || ( (sv&0x01) != (dv&0x01) ) ) // Timbre1 select
-      {      
+      {
          update_program_timbre_add_pc(pcOff+0x12, (dv&0x01) >> 0);
       }
 
       if(b_force || ( (sv&0x02) != (dv&0x02) ) ) // Timbre2 select
-      {      
+      {
          update_program_timbre_add_pc(pcOff+0x13, (dv&0x02) >> 1);
       }
 
       if(b_force || ( (sv&0x04) != (dv&0x04) ) ) // Timbre3 select
-      {      
+      {
          update_program_timbre_add_pc(pcOff+0x14, (dv&0x04) >> 2);
       }
 
       if(b_force || ( (sv&0x08) != (dv&0x08) ) ) // Timbre4 select
-      {      
+      {
          update_program_timbre_add_pc(pcOff+0x15, (dv&0x08) >> 3);
       }
 
       if(b_force || ( (sv&0x10) != (dv&0x10) ) ) // Vocoder select
-      {      
+      {
          update_program_timbre_add_pc(pcOff+0x16, (dv&0x10) >> 4);
       }
 
@@ -3505,12 +3510,12 @@ static void update_program(sBool _bSendFX) {
    if(b_force || (sv != dv))
    {
       if(b_force || ( (sv&0x0F) != (dv&0x0F) ) ) // Scale Type
-      {      
+      {
          update_program_timbre_add_pc(pcOff+0x17, (dv&0x0F) >> 0);
       }
 
       if(b_force || ( (sv&0xF0) != (dv&0xF0) ) ) // Scale Key
-      {      
+      {
          update_program_timbre_add_pc(pcOff+0x18, (dv&0xF0) >> 0);
       }
    }
@@ -3531,34 +3536,34 @@ static void update_program(sBool _bSendFX) {
    if(b_force || (sv != dv))
    {
       if(b_force || ( (sv&0x01) != (dv&0x01) ) ) // Link Panel Edit
-      {      
+      {
          update_program_timbre_add_pc(pcOff+0x20, (dv&0x01) >> 0);
       }
 
 #if 0
       // no-op ??!
       if(b_force || ( (sv&0x02) != (dv&0x02) ) ) // Timb1 panel sel
-      {      
+      {
          update_program_timbre_add_pc(pcOff+0x21, (dv&0x02) >> 1);
       }
 
       if(b_force || ( (sv&0x04) != (dv&0x04) ) ) // Timb2 panel sel
-      {      
+      {
          update_program_timbre_add_pc(pcOff+0x22, (dv&0x04) >> 2);
       }
 
       if(b_force || ( (sv&0x08) != (dv&0x08) ) ) // Timb3 panel sel
-      {      
+      {
          update_program_timbre_add_pc(pcOff+0x23, (dv&0x08) >> 3);
       }
 
       if(b_force || ( (sv&0x10) != (dv&0x10) ) ) // Timb4 panel sel
-      {      
+      {
          update_program_timbre_add_pc(pcOff+0x24, (dv&0x10) >> 4);
       }
 
       if(b_force || ( (sv&0x20) != (dv&0x20) ) ) // Vocoder panel sel
-      {      
+      {
          update_program_timbre_add_pc(pcOff+0x25, (dv&0x20) >> 5);
       }
 #endif
@@ -3571,12 +3576,12 @@ static void update_program(sBool _bSendFX) {
    if(b_force || (sv != dv))
    {
       if(b_force || ( (sv&0x1F) != (dv&0x1F) ) ) // Drum Bank Select
-      {      
+      {
          update_program_timbre_add_pc(pcOff+0x28, (dv&0x1F) >> 0);
       }
 
       if(b_force || ( (sv&0xE0) != (dv&0xE0) ) ) // Drum Timbre Select
-      {      
+      {
          update_program_timbre_add_pc(pcOff+0x29, (dv&0xE0) >> 5);
       }
    }
@@ -3628,13 +3633,13 @@ static void update_program(sBool _bSendFX) {
 
 }
 
-void YAC_CALL tkradiastools_update_program(YAC_Object *_progState, 
+void YAC_CALL tkradiastools_update_program(YAC_Object *_progState,
                                            YAC_Object *_progData,
                                            sBool _bSendFX,
-                                           YAC_Object *_out, 
+                                           YAC_Object *_out,
                                            YAC_Object *_cc,
                                            sBool _bForce
-                                           ) 
+                                           )
 {
    if(YAC_BCHK(_progState, YAC_CLID_BUFFER))
    {

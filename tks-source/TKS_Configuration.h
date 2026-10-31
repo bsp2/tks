@@ -12,7 +12,16 @@ class TKS_Configuration {
 public:
 
     sBool      b_simulatevfs;                // 1=map logic filenames to local filesystem
-    sU8        debug_level;                  // 0..99
+    sU32       debug_level;                  // 0..99
+    sS32       log_level;                    // -1,0..3 (-1=unset(off), 0=off, 1=log1, 2=log2, 3=log3)
+    sBool      b_log_info;
+    sBool      b_log_verbose;
+    sBool      b_log_success;
+    sBool      b_log_warning;
+    sBool      b_log_error;
+    sBool      b_log_fatal;
+    sBool      b_log_profile;
+    sBool      b_log_debug;                  // log[1234]
     sBool      b_forceint;                   // enable to force interpreted execution, default is OFF
     sBool      b_checkbounds;                // enable array index boundary checks, default in ON
     sBool      b_showasm;                    // show assembler output
@@ -71,6 +80,8 @@ public:
     ~TKS_Configuration ();
 
     void lazySetFallbackPaths (void);  // set app/mod/lib dirs to exe path subdirs when blank
+
+    void logAll (sBool _bEnable);
 };
 
 

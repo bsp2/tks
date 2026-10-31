@@ -4886,12 +4886,14 @@ sBool TKS_CachedScript::compile(void) {
                            if(NULL == cnspace)
                            {
                               sU8 bprocId = tks_get_pseudotoken_id_by_name(sv);
+                              if(TKS_BFUN_LOG2 == bprocId && ST_SSEQ == state_stack[stp].state)
+                                 bprocId = TKS_BPROC_LOG2;
                               if(bprocId >= TKS_BPROC_FIRST)
                               {
                                  if(bprocId == TKS_BPROC_STDOUT)
                                  {
                                     Dpushstate;
-                                    Dsetparami(0, 1); // target
+                                    Dsetparami(0, TKS_PRINT_TARGET_STDOUT);
                                     Dsetparami(1, 0); // dynamic trace
                                     Dsetparami(2, 0); // add newline
                                     state=ST_PRINT;
@@ -4901,7 +4903,7 @@ sBool TKS_CachedScript::compile(void) {
                                  else if(bprocId == TKS_BPROC_STDERR)
                                  {
                                     Dpushstate;
-                                    Dsetparami(0, 2);
+                                    Dsetparami(0, TKS_PRINT_TARGET_STDERR);
                                     Dsetparami(1, 0);
                                     Dsetparami(2, 0); // add newline
                                     state=ST_PRINT;
@@ -4911,7 +4913,7 @@ sBool TKS_CachedScript::compile(void) {
                                  else if(bprocId == TKS_BPROC_DCON)
                                  {
                                     Dpushstate;
-                                    Dsetparami(0, 0);
+                                    Dsetparami(0, TKS_PRINT_TARGET_DCON);
                                     Dsetparami(1, 1); // dynamic trace
                                     Dsetparami(2, 0); // add newline
                                     state=ST_PRINT;
@@ -4921,7 +4923,7 @@ sBool TKS_CachedScript::compile(void) {
                                  else if(bprocId == TKS_BPROC_DIE)
                                  {
                                     Dpushstate;
-                                    Dsetparami(0, 3);
+                                    Dsetparami(0, TKS_PRINT_TARGET_DIE);
                                     Dsetparami(1, 0);
                                     Dsetparami(2, 1); // add newline
                                     state=ST_PRINT;
@@ -4931,7 +4933,7 @@ sBool TKS_CachedScript::compile(void) {
                                  else if(bprocId == TKS_BPROC_PRINT)
                                  {
                                     Dpushstate;
-                                    Dsetparami(0, 1); // target stdout
+                                    Dsetparami(0, TKS_PRINT_TARGET_STDOUT);
                                     Dsetparami(1, 0); // dynamic trace
                                     Dsetparami(2, 1); // add newline
                                     state=ST_PRINT;
@@ -4941,8 +4943,9 @@ sBool TKS_CachedScript::compile(void) {
                                  else if(bprocId == TKS_BPROC_TRACE)
                                  {
                                     Dpushstate;
-                                    Dsetparami(0, 0); // target dcon
+                                    Dsetparami(0, TKS_PRINT_TARGET_DCON);
                                     Dsetparami(2, 1); // add newline
+                                    Dsetparami(3, 0); // trace
                                     state=ST_TRACE;
                                     state_index=1;
                                     break;
@@ -4978,6 +4981,17 @@ sBool TKS_CachedScript::compile(void) {
                                     state=ST_CLAMPWRAPSTAT;
                                     state_index=1;
                                     Dsetparami(0, 1);
+                                    break;
+                                 }
+                                 else if(bprocId >= TKS_BPROC_LOGINFO && bprocId <= TKS_BPROC_LOG4)
+                                 {
+                                    Dpushstate;
+                                    Dsetparami(0, TKS_PRINT_TARGET_DCON);
+                                    Dsetparami(2, 1); // add newline
+                                    // loginfo/verbose/success/warning/error/fatal/profile/[1234]
+                                    Dsetparami(3, (bprocId-TKS_BPROC_LOGINFO)+1);
+                                    state=ST_TRACE;
+                                    state_index=1;
                                     break;
                                  }
                               }
@@ -5802,43 +5816,127 @@ sBool TKS_CachedScript::compile(void) {
                break;
 
             case ST_TRACE:
-               // parami[0]: taget
+               // parami[0]: target
+               // parami[1]: <set by switchcase> (depend on dynamic trace status)
+               // parami[2]: add newline
+               // parami[3]: 0=trace, 1=loginfo,2=logsuccess,3=logwarning,4=logerror,5=logfatal,6=logprofile, 7=log1,8=log2,9=log3,10=log4
                switch(state_index)
                {
                   case 1:
                      switch(tok)
                      {
                         case TOKEN_TRUE:
-                           tkscript->trace_enabled=1;
+                           switch(Dgetparami(3))
+                           {
+                              default:
+                                 break;
+                              case 0:
+                                 tkscript->trace_enabled=1;
+                                 break;
+                              case 8:  // log1
+                              case 9:  // log2
+                              case 10: // log3
+                              case 11: // log4
+                                 if(-1 == tkscript->configuration.log_level)  // not set by cmdline or other log[1234] directive?
+                                 {
+                                    tkscript->configuration.log_level = sSI(Dgetparami(3)) - 8 + 1;
+                                 }
+                                 break;
+                           }
                            PTN_NEW_NODE(nn, PTN_TraceStat)();
                            popnode.statement = (PTN_Statement*)nn;
                            popState();
                            break;
                         case TOKEN_FALSE:
-                           tkscript->trace_enabled=0;
+                           switch(Dgetparami(3))
+                           {
+                              default:
+                                 break;
+                              case 0:
+                                 tkscript->trace_enabled=0;
+                                 break;
+                              case 8:  // log1
+                              case 9:  // log2
+                              case 10: // log3
+                              case 11: // log4
+                                 if(-1 == tkscript->configuration.log_level)  // not set by cmdline or other log[1234] directive?
+                                 {
+                                    tkscript->configuration.log_level = 0;
+                                 }
+                                 break;
+                           }
                            PTN_NEW_NODE(nn, PTN_TraceStat)();
                            popnode.statement = (PTN_Statement*)nn;
                            popState();
                            break;
                         default:
                            Dungettok;
-                           if(tkscript->trace_enabled)
                            {
-                              // ---- jump into ST_PRINT state ----
-                              state=ST_PRINT;
-                              state_index=1;
-                              //Dsetparami(0, 0); // target == dcon
-                              Dsetparami(1, 1); // depend on dynamic trace status
-                              Dpushstate;
-                              state=ST_EXPR;
-                              state_index=0;
-                           }
-                           else
-                           {
-                              // consume statement
-                              Dpushstate;
-                              state=ST_EXPR;
-                              state_index=0;
+                              sBool bTrace = (Dgetparami(3) <= 6/*logprofile*/)
+                                 ? tkscript->trace_enabled
+                                 : (tkscript->configuration.log_level >= (sSI(Dgetparami(3))-8+1/*log1*/))
+                                 ;
+                              if(bTrace)
+                              {
+                                 switch(3+Dgetparami(3))
+                                 {
+                                    default: break;
+                                    case TKS_PRINT_TARGET_LOGINFO:
+                                       bTrace = tkscript->configuration.b_log_info;
+                                       break;
+                                    case TKS_PRINT_TARGET_LOGVERBOSE:
+                                       bTrace = tkscript->configuration.b_log_verbose;
+                                       break;
+                                    case TKS_PRINT_TARGET_LOGSUCCESS:
+                                       bTrace = tkscript->configuration.b_log_success;
+                                       break;
+                                    case TKS_PRINT_TARGET_LOGWARNING:
+                                       bTrace = tkscript->configuration.b_log_warning;
+                                       break;
+                                    case TKS_PRINT_TARGET_LOGERROR:
+                                       bTrace = tkscript->configuration.b_log_error;
+                                       break;
+                                    case TKS_PRINT_TARGET_LOGFATAL:
+                                       bTrace = tkscript->configuration.b_log_fatal;
+                                       break;
+                                    case TKS_PRINT_TARGET_LOGPROFILE:
+                                       bTrace = tkscript->configuration.b_log_profile;
+                                       break;
+                                    case TKS_PRINT_TARGET_LOG1:
+                                    case TKS_PRINT_TARGET_LOG2:
+                                    case TKS_PRINT_TARGET_LOG3:
+                                    case TKS_PRINT_TARGET_LOG4:
+                                       bTrace = tkscript->configuration.b_log_debug;
+                                       break;
+                                 }
+                              }
+                              if(bTrace)
+                              {
+                                 // ---- jump into ST_PRINT state ----
+                                 state=ST_PRINT;
+                                 state_index=1;
+                                 if(0 == Dgetparami(3))
+                                 {
+                                    // trace
+                                    Dsetparami(1, 1); // depend on dynamic trace status
+                                 }
+                                 else
+                                 {
+                                    // loginfo/success/warning/error/fatal/profile, log[1234]
+                                    Dsetparami(0, 3+Dgetparami(3));  // target, see TKS_PRINT_TARGET_xxx
+                                    Dsetparami(1, 0); // do not depend on dynamic trace status
+                                 }
+                                 Dpushstate;
+                                 state=ST_EXPR;
+                                 state_index=0;
+                              }
+                              else
+                              {
+                                 // consume statement
+                                 Dpushstate;
+                                 state=ST_EXPR;
+                                 state_index=0;
+                              }
                            }
                            break;
                      }
@@ -5856,6 +5954,9 @@ sBool TKS_CachedScript::compile(void) {
                break;
 
             case ST_PRINT:
+               // parami[0]: target (see TKS_PRINT_TARGET_xxx)
+               // parami[1]: 1=depend on dtrace
+               // parami[2]: 1=add newline
                switch(state_index)
                {
                   // case 0 is skipped
@@ -12502,6 +12603,8 @@ sBool TKS_CachedScript::compile(void) {
                               if(ntok == TOKEN_BEGEXPR)
                               {
                                  sU8 bfunId = tks_get_pseudotoken_id_by_name(sv);
+                                 if(TKS_BFUN_LOG2 == bfunId && ST_SSEQ == state_stack[stp].state)
+                                    bfunId = 0;
                                  if(bfunId > 0)
                                  {
                                     if(bfunId < TKS_BFUN_PAD)

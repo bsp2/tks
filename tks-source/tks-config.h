@@ -28,7 +28,10 @@
 /// Define if you the scanner should not re-allocate already existing strings (needs more mem.)
 //#define DX_SCANNER_FASTADDUNIQUESTRING defined
 
-/// Define to write out "c" code for the entity scanners ("autogen_tks_entitytree_lookup.cpp")
+/// Define to write out "c" code for the entity scanners
+///  - "autogen_tks_entitytree_lookup.cpp"
+///  - "autogen_tks_pseudotoken_entitytree_lookup.cpp"
+///  - "autogen_xml_entitytree_lookup.cpp"
 /* #define TKS_EXPORT_ENTITY_SCANNER defined */
 
 /// Define if script function calls shall be tracked in a functioncallstack (useful for debug purposes)

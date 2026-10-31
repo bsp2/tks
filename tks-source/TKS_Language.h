@@ -11,7 +11,18 @@
 enum __tks_language_signals {
    TKS_SIG_SIGNAL       = 0,
    TKS_SIG_SEGV         = 1,
-   TKS_SIG_SEGVCONTINUE = 2
+   TKS_SIG_SEGVCONTINUE = 2,
+   TKS_SIG_LOGINFO      = 3,
+   TKS_SIG_LOGVERBOSE   = 4,
+   TKS_SIG_LOGSUCCESS   = 5,
+   TKS_SIG_LOGWARNING   = 6,
+   TKS_SIG_LOGERROR     = 7,
+   TKS_SIG_LOGFATAL     = 8,
+   TKS_SIG_LOGPROFILE   = 9,
+   TKS_SIG_LOG1         = 10,
+   TKS_SIG_LOG2         = 11,
+   TKS_SIG_LOG3         = 12,
+   TKS_SIG_LOG4         = 13
 };
 
 class TKS_Language : public YAC_Object {

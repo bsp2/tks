@@ -37,12 +37,12 @@ FT_Library ft_library;
 void YAC_CALL YAC_Init(YAC_Host *_host) {
 	yac_host=_host;
 	if(yac_host->yacGetDebugLevel() > 1)
-		yac_host->yacPrint("[dbg] tkfreetype2::YAC_Init() called.\n");
+		Dyac_host_log2("tkfreetype2::YAC_Init() called.");
 
    int error = FT_Init_FreeType(&ft_library);
    if(0 != error)
    {
-      yac_host->printf("[---] tkfreetype2: FT_Init_FreeType failed with error code %i\n", error);
+      Dyac_host_logerror("tkfreetype2: FT_Init_FreeType failed with error code %i", error);
    }
    else
    {
@@ -65,8 +65,8 @@ void YAC_CALL YAC_Exit(YAC_Host *_host) {
 
    FT_Done_FreeType(ft_library);
 
-	if(yac_host->yacGetDebugLevel() > 1)
-		yac_host->yacPrint("[dbg] tkfreetype2::YAC_Exit() finished.\n");
+	if(yac_host->yacGetDebugLevel() > 0)
+		Dyac_host_log2("tkfreetype2::YAC_Exit() finished.");
 }
 
 sUI YAC_CALL YAC_Version(void) {

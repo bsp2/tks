@@ -315,6 +315,8 @@ int print_usage(void) {
    ::printf("        %s -ee   --emitexplanations\n", (char*)loc_exe_name.chars);
    ::printf("        %s -h    --help\n", (char*)loc_exe_name.chars);
    ::printf("        %s -l    --list proj.tkx\n", (char*)loc_exe_name.chars);
+   ::printf("        %s -ll   --loglevel [0..4]\n", (char*)loc_exe_name.chars);
+   ::printf("        %s -lm[naivswefpd] (none,all,info,verbose,success,warning,error,fatal,profile,debug)\n", (char*)loc_exe_name.chars);
    ::printf("        %s -lp   --librarypath </path/to/dir/>|<drive:\\path\\to\\dir\\>\n", (char*)loc_exe_name.chars);
    ::printf("        %s -ch   --chapter <name>\n", (char*)loc_exe_name.chars);
    ::printf("        %s -mp   --modulepath </path/to/dir/>|<drive:\\path\\to\\dir\\>\n", (char*)loc_exe_name.chars);
@@ -384,14 +386,14 @@ void NewEngine(int _argc, char **_argv, sBool _bRunInBG) {
 
 void DeleteEngine(void) {
 #ifdef TKS_DCON
-   sBool dbg = YAC_FALSE;
+   sBool bDebug = YAC_FALSE;
 #endif // TKS_DCON
 
    if(NULL != tkscript)
    {
       i_return = tkscript->i_return;
 #ifdef TKS_DCON
-      dbg = (0 != tkscript->configuration.debug_level);
+      bDebug = (0 != tkscript->configuration.debug_level) && (0 != tkscript->configuration.log_level);
 #endif // TKS_DCON
       tks_free_streamio();
       delete tkscript;
@@ -400,7 +402,7 @@ void DeleteEngine(void) {
    }
 
 #ifdef TKS_DCON
-   if(dbg)
+   if(bDebug)
    {
 #ifdef YAC_OBJECT_COUNTER
       ::printf("[...] DeleteEngine():    Object::object_counter = %i\n", (int) (YAC_Object::object_counter-TKS_NUM_STATIC_OBJECTS));
@@ -1286,13 +1288,12 @@ int scan_ac(int _argc, char **_argv) {
       else if(ca.compare("-d") || ca.compare("--debuglevel"))
       {
          // ---- set debug level ----
-         if((++i) < _argc)
+         if(++i < _argc)
          {
-            sSI dlev;
-            ////sscanf(_argv[i], "%d", &dlev);
-            dlev = atoi(_argv[i]);
-            tkscript->configuration.debug_level = (sU8)dlev;
-            printf("[...] debug level set to %i\n", (sU8)dlev);
+            sSI debugLevel;
+            debugLevel = atoi(_argv[i]);
+            tkscript->configuration.debug_level = (sU8)debugLevel;
+            ::printf("[...] debug level set to %i\n", (sU8)debugLevel);
          }
          else
          {
@@ -1302,13 +1303,78 @@ int scan_ac(int _argc, char **_argv) {
       else if(ca.compare("-l") || ca.compare("--list"))
       {
          // ---- list pak file contents ----
-         if((++i) < _argc)
+         if(++i < _argc)
          {
             return(ac_list(_argv[i]));
          }
          else
          {
             exit_print_usage();
+         }
+      }
+      else if(ca.compare("-ll") || ca.compare("--loglevel"))
+      {
+         // ---- set log level ----
+         if(++i < _argc)
+         {
+            // 1=[dbg] debug
+            // 2=[trc] verbose debug
+            // 3=[>>>] very verbose debug
+            // 4=[***] very very verbose debug
+            sSI logLevel;
+            logLevel = atoi(_argv[i]);
+            if(logLevel > 4)
+               logLevel = 4;
+            tkscript->configuration.log_level = logLevel;
+            ::printf("[...] log level set to %i\n", logLevel);
+         }
+         else
+         {
+            exit_print_usage();
+         }
+      }
+      else if(ca.startsWith("-lm"))  // log mask
+      {
+         sUI i = 3;
+         sUI numChars = ca.getNumChars();
+         while(i < numChars)
+         {
+#define Dinvert(a) tkscript->configuration.b_log_##a = tkscript->configuration.b_log_##a ? YAC_FALSE : YAC_TRUE
+            switch((char)ca.chars[i])
+            {
+               case 'n':
+                  tkscript->configuration.logAll(YAC_FALSE);
+                  break;
+               case 'a':
+                  tkscript->configuration.logAll(YAC_TRUE);
+                  break;
+               case 'i':
+                  Dinvert(info);
+                  break;
+               case 'v':
+                  Dinvert(verbose);
+                  break;
+               case 's':
+                  Dinvert(success);
+                  break;
+               case 'w':
+                  Dinvert(warning);
+                  break;
+               case 'e':
+                  Dinvert(error);
+                  break;
+               case 'f':
+                  Dinvert(fatal);
+                  break;
+               case 'p':
+                  Dinvert(profile);
+                  break;
+               case 'd':
+                  Dinvert(debug);
+                  break;
+            }
+#undef Dinvert
+            i++;
          }
       }
       else if(ca.compare("-ch") || ca.compare("--chapter"))

@@ -51,7 +51,12 @@ TKS_Language::TKS_Language(void) {
 TKS_Language::~TKS_Language() { }
 
 void YAC_VCALL TKS_Language::yacGetSignalStringList(YAC_String *_sig) {
-   _sig->visit("onSignal:1 onSegV:0 onSegVContinue:0"); // TKS_SIG_SIGNAL, TKS_SIG_SEGV, TKS_SIG_SEGVCONTINUE
+   // TKS_SIG_SIGNAL, TKS_SIG_SEGV, TKS_SIG_SEGVCONTINUE
+   // TKS_SIG_LOGINFO, TKS_SIG_LOGVERBOSE, TKS_SIG_LOGSUCCESS,
+   // TKS_SIG_LOGWARNING, TKS_SIG_LOGERROR, TKS_SIG_LOGFATAL,
+   // TKS_SIG_LOGPROFILE,
+   // TKS_SIG_LOG1, TKS_SIG_LOG2, TKS_SIG_LOG3, TKS_SIG_LOG4
+   _sig->visit("onSignal:1 onSegV:0 onSegVContinue:0 onLogInfo:3 onLogVerbose:3 onLogSuccess:3 onLogWarning:3 onLogError:3 onLogFatal:3 onLogProfile:3 onLog1:3 onLog2:3 onLog3:3 onLog4:3");
 }
 
 void YAC_VCALL TKS_Language::yacRegisterSignal(sUI _id, YAC_FunctionHandle _fun) {
@@ -60,6 +65,17 @@ void YAC_VCALL TKS_Language::yacRegisterSignal(sUI _id, YAC_FunctionHandle _fun)
    case TKS_SIG_SIGNAL:       tkscript->sig_signal       = _fun; break;
    case TKS_SIG_SEGV:         tkscript->sig_segv         = _fun; break;
    case TKS_SIG_SEGVCONTINUE: tkscript->sig_segvcontinue = _fun; break;
+   case TKS_SIG_LOGINFO:      tkscript->sig_loginfo      = _fun; break;
+   case TKS_SIG_LOGVERBOSE:   tkscript->sig_logverbose   = _fun; break;
+   case TKS_SIG_LOGSUCCESS:   tkscript->sig_logsuccess   = _fun; break;
+   case TKS_SIG_LOGWARNING:   tkscript->sig_logwarning   = _fun; break;
+   case TKS_SIG_LOGERROR:     tkscript->sig_logerror     = _fun; break;
+   case TKS_SIG_LOGFATAL:     tkscript->sig_logfatal     = _fun; break;
+   case TKS_SIG_LOGPROFILE:   tkscript->sig_logprofile   = _fun; break;
+   case TKS_SIG_LOG1:         tkscript->sig_log1         = _fun; break;
+   case TKS_SIG_LOG2:         tkscript->sig_log2         = _fun; break;
+   case TKS_SIG_LOG3:         tkscript->sig_log3         = _fun; break;
+   case TKS_SIG_LOG4:         tkscript->sig_log4         = _fun; break;
    default:
       Dprintf("[---] TKS::yacRegisterSignal: unknown signal id=%i.\n", _id);
       break;

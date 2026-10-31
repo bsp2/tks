@@ -86,11 +86,13 @@ static void PTN_PrintStat__eval(PTN_Env *_env, const PTN_Statement *_st) {
       return;
    }
 
+   const sBool bNewLine = st->add_newline && (st->target < 4/*loginfo*/);
+
    switch(r.type)
    {
       case 0:
          // ---- void ----
-         if(st->add_newline)
+         if(bNewLine)
          {
             tkscript->print("<void>\n", st->target);
          }
@@ -107,7 +109,7 @@ static void PTN_PrintStat__eval(PTN_Env *_env, const PTN_Statement *_st) {
          YAC_String t;
          t.yacValueOfI(r.value.int_val);
          tkscript->print((char*)t.chars, st->target);
-         if(st->add_newline)
+         if(bNewLine)
          {
             tkscript->print("\n", st->target);
          }
@@ -121,7 +123,7 @@ static void PTN_PrintStat__eval(PTN_Env *_env, const PTN_Statement *_st) {
          YAC_String t;
          t.yacValueOfF32(r.value.float_val);
          tkscript->print((char*)t.chars, st->target);
-         if(st->add_newline)
+         if(bNewLine)
          {
             tkscript->print("\n", st->target);
          }
@@ -144,7 +146,7 @@ static void PTN_PrintStat__eval(PTN_Env *_env, const PTN_Statement *_st) {
             }
             tkscript->print((char*)t.chars, st->target);
 
-            if(st->add_newline)
+            if(bNewLine)
             {
                tkscript->print("\n", st->target);
             }
@@ -152,7 +154,7 @@ static void PTN_PrintStat__eval(PTN_Env *_env, const PTN_Statement *_st) {
          }
          else
          {
-            if(st->add_newline)
+            if(bNewLine)
             {
                tkscript->print("<null>\n", st->target);
             }
@@ -171,7 +173,7 @@ static void PTN_PrintStat__eval(PTN_Env *_env, const PTN_Statement *_st) {
             if(r.value.string_val->length > 1u)
             {
                tkscript->print((char*)r.value.string_val->chars, st->target);
-               if(st->add_newline)
+               if(bNewLine)
                {
                   if(!r.value.string_val->endsWith("\n"))
                   {
@@ -183,14 +185,14 @@ static void PTN_PrintStat__eval(PTN_Env *_env, const PTN_Statement *_st) {
             }
             else
             {
-               if(st->add_newline)
+               if(bNewLine)
                   tkscript->print("\n", st->target);
                e_msg = "";
             }
          }
          else
          {
-            if(st->add_newline)
+            if(bNewLine)
             {
                tkscript->print("<null>\n", st->target);
             }

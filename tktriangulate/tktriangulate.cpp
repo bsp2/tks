@@ -1,6 +1,6 @@
 /// tktriangulate.cpp
 ///
-/// (c) 2018-2024 by Bastian Spiegel <bs@tkscript.de>
+/// (c) 2018-2026 by Bastian Spiegel <bs@tkscript.de>
 ///
 /// Permission is hereby granted, free of charge, to any person obtaining a copy
 /// of this software and associated documentation files (the "Software"), to deal
@@ -154,7 +154,7 @@ void _Triangulate::addPolygonRegionEx(YAC_Object *_fa, sUI _startOff, sUI _numEl
             e->m_NumVertices     = numVertices;
             e->m_IndexBufferSize = 0u;
             e->m_IndexBuffer     = NULL;
-      
+
             if(NULL == vgtesselate.input)
             {
                vgtesselate.input = e;
@@ -579,7 +579,7 @@ sBool _Triangulate::storeResultIndexed(YAC_Object *_fa, YAC_Object *_ia) {
                      // yac_host->printf("xxx store vg res<indexed> idx=%u vtxIdx=%d\n", idx, vtxIdx);
 
                      vi.value.int_val = vtxIdx;
-                     _ia->yacArraySet(NULL/*context*/, idxOut++, &vi);                    
+                     _ia->yacArraySet(NULL/*context*/, idxOut++, &vi);
                   }
                }
                else
@@ -624,13 +624,18 @@ void YAC_CALL YAC_Init(YAC_Host *_host) {
    Dyac_std_exid_resolve;
 
    YAC_Init_tktriangulate(_host);
-   yac_host->printf("init tktriangulate done.\n");
+
+	if(Dyac_host_yacGetDebugLevel() > 1)
+      Dyac_host_log2("tktriangulate::YAC_Init called.\n");
 }
 
 
 // ---------------------------------------------------------------------------- YAC_Exit
 void YAC_CALL YAC_Exit(YAC_Host *_host) {
    YAC_Exit_tktriangulate(_host);
+
+	if(Dyac_host_yacGetDebugLevel() > 1)
+      Dyac_host_log2("tktriangulate::YAC_Exit called.\n");
 }
 
 

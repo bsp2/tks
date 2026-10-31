@@ -1,6 +1,6 @@
 /// tkoldmath.cpp
 ///
-/// (c) 2001-2014 by Bastian Spiegel <bs@tkscript.de>
+/// (c) 2001-2026 by Bastian Spiegel <bs@tkscript.de>
 ///     - Distributed under terms of the Lesser GNU General Public License (LGPL).
 ///       See COPYING and <http://www.gnu.org/licenses/licenses.html#LGPL> for further information.
 ///
@@ -525,7 +525,7 @@ void YAC_CALL _zglVertexv(YAC_Object *_v) {
 // ---------------------------------------------------------------------------
 void YAC_CALL YAC_Init(YAC_Host *_host) {
 	if(_host->yacGetDebugLevel())
-		_host->printf("[dbg] tkoldmath::YAC_Init called.\n");
+		Dyac_host_log2("tkoldmath::YAC_Init called.");
 	yac_host=_host;
 
 	YAC_Init_OldMath (_host);
@@ -545,7 +545,7 @@ void YAC_CALL YAC_Init(YAC_Host *_host) {
 	for(i=0; i<TKS_NUM_TMP_VECTOR4; i++) tmp_vector4[i].class_ID=clid_Vector4;
 
 	if(yac_host->yacGetDebugLevel())
-		yac_host->yacPrint("[dbg] tkoldmath::YAC_Init() finished.\n");
+		Dyac_host_log2("tkoldmath::YAC_Init() finished.");
 }
 
 void YAC_CALL YAC_Exit(YAC_Host *_host) {
@@ -557,10 +557,9 @@ void YAC_CALL YAC_Exit(YAC_Host *_host) {
 	YAC_Exit_OldMath (_host);
 
 	if(yac_host->yacGetDebugLevel())
-		yac_host->yacPrint("[dbg] tkoldmath::YAC_Exit() finished.\n");
+		Dyac_host_log2("tkoldmath::YAC_Exit() finished.");
 }
 
 sUI YAC_CALL YAC_Version(void) {
 	return 0x00090830;
 }
-

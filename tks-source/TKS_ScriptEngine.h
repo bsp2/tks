@@ -25,18 +25,29 @@ class TKS_LinearAllocator;
 #define TKS_BFUN2_LAST     0x43
 
 // Pseudo tokens for builtin procedures, also see PTN_BuiltinFun.h for builtin function ids
-#define TKS_BPROC_FIRST    0x80 // index of first function, used to determine whether a pseudo token represents a function or a procedure
-#define TKS_BPROC_STDOUT   0x80
-#define TKS_BPROC_STDERR   0x81
-#define TKS_BPROC_DCON     0x82
-#define TKS_BPROC_DIE      0x83
-#define TKS_BPROC_PRINT    0x84
-#define TKS_BPROC_TRACE    0x85
-#define TKS_BPROC_DTRACE   0x86
-#define TKS_BPROC_STDFLUSH 0x87
-#define TKS_BPROC_CLAMP    0x88
-#define TKS_BPROC_WRAP     0x89
-#define TKS_BPROC_LAST     0x8A
+#define TKS_BPROC_FIRST      0x80 // index of first function, used to determine whether a pseudo token represents a function or a procedure
+#define TKS_BPROC_STDOUT     0x80
+#define TKS_BPROC_STDERR     0x81
+#define TKS_BPROC_DCON       0x82
+#define TKS_BPROC_DIE        0x83
+#define TKS_BPROC_PRINT      0x84
+#define TKS_BPROC_TRACE      0x85
+#define TKS_BPROC_DTRACE     0x86
+#define TKS_BPROC_STDFLUSH   0x87
+#define TKS_BPROC_CLAMP      0x88
+#define TKS_BPROC_WRAP       0x89
+#define TKS_BPROC_LOGINFO    0x8A  // [...]  (console +  UI status bar)
+#define TKS_BPROC_LOGVERBOSE 0x8B  // [:::]  (console only)
+#define TKS_BPROC_LOGSUCCESS 0x8C  // [+++]  (console +  UI status bar)
+#define TKS_BPROC_LOGWARNING 0x8D  // [~~~]  (console +  UI status bar)
+#define TKS_BPROC_LOGERROR   0x8E  // [---]  (console +  UI status bar)
+#define TKS_BPROC_LOGFATAL   0x8F  // [!!!]  (console only)
+#define TKS_BPROC_LOGPROFILE 0x90  // [pro]  (console only)
+#define TKS_BPROC_LOG1       0x91  // [dbg]  (console only)
+#define TKS_BPROC_LOG2       0x92  // [trc]  (console only)
+#define TKS_BPROC_LOG3       0x93  // [>>>]  (console only)
+#define TKS_BPROC_LOG4       0x94  // [***]  (console only)
+#define TKS_BPROC_LAST       0x95
 
 struct TKS_PrintHook {
    yac_printhook_fxn_t  fxn;
@@ -45,13 +56,29 @@ struct TKS_PrintHook {
    TKS_PrintHook       *next;
 };
 
+#define TKS_PRINT_TARGET_DCON        0
+#define TKS_PRINT_TARGET_STDOUT      1
+#define TKS_PRINT_TARGET_STDERR      2
+#define TKS_PRINT_TARGET_DIE         3
+#define TKS_PRINT_TARGET_LOGINFO     4
+#define TKS_PRINT_TARGET_LOGVERBOSE  5
+#define TKS_PRINT_TARGET_LOGSUCCESS  6
+#define TKS_PRINT_TARGET_LOGWARNING  7
+#define TKS_PRINT_TARGET_LOGERROR    8
+#define TKS_PRINT_TARGET_LOGFATAL    9
+#define TKS_PRINT_TARGET_LOGPROFILE  10
+#define TKS_PRINT_TARGET_LOG1        11
+#define TKS_PRINT_TARGET_LOG2        12
+#define TKS_PRINT_TARGET_LOG3        13
+#define TKS_PRINT_TARGET_LOG4        14
+
 class TKS_ScriptEngine : public YAC_Host {
 public:
    // ---- YAC_Host virtual method interface
    sUI                YAC_VCALL yacQueryInterfaces       (void) {return YAC_HOST_INTERFACE_ALL;}
    sUI                YAC_VCALL yacGetDebugLevel         (void);
    sUI                YAC_VCALL yacRunning               (void);
-   void               YAC_VCALL yacPrint                 (const sChar *_s); // _sid: 0=dcon, 1=STDOUT, 2=STDERR
+   void               YAC_VCALL yacPrint                 (const sChar *_s);
    void               YAC_VCALL yacPrintHookAdd          (yac_printhook_fxn_t _fxn, YAC_String *_output, void *_userdata);
    void               YAC_VCALL yacPrintHookRemove       (yac_printhook_fxn_t _fxn, YAC_String *_output, void *_userdata);
    sUI                YAC_VCALL yacRegisterClass         (YAC_Object *_template, sUI _may_instantiate); // will be deleted upon clean()
@@ -133,91 +160,120 @@ public:
    YAC_ThreadHandle YAC_VCALL yacThreadNewFromCurrent    (void);
    sBool            YAC_VCALL yacThreadIsMain            (void);
 
+   sSI              YAC_VCALL yacGetLogLevel             (void);
+   void             YAC_VCALL yacLogInfo                 (const char *_fmt, ...);
+   void             YAC_VCALL yacLogVerbose              (const char *_fmt, ...);
+   void             YAC_VCALL yacLogSuccess              (const char *_fmt, ...);
+   void             YAC_VCALL yacLogWarning              (const char *_fmt, ...);
+   void             YAC_VCALL yacLogError                (const char *_fmt, ...);
+   void             YAC_VCALL yacLogFatal                (const char *_fmt, ...);
+   void             YAC_VCALL yacLogProfile              (const char *_fmt, ...);
+   void             YAC_VCALL yacLog1                    (const char *_fmt, ...);
+   void             YAC_VCALL yacLog2                    (const char *_fmt, ...);
+   void             YAC_VCALL yacLog3                    (const char *_fmt, ...);
+   void             YAC_VCALL yacLog4                    (const char *_fmt, ...);
+
 
    //
    // stubs for reserved vtable entries
    //
-   void               YAC_VCALL vtable_entry_0_12_reserved (void) { }
-   void               YAC_VCALL vtable_entry_0_13_reserved (void) { }
-   void               YAC_VCALL vtable_entry_0_14_reserved (void) { }
-   void               YAC_VCALL vtable_entry_0_15_reserved (void) { }
 
-   void               YAC_VCALL vtable_entry_1_2_reserved  (void) { }
-   void               YAC_VCALL vtable_entry_1_3_reserved  (void) { }
-   void               YAC_VCALL vtable_entry_1_4_reserved  (void) { }
-   void               YAC_VCALL vtable_entry_1_5_reserved  (void) { }
-   void               YAC_VCALL vtable_entry_1_6_reserved  (void) { }
-   void               YAC_VCALL vtable_entry_1_7_reserved  (void) { }
+   // reflection
+   void             YAC_VCALL vtable_entry_0_12_reserved (void) { }
+   void             YAC_VCALL vtable_entry_0_13_reserved (void) { }
+   void             YAC_VCALL vtable_entry_0_14_reserved (void) { }
+   void             YAC_VCALL vtable_entry_0_15_reserved (void) { }
 
-   void               YAC_VCALL vtable_entry_2_4_reserved  (void) { }
-   void               YAC_VCALL vtable_entry_2_5_reserved  (void) { }
-   void               YAC_VCALL vtable_entry_2_6_reserved  (void) { }
-   void               YAC_VCALL vtable_entry_2_7_reserved  (void) { }
-   void               YAC_VCALL vtable_entry_2_8_reserved  (void) { }
-   void               YAC_VCALL vtable_entry_2_9_reserved  (void) { }
-   void               YAC_VCALL vtable_entry_2_10_reserved (void) { }
-   void               YAC_VCALL vtable_entry_2_11_reserved (void) { }
-   void               YAC_VCALL vtable_entry_2_12_reserved (void) { }
-   void               YAC_VCALL vtable_entry_2_13_reserved (void) { }
-   void               YAC_VCALL vtable_entry_2_14_reserved (void) { }
-   void               YAC_VCALL vtable_entry_2_15_reserved (void) { }
+   // debug
+   void             YAC_VCALL vtable_entry_1_2_reserved  (void) { }
+   void             YAC_VCALL vtable_entry_1_3_reserved  (void) { }
+   void             YAC_VCALL vtable_entry_1_4_reserved  (void) { }
+   void             YAC_VCALL vtable_entry_1_5_reserved  (void) { }
+   void             YAC_VCALL vtable_entry_1_6_reserved  (void) { }
+   void             YAC_VCALL vtable_entry_1_7_reserved  (void) { }
 
-   void               YAC_VCALL vtable_entry_3_16_reserved (void) { }
-   void               YAC_VCALL vtable_entry_3_17_reserved (void) { }
-   void               YAC_VCALL vtable_entry_3_18_reserved (void) { }
-   void               YAC_VCALL vtable_entry_3_19_reserved (void) { }
-   void               YAC_VCALL vtable_entry_3_20_reserved (void) { }
-   void               YAC_VCALL vtable_entry_3_21_reserved (void) { }
-   void               YAC_VCALL vtable_entry_3_22_reserved (void) { }
-   void               YAC_VCALL vtable_entry_3_23_reserved (void) { }
-   void               YAC_VCALL vtable_entry_3_24_reserved (void) { }
-   void               YAC_VCALL vtable_entry_3_25_reserved (void) { }
-   void               YAC_VCALL vtable_entry_3_26_reserved (void) { }
-   void               YAC_VCALL vtable_entry_3_27_reserved (void) { }
-   void               YAC_VCALL vtable_entry_3_28_reserved (void) { }
-   void               YAC_VCALL vtable_entry_3_29_reserved (void) { }
-   void               YAC_VCALL vtable_entry_3_30_reserved (void) { }
-   void               YAC_VCALL vtable_entry_3_31_reserved (void) { }
+   // string
+   void             YAC_VCALL vtable_entry_2_4_reserved  (void) { }
+   void             YAC_VCALL vtable_entry_2_5_reserved  (void) { }
+   void             YAC_VCALL vtable_entry_2_6_reserved  (void) { }
+   void             YAC_VCALL vtable_entry_2_7_reserved  (void) { }
+   void             YAC_VCALL vtable_entry_2_8_reserved  (void) { }
+   void             YAC_VCALL vtable_entry_2_9_reserved  (void) { }
+   void             YAC_VCALL vtable_entry_2_10_reserved (void) { }
+   void             YAC_VCALL vtable_entry_2_11_reserved (void) { }
+   void             YAC_VCALL vtable_entry_2_12_reserved (void) { }
+   void             YAC_VCALL vtable_entry_2_13_reserved (void) { }
+   void             YAC_VCALL vtable_entry_2_14_reserved (void) { }
+   void             YAC_VCALL vtable_entry_2_15_reserved (void) { }
 
-   void               YAC_VCALL vtable_entry_4_1_reserved  (void) { }
-   void               YAC_VCALL vtable_entry_4_2_reserved  (void) { }
-   void               YAC_VCALL vtable_entry_4_3_reserved  (void) { }
-   void               YAC_VCALL vtable_entry_4_4_reserved  (void) { }
-   void               YAC_VCALL vtable_entry_4_5_reserved  (void) { }
-   void               YAC_VCALL vtable_entry_4_6_reserved  (void) { }
-   void               YAC_VCALL vtable_entry_4_7_reserved  (void) { }
+   // scripting
+   void             YAC_VCALL vtable_entry_3_16_reserved (void) { }
+   void             YAC_VCALL vtable_entry_3_17_reserved (void) { }
+   void             YAC_VCALL vtable_entry_3_18_reserved (void) { }
+   void             YAC_VCALL vtable_entry_3_19_reserved (void) { }
+   void             YAC_VCALL vtable_entry_3_20_reserved (void) { }
+   void             YAC_VCALL vtable_entry_3_21_reserved (void) { }
+   void             YAC_VCALL vtable_entry_3_22_reserved (void) { }
+   void             YAC_VCALL vtable_entry_3_23_reserved (void) { }
+   void             YAC_VCALL vtable_entry_3_24_reserved (void) { }
+   void             YAC_VCALL vtable_entry_3_25_reserved (void) { }
+   void             YAC_VCALL vtable_entry_3_26_reserved (void) { }
+   void             YAC_VCALL vtable_entry_3_27_reserved (void) { }
+   void             YAC_VCALL vtable_entry_3_28_reserved (void) { }
+   void             YAC_VCALL vtable_entry_3_29_reserved (void) { }
+   void             YAC_VCALL vtable_entry_3_30_reserved (void) { }
+   void             YAC_VCALL vtable_entry_3_31_reserved (void) { }
 
-   void               YAC_VCALL vtable_entry_5_3_reserved  (void) { }
-   void               YAC_VCALL vtable_entry_5_4_reserved  (void) { }
-   void               YAC_VCALL vtable_entry_5_5_reserved  (void) { }
-   void               YAC_VCALL vtable_entry_5_6_reserved  (void) { }
-   void               YAC_VCALL vtable_entry_5_7_reserved  (void) { }
-   void               YAC_VCALL vtable_entry_5_8_reserved  (void) { }
-   void               YAC_VCALL vtable_entry_5_9_reserved  (void) { }
+   // event
+   void             YAC_VCALL vtable_entry_4_1_reserved  (void) { }
+   void             YAC_VCALL vtable_entry_4_2_reserved  (void) { }
+   void             YAC_VCALL vtable_entry_4_3_reserved  (void) { }
+   void             YAC_VCALL vtable_entry_4_4_reserved  (void) { }
+   void             YAC_VCALL vtable_entry_4_5_reserved  (void) { }
+   void             YAC_VCALL vtable_entry_4_6_reserved  (void) { }
+   void             YAC_VCALL vtable_entry_4_7_reserved  (void) { }
 
-   void               YAC_VCALL vtable_entry_6_6_reserved  (void) { }
-   void               YAC_VCALL vtable_entry_6_7_reserved  (void) { }
-   void               YAC_VCALL vtable_entry_6_8_reserved  (void) { }
-   void               YAC_VCALL vtable_entry_6_9_reserved  (void) { }
+   // exception
+   void             YAC_VCALL vtable_entry_5_3_reserved  (void) { }
+   void             YAC_VCALL vtable_entry_5_4_reserved  (void) { }
+   void             YAC_VCALL vtable_entry_5_5_reserved  (void) { }
+   void             YAC_VCALL vtable_entry_5_6_reserved  (void) { }
+   void             YAC_VCALL vtable_entry_5_7_reserved  (void) { }
+   void             YAC_VCALL vtable_entry_5_8_reserved  (void) { }
+   void             YAC_VCALL vtable_entry_5_9_reserved  (void) { }
 
-   void               YAC_VCALL vtable_entry_7_5_reserved  (void) { }
-   void               YAC_VCALL vtable_entry_7_6_reserved  (void) { }
-   void               YAC_VCALL vtable_entry_7_7_reserved  (void) { }
-   void               YAC_VCALL vtable_entry_7_8_reserved  (void) { }
-   void               YAC_VCALL vtable_entry_7_9_reserved  (void) { }
+   // callback
+   void             YAC_VCALL vtable_entry_6_6_reserved  (void) { }
+   void             YAC_VCALL vtable_entry_6_7_reserved  (void) { }
+   void             YAC_VCALL vtable_entry_6_8_reserved  (void) { }
+   void             YAC_VCALL vtable_entry_6_9_reserved  (void) { }
 
-   void               YAC_VCALL vtable_entry_8_3_reserved  (void) { }
-   void               YAC_VCALL vtable_entry_8_4_reserved  (void) { }
-   void               YAC_VCALL vtable_entry_8_5_reserved  (void) { }
-   void               YAC_VCALL vtable_entry_8_6_reserved  (void) { }
-   void               YAC_VCALL vtable_entry_8_7_reserved  (void) { }
-   void               YAC_VCALL vtable_entry_8_8_reserved  (void) { }
-   void               YAC_VCALL vtable_entry_8_9_reserved  (void) { }
+   // mutex
+   void             YAC_VCALL vtable_entry_7_5_reserved  (void) { }
+   void             YAC_VCALL vtable_entry_7_6_reserved  (void) { }
+   void             YAC_VCALL vtable_entry_7_7_reserved  (void) { }
+   void             YAC_VCALL vtable_entry_7_8_reserved  (void) { }
+   void             YAC_VCALL vtable_entry_7_9_reserved  (void) { }
 
-   void               YAC_VCALL vtable_entry_9_17_reserved (void) { }
-   void               YAC_VCALL vtable_entry_9_18_reserved (void) { }
-   void               YAC_VCALL vtable_entry_9_19_reserved (void) { }
-   void               YAC_VCALL vtable_entry_9_20_reserved (void) { }
+   // atomic
+   void             YAC_VCALL vtable_entry_8_3_reserved  (void) { }
+   void             YAC_VCALL vtable_entry_8_4_reserved  (void) { }
+   void             YAC_VCALL vtable_entry_8_5_reserved  (void) { }
+   void             YAC_VCALL vtable_entry_8_6_reserved  (void) { }
+   void             YAC_VCALL vtable_entry_8_7_reserved  (void) { }
+   void             YAC_VCALL vtable_entry_8_8_reserved  (void) { }
+   void             YAC_VCALL vtable_entry_8_9_reserved  (void) { }
+
+   // threads
+   void             YAC_VCALL vtable_entry_9_17_reserved (void) { }
+   void             YAC_VCALL vtable_entry_9_18_reserved (void) { }
+   void             YAC_VCALL vtable_entry_9_19_reserved (void) { }
+   void             YAC_VCALL vtable_entry_9_20_reserved (void) { }
+
+   // log
+   void             YAC_VCALL vtable_entry_10_12_reserved (void) { }
+   void             YAC_VCALL vtable_entry_10_13_reserved (void) { }
+   void             YAC_VCALL vtable_entry_10_14_reserved (void) { }
 
 
    // _r may be NULL
@@ -282,7 +338,9 @@ public:
    void             freePrintHooks (void);
    void             callPrintHooks (YAC_String *_s);
 
-   void             print (const char *_s, sSI _sid); // _sid: 0=dcon, 1=STDOUT, 2=STDERR
+   void             buf_va_sprintf (const char *_fmt, va_list va);
+   void             printTarget (const char *_s, sSI _target);  // unsychronized
+   void             print (const char *_s, sSI _target); // target: TKS_PRINT_TARGET_xxx. call lockMtxPrint()
    void             printf (const char *_fmt, ...);
 
    // ---- compile error handling ----
@@ -373,6 +431,20 @@ public:
    void            *sig_signal;
    void            *sig_segv;
    void            *sig_segvcontinue;
+   void            *sig_loginfo;
+   void            *sig_logverbose;
+   void            *sig_logsuccess;
+   void            *sig_logwarning;
+   void            *sig_logerror;
+   void            *sig_logfatal;
+   void            *sig_logprofile;
+   void            *sig_log1;
+   void            *sig_log2;
+   void            *sig_log3;
+   void            *sig_log4;
+   void unsetSignalCallbacks (void);
+
+   void callOnLog (void *_fxn, const char *_s, const char *_defPrefix);
 
    // ---- milli seconds counter ----
    struct __milliSeconds {
@@ -449,7 +521,7 @@ public:
    void freeMutexes(void);
    TKS_NamedMutex *findNamedMutex   (YAC_String *_name); // returns NULL if mutex was not found
    TKS_NamedMutex *createNamedMutex (YAC_String *_name); // "=<name>=" mutex declaration
-   ////void destroyNamedMutex (TKS_Mutex *_mutex); // called by ~TKS_CachedScript xxx really needed?
+   ////void destroyNamedMutex (TKS_Mutex *_mutex); // called by ~TKS_CachedScript xxx really needed? (=> nope)
 #endif //TKS_MT
 
    // ---- profiling ----

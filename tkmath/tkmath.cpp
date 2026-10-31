@@ -1,6 +1,6 @@
 /// tkmath.cpp
 ///
-/// (c) 2008-2024 by Carsten Busse <carsten.busse@googlemail.com>,
+/// (c) 2008-2026 by Carsten Busse <carsten.busse@googlemail.com>,
 ///                  Bastian Spiegel <bs@tkscript.de>
 ///     - Distributed under terms of the Lesser GNU General Public License (LGPL).
 ///       See COPYING and <http://www.gnu.org/licenses/licenses.html#LGPL> for further information.
@@ -122,7 +122,7 @@ void YAC_CALL YAC_Init(YAC_Host *_host) {
 #endif // DX_STATIC_TKMATH
 
    if(_host->yacGetDebugLevel())
-      _host->printf("[dbg] tkmath::YAC_Init called\n");
+      Dyac_host_log2("tkmath::YAC_Init called");
 
    yac_host = _host;
    YAC_Init_Math(_host);
@@ -166,7 +166,7 @@ void YAC_CALL YAC_Init(YAC_Host *_host) {
    Dyac_exid_register(TkMathUnsupportedOperator, TkMathError);
 
    if(yac_host->yacGetDebugLevel())
-      yac_host->printf("[dbg] tkmath::YAC_Init finished\n");
+      Dyac_host_log2("tkmath::YAC_Init finished");
 }
 
 #ifdef DX_STATIC_TKMATH
@@ -177,6 +177,6 @@ void YAC_CALL YAC_Exit(YAC_Host *_host) {
    YAC_Exit_Math(_host);
    if(yac_host->yacGetDebugLevel())
    {
-      yac_host->printf("[dbg] tkmath::YAC_Exit finished\n");
+      Dyac_host_log2("tkmath::YAC_Exit finished");
    }
 }

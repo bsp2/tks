@@ -13,8 +13,20 @@ public:
    TKS_ConfigurationInter  (void);
    ~TKS_ConfigurationInter ();
 
-	 void setDebugLevel (sSI);
-	 sSI  getDebugLevel (void);
+	 void setLogLevel (sSI);
+	 sSI  getLogLevel (void);
+
+    sBool getEnableLogInfo (void);
+    sBool getEnableLogVerbose (void);
+    sBool getEnableLogSuccess (void);
+    sBool getEnableLogWarning (void);
+    sBool getEnableLogError (void);
+    sBool getEnableLogFatal (void);
+    sBool getEnableLogProfile (void);
+    sBool getEnableLogDebug (void);
+
+	 void setDebugLevel (sUI);
+	 sUI  getDebugLevel (void);
 
 	 void setForceInt   (sSI);
 	 sSI  getForceInt   (void);

@@ -1,6 +1,6 @@
 /// tksdl.cpp
 ///
-/// (c) 2001-2024 by Bastian Spiegel <bs@tkscript.de>
+/// (c) 2001-2026 by Bastian Spiegel <bs@tkscript.de>
 ///     - Distributed under terms of the Lesser GNU General Public License (LGPL).
 ///       See COPYING and <http://www.gnu.org/licenses/licenses.html#LGPL> for further information.
 ///
@@ -64,21 +64,21 @@ void *sc_context;
 
 // ---------------------------------------------------------------------------
 void YAC_CALL YAC_Init(YAC_Host *_host) {
-	yac_host=_host;
+	yac_host = _host;
 
-	if(_host->yacGetDebugLevel() > 1) 
+	if(_host->yacGetDebugLevel() > 1)
    {
-	  _host->printf("[dbg] tksdl::YAC_Init called.\n");
+      Dyac_host_log2("tksdl::YAC_Init called.");
 
 #ifdef YAC_GLOBAL_NEWDELETE
-     _host->printf("[dbg] tksdl: yac_global_newdelete_counter=%d\n", yac_host->yacNewDeleteGetCounter());
+      Dyac_host_log3("tksdl: yac_global_newdelete_counter=%d", yac_host->yacNewDeleteGetCounter());
 #endif // YAC_GLOBAL_NEWDELETE
    }
 
    sc_context = yac_host->yacContextGetDefault();
 
 #if defined(YAC_WIN32)
-	// ::SDL_SetModuleHandle(::GetModuleHandle(NULL)); 
+	// ::SDL_SetModuleHandle(::GetModuleHandle(NULL));
 #endif // YAC_WIN32
 
 #if 1
@@ -114,31 +114,31 @@ void YAC_CALL YAC_Init(YAC_Host *_host) {
    yac_host->yacCallbackSetFunByName(TKSDL_HOOK_NAME_CLOSE, (YAC_CFunctionPtr)&tksdl_hook_close);
 
 	if(yac_host->yacGetDebugLevel() > 1)
-		yac_host->yacPrint("tksdl::YAC_Init() finished.\n");
+		Dyac_host_log2("tksdl::YAC_Init() finished.");
 }
 
 void YAC_CALL YAC_Exit(YAC_Host *_host) {
    sBool bDebug = (yac_host->yacGetDebugLevel() > 1);
 
 	if(bDebug)
-		yac_host->yacPrint("[dbg] tksdl::YAC_Exit() called.\n");
+		Dyac_host_log2("tksdl::YAC_Exit() called.");
 
    if(bDebug)
-      yac_host->yacPrint("[dbg] tksdl: exit audio.\n");
+      Dyac_host_log2("tksdl: exit audio.");
    YAC_Exit_audio        (_host);
 
    if(bDebug)
-      yac_host->yacPrint("[dbg] tksdl: exit hal1.\n");
+      Dyac_host_log2("tksdl: exit hal1.");
    YAC_Exit_hal1         (_host);
 
    if(bDebug)
-      yac_host->yacPrint("[dbg] tksdl: exit hal.\n");
+      Dyac_host_log2("tksdl: exit hal.");
    YAC_Exit_hal          (_host);
 
 	::SDL_Quit();
 
 	if(bDebug)
-		yac_host->yacPrint("[dbg] tksdl::YAC_Exit() finished.\n");
+		Dyac_host_log2("tksdl::YAC_Exit() finished.");
 
 }
 

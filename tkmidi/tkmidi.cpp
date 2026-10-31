@@ -23,13 +23,12 @@ YAC_MutexHandle mtx_miditimer;
 void YAC_CALL YAC_Init(YAC_Host *_host) {
 	yac_host = _host;
 
-	if(yac_host->yacGetDebugLevel()) 
-	  yac_host->printf("tkmidi<winmm>::YAC_Init called.\n");
+	if(Dyac_host_yacGetDebugLevel() > 1)
+	  Dyac_host_log2("tkmidi<winmm>::YAC_Init called.");
 
    mtx_miditimer = yac_host->yacMutexCreate();
 
    YAC_Init_midi(_host);
-
 }
 
 void YAC_CALL YAC_Exit(YAC_Host *_host) {

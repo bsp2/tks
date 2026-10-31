@@ -1,14 +1,14 @@
 // ----
 // ---- file   : tkanalogrytm.cpp
 // ---- author : Bastian Spiegel <bs@tkscript.de>
-// ---- legal  : (c) 2016-2023 by Bastian Spiegel.
+// ---- legal  : (c) 2016-2026 by Bastian Spiegel.
 // ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
 // ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
 // ----
 // ---- info   : This is part of the "tkanalogrytm" plugin.
 // ----
 // ---- created: 27Feb2016
-// ---- changed: 28Feb2016, 21Aug2017, 03Jan2018, 25Nov2023
+// ---- changed: 28Feb2016, 21Aug2017, 03Jan2018, 25Nov2023, 31Oct2026
 // ----
 // ----
 // ----
@@ -29,15 +29,15 @@ YAC_Host *yac_host;
 void YAC_CALL YAC_Init(YAC_Host *_host) {
 	yac_host = _host;
 
-	if(yac_host->yacGetDebugLevel())
+	if(Dyac_host_yacGetDebugLevel() > 1)
    {
-      yac_host->printf("tkanalogrytm::YAC_Init called.\n");
-      yac_host->printf("tkanalogrytm::YAC_Init:  sizeof(ar_kit_t)=%u\n", sizeof(ar_kit_t));
-      yac_host->printf("tkanalogrytm::YAC_Init:  sizeof(ar_sound_t)=%u\n", sizeof(ar_sound_t));
-      yac_host->printf("tkanalogrytm::YAC_Init:  sizeof(ar_pattern_t)=%u\n", sizeof(ar_pattern_t));
-      yac_host->printf("tkanalogrytm::YAC_Init:  sizeof(ar_pattern_track_t)=%u\n", sizeof(ar_pattern_track_t));
-      yac_host->printf("tkanalogrytm::YAC_Init:  sizeof(ar_global_t)=%u\n", sizeof(ar_global_t));
-      yac_host->printf("tkanalogrytm::YAC_Init:  sizeof(ar_settings_t)=%u\n", sizeof(ar_settings_t));
+      Dyac_host_log2("tkanalogrytm::YAC_Init called.");
+      Dyac_host_log3("tkanalogrytm::YAC_Init:  sizeof(ar_kit_t)=%u", sizeof(ar_kit_t));
+      Dyac_host_log3("tkanalogrytm::YAC_Init:  sizeof(ar_sound_t)=%u", sizeof(ar_sound_t));
+      Dyac_host_log3("tkanalogrytm::YAC_Init:  sizeof(ar_pattern_t)=%u", sizeof(ar_pattern_t));
+      Dyac_host_log3("tkanalogrytm::YAC_Init:  sizeof(ar_pattern_track_t)=%u", sizeof(ar_pattern_track_t));
+      Dyac_host_log3("tkanalogrytm::YAC_Init:  sizeof(ar_global_t)=%u", sizeof(ar_global_t));
+      Dyac_host_log3("tkanalogrytm::YAC_Init:  sizeof(ar_settings_t)=%u", sizeof(ar_settings_t));
    }
 
    YAC_Init_analogrytm(_host);
@@ -45,8 +45,8 @@ void YAC_CALL YAC_Init(YAC_Host *_host) {
 
 void YAC_CALL YAC_Exit(YAC_Host *_host) {
 
-	if(yac_host->yacGetDebugLevel())
-      yac_host->printf("[dbg] tkanalogrytm::YAC_Exit called.\n");
+	if(Dyac_host_yacGetDebugLevel() > 1)
+      Dyac_host_log2("tkanalogrytm::YAC_Exit called.");
 
    YAC_Exit_analogrytm(_host);
 

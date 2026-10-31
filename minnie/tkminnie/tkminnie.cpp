@@ -412,8 +412,8 @@ void YAC_CALL YAC_Init(YAC_Host *_host) {
 
    loc_shared_export();
 
-	if(yac_host->yacGetDebugLevel() > 1)
-		yac_host->yacPrint("[dbg] tkminnie::YAC_Init() finished.\n");
+	if(Dyac_host_yacGetDebugLevel() > 1)
+		Dyac_host_log2("tkminnie::YAC_Init() finished.");
 }
 
 void YAC_CALL YAC_Exit(YAC_Host *_host) {
@@ -423,8 +423,8 @@ void YAC_CALL YAC_Exit(YAC_Host *_host) {
    YAC_Exit_shadervg(_host);
    YAC_Exit_minnie(_host);
 
-	if(yac_host->yacGetDebugLevel() > 1)
-		yac_host->yacPrint("[dbg] tkminnie::YAC_Exit() finished.\n");
+	if(Dyac_host_yacGetDebugLevel() > 1)
+		Dyac_host_log2("tkminnie::YAC_Exit() finished.");
 }
 
 

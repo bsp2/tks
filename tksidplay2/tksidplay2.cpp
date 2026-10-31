@@ -1,6 +1,6 @@
 // YAC interface wrapper for the SidPlay2 player library
 //
-// last changed: 9-Jan-2005, 17-Apr-2009 
+// last changed: 9-Jan-2005, 17-Apr-2009, 31-Oct-2026
 //
 #include <math.h>
 #include <stdarg.h>
@@ -108,11 +108,11 @@ public:
 
 public:
 	YAC(_SidPlay2);
-	
+
     _SidPlay2(void) {
 		debug(1, stdout);
 
-		cfg_sidModel = SID2_MOS8580; 
+		cfg_sidModel = SID2_MOS8580;
 
 		resid=new ReSIDBuilder("reSID");
 		resid->create(info().maxsids);
@@ -153,7 +153,7 @@ public:
 			_SidTune *st=(_SidTune*)_o;
 
 		sid2_config_t      m_engCfg;
-		m_engCfg = config (); 
+		m_engCfg = config ();
 
 		m_engCfg.precision=16;
         m_engCfg.frequency    = 44100;
@@ -161,21 +161,21 @@ public:
 		m_engCfg.rightVolume     = 125;
 		m_engCfg.playback=sid2_mono;
 		m_engCfg.sampleFormat=SID2_LITTLE_SIGNED;
-		
+
 		m_engCfg.clockSpeed=SID2_CLOCK_CORRECT;
 		m_engCfg.clockDefault=SID2_CLOCK_PAL;//SID2_CLOCK_CORRECT;
 		m_engCfg.clockForced=0;
-		
+
 		m_engCfg.environment=sid2_envR; //sid2_envPS;
 		m_engCfg.sidSamples=1;
 		m_engCfg.forceDualSids=0;
 		m_engCfg.sidEmulation=0;
-		m_engCfg.sidModel = (sid2_model_t)cfg_sidModel ;//SID2_MOS6581;//SID2_MOS8580; 
+		m_engCfg.sidModel = (sid2_model_t)cfg_sidModel ;//SID2_MOS6581;//SID2_MOS8580;
         m_engCfg.sidDefault   = (sid2_model_t)cfg_sidModel;//SID2_MOS6581; //SID2_MOS8580;//6581;
 		m_engCfg.optimisation=SID2_DEFAULT_OPTIMISATION;
-		
-        //m_filter.enabled      = emulation.filter; 
-		
+
+        //m_filter.enabled      = emulation.filter;
+
 		m_engCfg.sidEmulation=resid;
 		m_engCfg.precision=16;
 		m_engCfg.playback=sid2_mono;
@@ -194,29 +194,30 @@ public:
 #include "ying_sidplay2_SidPlay2.cpp"
 
 
-// --------------------------------------------------------------------------- 
+// ---------------------------------------------------------------------------
 
 #include "ying_sidplay2.cpp"
 
 void YAC_CALL YAC_Init(YAC_Host *_host) {
-	yac_host=_host;
-	if(yac_host->yacGetDebugLevel())
-		yac_host->yacPrint("tksidplay2::YAC_Init() called.\n");
+	yac_host = _host;
+
+	if(Dyac_host_yacGetDebugLevel() > 1)
+		Dyac_host_log2("tksidplay2::YAC_Init() called.");
 
     YAC_Init_sidplay2(_host);
 
-	if(yac_host->yacGetDebugLevel())
-		yac_host->yacPrint("tksidplay2::YAC_Init() finished.\n");
+	if(Dyac_host_yacGetDebugLevel())
+		Dyac_host_log2("tksidplay2::YAC_Init() finished.");
 }
 
 void YAC_CALL YAC_Exit(YAC_Host *_host) {
-	if(yac_host->yacGetDebugLevel())
-		yac_host->yacPrint("tksidplay2::YAC_Exit() called.\n");
+	if(Dyac_host_yacGetDebugLevel() > 1)
+		Dyac_host_log2("tksidplay2::YAC_Exit() called.");
 
     YAC_Exit_sidplay2(_host);
 
-	if(yac_host->yacGetDebugLevel())
-		yac_host->yacPrint("tksidplay2::YAC_Exit() finished.\n");
+	if(Dyac_host_yacGetDebugLevel() > 1)
+		Dyac_host_log2("tksidplay2::YAC_Exit() finished.");
 }
 
 sUI YAC_CALL YAC_Version(void) {

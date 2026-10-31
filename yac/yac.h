@@ -21,7 +21,7 @@
 /// ----          17-Jul-2023 / 24-Jul-2023 / 26-Jul-2023 / 13-Jan-2024 / 07-Jun-2024 / 17-Aug-2024
 /// ----          20-Aug-2024 / 22-Aug-2024 / 10-Oct-2024 / 20-Oct-2024 / 14-Mar-2025 / 01-Oct-2025
 /// ----          03-Oct-2025 / 22-Feb-2026 / 09-Apr-2026 / 18-May-2026 / 08-Aug-2026 / 20-Aug-2026
-/// ----          21-Aug-2026 / 25-Aug-2026 / 07-Sep-2026 / 12-Sep-2026
+/// ----          21-Aug-2026 / 25-Aug-2026 / 07-Sep-2026 / 12-Sep-2026 / 31-Oct-2026
 /// ----
 /// ---- info   : YAC - Yet Another Component object model.  YAC is a self contained, binary level
 /// ----          C++ component/reflectance model and plugin SDK.
@@ -66,13 +66,13 @@
 // ----
 // ---- Version number
 // ----
-#define YAC_VERSION_MAJOR 924
+#define YAC_VERSION_MAJOR 940
 #define YAC_VERSION_MINOR 0
 
 // ----
 // ---- Configuration
 // ----
-#ifndef YAC_PRINTF
+#if !defined(YAC_PRINTF) && !defined(YAC_NO_STDIO)
 /// ---- Define if you want a YAC_Host::printf() utility method
 #define YAC_PRINTF defined
 #endif
@@ -193,7 +193,10 @@ typedef enum __yac_host_interfaces {
    YAC_HOST_INTERFACE_EXCEPTION    = (1<<5),
    YAC_HOST_INTERFACE_CALLBACK     = (1<<6),
    YAC_HOST_INTERFACE_MUTEX        = (1<<7),
-   YAC_HOST_INTERFACE_ALL          =  0xFF
+   YAC_HOST_INTERFACE_ATOMIC       = (1<<8),
+   YAC_HOST_INTERFACE_THREADS      = (1<<9),
+   YAC_HOST_INTERFACE_LOG          = (1<<10),
+   YAC_HOST_INTERFACE_ALL          = 255
 } e_yac_host_interfaces;
 
 // ----
@@ -2286,8 +2289,31 @@ public:
     virtual void             YAC_VCALL vtable_entry_9_19_reserved (void) = 0;
     virtual void             YAC_VCALL vtable_entry_9_20_reserved (void) = 0;
 
-#ifdef YAC_PRINTF
-	void printf(const char *_fmt, ...);
+    // ----
+    // ----
+    // ---- LEVEL (1<<10) interface
+    // ----                    ( log )
+    // ----
+    // ----
+    // ----
+    virtual sSI              YAC_VCALL yacGetLogLevel             (void) = 0;
+    virtual void             YAC_VCALL yacLogInfo                 (const char *_fmt, ...) = 0;
+    virtual void             YAC_VCALL yacLogVerbose              (const char *_fmt, ...) = 0;
+    virtual void             YAC_VCALL yacLogSuccess              (const char *_fmt, ...) = 0;
+    virtual void             YAC_VCALL yacLogWarning              (const char *_fmt, ...) = 0;
+    virtual void             YAC_VCALL yacLogError                (const char *_fmt, ...) = 0;
+    virtual void             YAC_VCALL yacLogFatal                (const char *_fmt, ...) = 0;
+    virtual void             YAC_VCALL yacLogProfile              (const char *_fmt, ...) = 0;
+    virtual void             YAC_VCALL yacLog1                    (const char *_fmt, ...) = 0;
+    virtual void             YAC_VCALL yacLog2                    (const char *_fmt, ...) = 0;
+    virtual void             YAC_VCALL yacLog3                    (const char *_fmt, ...) = 0;
+    virtual void             YAC_VCALL yacLog4                    (const char *_fmt, ...) = 0;
+    virtual void             YAC_VCALL vtable_entry_10_12_reserved (void) = 0;
+    virtual void             YAC_VCALL vtable_entry_10_13_reserved (void) = 0;
+    virtual void             YAC_VCALL vtable_entry_10_14_reserved (void) = 0;
+
+#if defined(YAC_PRINTF) && !defined(YAC_NO_STDIO)
+	void printf (const char *_fmt, ...);
 #endif
 };
 #endif // YAC_NO_HOST
@@ -2927,19 +2953,56 @@ extern sSI yac_global_newdelete_numfrees;   // Tracks total number of calls to "
 #endif // YAC_WIN32
 
 #ifdef YAC_NO_HOST
-// (note) used for tksampler standalone build
+// (note) used e.g. for tksampler standalone build
 #ifndef YAC_NO_STDIO
 #define Dyac_host_printf printf
+#define Dyac_host_loginfo    Dyac_host_printf("[...] "); Dyac_host_printf
+#define Dyac_host_logverbose Dyac_host_printf("[:::] "); Dyac_host_printf
+#define Dyac_host_logsuccess Dyac_host_printf("[+++] "); Dyac_host_printf
+#define Dyac_host_logwarning Dyac_host_printf("[~~~] "); Dyac_host_printf
+#define Dyac_host_logerror   Dyac_host_printf("[---] "); Dyac_host_printf
+#define Dyac_host_logfatal   Dyac_host_printf("[!!!] "); Dyac_host_printf
+#define Dyac_host_logprofile Dyac_host_printf("[pro] "); Dyac_host_printf
+#define Dyac_host_log1       Dyac_host_printf("[dbg] "); Dyac_host_printf
+#define Dyac_host_log2       Dyac_host_printf("[trc] "); Dyac_host_printf
+#define Dyac_host_log3       Dyac_host_printf("[>>>] "); Dyac_host_printf
+#define Dyac_host_log4       Dyac_host_printf("[***] "); Dyac_host_printf
 #else
 #define Dyac_host_printf if(1);else printf
+#define Dyac_host_loginfo    Dyac_host_printf
+#define Dyac_host_logverbose Dyac_host_printf
+#define Dyac_host_logsuccess Dyac_host_printf
+#define Dyac_host_logwarning Dyac_host_printf
+#define Dyac_host_logerror   Dyac_host_printf
+#define Dyac_host_logfatal   Dyac_host_printf
+#define Dyac_host_logprofile Dyac_host_printf
+#define Dyac_host_log1       Dyac_host_printf
+#define Dyac_host_log2       Dyac_host_printf
+#define Dyac_host_log3       Dyac_host_printf
+#define Dyac_host_log4       Dyac_host_printf
 #endif // YAC_NO_STDIO
-#define Dyac_host_yacMilliSeconds yac_host_yacMilliSeconds
+#define Dyac_host_yacMilliSeconds  yac_host_yacMilliSeconds
+#define Dyac_host_yacGetLogLevel   yac_host_yacGetLogLevel
 #define Dyac_host_yacGetDebugLevel yac_host_yacGetDebugLevel
+// (note) implemented by application as required
 extern sUI yac_host_yacMilliSeconds (void);
+extern sSI yac_host_yacGetLogLevel (void);
 extern sUI yac_host_yacGetDebugLevel (void);
 #else
 #define Dyac_host_printf yac_host->printf
-#define Dyac_host_yacMilliSeconds yac_host->yacMilliSeconds
+#define Dyac_host_loginfo    yac_host->yacLogInfo
+#define Dyac_host_logverbose yac_host->yacLogVerbose
+#define Dyac_host_logsuccess yac_host->yacLogSuccess
+#define Dyac_host_logwarning yac_host->yacLogWarning
+#define Dyac_host_logerror   yac_host->yacLogError
+#define Dyac_host_logfatal   yac_host->yacLogFatal
+#define Dyac_host_logprofile yac_host->yacLogProfile
+#define Dyac_host_log1       yac_host->yacLog1
+#define Dyac_host_log2       yac_host->yacLog2
+#define Dyac_host_log3       yac_host->yacLog3
+#define Dyac_host_log4       yac_host->yacLog4
+#define Dyac_host_yacMilliSeconds  yac_host->yacMilliSeconds
+#define Dyac_host_yacGetLogLevel   yac_host->yacGetLogLevel
 #define Dyac_host_yacGetDebugLevel yac_host->yacGetDebugLevel
 #endif // YAC_NO_HOST
 

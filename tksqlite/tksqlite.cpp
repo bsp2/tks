@@ -1,6 +1,6 @@
 /// tksqlite.h
 ///
-/// (c) 2006-2023 Bastian Spiegel <bs@tkscript.de> 
+/// (c) 2006-2026 Bastian Spiegel <bs@tkscript.de>
 ///     - distributed under terms of the GNU general public license (GPL).
 ///
 ///
@@ -172,7 +172,7 @@ void SQLite_Statement::getColumnDeclType       (sSI _columnIndex, YAC_Value *_r)
 }
 
 void        SQLite_Statement::getColumnValue         (sSI _columnIndex, YAC_Value *_r) {
-   
+
    _r->initVoid();
 
    if(st_handle != NULL)
@@ -239,7 +239,7 @@ sSI         SQLite_Statement::getParameterCount      (void) {
 }
 
 void SQLite_Statement::getParameterName       (sSI _index, YAC_Value *_r) {
-   
+
    _r->initString(NULL, 0);
 
    if(st_handle != NULL)
@@ -292,14 +292,14 @@ void SQLite_Statement::setBlobByName(YAC_Object *_String_name, YAC_Object *_Buff
          }
       }
    }
-   
+
 }
 
 void SQLite_Statement::setDouble(sSI _index, YAC_Object *_Double_value) {
    if(st_handle != NULL)
    {
       sF64 val = 0.0;
-      
+
       if(YAC_VALID(_Double_value))
       {
          _Double_value->yacScanF64(&val);
@@ -320,7 +320,7 @@ void SQLite_Statement::setDoubleByName(YAC_Object *_String_name, YAC_Object *_Do
             if(idx > 0)
             {
                sF64 val = 0.0;
-               
+
                if(YAC_VALID(_Double_value))
                {
                   _Double_value->yacScanF64(&val);
@@ -388,7 +388,7 @@ void SQLite_Statement::setLong (sSI _index, YAC_Object *_Long_value) {
    if(st_handle != NULL)
    {
       sS64 val = 0;
-      
+
       if(YAC_VALID(_Long_value))
       {
          _Long_value->yacScanI64(&val);
@@ -409,7 +409,7 @@ void SQLite_Statement::setLongByName(YAC_Object *_String_name, YAC_Object *_Long
             if(idx > 0)
             {
                sS64 val = 0;
-               
+
                if(YAC_VALID(_Long_value))
                {
                   _Long_value->yacScanI64(&val);
@@ -450,7 +450,7 @@ void        SQLite_Statement::setText                (sSI _index, YAC_Object *_S
    if(st_handle != NULL)
    {
       sBool bOk = 0;
-      
+
       if(YAC_VALID(_String_text))
       {
          if(YAC_Is_String(_String_text))
@@ -650,7 +650,7 @@ SQLite_Database::~SQLite_Database() {
 }
 
 void SQLite_Database::yacGetConstantStringList(YAC_String *_s) {
-   // Note: the /**/ comments are taken from sqlite3.h  
+   // Note: the /**/ comments are taken from sqlite3.h
    _s->copy(
       "SQLITE_OK:0"           /* Successful result */
       " SQLITE_ERROR:1"       /* SQL error or missing database */
@@ -660,7 +660,7 @@ void SQLite_Database::yacGetConstantStringList(YAC_String *_s) {
       " SQLITE_BUSY:5"        /* The database file is locked */
       " SQLITE_LOCKED:6"      /* A table in the database is locked */
       " SQLITE_NOMEM:7"       /* A malloc() failed */
-      " SQLITE_READONLY:8"    /* Attempt to write a readonly database */ 
+      " SQLITE_READONLY:8"    /* Attempt to write a readonly database */
       " SQLITE_INTERRUPT:9"   /* Operation terminated by sqlite3_interrupt()*/
       " SQLITE_IOERR:10"      /* Some kind of disk I/O error occurred */
       " SQLITE_CORRUPT:11"    /* The database disk image is malformed */
@@ -707,7 +707,7 @@ void SQLite_Database::close               (void) {
 }
 
 void SQLite_Database::prepareStatement    (YAC_Object *_String_sql, YAC_Value *_r) {
-   
+
    _r->initObject(NULL, 0);
 
    if(YAC_VALID(_String_sql))
@@ -769,7 +769,7 @@ void SQLite_Database::getErrorMessage     (YAC_Value *_r) {
 sSI SQLite_Database::getTotalChanges(void) {
    if(db_handle != NULL)
    {
-      int r = sqlite3_total_changes(db_handle); 
+      int r = sqlite3_total_changes(db_handle);
       return r;
    }
    return 0;
@@ -840,4 +840,3 @@ YAC_APIC void YAC_Exit(YAC_Host *_host) {
 sUI YAC_Version(void) {
 	return 0x00010000;
 }
-

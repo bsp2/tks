@@ -26,7 +26,7 @@ void YAC_CALL YAC_Init(YAC_Host *_host) {
 	yac_host = _host;
 
 	if(yac_host->yacGetDebugLevel())
-	  yac_host->printf("tkmidi<portmidi>::YAC_Init called.\n");
+      Dyac_host_log2("tkmidi<portmidi>::YAC_Init called.");
 
    mtx_miditimer = yac_host->yacMutexCreate();
 
