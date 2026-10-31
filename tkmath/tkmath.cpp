@@ -120,11 +120,11 @@ void YAC_CALL YAC_Init_tkmath(YAC_Host *_host) {
 #else
 void YAC_CALL YAC_Init(YAC_Host *_host) {
 #endif // DX_STATIC_TKMATH
+   yac_host = _host;
 
    if(_host->yacGetDebugLevel())
       Dyac_host_log2("tkmath::YAC_Init called");
 
-   yac_host = _host;
    YAC_Init_Math(_host);
 
    // Matrix inheritance
@@ -165,7 +165,7 @@ void YAC_CALL YAC_Init(YAC_Host *_host) {
    Dyac_exid_register(TkMathInvalidValue,        TkMathError);
    Dyac_exid_register(TkMathUnsupportedOperator, TkMathError);
 
-   if(yac_host->yacGetDebugLevel())
+   if(Dyac_host_yacGetDebugLevel() > 1)
       Dyac_host_log2("tkmath::YAC_Init finished");
 }
 
@@ -175,7 +175,7 @@ void YAC_CALL YAC_Exit_tkmath(YAC_Host *_host) {
 void YAC_CALL YAC_Exit(YAC_Host *_host) {
 #endif // DX_STATIC_TKMATH
    YAC_Exit_Math(_host);
-   if(yac_host->yacGetDebugLevel())
+   if(Dyac_host_yacGetDebugLevel() > 1)
    {
       Dyac_host_log2("tkmath::YAC_Exit finished");
    }
