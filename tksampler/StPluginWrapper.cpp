@@ -58,7 +58,7 @@ StPluginInfo::StPluginInfo(void) {
 StPluginInfo::~StPluginInfo() {
    if(Dyac_host_yacGetDebugLevel() >= 3u)
    {
-      Dyac_host_printf("[trc] StPluginInfo: DTOR this=%p info=%p\n", this, info);
+      Dyac_host_log3("StPluginInfo: DTOR this=%p info=%p\n", this, info);
    }
    info = NULL;
 }
@@ -488,7 +488,7 @@ StPluginShared::StPluginShared(void) {
 }
 
 StPluginShared::~StPluginShared() {
-   // Dyac_host_printf("xxx ~StPluginShared() called\n");
+   // Dyac_host_log3("~StPluginShared() called\n");
    freeShared();
 }
 
@@ -500,7 +500,7 @@ void StPluginShared::init(StPluginInfo *_info, st_plugin_shared_t *_shared) {
 void StPluginShared::freeShared(void) {
    if(Dyac_host_yacGetDebugLevel() >= 3u)
    {
-      Dyac_host_printf("[trc] StPluginShared::freeShared: this=%p shared=%p\n", this, shared);
+      Dyac_host_log3("StPluginShared::freeShared: this=%p shared=%p\n", this, shared);
    }
    if(NULL != shared)
    {
@@ -579,11 +579,11 @@ void StPluginShared::queryDynamicParamPresetValues(sUI _paramIdx, YAC_Value *_r)
    _r->initNull();
    if(_paramIdx < info->info->num_params)
    {
-      // Dyac_host_printf("xxx StPluginShared::queryDynamicParamPresetValues: paramIdx=%u fxn=%p\n", _paramIdx, info->info->query_dynamic_param_preset_values);
+      // Dyac_host_log3("StPluginShared::queryDynamicParamPresetValues: paramIdx=%u fxn=%p\n", _paramIdx, info->info->query_dynamic_param_preset_values);
       if(NULL != info->info->query_dynamic_param_preset_values)
       {
          sUI numPresets = info->info->query_dynamic_param_preset_values(shared, _paramIdx, NULL/*retValues*/, 0u/*retValuesSize*/);
-         // Dyac_host_printf("xxx StPluginShared::queryDynamicParamPresetValues: paramIdx=%u => numPresets=%u\n", _paramIdx, numPresets);
+         // Dyac_host_log3("StPluginShared::queryDynamicParamPresetValues: paramIdx=%u => numPresets=%u\n", _paramIdx, numPresets);
          if(numPresets > 0u)
          {
             YAC_FloatArray *fa = YAC_New_FloatArray();
@@ -695,7 +695,7 @@ void StPluginShared::setArrayParamEditVariationIdx(sUI _paramIdx, sSI _variation
 #endif // LIBSYNERGY_BUILD
 
 sF32 StPluginShared::getParamValue(sUI _paramIdx) {
-   // yac_host->printf("xxx StPluginShared::getParamValue: paramIdx=%u num=%u\n", _paramIdx, info->info->num_params);
+   // Dyac_host_log3("StPluginShared::getParamValue: paramIdx=%u num=%u\n", _paramIdx, info->info->num_params);
    if(_paramIdx < info->info->num_params)
    {
       if(NULL != info->info->get_param_value)
@@ -766,7 +766,7 @@ void StPluginShared::benchmarkSingle(YAC_FloatArray *_ioBuf, sUI _numFramesPerCh
 
       for(sUI i = 0u; i < _numFramesPerChunk; i++)
       {
-         // yac_host->printf("xxx benchmarkSingle: chunkIdx=%u frameIdx=%u  numChunks=%u  numFramesPerChunk=%u\n", j, i, _numChunks, _numFramesPerChunk);
+         // Dyac_host_log3("benchmarkSingle: chunkIdx=%u frameIdx=%u  numChunks=%u  numFramesPerChunk=%u\n", j, i, _numChunks, _numFramesPerChunk);
          ioBuf[0] = ioBuf[1] = 0.0f;
          voice->voice_bus_read_offset = 0u;
          voice->voice_bus_buffers = NULL; // (todo)
@@ -776,7 +776,7 @@ void StPluginShared::benchmarkSingle(YAC_FloatArray *_ioBuf, sUI _numFramesPerCh
                                       ioBuf,
                                       1u/*numFrames*/
                                       );
-         // yac_host->printf("xxx benchmarkSingle:   END chunkIdx=%u frameIdx=%u\n", j, i);
+         // Dyac_host_log3("benchmarkSingle:   END chunkIdx=%u frameIdx=%u\n", j, i);
       }
    }
    voice->info->voice_delete(voice);
@@ -1018,7 +1018,7 @@ void StPluginVoice::init(StPluginShared *_shared, sF32 _sampleRate, sUI _voiceId
 
       if(Dyac_host_yacGetDebugLevel() >= 3u)
       {
-         Dyac_host_printf("[trc] StPluginVoice::init: info=%p voice=%p idx=%u\n", shared->shared->info, voice, _voiceIdx);
+         Dyac_host_log3("StPluginVoice::init: info=%p voice=%p idx=%u\n", shared->shared->info, voice, _voiceIdx);
       }
 
       if(NULL != voice)
@@ -1049,7 +1049,7 @@ void StPluginVoice::init(StPluginShared *_shared, sF32 _sampleRate, sUI _voiceId
 void StPluginVoice::freeVoice(void) {
    if(Dyac_host_yacGetDebugLevel() >= 3u)
    {
-      Dyac_host_printf("[trc] StPluginVoice::freeVoice: this=%p voice=%p\n", this, voice);
+      Dyac_host_log3("StPluginVoice::freeVoice: this=%p voice=%p\n", this, voice);
    }
    if(NULL != voice)
    {
@@ -1166,7 +1166,7 @@ StPluginLibrary::StPluginLibrary(void) {
 StPluginLibrary::~StPluginLibrary() {
    if(Dyac_host_yacGetDebugLevel() >= 3u)
    {
-      Dyac_host_printf("[trc] StPluginLibrary: DTOR this=%p num_infos=%u\n", this, num_infos);
+      Dyac_host_log3("StPluginLibrary: DTOR this=%p num_infos=%u\n", this, num_infos);
    }
    close();
 }
@@ -1329,7 +1329,7 @@ void StPluginLibrary::close(void) {
       {
          if(Dyac_host_yacGetDebugLevel() >= 3u)
          {
-            Dyac_host_printf("xxx StPluginLibrary::close: free infoidx=%u id=\"%s\"\n", infoIdx, infos[infoIdx]->id);
+            Dyac_host_log3("StPluginLibrary::close: free infoidx=%u id=\"%s\"\n", infoIdx, infos[infoIdx]->id);
          }
          if(NULL != infos[infoIdx]->plugin_exit)
          {
