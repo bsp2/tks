@@ -32,7 +32,7 @@
 // ----          20Dec2022, 12Apr2023, 20Aug2023, 07Sep2023, 21Jan2024, 28Sep2024, 01Oct2024
 // ----          03Oct2024, 31Oct2024, 15Nov2024, 14Jan2025, 28May2025, 29May2025, 30May2025
 // ----          13Jun2025, 16Jan2026, 09Apr2026, 19May2026, 24May2026, 27May2026, 11Jul2026
-// ----          08Sep2026, 11Sep2026
+// ----          08Sep2026, 11Sep2026, 01Nov2026
 // ----
 // ----
 
@@ -405,7 +405,7 @@ YC class StSamplePlayer : public YAC_Object {
    YM void allNotesOffRelease (void);
 
 
-   /* @method reset
+   /* @method resetVoices
       Immediately reset / stop all voices (no fadeout)
    */
    YM void resetVoices (void);
@@ -419,14 +419,14 @@ YC class StSamplePlayer : public YAC_Object {
 
 
    /* @method stopVoicesByKey,int voiceKey
-      Immediately stop all voices that are assigned the given key (no fadeout)
+      Soft-stop all voices that are assigned the given key (volramp fadeout)
       This is called when muting a track.
    */
    YM void stopVoicesByKey (sSI _key);
 
 
    /* @method stopVoicesBySample,StSample sample
-      Stop all voices that play the given sample (with fadeout)
+      Immediately stop all voices that play the given sample (with anticlick fadeout)
    */
    YM void stopVoicesBySample (YAC_Object *_sample);
 

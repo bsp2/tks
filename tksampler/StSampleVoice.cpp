@@ -1983,23 +1983,24 @@ void StSampleVoice::stopVoice(void) {
 
 void StSampleVoice::softStopVoice(void) {
 
-   // Already fading out ?
-   if(volramp_fadeout_countdown < 0)
-   {
-      // Dyac_host_printf("xxx StSampleVoice::softStopVoice: this=0x%p b_playing=%d volramp_fadeout_countdown=%d\n", this, b_playing, volramp_fadeout_countdown);
+   // Dyac_host_printf("xxx StSampleVoice::softStopVoice: this=0x%p b_playing=%d volramp_fadeout_countdown=%d\n", this, b_playing, volramp_fadeout_countdown);
 
+   if(volramp_fadeout_countdown < 0) // Not already fading out ?
+   {
       queued_noteon.b_valid = 0;
 
       b_used = YAC_FALSE; // => can allocate
 
       // stop after volume ramp fadeout
-      if(b_playing && (NULL != sample))
+      if(b_playing && NULL != sample)
       {
          volramp_fadeout_countdown = (sSI)sample->num_volramp_steps_out;
       }
 
       if(volramp_fadeout_countdown < 0)
          volramp_fadeout_countdown = 0;
+
+      // Dyac_host_printf("xxx StSampleVoice::softStopVoice: volramp_fadeout_countdown=%d\n", volramp_fadeout_countdown);
 
       if(NULL != sample)
       {
@@ -2497,12 +2498,11 @@ void StSampleVoice::calcNextBlockState(sBool _bNext) {
    // Do sample fadeout
    if(volramp_fadeout_countdown >= 0)
    {
-
       // Continue fade out
       volramp_fadeout_countdown--;
       if(-1 == volramp_fadeout_countdown)
       {
-         ////printf("xxx StSampleVoice: fade-out finished this=0x%p b_valid=%d\n", this, queued_noteon.b_valid);
+         // Dyac_host_printf("xxx StSampleVoice: fade-out finished this=0x%p b_valid=%d\n", this, queued_noteon.b_valid);
 
          // Fadeout finished
          if(queued_noteon.b_valid) // xx paranoia check, should never be 0 ATP
