@@ -32,6 +32,7 @@ class LineStripPatternDecalBevelAA32 : public ShaderVG_Shape {
       "uniform mat4  u_transform; \n"
       "uniform int   u_last_instance; \n"
       "uniform float u_stroke_w; \n"
+      "uniform float u_aa_range; \n"
       "uniform float u_line_pattern_scl; \n"
       "uniform float u_line_pattern_off; \n"
       " \n"
@@ -43,7 +44,8 @@ class LineStripPatternDecalBevelAA32 : public ShaderVG_Shape {
       " \n"
       "VARYING_OUT vec2  v_vertex_mp; \n"
       "VARYING_FLAT VARYING_OUT vec2  v_plane_n; \n"
-      "VARYING_FLAT VARYING_OUT float v_join; \n"
+      "VARYING_FLAT VARYING_OUT float v_step_l; \n"
+      "VARYING_FLAT VARYING_OUT float v_step_r; \n"
       "VARYING_OUT vec2  v_uv; \n"
       " \n"
       "void main(void) { \n"
@@ -145,13 +147,15 @@ class LineStripPatternDecalBevelAA32 : public ShaderVG_Shape {
       "    if(index > 11.9) { \n"
       "      v_vertex_mp = v - ((cz > 0.0) ? v2L : v2R); \n"
       "      vec2 vNB = normalize( (cz > 0.0) ? (v2L2 - v2L) : (v2R2 - v2R) ); \n"
-      "      v_plane_n   = vec2(vNB.y, -vNB.x); \n"
-      "      v_join = 1.0; \n"
+      "      v_plane_n = vec2(vNB.y, -vNB.x); \n"
+      "      v_step_l = 0.0; \n"  // join
+      "      v_step_r = u_aa_range; \n"
       "    } \n"
       "    else { \n"
       "      v_vertex_mp = v - v1; \n"
-      "      v_plane_n   = vec2(vN.y, -vN.x); \n"
-      "      v_join = 0.0; \n"
+      "      v_plane_n = vec2(vN.y, -vN.x); \n"
+      "      v_step_l = u_stroke_w; \n"
+      "      v_step_r = u_stroke_w - u_aa_range; \n"
       "    } \n"
       "    uv.x *= u_line_pattern_scl; \n"
       "    uv.x += u_line_pattern_off; \n"
@@ -203,13 +207,15 @@ class LineStripPatternDecalBevelAA32 : public ShaderVG_Shape {
       "    if(index > 5.9) { \n"
       "      v_vertex_mp = v - ((cz > 0.0) ? v2L : v2R); \n"
       "      vec2 vNB = normalize( (cz > 0.0) ? (v2L2 - v2L) : (v2R2 - v2R) ); \n"
-      "      v_plane_n   = vec2(vNB.y, -vNB.x); \n"
-      "      v_join = 1.0; \n"
+      "      v_plane_n = vec2(vNB.y, -vNB.x); \n"
+      "      v_step_l = 0.0; \n"  // join
+      "      v_step_r = u_aa_range; \n"
       "    } \n"
       "    else { \n"
       "      v_vertex_mp = v - v1; \n"
-      "      v_plane_n   = vec2(vN.y, -vN.x); \n"
-      "      v_join = 0.0; \n"
+      "      v_plane_n = vec2(vN.y, -vN.x); \n"
+      "      v_step_l = u_stroke_w; \n"
+      "      v_step_r = u_stroke_w - u_aa_range; \n"
       "    } \n"
       "    uv.x *= u_line_pattern_scl; \n"
       "    uv.x += u_line_pattern_off; \n"
@@ -224,8 +230,6 @@ class LineStripPatternDecalBevelAA32 : public ShaderVG_Shape {
       "uniform vec4      u_color_fill; \n"
       "uniform vec4      u_color_stroke; \n"
       "uniform float     u_decal_alpha; \n"
-      "uniform float     u_stroke_w; \n"
-      "uniform float     u_aa_range; \n"
 #ifdef SHADERVG_DEBUG_FRAG
       "uniform float     u_debug; \n"
 #endif // SHADERVG_DEBUG_FRAG
@@ -233,18 +237,13 @@ class LineStripPatternDecalBevelAA32 : public ShaderVG_Shape {
       " \n"
       "VARYING_IN vec2  v_vertex_mp; \n"
       "VARYING_FLAT VARYING_IN vec2  v_plane_n; \n"
-      "VARYING_FLAT VARYING_IN float v_join; \n"
+      "VARYING_FLAT VARYING_IN float v_step_l; \n"
+      "VARYING_FLAT VARYING_IN float v_step_r; \n"
       "VARYING_IN vec2  v_uv; \n"
       " \n"
       "void main(void) { \n"
-      "  float a; \n"
       "  float d = abs(dot(v_vertex_mp, v_plane_n)); \n"
-      "  if(v_join > 0.0) { \n"
-      "    a = smoothstep(0.0, u_aa_range, d); \n"
-      "  } \n"
-      "  else { \n"
-      "    a = 1.0 - smoothstep(u_stroke_w - u_aa_range, u_stroke_w, d); \n"
-      "  } \n"
+      "  float a = smoothstep(v_step_l, v_step_r, d); \n"
       "  float patA = TEXTURE2D(u_sampler, v_uv).TEX_ALPHA; \n"
       "  vec4 c = mix(u_color_fill.rgba, u_color_stroke.rgba, patA * u_decal_alpha); \n"
       "  OUT_FRAGCOLOR = vec4(c.rgb, c.a * a); \n"
@@ -286,15 +285,15 @@ class LineStripPatternDecalBevelAA32 : public ShaderVG_Shape {
       Dsdvg_uniform_1i(shape_u_sampler, 0);
    }
 
-   void drawLineStripPatternDecalBevelAAVBO32(sUI              _vboId,
-                                              sUI              _byteOffset,
-                                              sUI              _numPoints,
-                                              sBool            _bSkipLastLineJoint,
-                                              sF32             _decalAlpha,
-                                              sF32             _strokeW,
-                                              sF32             _aaRange,
-                                              sF32             _linePatternScale,
-                                              sF32             _linePatternOffset
+   void drawLineStripPatternDecalBevelAAVBO32(sUI   _vboId,
+                                              sUI   _byteOffset,
+                                              sUI   _numPoints,
+                                              sBool _bSkipLastLineJoint,
+                                              sF32  _decalAlpha,
+                                              sF32  _strokeW,
+                                              sF32  _aaRange,
+                                              sF32  _linePatternScale,
+                                              sF32  _linePatternOffset
                                               ) {
       //
       // VBO vertex format (12 bytes per vertex):

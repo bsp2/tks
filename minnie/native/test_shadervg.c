@@ -25,8 +25,8 @@
 // ----
 // ----          e.g.:
 // ----          $ m clean; m bin && ./test_shadervg 177 10 50000
-// ----          [...] auto_exit after 10 frames (50000 iteration(s)) / 5853 millisec => 85426.27 fps
-// ----          => (1000*85426.27)=> 85.42627 million lines per second
+// ----          [...] auto_exit after 10 frames (500000 iteration(s)) / 3680 millisec => 135869.56 fps
+// ----          => (1000*135869.56)=> 135.87 million lines per second
 // ----
 // ----
 // ----
