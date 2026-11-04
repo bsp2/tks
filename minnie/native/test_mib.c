@@ -318,15 +318,15 @@ void hal_on_draw(void) {
       minDrawableSetTranslate2f(drawable, 0.0f, 0.0f);
       MinnieVG_SetTransformForDrawable(drawable);
 
-      // One extra iteration to warm-up shader(s)
-      const sUI numIter = (0u == total_num_iterations) ? (num_iter + 1u) : num_iter;
+      const sBool bBenchmark = (b_benchmark || auto_exit_frames > 0u);
+      const sUI numIter = (0u == total_num_iterations && bBenchmark) ? (num_iter + 1u) : num_iter;
 
       for(sUI iter = 0u; iter < numIter; iter++)
       {
          minDrawableSetEnableDebug(drawable, !b_benchmark && (0u == iter) && (0u == (num_frames_rendered & 255u)));
          minDrawableDraw(drawable);
 
-         if(0u == total_num_iterations++)
+         if(0u == total_num_iterations++ && bBenchmark)
          {
             glFinish();
             ticks_start = hal_get_ticks();

@@ -5736,8 +5736,8 @@ void hal_on_draw(void) {
 
    // Dprintf("[trc] b_benchmark=%d auto_exit_frames=%u numIter=%u\n", b_benchmark, auto_exit_frames, numIter);
 
-   // One extra iteration to warm-up shader(s)
-   numIter = (0u == total_num_iterations) ? (numIter + 1u) : numIter;
+   const sBool bBenchmark = (b_benchmark || auto_exit_frames > 0u);
+   numIter = (0u == total_num_iterations && bBenchmark) ? (numIter + 1u) : numIter;
 
    for(sUI iter = 0u; iter < numIter; iter++)
    {
@@ -5769,7 +5769,7 @@ void hal_on_draw(void) {
 
       if(render_mode >= 0)
       {
-         if(0u == total_num_iterations++)
+         if(0u == total_num_iterations++ && bBenchmark)
          {
             ticks_start = hal_get_ticks();
             benchmark_ms_start = (float)ticks_start;
@@ -5782,7 +5782,7 @@ void hal_on_draw(void) {
       sUI t = hal_get_ticks();
       for(;;)
       {
-         if((hal_get_ticks() - t) >= 300)
+         if((hal_get_ticks() - t) >= 900)
             break;
       }
    }
