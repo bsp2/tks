@@ -670,6 +670,8 @@ _HAL::_HAL(void) {
    sdl_glcontext = NULL;
 
    drop_file_names = NULL;
+   drop_x = 0;
+   drop_y = 0;
 
    cursor_zoom = 1u;
 }
@@ -2016,15 +2018,21 @@ sBool _HAL::processSDLEvent(sBool _poll) {
             break;
 
          case SDL_EVENT_DROP_BEGIN:
-            yac_host->printf("xxx SDL_EVENT_DROP_BEGIN\n");
+            Dyac_host_log2("SDL_EVENT_DROP_BEGIN");
             drop_file_names = YAC_New_StringArray();
             break;
 
+         case SDL_EVENT_DROP_POSITION:
+            Dyac_host_log3("SDL_EVENT_DROP_POSITION");
+            drop_x = (sSI)ev.drop.x;
+            drop_y = (sSI)ev.drop.y;
+            break;
+
          case SDL_EVENT_DROP_FILE:
-            yac_host->printf("xxx SDL_EVENT_DROP_FILE\n");
+            Dyac_host_log2("tksdl: SDL_EVENT_DROP_FILE");
             if(NULL != ev.drop.data)
             {
-               yac_host->printf("xxx SDL_EVENT_DROP_FILE: ev.drop.data=\"%s\"\n", ev.drop.data);
+               Dyac_host_log2("tksdl: SDL_EVENT_DROP_FILE: ev.drop.data=\"%s\"", ev.drop.data);
                if(NULL != drop_file_names)
                {
                   // Add filename copy to array
@@ -2040,22 +2048,19 @@ sBool _HAL::processSDLEvent(sBool _poll) {
             break;
 
          case SDL_EVENT_DROP_TEXT:
-            yac_host->printf("[trc] tksdl: SDL_EVENT_DROP_TEXT\n");
+            Dyac_host_log2("tksdl: SDL_EVENT_DROP_TEXT");
             break;
 
          case SDL_EVENT_DROP_COMPLETE:
-            yac_host->printf("xxx SDL_EVENT_DROP_COMPLETE\n");
+            Dyac_host_log2("tksdl: SDL_EVENT_DROP_COMPLETE  drop_pos=(%d;%d)", drop_x, drop_y);
             if(NULL != drop_file_names)
             {
                YAC_FunctionHandle f = signal_funs[TKS_SIG_HALDROPFILES];
                if(NULL != f)
                {
                   YAC_Value args[3];
-                  sF32 px = 0.0f;
-                  sF32 py = 0.0f;
-                  (void)SDL_GetMouseState(&px, &py);
-                  args[0].initInt(sSI(px));
-                  args[1].initInt(sSI(py));
+                  args[0].initInt(drop_x);
+                  args[1].initInt(drop_y);
                   args[2].initObject(drop_file_names, 1); // let runtime take care of array deletion
                   yac_host->yacEvalFunction(sc_context, f, 3, args);
                   drop_file_names = NULL;

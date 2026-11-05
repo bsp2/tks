@@ -336,6 +336,8 @@ public:
     sU32  last_vkey;
 
     YAC_StringArray *drop_file_names;
+    sSI drop_x;
+    sSI drop_y;
 
     sUI cursor_zoom;  // e.g. for Linux Debian/Ubuntu 4k screens
 
