@@ -42,11 +42,11 @@ class LineStripPatternBevelAA14_2 : public ShaderVG_Shape {
       "ATTRIBUTE float a_pattern; \n"
       "ATTRIBUTE float a_pattern_n; \n"
       " \n"
-      "VARYING_OUT vec2  v_vertex_mp; \n"
+      "VARYING_OUT vec2 v_vertex_mp; \n"
       "VARYING_FLAT VARYING_OUT vec2  v_plane_n; \n"
       "VARYING_FLAT VARYING_OUT float v_step_l; \n"
       "VARYING_FLAT VARYING_OUT float v_step_r; \n"
-      "VARYING_OUT vec2  v_uv; \n"
+      "VARYING_OUT vec2 v_uv; \n"
       " \n"
       "void main(void) { \n"
       "  vec2 v1 = a_vertex * 0.25; \n"
@@ -69,7 +69,7 @@ class LineStripPatternBevelAA14_2 : public ShaderVG_Shape {
       "  vec2 v2R2 = vec2(v2.x - vD2.y, v2.y + vD2.x); \n"
       // "  vec2 v3R = vec2(v3.x - vD2.y, v3.y + vD2.x); \n"
       " \n"
-      "  float cz = v12.x * v23.y - v12.y * v23.x; \n"
+      "  bool bc = ((v12.x * v23.y - v12.y * v23.x) > 0.0); \n"
       " \n"
       "  vec2 v; \n"
       "  float pat1 = a_pattern; \n"
@@ -78,102 +78,17 @@ class LineStripPatternBevelAA14_2 : public ShaderVG_Shape {
       " \n"
       "  float index = float(gl_VertexID); \n"
       " \n"
-#ifdef SHADERVG_HIRES_GEO
-      "  if(index > 13.9) { \n"
-      "    v = v2; \n"
-      "    uv = vec2(pat2, 0.5); \n"
-      "  } \n"
-      "  else if(index > 12.9) { \n"
-      "    v = (cz > 0.0) ? v2L2 : v2R2; \n"
-      "    uv = vec2(pat2, (cz > 0.0) ? 0.0 : 1.0); \n"
-      "  } \n"
-      "  else if(index > 11.9) { \n"
-      "    v = (cz > 0.0) ? v2L : v2R; \n"
-      "    uv = vec2(pat2, (cz > 0.0) ? 0.0 : 1.0); \n"
-      "  } \n"
-      "  else if(index > 10.9) { \n"
-      "    v = v1R; \n"
-      "    uv = vec2(pat1, 1.0); \n"
-      "  } \n"
-      "  else if(index > 9.9) { \n"
-      "    v = v2R; \n"
-      "    uv = vec2(pat2, 1.0); \n"
-      "  } \n"
-      "  else if(index > 8.9) { \n"
-      "    v = v1; \n"
-      "    uv = vec2(pat1, 0.5); \n"
-      "  } \n"
-      "  else if(index > 7.9) { \n"
-      "    v = v2R; \n"
-      "    uv = vec2(pat2, 1.0); \n"
-      "  } \n"
-      "  else if(index > 6.9) { \n"
-      "    v = v2; \n"
-      "    uv = vec2(pat2, 0.5); \n"
-      "  } \n"
-      "  else if(index > 5.9) { \n"
-      "    v = v1; \n"
-      "    uv = vec2(pat1, 0.5); \n"
-      "  } \n"
-      "  else if(index > 4.9) { \n"
-      "    v = v1; \n"
-      "    uv = vec2(pat1, 0.5); \n"
-      "  } \n"
-      "  else if(index > 3.9) { \n"
-      "    v = v2; \n"
-      "    uv = vec2(pat2, 0.5); \n"
-      "  } \n"
-      "  else if(index > 2.9) { \n"
-      "    v = v1L; \n"
-      "    uv = vec2(pat1, 0.0); \n"
-      "  } \n"
-      "  else if(index > 1.9) { \n"
-      "    v = v2; \n"
-      "    uv = vec2(pat2, 0.5); \n"
-      "  } \n"
-      "  else if(index > 0.9) { \n"
-      "    v = v2L; \n"
-      "    uv = vec2(pat2, 0.0); \n"
-      "  } \n"
-      "  else { \n"
-      "    v = v1L; \n"
-      "    uv = vec2(pat1, 0.0); \n"
-      "  } \n"
-      " \n"
-      "  if(gl_InstanceID == u_last_instance && index > 11.9) { \n"
-      "    gl_Position = vec4(0,0,0,1); \n"  // skip last line joint
-      "  } else { \n"
-      "    gl_Position = u_transform * vec4(v,0,1); \n"
-      "    if(index > 11.9) { \n"
-      "      v_vertex_mp = v - ((cz > 0.0) ? v2L : v2R); \n"
-      "      vec2 vNB = normalize( (cz > 0.0) ? (v2L2 - v2L) : (v2R2 - v2R) ); \n"
-      "      v_plane_n = vec2(vNB.y, -vNB.x); \n"
-      "      v_step_l = 0.0; \n"  // join
-      "      v_step_r = u_aa_range; \n"
-      "    } \n"
-      "    else { \n"
-      "      v_vertex_mp = v - v1; \n"
-      "      v_plane_n = vec2(vN.y, -vN.x); \n"
-      "      v_step_l = u_stroke_w; \n"
-      "      v_step_r = u_stroke_w - u_aa_range; \n"
-      "    } \n"
-      "    uv.x *= u_line_pattern_scl; \n"
-      "    uv.x += u_line_pattern_off; \n"
-      "    v_uv = uv; \n"
-      "  } \n"
-      "} \n"
-#else
       "  if(index > 7.9) { \n"
-      "    v = v2; \n"
-      "    uv = vec2(pat2, 0.5); \n"
+      "    v = bc ? v2R : v2L; \n"
+      "    uv = vec2(pat2, bc ? 1.0 : 0.0); \n"
       "  } \n"
       "  else if(index > 6.9) { \n"
-      "    v = (cz > 0.0) ? v2L2 : v2R2; \n"
-      "    uv = vec2(pat2, (cz > 0.0) ? 0.0 : 1.0); \n"
+      "    v = bc ? v2L2 : v2R2; \n"
+      "    uv = vec2(pat2, bc ? 0.0 : 1.0); \n"
       "  } \n"
       "  else if(index > 5.9) { \n"
-      "    v = (cz > 0.0) ? v2L : v2R; \n"
-      "    uv = vec2(pat2, (cz > 0.0) ? 0.0 : 1.0); \n"
+      "    v = bc ? v2L : v2R; \n"
+      "    uv = vec2(pat2, bc ? 0.0 : 1.0); \n"
       "  } \n"
       "  else if(index > 4.9) { \n"
       "    v = v1R; \n"
@@ -205,8 +120,8 @@ class LineStripPatternBevelAA14_2 : public ShaderVG_Shape {
       "  } else { \n"
       "    gl_Position = u_transform * vec4(v,0,1); \n"
       "    if(index > 5.9) { \n"
-      "      v_vertex_mp = v - ((cz > 0.0) ? v2L : v2R); \n"
-      "      vec2 vNB = normalize( (cz > 0.0) ? (v2L2 - v2L) : (v2R2 - v2R) ); \n"
+      "      v_vertex_mp = v - (bc ? v2L : v2R); \n"
+      "      vec2 vNB = normalize( bc ? (v2L2 - v2L) : (v2R2 - v2R) ); \n"
       "      v_plane_n   = vec2(vNB.y, -vNB.x); \n"
       "      v_step_l = 0.0; \n"  // join
       "      v_step_r = u_aa_range; \n"
@@ -222,7 +137,6 @@ class LineStripPatternBevelAA14_2 : public ShaderVG_Shape {
       "    v_uv = uv; \n"
       "  } \n"
       "} \n"
-#endif // SHADERVG_HIRES_GEO
       ;
 
    // ------------ fragment shader ------------
@@ -297,7 +211,6 @@ class LineStripPatternBevelAA14_2 : public ShaderVG_Shape {
       //
       // (note) numSeg = (numPoints - 2)
       // (note) numTri = numSeg * 3 - 1
-      // (note)          SHADERVG_HIRES_GEO: (numSeg * 5 - 1)
       //
 
       sdvg_BindVBO(_vboId);
@@ -341,11 +254,7 @@ class LineStripPatternBevelAA14_2 : public ShaderVG_Shape {
 
       const sSI numSeg = (_numPoints - 2);
       Dsdvg_uniform_1i(shape_u_last_instance, sSI(numSeg - sSI(_bSkipLastLineJoint)));
-#ifdef SHADERVG_HIRES_GEO
-      Dsdvg_draw_triangles_instanced_vbo(15, numSeg);
-#else
       Dsdvg_draw_triangles_instanced_vbo(9, numSeg);
-#endif // SHADERVG_HIRES_GEO
 
       Dsdvg_queue_attrib_disable(shape_a_vertex_nn);
       Dsdvg_queue_attrib_disable(shape_a_vertex_n);

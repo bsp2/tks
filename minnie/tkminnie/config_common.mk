@@ -47,9 +47,6 @@ else
 #EXTRAFLAGS+= -DSHADERVG_GLES
 endif
 
-# fixes t-junctions in bevel and miter line strips but increases triangle-count by ~67% (5/3)
-EXTRAFLAGS+= -DSHADERVG_HIRES_GEO
-
 # must be defined for OpenGL ES 3.x targets
 #EXTRAFLAGS+= -DSHADERVG_GLES
 

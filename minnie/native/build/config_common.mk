@@ -46,9 +46,6 @@ else
 #EXTRAFLAGS+= -DSHADERVG_GLES
 endif
 
-# fixes t-junctions in bevel and miter line strips but increases triangle-count by ~67% (5/3)
-EXTRAFLAGS+= -DSHADERVG_HIRES_GEO
-
 # auto-advance tests
 #EXTRAFLAGS+= -DAUTO_CYCLE_NUM_FRAMES=200
 

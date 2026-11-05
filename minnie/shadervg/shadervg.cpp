@@ -2816,21 +2816,13 @@ static void loc_DrawLineStripFlatAAVBOPaint(sUI _vboId,
 
       if(_bBevel)
       {
-#ifdef SHADERVG_HIRES_GEO
-         Dsdvg_draw_triangles_instanced_vbo(15, numInstances);
-#else
          Dsdvg_draw_triangles_instanced_vbo(9, numInstances);
-#endif // SHADERVG_HIRES_GEO
       }
       else
       {
          Dsdvg_uniform_1f(_shape->shape_u_line_miter_limit, line_miter_limit);
 
-#ifdef SHADERVG_HIRES_GEO
-         Dsdvg_draw_triangles_instanced_vbo(21, numInstances);
-#else
          Dsdvg_draw_triangles_instanced_vbo(15, numInstances);
-#endif // SHADERVG_HIRES_GEO
       }
    }
    else
@@ -2873,21 +2865,13 @@ static void loc_DrawLineStripFlatAAVBOPaint(sUI _vboId,
 
       if(_bBevel)
       {
-#ifdef SHADERVG_HIRES_GEO
-         Dsdvg_draw_triangles_instanced_vbo(15, numInstances);
-#else
          Dsdvg_draw_triangles_instanced_vbo(9, numInstances);
-#endif // SHADERVG_HIRES_GEO
       }
       else
       {
          Dsdvg_uniform_1f(_shape->shape_u_line_miter_limit, line_miter_limit);
 
-#ifdef SHADERVG_HIRES_GEO
-         Dsdvg_draw_triangles_instanced_vbo(21, numInstances);
-#else
          Dsdvg_draw_triangles_instanced_vbo(15, numInstances);
-#endif // SHADERVG_HIRES_GEO
       }
    }
    else

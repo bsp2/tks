@@ -24,9 +24,9 @@
 // ----          $ ./test_shadervg [[<testidx_or_-1=benchmark_all> [<single_test_benchmark_num_frames> <num_iter>]]]
 // ----
 // ----          e.g.:
-// ----          $ m clean; m bin && ./test_shadervg 177 10 50000
-// ----          [...] auto_exit after 10 frames (500000 iteration(s)) / 3680 millisec => 135869.56 fps
-// ----          => (1000*135869.56)=> 135.87 million lines per second
+// ----          $ m clean; m bin && ./test_shadervg 177 10 200000
+// ----          [...] auto_exit after 10 frames (2000000 iteration(s)) / 11111 millisec => 180001.80 fps
+// ----          => (1000*180001.80)=> 180.00 million lines per second
 // ----
 // ----
 // ----
