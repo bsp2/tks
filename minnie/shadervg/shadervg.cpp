@@ -2816,6 +2816,14 @@ static void loc_DrawLineStripFlatAAVBOPaint(sUI _vboId,
 
       if(_bBevel)
       {
+#ifdef SHADERVG_BEVEL_UNIFORM_ARRAY
+         if(-1 != _shape->shape_u_a_bevel && !_shape->b_shape_u_a_bevel_done)
+         {
+            _shape->b_shape_u_a_bevel_done = YAC_TRUE;
+            _shape->updateBevelUniformArray();
+         }
+#endif // SHADERVG_BEVEL_UNIFORM_ARRAY
+
          Dsdvg_draw_triangles_instanced_vbo(9, numInstances);
       }
       else

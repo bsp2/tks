@@ -122,6 +122,10 @@ class ShaderVG_Shape {
 #ifdef SHADERVG_UNIFORM_ARRAY
    sSI shape_u_a_offset;             // optional
 #endif // SHADERVG_UNIFORM_ARRAY
+#ifdef SHADERVG_BEVEL_UNIFORM_ARRAY
+   sSI shape_u_a_bevel;              // optional
+   sBool b_shape_u_a_bevel_done;
+#endif // SHADERVG_BEVEL_UNIFORM_ARRAY
 
    sSI shape_state_u_transform;
    sSI shape_state_u_color_fill;
@@ -383,6 +387,10 @@ class ShaderVG_Shape {
 #ifdef SHADERVG_UNIFORM_ARRAY
    void updateUniformOffsetArray (sF32 _pointRadius) const;
 #endif // SHADERVG_UNIFORM_ARRAY
+
+#ifdef SHADERVG_BEVEL_UNIFORM_ARRAY
+   void updateBevelUniformArray (void) const;
+#endif // SHADERVG_BEVEL_UNIFORM_ARRAY
 };
 
 

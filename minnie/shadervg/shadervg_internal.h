@@ -151,6 +151,7 @@ void sdvg_int_handle_queued_attrib_divisor (void);
 #define Dsdvg_uniform_4f(a,v1,v2,v3,v4) Dsdvg_glcall(glUniform4f(a,v1,v2,v3,v4))
 #define Dsdvg_uniform_4fv(a,num,v) Dsdvg_glcall(glUniform4fv(a,num,v))
 #define Dsdvg_uniform_2fv(a,num,va) Dsdvg_glcall(glUniform2fv(a,num,va))
+#define Dsdvg_uniform_1fv(a,num,va) Dsdvg_glcall(glUniform1fv(a,num,va))
 #define Dsdvg_uniform_mat4(a,m) sdvg_int_UniformMatrix4(a,m)  // load row-major matrix (+convert to GL column-major)
 #define Dsdvg_attrib_offset(a,s,t,n,d,o) Dsdvg_glcall(zglVertexAttribOffset(a,s,t,n,d,o))
 #define Dsdvg_attrib_pointer(a,s,t,n,d,p) Dsdvg_glcall(glVertexAttribPointer(a,s,t,n,d,p))

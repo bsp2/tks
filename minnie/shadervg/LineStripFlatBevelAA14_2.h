@@ -33,6 +33,9 @@ class LineStripFlatBevelAA14_2 : public ShaderVG_Shape {
       "uniform float u_stroke_w; \n"
       "uniform float u_aa_range; \n"
       "uniform int   u_last_instance; \n"
+#ifdef SHADERVG_BEVEL_UNIFORM_ARRAY
+      "uniform float u_a_bevel[63]; \n"
+#endif // SHADERVG_UNIFORM_ARRAY
       " \n"
       "ATTRIBUTE vec2  a_vertex; \n"
       "ATTRIBUTE vec2  a_vertex_n; \n"
@@ -66,18 +69,44 @@ class LineStripFlatBevelAA14_2 : public ShaderVG_Shape {
       " \n"
       "  bool bc = ((v12.x * v23.y - v12.y * v23.x) > 0.0); \n"
       " \n"
+      "  vec2 vBC_2L_2R; \n"
+      "  vec2 vBC_2L2_2R2; \n"
+      "  vec2 vBC_2R_2L; \n"
+      "  if(bc) { \n"
+      "    vBC_2L_2R = v2L; \n"
+      "    vBC_2L2_2R2 = v2L2; \n"
+      "    vBC_2R_2L = v2R; \n"
+      "  } \n"
+      "  else { \n"
+      "    vBC_2L_2R = v2R; \n"
+      "    vBC_2L2_2R2 = v2R2; \n"
+      "    vBC_2R_2L = v2L; \n"
+      "  } \n"
+      " \n"
       "  vec2 v; \n"
       " \n"
       "  float index = float(gl_VertexID); \n"
       " \n"
+#ifdef SHADERVG_BEVEL_UNIFORM_ARRAY
+      // (note) saves just 3 instructions (260 => 257) => not really worth it
+      //         (also requires 252 uniform bytes to be uploaded when prg is selected)
+      "  int lutIdx = int(gl_VertexID) * 7; \n"
+      "  v = (u_a_bevel[lutIdx    ] * v1L) + \n"
+      "      (u_a_bevel[lutIdx + 1] * v1R) + \n"
+      "      (u_a_bevel[lutIdx + 2] * v2L) + \n"
+      "      (u_a_bevel[lutIdx + 3] * v2R) + \n"
+      "      (u_a_bevel[lutIdx + 4] * vBC_2L_2R)   + \n"
+      "      (u_a_bevel[lutIdx + 5] * vBC_2L2_2R2) + \n"
+      "      (u_a_bevel[lutIdx + 6] * vBC_2R_2L)   ; \n"
+#else
       "  if(index > 7.9) { \n"
-      "    v = bc ? v2R : v2L; \n"
+      "    v = vBC_2R_2L; \n"
       "  } \n"
       "  else if(index > 6.9) { \n"
-      "    v = bc ? v2L2 : v2R2; \n"
+      "    v = vBC_2L2_2R2; \n"
       "  } \n"
       "  else if(index > 5.9) { \n"
-      "    v = bc ? v2L : v2R; \n"
+      "    v = vBC_2L_2R; \n"
       "  } \n"
       "  else if(index > 4.9) { \n"
       "    v = v1R; \n"
@@ -96,7 +125,8 @@ class LineStripFlatBevelAA14_2 : public ShaderVG_Shape {
       "  } \n"
       "  else { \n"
       "    v = v1L; \n"
-      "  } \n"
+      "  }\n"
+#endif // SHADERVG_BEVEL_UNIFORM_ARRAY
       " \n"
       "  if(gl_InstanceID == u_last_instance && index > 5.9) { \n"
       "    gl_Position = vec4(0,0,0,1); \n"  // skip last line joint
@@ -153,6 +183,9 @@ class LineStripFlatBevelAA14_2 : public ShaderVG_Shape {
          && (-1 != shape_u_color_stroke)
          && (-1 != shape_u_stroke_w)
          && (-1 != shape_u_aa_range)
+#ifdef SHADERVG_BEVEL_UNIFORM_ARRAY
+         && (-1 != shape_u_a_bevel)
+#endif // SHADERVG_UNIFORM_ARRAY
          ;
    }
 

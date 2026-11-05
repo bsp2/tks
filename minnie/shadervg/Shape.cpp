@@ -126,6 +126,10 @@ ShaderVG_Shape::ShaderVG_Shape(void) {
 #ifdef SHADERVG_UNIFORM_ARRAY
    shape_u_a_offset            = -1;
 #endif // SHADERVG_DEBUG_FRAG
+#ifdef SHADERVG_BEVEL_UNIFORM_ARRAY
+   shape_u_a_bevel             = -1;
+   b_shape_u_a_bevel_done      = YAC_FALSE;
+#endif // SHADERVG_BEVEL_UNIFORM_ARRAY
 
    // debug:
    b_draw_inner  = YAC_TRUE;
@@ -640,6 +644,9 @@ sBool ShaderVG_Shape::queryLocationsAndValidate(void) {
 #ifdef SHADERVG_UNIFORM_ARRAY
    shape_u_a_offset         = shape_shader.getUniformLocation("u_a_offset");                // optional
 #endif // SHADERVG_UNIFORM_ARRAY
+#ifdef SHADERVG_BEVEL_UNIFORM_ARRAY
+   shape_u_a_bevel          = shape_shader.getUniformLocation("u_a_bevel");                 // optional
+#endif // SHADERVG_BEVEL_UNIFORM_ARRAY
 
    sBool r = validateShapeShader();
    if(!r)
@@ -2447,3 +2454,30 @@ void ShaderVG_Shape::updateUniformOffsetArray(sF32 _pointRadius) const {
    Dsdvg_uniform_2fv(shape_u_a_offset, 6, aOffset);
 }
 #endif // SHADERVG_UNIFORM_ARRAY
+
+#ifdef SHADERVG_BEVEL_UNIFORM_ARRAY
+void ShaderVG_Shape::updateBevelUniformArray(void) const {
+   static const sF32 aBevel[9*7] = {
+      /*
+      A     B     C     D     E     F     G
+      */
+      1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+      0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+      0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f,
+      1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+      0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f,
+      0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+      0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
+      0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f,
+      0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f,
+      // A: v1L
+      // B: v1R
+      // C: v2L
+      // D: v2R
+      // E: bc ? v2L : v2R
+      // F: bc ? v2L2 : v2R2
+      // G: bc ? v2R : v2L
+   };
+   Dsdvg_uniform_1fv(shape_u_a_bevel, 9*7, aBevel);
+}
+#endif // SHADERVG_BEVEL_UNIFORM_ARRAY
