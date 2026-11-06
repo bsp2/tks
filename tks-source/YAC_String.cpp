@@ -972,7 +972,18 @@ sBool YAC_VCALL YAC_String::yacCopy(YAC_Object *u) {
             }
             else
             {
-               return empty();
+               // length is 0 => return empty string
+               empty();
+
+               // Copy quotation flag
+               if(o->bflags & TKS_STRFL_QUOT)
+                  bflags |= TKS_STRFL_QUOT;
+               else if(o->bflags & TKS_STRFL_QUOTR)
+                  bflags |= TKS_STRFL_QUOTR;
+               else if(o->bflags & TKS_STRFL_QUOT2)
+                  bflags |= TKS_STRFL_QUOT2;
+
+               return YAC_TRUE;
             }
          }
          else if(YAC_VALID(u))

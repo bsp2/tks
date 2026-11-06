@@ -285,9 +285,10 @@ sUI TKS_TokenizedScript::nextToken(void) {
       return ERRTKSEOFQUOTR;
    }
 
-   //Dpcscan_startSample(findDelim);
+   // Dpcscan_startSample(findDelim);
    for(i=0; !k && i<=(sSI)chleft; i++)
    {
+      // ::printf("xxx i=%d k=%d chleft=%d s[i]=\'%c\'\n", i, k, sSI(chleft), (char)s[i]);
       switch(s[i])
       {
          case 'e':
@@ -350,7 +351,7 @@ sUI TKS_TokenizedScript::nextToken(void) {
          case '\'': // enter/leave double quote mode?
             bfloat=0;
             dquot_mode=1-dquot_mode;
-            if(quot_mode&&(!dquot_first)) // "trace 'hello, world.';" style
+            if(quot_mode && !dquot_first) // "trace 'hello, world.';" style
             {
                dquot_first=0;// xxx
                //off=i+1;
@@ -385,7 +386,7 @@ sUI TKS_TokenizedScript::nextToken(void) {
                      {
                         dquot_mode=0;
                         // empty string
-                        k=0xDEAF;
+                        k=0xEDCBA987;
                      }
                      else
                         off=i+1; // set start
@@ -396,10 +397,10 @@ sUI TKS_TokenizedScript::nextToken(void) {
          case '\"': // enter/leave quote mode?
             bfloat=0;
             quot_mode=1-quot_mode;
+            // ::printf("quot: quot_mode=%d dquot_mode=%d dquot_first=%d\n", quot_mode, dquot_mode, dquot_first);
             if(dquot_mode&&dquot_first)
             {
-
-               //off=i+1; // set start
+               // // off=i+1; // set start
             }
             else
             {
@@ -414,7 +415,7 @@ sUI TKS_TokenizedScript::nextToken(void) {
                   if(s[i+1]=='\"')
                   {
                      // empty string
-                     k=0xDEAF;
+                     k=0xEDCBA987;
                   }
                   else off=i+1;
                }
@@ -474,7 +475,7 @@ sUI TKS_TokenizedScript::nextToken(void) {
 
    //Dpcscan_stopSample(findDelim);
 
-   if( k != 0xDEAF && k > 0)
+   if( k != 0xEDCBA987 && k > 0)
    {
       if(k==1)
       {
@@ -703,6 +704,7 @@ sUI TKS_TokenizedScript::addUniqueString(YAC_String *_s) {
       {
          if(strings.elements[i].getQuotFlag() == oQuotFlag)
          {
+            // ::printf("xxx addUniqueString: useref i=%u str=\"%s\"\n", i, strings.elements[i].chars);
             Dpcscan_stopSample(addUniqueString);
             return i;
          }
@@ -720,6 +722,7 @@ sUI TKS_TokenizedScript::addUniqueString(YAC_String *_s) {
    YAC_String *d = (YAC_String*) &strings.elements[strings.num_elements++];
    new(d)YAC_String();
    d->refCopy(_s);
+   // ::printf("xxx addUniqueString: refcopy d=\"%s\" _s->getQuotFlag=%d d->getQuotFlag=%d\n", d->chars, _s->getQuotFlag(), d->getQuotFlag());
    Dpcscan_stopSample(addUniqueString);
    return strings.num_elements-1;
 }

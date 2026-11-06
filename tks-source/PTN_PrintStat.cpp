@@ -87,6 +87,7 @@ static void PTN_PrintStat__eval(PTN_Env *_env, const PTN_Statement *_st) {
    }
 
    const sBool bNewLine = st->add_newline && (st->target < 4/*loginfo*/);
+   // ::printf("xxx PrintStat: r.type=%d target=%d bNewLine=%d\n", r.type, st->target, bNewLine);
 
    switch(r.type)
    {
@@ -105,31 +106,31 @@ static void PTN_PrintStat__eval(PTN_Env *_env, const PTN_Statement *_st) {
 
       case 1:
          // ---- int ----
-      {
-         YAC_String t;
-         t.yacValueOfI(r.value.int_val);
-         tkscript->print((char*)t.chars, st->target);
-         if(bNewLine)
          {
-            tkscript->print("\n", st->target);
+            YAC_String t;
+            t.yacValueOfI(r.value.int_val);
+            tkscript->print((char*)t.chars, st->target);
+            if(bNewLine)
+            {
+               tkscript->print("\n", st->target);
+            }
+            e_msg = (char*) t.chars;
          }
-         e_msg = (char*) t.chars;
-      }
-      break;
+         break;
 
       case 2:
          // ---- float ----
-      {
-         YAC_String t;
-         t.yacValueOfF32(r.value.float_val);
-         tkscript->print((char*)t.chars, st->target);
-         if(bNewLine)
          {
-            tkscript->print("\n", st->target);
+            YAC_String t;
+            t.yacValueOfF32(r.value.float_val);
+            tkscript->print((char*)t.chars, st->target);
+            if(bNewLine)
+            {
+               tkscript->print("\n", st->target);
+            }
+            e_msg = (char*) t.chars;
          }
-         e_msg = (char*) t.chars;
-      }
-      break;
+         break;
 
       case 3:
          // ---- object ----
@@ -187,6 +188,7 @@ static void PTN_PrintStat__eval(PTN_Env *_env, const PTN_Statement *_st) {
             {
                if(bNewLine)
                   tkscript->print("\n", st->target);
+               tkscript->print("", st->target);
                e_msg = "";
             }
          }

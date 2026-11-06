@@ -1296,6 +1296,7 @@ void TKS_ScriptEngine::print(const char *_s, sSI _target) {
    //                                      loginfo, logverbose, logsuccess, logwarning, logerror, logfatal, logprofile,
    //                                      log1, log2, log3, log4)
    lockMtxPrint();
+   // ::printf("xxx print s=\"%s\" target=%d\n", _s, _target);
    if(_s)
    {
       if(NULL == print_hooks || configuration.debug_level > 0)
