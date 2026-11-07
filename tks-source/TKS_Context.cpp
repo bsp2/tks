@@ -44,23 +44,11 @@
 
 #include "PTN_TryCatchFinally.h"
 
-// Required for Object pools
 #include "Pool.h"
 
 #ifdef DX_TRACEFUNCTIONCALLS
 #include "TKS_FunctionCallStackEntry.h"
 #endif
-
-
-//////
-////// (note) all calls to handleCompiletimerError() at *runtime* should be replaced by exceptions
-//////        this mainly regards stack overflows
-//////
-////#ifdef TKS_TRACE_NODES
-////#define Dcterror(a) tkscript->handleCompiletimeError(last_seen_srcloc, a)
-////#else
-////#define Dcterror(a) tkscript->handleCompiletimeError(0, a)
-////#endif
 
 
 TKS_Context::TKS_Context(void) {
@@ -130,8 +118,7 @@ void TKS_Context::use(void) {
 }
 
 void TKS_Context::clearClassStack(void) {
-   sUI i;
-   for(i = 0u; i < (PTN_MAX_CLASS_STACK + 1u); i++)
+   for(sUI i = 0u; i < (PTN_MAX_CLASS_STACK + 1u); i++)
    {
       class_stack[i] = 0;
    }
@@ -153,8 +140,6 @@ void TKS_Context::pushClassStack(YAC_Object *_o) {
       tkscript->printf("\n[---] class stack overflow (push).\n");
       b_running = YAC_FALSE;
       tkscript->handleFatalError();
-      // // ptn_error_code=PTNERR_CLASSSTACKOVERFLOW;
-      // // XXX TODO: throw exception ??
       tksvm_class_stack_object = NULL;
    }
 #endif
@@ -181,82 +166,11 @@ void TKS_Context::popClassStack(void) {
    else
    {
       tkscript->printf("\n[---] class stack overflow (pop).\n");
-      b_running = 0;
+      b_running = YAC_FALSE;
       tkscript->handleFatalError();
-      // // ptn_error_code=PTNERR_CLASSSTACKOVERFLOW;
-      // // XXX TODO: throw exception
    }
 #endif
 }
-
-#if 0
-YAC_Value *TKS_Context::pushStackFrame__OLD(PTN_Function *_f) {
-   const sUI numLocalVars = _f->num_local_vars;
-#define Dmethodnameargs (NULL != _f->parent_class) ? (const char*)_f->parent_class->name.chars : NULL, (NULL != _f->parent_class) ? "::":"", (const char*)_f->name.chars
-   // Dyac_host_printf("xxx pushStackFrame f->name=\"%s%s%s\"\n", Dmethodnameargs);
-   if(numLocalVars > 0u)
-   {
-      // Dyac_host_printf("xxx TKS_Context::pushStackFrame: tks_fstacki=%d numLocalVars=%u stacki_displace=%d\n", tks_fstacki, numLocalVars, stacki_displace);
-      if( (sSI(tks_fstacki) - sSI(numLocalVars) + stacki_displace) >= sSI(numLocalVars) )
-      {
-         YAC_Value *nsfc = &tks_fstack[tks_fstacki - numLocalVars + stacki_displace];
-         YAC_Value *cp = _f->opt_local_vars;
-         sUI i;
-         for(i = 0u; i < numLocalVars; i++)
-         {
-            if(cp->type >= YAC_TYPE_OBJECT)
-            {
-               if(NULL == ((void*)cp->value.object_val))
-               {
-                  // TKS_CachedObject::PTRASSIGN hint
-                  nsfc[i].initNullType(cp->type);
-                  cp++;
-                  // Dyac_host_printf("xxx nsfc initnull obj\n");
-               }
-               else if( (YAC_CLID_CLASS == cp->value.object_val->class_ID) &&
-                        (((TKS_ScriptClassInstance*)cp->value.object_val)->class_decl->b_abstract)
-                        )
-               {
-                  // "local MyAbstractClass c;" 
-                  // Dyac_host_printf("xxx nsfc initnull class\n");
-                  nsfc[i].initNull();
-                  cp++;
-               }
-               else
-               {
-                  // "local Double d;"
-                  Dyac_host_printf("xxx nsfc duplicate object %s%s%s\n", Dmethodnameargs);
-                  nsfc[i].duplicate(this, cp++);
-               }
-            }
-            else
-            {
-               // var, int, float
-               // Dyac_host_printf("xxx nsfc duplicate int/float\n");
-               // // nsfc[i].duplicate(this, cp++);
-               nsfc[i].initNullType(cp->type);
-               cp++;
-            }
-
-         }
-         return nsfc;
-      }
-      else
-      {
-         Dprintf("[---] Function::pushStackFrame: recursion depth (%i) exceeded.\n", tkscript->configuration.function_stack_size);
-         b_running = YAC_FALSE;
-         // // (TODO) throw an exception instead
-         // // // tkscript->handleCompiletimeError(_f->src_loc, PTNERR_FSTACKOVERFLOW);
-         tkscript->handleFatalError();
-         return NULL;
-      }
-   }
-   else
-   {
-      return tks_fstackc; // xxx no new stackframe needed
-   }
-}
-#endif // 0
 
 YAC_Value *TKS_Context::pushStackFrame(const PTN_Function *_f) {
    // (note) caller must ensure that function has local vars (_f->num_local_vars > 0u)
@@ -313,7 +227,6 @@ void TKS_Context::popStackFrame(const PTN_Function *_f) {
       i++;
    }
    tks_fstacki += numLocalVars;
-   // // now done by caller //tks_fstackc=&tks_fstack[tks_fstacki+stacki_displace];
 }
 
 void TKS_Context::discardUncriticalError(void) {
@@ -338,8 +251,6 @@ void TKS_Context::discardUncriticalError(void) {
 }
 
 void TKS_Context::raiseException(sUI _id, const char *_message, const char *_file, sSI _line, const PTN_Node *_node) {
-
-   (void)_line;
 
    // Stop script execution
    b_running = YAC_FALSE;
@@ -420,7 +331,12 @@ void TKS_Context::raiseExceptionByTypeAndMsg(const PTN_Node *_nodeOrNull, const 
    setCurrentException(e);
 }
 
-void TKS_Context::raiseInvalidPointer(const PTN_Node *_nodeOrNull, const char *_msg, const char*_file, sSI _line, YAC_Object *_o) {
+void TKS_Context::raiseInvalidPointer(const PTN_Node *_nodeOrNull,
+                                      const char     *_msg,
+                                      const char     *_file,
+                                      sSI             _line,
+                                      YAC_Object     *_o
+                                      ) {
    YAC_String *msg = (YAC_String*) YAC_NEW_CORE_POOLED(YAC_CLID_STRING);
    msg->copy(_msg);
 #ifdef TKS_ALLOWNODELETEOBJECTS
@@ -536,7 +452,7 @@ void TKS_Context::printException(void) {
          e->printStackTrace(0);
       }
    }
-#endif
+#endif // TKS_DCON
 }
 
 void TKS_Context::initFunctionStack(void) {
@@ -586,7 +502,6 @@ YAC_Value *TKS_Context::pushSwitchValue(void) {
       Dprintf("[---] switch stack overflow (push).\n");
       b_running = YAC_FALSE;
       tkscript->handleFatalError();
-      // // Dcterror(PTNERR_SWITCHSTACKOVERFLOW);
       return NULL;
    }
 }
@@ -600,7 +515,6 @@ void TKS_Context::popSwitchValue(void) {
    {
       Dprintf("[---] switch stack overflow (pop).\n");
       b_running = YAC_FALSE;
-      // // Dcterror(PTNERR_SWITCHSTACKOVERFLOW);
       tkscript->handleFatalError();
    }
 }
@@ -624,7 +538,6 @@ sBool *TKS_Context::pushBreak(void) {
    {
       Dprintf("[---] break stack overflow (push).\n");
       b_running = YAC_FALSE;
-      // // Dcterror(PTNERR_BREAKSTACKOVERFLOW);
       tkscript->handleFatalError();
       return NULL;
    }
@@ -639,7 +552,6 @@ void TKS_Context::popBreak(void) {
    {
       Dprintf("[---] break stack overflow (pop).\n");
       b_running = YAC_FALSE;
-      // // Dcterror(PTNERR_BREAKSTACKOVERFLOW);
       tkscript->handleFatalError();
    }
 }

@@ -119,12 +119,12 @@ note: Software written in TkScript may use any license (FOSS, closed source, ..)
 
 |noheader
 |cols=1,1
-| macOS 26 arm64            :|:[tks-macos_arm64.zip](files/current/tks-macos_arm64.zip) (v0.9.94.0, 31Oct2026)
-| Debian GNU/Linux 13 arm64 :|:[tks-aarch64-raspberry.tar.gz](files/current/tks-aarch64-raspberry.tar.gz) (v0.9.94.0, 06Nov2026)
-| Windows 10 x86\_64        :|:[tks.zip](files/current/tks.zip) (v0.9.94.0, 31Oct2026)
+| macOS 26 arm64            :|:[tks-macos_arm64.zip](files/current/tks-macos_arm64.zip) (v0.9.94.2, 06Nov2026)
+| Debian GNU/Linux 13 arm64 :|:[tks-aarch64-raspberry.tar.gz](files/current/tks-aarch64-raspberry.tar.gz) (v0.9.94.2, 06Nov2026)
+| Windows 10 x86\_64        :|:[tks.zip](files/current/tks.zip) (v0.9.94.2, 06Nov2026)
 ].table_noborder
 
-tip: on macOS, copy the extracted the files to `/usr/local/` (optional)
+tip: on macOS, copy the extracted the files to `/usr/local/` (optional). use `brew install sdl3 libpng freetype portaudio` to install the core library dependencies.
 
 
 ## Source
@@ -187,7 +187,7 @@ Requirements / Prerequisites:
 - The Linux build environment requires GCC / G++, GNU make, and GNU Bash.
    - optional (recommended) packages: `$ sudo apt-get install build-essential libsdl3-dev libsdl2-dev libsdl2-net-dev libpng-dev libfreetype-dev libgtk2.0-dev libzip-dev libgnutls28-dev libasound2-dev`
    - optional packages: `$ sudo apt-get install portaudio19-dev libportmidi-dev sox rubberband-cli`
-- The macOS build environment requires Clang (xcode toolchain), make, zsh, and the following [brew](https://brew.sh/) packages: `brew install sdl2 libpng freetype` (tested with arm64 and x86\_64) (and optionally `brew install portaudio portmidi` and `brew install sdl12-compat sdl2_net meson libzip gnutls`).
+- The macOS build environment requires Clang (xcode toolchain), make, zsh, and the following [brew](https://brew.sh/) packages: `brew install sdl3 libpng freetype` (tested with arm64 and x86\_64) (and optionally `brew install portaudio portmidi` and `brew install sdl12-compat sdl2_net meson libzip gnutls`).
 
 The plugin bindings use the `YaC` (*Yet another Component object model*) interface, and the `YInG` interface generator.
 To rebuild the bindings for a specific module, run

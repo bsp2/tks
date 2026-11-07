@@ -34,7 +34,7 @@ public:
    sSI                      stacki_displace;// = 0;
    YAC_Value               *tks_fstackc; // (start of) current function stackframe
 
-   void use(void); // re-init stack pointer, reset current exception etc
+   void use (void); // re-init stack pointer, reset current exception etc
 
    YAC_Object *tksvm_indirect_object; // for indirect ecalls
 
