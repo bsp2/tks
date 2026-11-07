@@ -153,19 +153,17 @@ static void PTN_IMethodECall__eval(PTN_Env *_env, YAC_Value *_r, const PTN_Expr 
             if(metaClassMethod)
             {
                // Eval class method ecall
-               btrynext=0;
-               PTN_Function *f = &metaClassMethod->function;
+               btrynext = YAC_FALSE;
 
+               PTN_Function *f = &metaClassMethod->function;
                Dbeginfuncall(f);
 
                Dcondbegincallsiteprofile;
 
-               YAC_Value *nsf = _env->context->pushStackFrame(f);
-
+               YAC_Value *stackc = _env->context->tks_fstackc;
+               YAC_Value *nsf = (f->num_local_vars > 0u) ? _env->context->pushStackFrame(f) : stackc;
                if(nsf)
                {
-                  YAC_Value *stackc = _env->context->tks_fstackc;
-
                   // Validate arguments
                   if(st->method_arglist)
                   {

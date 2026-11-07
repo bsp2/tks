@@ -2417,15 +2417,15 @@ sBool TKS_ScriptEngine::findDeclaredClassType(YAC_String *_name,
    if(NULL != _forcedNSpace)
    {
       Dprintf("[---] Script class \"%s::%s\" does not exist.\n",
-         (char*)_forcedNSpace->name.chars,
-         (char*)_name->chars
-         );
+              (char*)_forcedNSpace->name.chars,
+              (char*)_name->chars
+              );
    }
    else
    {
       Dprintf("[---] Script class \"%s\" does not exist.\n",
-         (char*)_name->chars
-         );
+              (char*)_name->chars
+              );
    }
 
    // Failed
@@ -2456,7 +2456,7 @@ sBool TKS_ScriptEngine::evalFunction2(YAC_ContextHandle _context, PTN_Function *
       // apps must use yacContextSetDefault() if a script fxn/method is to be called from a non-script thread (e.g. the windows multimedia timer)
 #ifndef TKS_SKIP_API_THREAD
 #ifndef YAC_FORCE_NO_TLS
-      if((NULL == tks_current_thread) && (NULL == tks_current_context))
+      if(NULL == tks_current_thread && NULL == tks_current_context)
       {
          tks_current_context = _context;
       }
@@ -2472,7 +2472,8 @@ sBool TKS_ScriptEngine::evalFunction2(YAC_ContextHandle _context, PTN_Function *
             tkscript->printf("[---] yacEvalFunction: argument mismatch in call to function \"%s::%s\" (expected %d, have %d).\n",
                              (_f->parent_class?((char*)_f->parent_class->name.chars) : ""),
                              (char*)_f->name.chars,
-                             _f->argvarlist->num_vars, _numArgs);
+                             _f->argvarlist->num_vars, _numArgs
+                             );
             return YAC_FALSE;
          }
       }
@@ -2483,7 +2484,8 @@ sBool TKS_ScriptEngine::evalFunction2(YAC_ContextHandle _context, PTN_Function *
             tkscript->printf("[---] yacEvalFunction: argument mismatch in call to function \"%s::%s\" (expected 0, have %d).\n",
                              (_f->parent_class?((char*)_f->parent_class->name.chars) : ""),
                              (char*)_f->name.chars,
-                             _numArgs);
+                             _numArgs
+                             );
             return YAC_FALSE;
          }
       }
@@ -2495,15 +2497,16 @@ sBool TKS_ScriptEngine::evalFunction2(YAC_ContextHandle _context, PTN_Function *
       // Prepare local var stackframe (if required)
       YAC_Value *stackc = NULL;
       YAC_Value *nsf;
-      if(_f->num_local_vars > 0)
+      if(_f->num_local_vars > 0u)
       {
-         if((nsf = _env->context->pushStackFrame(_f))!=0) // get expected call ("displaced") stackframe
+         nsf = _env->context->pushStackFrame(_f);
+         if(nsf)
          {
             stackc = _env->context->tks_fstackc;
          }
          else
          {
-            tkscript->printf("[---] yacEvalFunction: pushStackFrame() failed.\n");
+            printf("[---] yacEvalFunction: pushStackFrame() failed.\n");
             Dendfuncall(_f);
             return YAC_FALSE;
          }
@@ -2522,7 +2525,7 @@ sBool TKS_ScriptEngine::evalFunction2(YAC_ContextHandle _context, PTN_Function *
 
       if(_f->num_local_vars > 0)
       {
-         _env->context->pushStackFrame2(_f); // really change tks_fstackc
+         _env->context->pushStackFrame2(_f); // update tks_fstackc
       }
 
       // Evaluate function statements
@@ -2546,7 +2549,7 @@ sBool TKS_ScriptEngine::evalFunction2(YAC_ContextHandle _context, PTN_Function *
 
 
       // Pop localvar stackframe
-      if(_f->num_local_vars > 0)
+      if(_f->num_local_vars > 0u)
       {
          _env->context->popStackFrame(_f);
          _env->context->tks_fstackc = stackc;
@@ -2678,7 +2681,8 @@ sBool TKS_ScriptEngine::evalScriptMethodByName(YAC_ContextHandle _context,
          YAC_Value *nsf;
          if(f->num_local_vars > 0)
          {
-            if((nsf = _env->context->pushStackFrame(f))!=0) // get expected call ("displaced") stackframe
+            nsf = _env->context->pushStackFrame(f);
+            if(nsf)
             {
                stackc = _env->context->tks_fstackc;
             }
@@ -2701,7 +2705,7 @@ sBool TKS_ScriptEngine::evalScriptMethodByName(YAC_ContextHandle _context,
 
          if(f->num_local_vars > 0)
          {
-            _env->context->pushStackFrame2(f); // really change tks_fstackc
+            _env->context->pushStackFrame2(f); // update tks_fstackc
          }
 
          // Evaluate function statements

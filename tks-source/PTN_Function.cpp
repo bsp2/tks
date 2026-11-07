@@ -52,6 +52,10 @@ void PTN_Function::initFunction(void) {
    return_class_nspaces   = NULL;
    function_object        = NULL;
 
+   nsf_template                       = NULL;
+   nsf_template_duplicate_indices     = NULL;
+   nsf_template_num_duplicate_indices = 0u;
+
 #ifdef DX_SCRIPTCONSTRAINTS
    return_constraint      = NULL;
    return_constraint_type = TKS_CONSTRAINTTYPE_NONE;
@@ -943,45 +947,118 @@ sU8 PTN_Function::compile(VMCore *_vm) {
 void PTN_Function::prepareStackFrameTemplate(void) {
    if(num_local_vars)
    {
-      opt_local_vars=new YAC_Value[num_local_vars];
-      sUI i;
-      sUI j=0;
+      opt_local_vars = new(std::nothrow) YAC_Value[num_local_vars];
+      nsf_template   = new(std::nothrow) YAC_Value[num_local_vars];
+      nsf_template_sz = sUI(sizeof(YAC_Value) * num_local_vars);
+      // // ::memset((void*)opt_local_vars, 0, sizeof(YAC_Value) * num_local_vars);
+      // // ::memset((void*)nsf_template,   0, sizeof(YAC_Value) * num_local_vars);
+
+      sUI j = 0u;
       TKS_CachedObject **ce = fun_vars->objects;
-      for(i = 0u; i < num_local_vars && j < fun_vars->max_entries; j++,ce++)
+      sUI numDuplicate = 0u;
+
+      for(sUI i = 0u; i < num_local_vars && j < fun_vars->max_entries; j++,ce++)
       {
          if(*ce)
          {
             if( (*ce)->flags & TKS_CachedObject::ISLOCAL )
             {
+               const sUI localIndex = (*ce)->local_index;
+               YAC_Value *cp = &opt_local_vars[localIndex];
+               YAC_Value *cf = &nsf_template[localIndex];
+
                if( ((*ce)->flags & TKS_CachedObject::PTRASSIGN) )
                {
                   if(YAC_TYPE_STRING == (*ce)->type)
-                     opt_local_vars[(*ce)->local_index].initString(0, 0);
+                  {
+                     cp->initString(NULL, 0);
+                     cf->initString(NULL, 0);
+                  }
                   else
-                     opt_local_vars[(*ce)->local_index].initObject(0,0);
+                  {
+                     cp->initObject(NULL, 0);
+                     cf->initObject(NULL, 0);
+                  }
                }
                else
                {
-                  opt_local_vars[(*ce)->local_index].derefPointerAssignValue( *ce );  // xxx
+                  // (todo) in some cases takes ownership from 'fun_vars'
+                  cp->derefPointerAssignValue(*ce);
+                  cf->initNullType(cp->type);
+
+                  if(cp->type >= YAC_TYPE_OBJECT)
+                  {
+                     if( (YAC_CLID_CLASS == cp->value.object_val->class_ID) &&
+                         (((TKS_ScriptClassInstance*)cp->value.object_val)->class_decl->b_abstract)
+                         )
+                     {
+                        // abstract class
+                     }
+                     else
+                     {
+                        // non-null object instantiation
+                        numDuplicate++;
+                     }
+                  }
                }
                i++;
             }
          }
       }
+
+      // Create duplication LUT
+      if(numDuplicate > 0u)
+      {
+         nsf_template_duplicate_indices = new(std::nothrow) sUI[numDuplicate];
+         nsf_template_num_duplicate_indices = numDuplicate;
+         sUI duplicateIdx = 0u;
+         YAC_Value *cp = opt_local_vars;
+
+         for(sUI i = 0u; i < num_local_vars; i++, cp++)
+         {
+            if(cp->type >= YAC_TYPE_OBJECT)
+            {
+               if(NULL != ((void*)cp->value.object_val))
+               {
+                  if( (YAC_CLID_CLASS != cp->value.object_val->class_ID) ||
+                      !(((TKS_ScriptClassInstance*)cp->value.object_val)->class_decl->b_abstract)
+                      )
+                  {
+                     // non-abstract object instance requires duplication
+                     nsf_template_duplicate_indices[duplicateIdx++] = i;
+                  }
+               }
+            }
+         }
+      }
+
    }
 }
 
 void PTN_Function::freeStackFrameTemplate(void) {
-   if(num_local_vars&&opt_local_vars)
+   if(num_local_vars && opt_local_vars)
    {
-      sUI i;
-      for(i = 0u; i < num_local_vars; i++)
+      if(NULL != nsf_template)
+      {
+         delete [] nsf_template;
+         nsf_template = NULL;
+      }
+
+      if(NULL != nsf_template_duplicate_indices)
+      {
+         delete [] nsf_template_duplicate_indices;
+         nsf_template_duplicate_indices = NULL;
+      }
+
+      nsf_template_num_duplicate_indices = 0u;
+
+      for(sUI i = 0u; i < num_local_vars; i++)
       {
          opt_local_vars[i].unset();
       }
       delete [] opt_local_vars;
+      opt_local_vars = NULL;
       num_local_vars = 0u;
-      opt_local_vars = 0u;
    }
 }
 

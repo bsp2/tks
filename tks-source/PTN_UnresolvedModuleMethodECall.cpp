@@ -64,7 +64,7 @@ sBool PTN_UnresolvedModuleMethodECall::resolveXRef(void) {
               (char*)module_method_name.chars
               );
       Dcterror(PTNERR_MODULENOTFOUND);
-      return 0;
+      return YAC_FALSE;
    }
 
    resolved_fun = resolved_module->findFunction(&module_method_name);
@@ -100,14 +100,12 @@ static void PTN_UnresolvedModuleMethodECall__eval(PTN_Env *_env, YAC_Value *_r, 
    const PTN_UnresolvedModuleMethodECall *st = (const PTN_UnresolvedModuleMethodECall*)_st;
 
    PTN_Function *f = st->resolved_fun;
-
    Dbeginfuncall(f);
 
-   YAC_Value *nsf = _env->context->pushStackFrame(f);
+   YAC_Value *stackc = _env->context->tks_fstackc;
+   YAC_Value *nsf = (f->num_local_vars > 0u) ? _env->context->pushStackFrame(f) : stackc;
    if(nsf)
    {
-      YAC_Value *stackc = _env->context->tks_fstackc;
-
       // Validate arguments
       if(st->arglist)
       {

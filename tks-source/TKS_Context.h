@@ -56,9 +56,9 @@ public:
    void             initFunctionStack (void);
    void             freeFunctionStack (void);
 
-   YAC_Value *pushStackFrame            (PTN_Function *_f); // alloc new stackframe, return pointer
-   void       pushStackFrame2           (PTN_Function *_f); // really change tks_fstackc
-   void       popStackFrame             (PTN_Function *_f);
+   YAC_Value *pushStackFrame  (const PTN_Function *_f);  // alloc new stackframe, return pointer
+   void       pushStackFrame2 (const PTN_Function *_f);  // really change tks_fstackc
+   void       popStackFrame   (const PTN_Function *_f);  // unset values
 
    // ---- switch cmpvalue stack
    YAC_Value  switch_stack[TKS_SWITCH_STACK_SIZE];

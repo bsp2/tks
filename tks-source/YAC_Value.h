@@ -277,7 +277,7 @@ public:
 
                      void        toString                (YAC_String *_s) const;
 
-   TKS_INLINE_METHOD void        duplicate               (TKS_Context *_ctx, YAC_Value *c) {
+   TKS_INLINE_METHOD void        duplicate               (TKS_Context *_ctx, const YAC_Value *c) {
       switch(c->type)
       {
       case 0:
@@ -312,6 +312,18 @@ public:
       type             = YAC_TYPE_OBJECT;
       value.object_val = yac_null;
       deleteme         = 0;
+   }
+
+   TKS_INLINE_METHOD void        initNullString          (void) {
+      type             = YAC_TYPE_STRING;
+      value.object_val = yac_null;
+      deleteme         = 0;
+   }
+
+   TKS_INLINE_METHOD void        initNullType            (sSI _type) {
+      type = _type;
+      value.object_val = NULL;
+      deleteme = 0;
    }
 
    TKS_INLINE_METHOD void        safeInitNull            (void) {

@@ -1624,8 +1624,11 @@ void TKS_ScriptClassInstance::setDelegate(YAC_String *_name, PTN_Function *_meth
    delegates->yacHashSet(NULL, _name, &v);  // xxx TKS_MT: should use *real* thread context (exceptions!)
 }
 
-sBool TKS_ScriptClassInstance::evalDelegate(YAC_String *_name, PTN_ArgList *_args,
-                                            sUI _srcLoc, PTN_Env *_env, YAC_Value *_r
+sBool TKS_ScriptClassInstance::evalDelegate(YAC_String  *_name,
+                                            PTN_ArgList *_args,
+                                            sUI          _srcLoc,
+                                            PTN_Env     *_env,
+                                            YAC_Value   *_r
                                             ) const
 {
    if(delegates)
@@ -1635,14 +1638,12 @@ sBool TKS_ScriptClassInstance::evalDelegate(YAC_String *_name, PTN_ArgList *_arg
       if(v.type >= YAC_TYPE_OBJECT)
       {
          PTN_Function *f = (PTN_Function*) v.value.object_val;
-
          Dbeginfuncall(f);
 
-         YAC_Value *nsf = _env->context->pushStackFrame(f);
+         YAC_Value *stackc = _env->context->tks_fstackc;
+         YAC_Value *nsf = (f->num_local_vars > 0u) ? _env->context->pushStackFrame(f) : stackc;
          if(nsf)
          {
-            YAC_Value *stackc = _env->context->tks_fstackc;
-
             // Validate arguments
             if(_args)
             {

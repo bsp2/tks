@@ -120,26 +120,28 @@ static void PTN_FunctionECall__eval(PTN_Env *_env, YAC_Value *_r, const PTN_Expr
 
    Dcondbegincallsiteprofile;
 
-   Dbeginfuncall(st->fun);
+   PTN_Function *f = st->fun;
+   Dbeginfuncall(f);
 
-   YAC_Value *nsf;
-   if((nsf = _env->context->pushStackFrame(st->fun))!=0) // get expected call ("displaced") stackframe
+   YAC_Value *stackc = _env->context->tks_fstackc;
+   YAC_Value *nsf = (f->num_local_vars > 0u) ? _env->context->pushStackFrame(f) : stackc;
+   if(nsf)
    {
       YAC_Value *stackc = _env->context->tks_fstackc;
 
       PTN_Env env(_env);
 
 #ifdef DX_TRACEFUNCTIONCALLS
-      env.context->pushFunctionCall(st->fun, _st->src_loc);
+      env.context->pushFunctionCall(f, _st->src_loc);
 #endif
       if(st->arglist) // SemanticCheck() ensures that function expects args
       {
          st->fun->setArgsByList(&env, st->arglist, nsf);
       }
-      env.context->pushStackFrame2(st->fun); // really change tks_fstackc
+      env.context->pushStackFrame2(f); // really change tks_fstackc
 
       st->fun->evalCall(&env, _r);
-      env.context->popStackFrame(st->fun);
+      env.context->popStackFrame(f);
       env.context->tks_fstackc = stackc;
 
 #ifdef DX_TRACEFUNCTIONCALLS
@@ -151,7 +153,7 @@ static void PTN_FunctionECall__eval(PTN_Env *_env, YAC_Value *_r, const PTN_Expr
       _r->initVoid();
    }
 
-   Dendfuncall(st->fun);
+   Dendfuncall(f);
 
    Dcondendcallsiteprofile(st->src_loc);
 }

@@ -23,31 +23,36 @@ class PTN_TryCatchFinally;
 #define Dendfuncall(a) Dendfuncalltry
 #endif // TKS_MT
 
-class PTN_Function : public PTN_Statement { // , public YAC_Object
+class PTN_Function : public PTN_Statement {
 public:
    static sSI object_counter;
 
 public:
    YAC_String                name;
    YAC_String                documentation;
-   PTN_ArgVarList *          argvarlist;
-   PTN_Statement *           body;
+   PTN_ArgVarList           *argvarlist;
+   PTN_Statement            *body;
    TKS_ObjectCache          *fun_vars;         // static and local cachedobject*. NULL if function has no variables.
-   YAC_Value *               opt_local_vars;   // references to fun_vars.elements, used to build stackframes
+   YAC_Value                *opt_local_vars;   // references to fun_vars.elements, used to build stackframes
    sUI                       num_local_vars;   // initialized by prepareStackFrame()
-   TKS_FormalArgument *      formal_args;      // *new* relaxed argument forward declaration
-   TKS_ClassDecl *           parent_class;     // reference to class if this is a class function ("static method"). Also used by delegate methods (which run in the context of a class).
-   TKS_Namespace *           nspace;           // reference to namespace or NULL (= global namespace) in which this function was declared
+   TKS_FormalArgument       *formal_args;      // *new* relaxed argument forward declaration
+   TKS_ClassDecl            *parent_class;     // reference to class if this is a class function ("static method"). Also used by delegate methods (which run in the context of a class).
+   TKS_Namespace            *nspace;           // reference to namespace or NULL (= global namespace) in which this function was declared
    sUI                       protection_flags; // TKS_PROT_xxx, for class functions
    sBool                     is_class_function; // 1=static method
    sU8                       return_type;           // YAC_TYPE_xxx (default is YAC_TYPE_VARIANT = 0)
    YAC_String                return_class_name;     // Name of unresolved return type class name
    TKS_FreezedNamespaceArray return_class_nspaces;  // Which namespaces to search when resolving the return class type
-   YAC_Object           *    return_template_object;
+   YAC_Object               *return_template_object;
 #ifdef DX_SCRIPTCONSTRAINTS
-   TKS_ScriptConstraint *    return_constraint;     // if!=null then apply this constraint to each returned value
+   TKS_ScriptConstraint     *return_constraint;     // if!=null then apply this constraint to each returned value
    sUI                       return_constraint_type;
 #endif
+
+   YAC_Value *nsf_template;                        // num_local_vars. values are all NULLs and zeroes.
+   sUI        nsf_template_sz;                     // in bytes
+   sUI       *nsf_template_duplicate_indices;      // indices of values that need to be duplicated
+   sUI        nsf_template_num_duplicate_indices;  // number of object duplications
 
    // The yac_function_object is used by YAC_Host
    //   * yacEvalFunction

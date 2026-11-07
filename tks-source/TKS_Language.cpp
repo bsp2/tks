@@ -224,7 +224,7 @@ void TKS_Language::getClassName(YAC_Object *_o, YAC_Value *_r) {
    }
    else
    {
-      _r->initString(NULL, 0);
+      _r->initNullString();
    }
 }
 
@@ -247,7 +247,7 @@ void TKS_Language::getNamespaceName(YAC_Object *_o, YAC_Value *_r) {
    }
    else
    {
-      _r->initString(NULL, 0);
+      _r->initNullString();
    }
 }
 

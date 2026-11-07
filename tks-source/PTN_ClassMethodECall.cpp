@@ -228,11 +228,10 @@ static void PTN_ClassMethodECall__eval(PTN_Env *_env, YAC_Value *_r, const PTN_E
 
    Dcondbegincallsiteprofile;
 
-   YAC_Value *nsf = _env->context->pushStackFrame(f);
+   YAC_Value *stackc = _env->context->tks_fstackc;
+   YAC_Value *nsf = (f->num_local_vars > 0u) ? _env->context->pushStackFrame(f) : stackc;
    if(nsf)
    {
-      YAC_Value *stackc = _env->context->tks_fstackc;
-
 #ifdef DX_TRACEFUNCTIONCALLS
       _env->context->pushFunctionCall(f, st->src_loc);
 #endif
