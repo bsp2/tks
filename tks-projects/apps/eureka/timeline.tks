@@ -14,6 +14,7 @@
 // ----          17Jan2026, 07Apr2026, 08Apr2026, 14Apr2026, 15Apr2026, 17Apr2026, 18Apr2026
 // ----          11May2026, 10Jul2026, 11Jul2026, 12Jul2026, 14Jul2026, 02Aug2026, 03Aug2026
 // ----          04Aug2026, 05Aug2026, 12Aug2026, 29Oct2026, 30Oct2026, 31Oct2026, 06Nov2026
+// ----          07Nov2026
 // ----
 // ----
 // ----
@@ -1660,6 +1661,7 @@ class TimelineTrack : Composite {
       // create new clip display object
       // called while initializing clips
       TimelineClip clip <= timelineTrackNewClip();
+      clip.setLinkedRedraw(parent_timeline);
       clip.initTimelineClip(this);
       clips.add(#(deref clip));
       addChildLayerHead(clip);
@@ -2491,18 +2493,23 @@ class TimelineData : Composite {
    }
 
    public virtual onDrawOverlays() {
-      // // log4 "TimelineData::onDrawOverlays";
+      log4 "TimelineData::onDrawOverlays";
+
       float trackHeaderH = Timeline.GetTrackHeaderH();
+
+      Point2f abspos;
+      ScrollPane spClips <= parent_timeline.sp_clips;
+      spClips.calcAbsolutePosition(abspos); // (todo) optimize/cache
+      int clipY = abspos.y + 0.5 + trackHeaderH;
+      int clipH = getSizeY() + 0.5 - trackHeaderH;
+      sdvg_PushScissor(abspos.x+0.5, clipY, getSizeX()+0.5, clipH);
+      sdvg_EnableScissor();
 
       if(TimelineClip.DRAG_NONE != TimelineClip.drag_mode)
       {
-         sdvg_EnableBlending();
-
-         // // float clipX;
-         // // float clipY;
-         // // float clipW;
-         // // float clipH;
          float offY;
+
+         sdvg_EnableBlending();
 
          IntArray clipSelection <= parent_timeline.clip_selection;
          if(clipSelection.isEmpty())
@@ -2647,7 +2654,11 @@ class TimelineData : Composite {
 
       sdvg_DisableBlending();
 
-      UI.CompositeAll();
+      sdvg_PopScissor();
+      sdvg_DisableScissor();
+
+      if(parent_timeline.timelineIsPlaying())
+         UI.CompositeAll();
    }
 
 }
@@ -2935,6 +2946,7 @@ class Timeline : Composite {
       data.initTimelineData();
       data.setLayout(null);
       data.setAlignment(Layout.EXPAND);
+      data.setLinkedRedraw(this);
 
       sp_clips <= new ScrollPane;
       sp_clips.initScrollPane(null);
@@ -3669,6 +3681,7 @@ class Timeline : Composite {
       TimelineTrack track <= timelineNewTrack();
       track.track_idx = tracks.numElements;
       track.initTimelineTrack(this);
+      track.setLinkedRedraw(this);
       TimelineTrack trackLast <= tracks.last;
       float trackHeaderH = Timeline.GetTrackHeaderH();
       if(null != trackLast)
@@ -4831,7 +4844,7 @@ class Timeline : Composite {
          clipboard_modification_time = milliSeconds();
       }
       b_selection_copied = true;
-      redraw();///UI.CompositeAll();
+      redraw();
    }
 
    public method timelineModelCanPasteClipClipboard(int _units, int _trackIdx) : boolean {
@@ -5249,6 +5262,8 @@ class Timeline : Composite {
    }
 
    public method timelineSetHighlightPos(int _x, int _y) {
+      // (note) called by TimelineData::onMouse()
+
       float trackHeaderH = Timeline.GetTrackHeaderH();
       int units = timelinePixToUnits(_x);
       if(b_snap)
@@ -5528,6 +5543,11 @@ class Timeline : Composite {
       }
    }
 
+   public method timelineIsPlaying() : boolean {
+      // implemented by derived classes
+      return false;
+   }
+
    public method handleSetLoop(boolean _bPreferRegion, boolean _bKbdSelectNone) {
       timelineSetLoopFromSelection(_bPreferRegion);
       if(_bKbdSelectNone)
@@ -5689,14 +5709,14 @@ class Timeline : Composite {
    }
 
    public method onDraw() {
-      // log4 "Timeline::onDraw";
+      log4 "Timeline::onDraw";
       UIRenderer.DrawFilledRectangle(0, 0, getSizeX(), getSizeY(), c32_bg);
       // // log4 "timeline::onDraw";
       // // printHierarchy();
    }
 
    public virtual onDrawPost() {
-      // log4 "Timeline::onDrawPost";
+      log4 "Timeline::onDrawPost";
 
       float x = vp_tracks.getSizePadX() + 1;
       float scrollW = sp_clips.getScrollYSizeX();
@@ -5706,11 +5726,9 @@ class Timeline : Composite {
       float w = getSizeX() - scrollW - x;
       float viewOffsetX = sp_clips.getViewOffsetX();
       // log4 "onDrawPost: viewOffsetX="+viewOffsetX;
-      // (todo) draw ticks
-      // (todo) draw bar labels
       float trackHeaderH = Timeline.GetTrackHeaderH();
 
-      local Point2f abspos;
+      Point2f abspos;
       // // calcAbsolutePositionFBO(abspos); // (todo) optimize/cache
       calcAbsolutePosition(abspos); // (todo) optimize/cache
 
