@@ -843,8 +843,8 @@ class Lane {
 
       milliSecondsDouble(profile_process_t_start);
 
-      local Mod mod <= null;
-      local Mod pmod <= null;
+      local Mod *mod;
+      local Mod *pmod;
       local int modIdx = 0;
       local int inIdx;
       local int k;
@@ -935,7 +935,7 @@ class Lane {
                   // if(b_track_input)
                   if(b_track_input || b_override_input)  // [28Nov2025]
                   {
-                     if(1 == numIn)  // [21Jul2018] b_mono_in removed
+                     if(1 == numIn)
                      {
                         // Left/mono/mid channel only
                         tksampleedit_copy_mono_adv_to_mono(cInL, k, currentInputBuffer, j, 2, _numFrames);
@@ -960,7 +960,7 @@ class Lane {
                   local FloatArray pOutL <= pmod.output_bufs.get(0);
                   local FloatArray pOutR <= pmod.output_bufs.get(1);
 
-                  if(1 == numIn) // [21Jul2018] mod.b_mono_in removed
+                  if(1 == numIn)
                   {
                      // Left/mono/mid channel only
                      tksampleedit_copy_mono_to_mono(cInL, k, pOutL, k, _numFrames);
@@ -968,7 +968,7 @@ class Lane {
                   else
                   {
                      // Stereo input
-                     if(1 == pmod.getNumOutputs()) /// [21Jul2018] pmod.b_mono_out removed
+                     if(1 == pmod.getNumOutputs())
                      {
                         // Mono output from previous mod
                         tksampleedit_copy_mono_to_dualmono(cInL, cInR, k, pOutL, k, _numFrames);
@@ -1035,9 +1035,8 @@ class Lane {
                   outIdx = 0;
                   loop(numOut)
                   {
-                     modOutL <= mod.output_bufs.get(outIdx);
+                     modOutL <= mod.output_bufs.get(outIdx++);
                      modOutL.fill(0);
-                     outIdx++;
                   }
                }
 
@@ -1092,7 +1091,7 @@ class Lane {
                {
                   if(mod.b_multi_out)
                   {
-                     if(1 == numOut) // mod.b_mono_out)
+                     if(1 == numOut)
                      {
                         // Mono multi output to following lanes
                         outIdx = 1;
@@ -1117,6 +1116,7 @@ class Lane {
                         // Stereo multi output to following lanes
                         local int outLaneIdx = _laneIdx + 1;
                         outIdx = 2;
+
                         while((outIdx + 1) < numOut)
                         {
                            laneInputBuf <= _track.getLaneOverrideInputBufferOrNull(outLaneIdx);
@@ -1143,7 +1143,6 @@ class Lane {
          } // if enabled || process MIDI or audio when muted
       } // foreach mod
 
-      // Level meter
       if(null != pmod)
       {
          modOutL <= pmod.output_bufs.get(0);
@@ -1173,6 +1172,7 @@ class Lane {
             lane_fade_vol_cur = lane_fade_vol_next;
          }
 
+         // Level meter
          ui_peakavg_l.process(tksampleedit_calc_peak_mono_adv(modOutL, 0, 1, _numFrames));
          ui_peakavg_r.process(tksampleedit_calc_peak_mono_adv(modOutR, 0, 1, _numFrames));
       }
@@ -1183,6 +1183,15 @@ class Lane {
 
       if(_bPlaying && replay.b_process_audio)
       {
+         local int pmodNumOut;
+         if(null != pmod)
+         {
+            // Common to all outputs
+            pmodNumOut = pmod.getNumOutputs();
+            modOutL <= pmod.output_bufs.get(0);
+            modOutR <= pmod.output_bufs.get(1);
+         }
+
          local FloatArray *trackInputBuf;  // send to track
          local Output *output;
          foreach output in outputs
@@ -1192,23 +1201,19 @@ class Lane {
 
             if(null != pmod)
             {
-               // lane output = last mod output
-               modOutL <= pmod.output_bufs.get(0);
-               modOutR <= pmod.output_bufs.get(1);
+               // Lane output = last mod output
                local int outTrackIdx;
-               local int pmodNumOut = pmod.getNumOutputs();
 
                switch(output.type)
                {
                   case Output.TYPE_DEFAULT:
                      // Send lane output to lane mix buffer
-                     // (todo) native loop
                      // log4 "modOutL="+#(modOutL);
                      k = 0;
                      j = 0;
                      if(output.b_enable)
                      {
-                        if(1 == pmodNumOut)///pmod.b_mono_out)
+                        if(1 == pmodNumOut)
                         {
                            // Mono output from previous mod
                            lvlL = output.level;
@@ -1228,7 +1233,7 @@ class Lane {
                         k--;
                      j = 0;
                      replay.lockMixBufferChannels(k, 2);
-                     if(1 == pmodNumOut)////pmod.b_mono_out)
+                     if(1 == pmodNumOut)
                      {
                         // Mono output from previous mod
                         tksampleedit_add_pan_mono_to_stereo_adv(replay.mix_buffer, k, replay.num_out_ch,
@@ -1298,7 +1303,7 @@ class Lane {
                            current_project.lockTrackInputBuffer(_curTrackIdx, outTrackIdx);
                            k = 0;
                            j = 0;
-                           if(1 == pmodNumOut)////pmod.b_mono_out)
+                           if(1 == pmodNumOut)
                            {
                               // Mono output from previous mod
                               lvlL = output.b_enable ? output.level : 0.0f;
@@ -1333,7 +1338,7 @@ class Lane {
                            current_project.lockTrackSCInputBuffer(_curTrackIdx, outTrackIdx);
                            k = 0;
                            j = 0;
-                           if(1 == pmodNumOut)////pmod.b_mono_out)
+                           if(1 == pmodNumOut)
                            {
                               // Mono output from previous mod
                               lvlL = output.b_enable ? output.level : 0.0f;
@@ -1358,7 +1363,7 @@ class Lane {
                         {
                            k = 0;
                            j = 0;
-                           if(1 == pmodNumOut)////pmod.b_mono_out)
+                           if(1 == pmodNumOut)
                            {
                               // Mono output from previous mod
                               lvlL = output.b_enable ? output.level : 0.0f;
@@ -1382,7 +1387,7 @@ class Lane {
                         {
                            k = 0;
                            j = 0;
-                           if(1 == pmodNumOut)////pmod.b_mono_out)
+                           if(1 == pmodNumOut)
                            {
                               // Mono output from previous mod
                               lvlL = output.b_enable ? output.level : 0.0f;
