@@ -471,7 +471,7 @@ class PageTrack : Page {
 
    // <method.png>
    protected method lazySwitchEditorMode() : boolean {
-      if(1) trace "[trc] PageTrack::lazySwitchEditorMode: ENTER";
+      if(1) log2 "PageTrack::lazySwitchEditorMode: ENTER";
       boolean bRelayout = false;
 
       f_sampletimeline.removeOverlays();
@@ -1568,7 +1568,7 @@ class PageTrack : Page {
                                                 newSample.getZoneSamplePluginById(mergedZone, ModEQ3.FX_ID);
                                              if(null == pluginSharedEQ3Dst)
                                              {
-                                                trace "[trc] PageTrack::handleMergeSamples2: merge lane ModEQ3 to mergedZoneIdx="+mergedZoneIdx+"(\""+mergedZone.name+"\")";
+                                                log2 "PageTrack::handleMergeSamples2: merge lane ModEQ3 to mergedZoneIdx="+mergedZoneIdx+"(\""+mergedZone.name+"\")";
                                                 // Create new EQ3 voice plugin instance and copy params from lane ModEQ3
                                                 pluginSharedEQ3Dst <=
                                                    newSample.getOrCreateZoneSamplePluginById(mergedZone, ModEQ3.FX_ID);
@@ -1655,7 +1655,7 @@ class PageTrack : Page {
       Lane *lane;
       int noteIdx = 0;
       IntArray noteTbl <= Sample.drumkit_note_tbl;
-      
+
       foreach lane in track.lanes
       {
          ModSample *modSample;
@@ -1684,7 +1684,7 @@ class PageTrack : Page {
 
    // <ui_handle.png>
    protected =replay= method handleConvertDrumPadsToModSampleLanes1() {
-    
+
       PointerArray aSrcLanes <= track.lanes;
 
       SamplePadKit spk <= track.sample_pad_kit;
@@ -1703,6 +1703,8 @@ class PageTrack : Page {
       SamplePadCommon *padCommon;
       int sendIdx;
       float level;
+      int laneIdx;
+      Output *output;
 
       // Find used lane sends
       local IntArray aUsedLaneSends;
@@ -1731,7 +1733,7 @@ class PageTrack : Page {
          }
          padIdx++;
       }
-   
+
       // Create pad lanes
       int numPadLanes = 0;
       Lane *newLane;
@@ -1744,6 +1746,7 @@ class PageTrack : Page {
 
             newLane <= track.newLane();
             newLane.lane_name = padCommon.name;
+            newLane.tmp_src_lane <= null;
             log2 "handleConvertDrumPadsToModSampleLanes: padIdx="+padIdx+" newLane.lane_name=\""+newLane.lane_name+"\"";
             ModSample modSample <= newLane.newMod("Sample");
             modSample.setSampleIdx(pad.sample_idx);
@@ -1762,7 +1765,7 @@ class PageTrack : Page {
       local IntArray sendToLaneMap;
       sendToLaneMap.allocAndFill(8, -1);
       sendIdx = 0;
-      int laneIdx = 0;
+      laneIdx = 0;
       loop(SamplePadCommon.NUM_LANE_SENDS/*8*/)
       {
          if(aUsedLaneSends[sendIdx])
@@ -1784,14 +1787,16 @@ class PageTrack : Page {
                // Create send lane
                newLane <= track.newLane();
                Lane srcLane <= aSrcLanes.get(sendIdx);
+               newLane.tmp_src_lane <= srcLane;
                newLane.copyModsFrom(srcLane, true/*bFullInit*/, true/*bCopyModMatrix*/);
                newLane.copyOutputsFrom(srcLane);
+               newLane.markOutputLaneIndicesAsUnresolved();
                newLane.lane_name = srcLane.lane_name;
             }
             sendIdx++;
          }
 
-         // Create outputs
+         // Create pad lane outputs
          laneIdx = 0;
          padIdx = 0;
          foreach pad in ekv.pads
@@ -1804,8 +1809,6 @@ class PageTrack : Page {
                laneLevelMod <= pad.lane_level_mod;
                lanePan      <= padCommon.lane_pan;
                lanePanMod   <= pad.lane_pan_mod;
-
-               Output *output;
 
                sendIdx = 0;
                loop(numUsedLaneSends)
@@ -1839,6 +1842,77 @@ class PageTrack : Page {
             padIdx++;
          }
       }
+
+      // Iterate new (send) lanes last-to-first and create missing (indirect) target lanes
+      if(1)
+      {
+         PointerArray aNewLanes <= tpv.lanes;
+         boolean bLaneCreated, bOutputUpdated;
+         do
+         {
+            int newLaneIdx = aNewLanes.numElements;
+            bLaneCreated = false;
+            bOutputUpdated = false;
+            // log4 "~~~~~~~ start newLaneIdx="+newLaneIdx+" (#lanes)";
+            while(--newLaneIdx > 0)  // assumes that drumkit has at least one pad
+            {
+               newLane <= aNewLanes.get(newLaneIdx);
+               // log4 "process newLaneIdx="+newLaneIdx+"  newLane.name=\""+newLane.lane_name+"\"";
+               if(null != newLane.tmp_src_lane) // a send lane ?
+               {
+                  foreach output in newLane.outputs
+                  {
+                     if(Output.TYPE_LANE == output.type)
+                     {
+                        log4 "   output.lane_idx="+output.lane_idx+"  output.b_tmp_unresolved="+output.b_tmp_unresolved;
+                        if(output.b_tmp_unresolved)
+                        {
+                           int oldLaneIdx = output.lane_idx;
+                           int copiedLaneIdx = track.findNewLaneIdxForOldUnresolvedLaneIdx(oldLaneIdx);
+                           log4 "   find copiedLaneIdx="+copiedLaneIdx;
+                           if(copiedLaneIdx < 0)
+                           {
+                              // Send lane sends to another (currently not existing) lane => create it
+                              // log4 "create new lane after newLaneIdx="+newLaneIdx+" srcLane(output.lane_idx)="+output.lane_idx;
+                              track.newLaneAfter(newLaneIdx);
+                              track.incResolvedOutputLaneIndicesAfter(newLaneIdx);
+                              Lane outLane <= aNewLanes.get(newLaneIdx + 1);
+                              srcLane <= aSrcLanes.get(oldLaneIdx);
+                              log2 "   srcLane.lane_name=\""+srcLane.lane_name+"\"";
+                              outLane.tmp_src_lane <= srcLane;
+                              outLane.tmp_src_lane_idx = oldLaneIdx;
+                              outLane.lane_name = srcLane.lane_name;
+                              outLane.copyModsFrom(srcLane, true/*bFullInit*/, true/*bCopyModMatrix*/);
+                              outLane.copyOutputsFrom(srcLane);
+                              outLane.markOutputLaneIndicesAsUnresolved();
+                              output.lane_idx = newLaneIdx + 1;
+                              output.b_tmp_unresolved = false;
+                              bLaneCreated = true;
+                              // log4 "   debug find new copiedLaneIdx="+track.findNewLaneIdxForOldUnresolvedLaneIdx(oldLaneIdx);
+                           }
+                           else
+                           {
+                              // Lane already created => assign
+                              output.lane_idx = copiedLaneIdx;
+                              output.b_tmp_unresolved = false;
+                              bOutputUpdated = true;
+                           }
+                        } // if output unresolved
+                     } // if TYPE_LANE
+                     if(bLaneCreated)
+                        break;
+                  } // loop outputs
+                  // // newLane.tmp_src_lane <= null;
+                  if(bLaneCreated)
+                     break;
+               }
+            } // rev-loop newLanes
+         }
+         while(bLaneCreated || bOutputUpdated);
+      }
+
+      // (todo) final clean-up: unset tmp_src_lane / tmp_src_lane_idx / b_tmp_resolved ?
+      //         (not really necessary, though. these are just temporaries)
 
       Audio.PopSuppressUnderrunError(bOldSuppressUnderrunError);
 
@@ -2094,7 +2168,7 @@ class PageTrack : Page {
 
    // <ui_kbd.png>
    public virtual onTriadKey(Key _k) : boolean {
-      // trace "[trc] PageTrack::onTriadKey: name="+_k.name;
+      // log2 "PageTrack::onTriadKey: name="+_k.name;
       if(null != track && track.isTimelineMode())
       {
          switch(_k.pressed)
@@ -2115,7 +2189,7 @@ class PageTrack : Page {
 
    // <ui_kbd.png>
    public virtual onKey(Key _k) : boolean {
-      // trace "[trc] PageTrack::onKey: name="+_k.name+" pressed="+_k.pressed+" released="+_k.released+" mod="+_k.mod;
+      // log2 "PageTrack::onKey: name="+_k.name+" pressed="+_k.pressed+" released="+_k.released+" mod="+_k.mod;
 
       if(_k.modNone())
       {
