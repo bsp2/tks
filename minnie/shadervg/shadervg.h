@@ -5719,7 +5719,7 @@ Tint color
 
 @arg x Packed RGB24 base color
 @arg y Packed RGB24 tint color. Alpha channel determines blend amount.
-@arg a8 Alpha channel (0..25) to be inserted into returned color
+@arg a8 Alpha channel (0..255) to be inserted into returned color
 
 @return Packed ARGB32 color
 
