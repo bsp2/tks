@@ -16,6 +16,7 @@
 // ----          18Nov2023, 02Dec2023, 03Dec2023, 05Jul2024, 07Jul2024, 15Nov2024, 07Jan2025
 // ----          22May2025, 13Jun2025, 18Dec2025, 06Apr2026, 14Apr2026, 16Apr2026, 13Jul2026
 // ----          02Aug2026, 03Aug2026, 09Aug2026, 29Oct2026, 30Oct2026, 31Oct2026, 07Nov2026
+// ----          12Nov2026
 // ----
 // ----
 // ----
@@ -60,7 +61,7 @@ class SysEx {
 
    // (note) in_dev MIDI ch 0 : Play temp sample polyphonically
 
-   define int SYX_MSGID_EXT                       =  0;  // unused
+   define int SYX_MSGID_QUIT                      =  0;  // INOUT  other process quit
    define int SYX_MSGID_DETECT                    =  1;  // IN     detect presence
    define int SYX_MSGID_DETECT_ACK                =  2;  // OUT    audio process is active
    define int SYX_MSGID_SEQ_START                 =  3;  // INOUT  sequencer replay has begun / send replay start request
@@ -156,9 +157,14 @@ class SysEx {
    static MIDIOutDevice *out_dev;
 
    define int SEQ_DETECT_INTERVAL_MS = 1500;
+   define int SEQ_DETECT_TIMEOUT_MS  = 8000;
+   static boolean b_queued_recv_quit;
+   static boolean b_queued_send_quit;
    static boolean b_seq_connected;
    static int last_seq_detect_ms;
-   static boolean b_seq_detect_ack;
+   static int last_seq_detect_ack_ms;
+   static boolean b_queued_recv_detect_ack;
+   static boolean b_queued_recv_detect_ack_ui;
 
    static boolean b_queued_recv_seq_start;
    static boolean b_queued_recv_seq_start_ack;
@@ -169,6 +175,8 @@ class SysEx {
    static String *queued_recv_project_name;
    static String *queued_recv_project_load;
    static String *queued_recv_project_save;
+
+   static boolean b_queued_send_project_load_reply;  // maybe=nothing to send
 
    static boolean queued_send_project_query_autoload;
    static boolean b_queued_send_seq_start;
@@ -372,6 +380,9 @@ class SysEx {
       send_raw.size = MAX_PAYLOAD_SIZE_RAW;
 
       queued_recv_atrk = -1;
+
+      b_queued_recv_detect_ack_ui = maybe;
+      b_queued_send_project_load_reply = maybe;
    }
 
    // <method.png>
@@ -528,9 +539,13 @@ class SysEx {
 
          switch(msgId)
          {
+            case SYX_MSGID_QUIT:
+               b_queued_recv_quit = true;
+               break;
+
             case SYX_MSGID_DETECT:
                raw.offset = 0;
-               seq_native_process_id    = raw.i32;
+               seq_native_process_id = raw.i32;
                // // seq_native_window_handle = raw.i32;
                Utils.ReadString(raw, seq_native_window_handle);
                log4 "SysEx::Handle<DETECT>: seq_native_window_handle="+seq_native_window_handle+" seq_native_process_id="+seq_native_process_id;
@@ -541,13 +556,13 @@ class SysEx {
 
             case SYX_MSGID_DETECT_ACK:
                raw.offset = 0;
-               seq_native_process_id    = raw.i32;
+               seq_native_process_id = raw.i32;
                // // seq_native_window_handle = raw.i32;
                Utils.ReadString(raw, seq_native_window_handle);
                log4 "SysEx::Handle<DETECT_ACK>: seq_native_window_handle="+seq_native_window_handle+" seq_native_process_id="+seq_native_process_id;
                if(0 != seq_native_process_id)
                   SDL.allowShowNativeWindow(seq_native_process_id);
-               b_seq_detect_ack = true;
+               b_queued_recv_detect_ack = true;
                break;
 
             case SYX_MSGID_SEQ_START:
@@ -988,7 +1003,23 @@ class SysEx {
 
    // <method_get.png>
    public static IsSeqConnected() : boolean {
-      return b_seq_connected && b_seq_detect_ack;
+      return b_seq_connected;
+   }
+
+   // <method.png>
+   public static SendQuit() {
+      Send(SYX_MSGID_QUIT, null/*payload*/);
+   }
+
+   // <method.png>
+   public =sysexqueue= static QueueSendQuit() {
+      b_queued_send_quit = true;
+   }
+
+   // <method.png>
+   public static WaitSendQuit() {
+      while(b_queued_send_quit)
+         Thread.Delay();
    }
 
    // <method.png>
@@ -1015,7 +1046,6 @@ class SysEx {
    public static SendDetect() {
       send_raw.offset = 0;
       send_raw.i32 = SDL.nativeProcessId;
-      // // send_raw.i32 = SDL.nativeWindowHandle;
       Utils.WriteString(send_raw, SDL.nativeWindowHandle);
       Send(SYX_MSGID_DETECT, send_raw/*payload*/);
    }
@@ -1024,7 +1054,6 @@ class SysEx {
    public static SendDetectAck() {
       send_raw.offset = 0;
       send_raw.i32 = SDL.nativeProcessId;
-      // // send_raw.i32 = SDL.nativeWindowHandle;
       Utils.WriteString(send_raw, SDL.nativeWindowHandle);
       Send(SYX_MSGID_DETECT_ACK, send_raw/*payload*/);
    }
@@ -1095,16 +1124,24 @@ class SysEx {
 
    // <method.png>
    public static SendProjectLoadReply(boolean _bOk) {
+      trace "xxx ~~~~~~~~~~~~~~~ SendProjectLoadReply(bOk="+_bOk+")";
       Send(_bOk ? SYX_MSGID_PROJECT_LOAD_OK : SYX_MSGID_PROJECT_LOAD_FAIL, null/*payload*/);
    }
 
    // <method.png>
+   public =sysexqueue= static QueueSendProjectLoadReply(boolean _bOk) {
+      b_queued_send_project_load_reply = _bOk;
+   }
+
+   // <method.png>
    public static SendProjectSaveReply(boolean _bOk) {
+      // (todo) QueueSendProjectSaveReply()
       Send(_bOk ? SYX_MSGID_PROJECT_SAVE_OK : SYX_MSGID_PROJECT_SAVE_FAIL, null/*payload*/);
    }
 
    // <method.png>
    public static SendProjectAutoload() {
+      // log4 "......... SendProjectAutoload()";
       Send(SYX_MSGID_PROJECT_AUTOLOAD, null/*payload*/);
    }
 
@@ -1429,14 +1466,26 @@ class SysEx {
 
       if(null != out_dev)
       {
-         SendPeriodicAudioDetect();
+         SendPeriodicSeqDetect();
 
          if(b_seq_connected)
          {
+            if(b_queued_send_quit)
+            {
+               SendQuit();
+               b_queued_send_quit = false;
+            }
+
             if(queued_send_project_query_autoload)
             {
                queued_send_project_query_autoload = false;
                SendProjectAutoload();
+            }
+
+            if(maybe != b_queued_send_project_load_reply)
+            {
+               SendProjectLoadReply(b_queued_send_project_load_reply);
+               b_queued_send_project_load_reply = maybe;
             }
 
             if(b_queued_send_seq_start)
@@ -1539,23 +1588,45 @@ class SysEx {
    }
 
    // <method.png>
-   public static SendPeriodicAudioDetect() {
+   public static SendPeriodicSeqDetect() {
       int t = milliSeconds();
+
+      if(b_queued_recv_detect_ack)
+      {
+         b_queued_recv_detect_ack = false;
+         if(!b_seq_connected)
+         {
+            // Sequencer process connected
+            logsuccess "SysEx: seq process connected at t="+t+", sending BPM/PPQ+project name";
+            b_seq_connected = true;
+            b_queued_recv_detect_ack_ui = true;
+         }
+         last_seq_detect_ack_ms = t;
+      }
+      else if(b_queued_recv_quit)
+      {
+         b_queued_recv_quit = false;
+         if(b_seq_connected)
+         {
+            logverbose "SysEx: seq process disconnected at t="+t;
+            b_queued_recv_detect_ack_ui = false;
+            b_seq_connected = false;
+         }
+      }
+
+      if(b_seq_connected)
+      {
+         if((t - last_seq_detect_ack_ms) >= SEQ_DETECT_TIMEOUT_MS)
+         {
+            logverbose "SysEx: seq process timed out at t="+t;
+            b_queued_recv_detect_ack_ui = false;
+            b_seq_connected = false;
+         }
+      }
 
       if((t - last_seq_detect_ms) >= SEQ_DETECT_INTERVAL_MS)
       {
-         if(!b_seq_connected && b_seq_detect_ack)
-         {
-            // Sequencer process just connected
-            b_seq_connected = true;
-            Global.Info("SysEx: seq process connected at t="+t);
-         }
-         else
-         {
-            // Keep alive or disconnect
-            b_seq_connected = b_seq_detect_ack;
-         }
-         b_seq_detect_ack = false;
+         // log4 "SendPeriodicSeqDetect: b_seq_connected="+b_seq_connected+" b_queued_recv_detect_ack_ui="+b_queued_recv_detect_ack_ui;
          last_seq_detect_ms = t;
          SendDetect();
       }
@@ -1725,6 +1796,15 @@ class SysEx {
    // <method.png>
    public =sysexqueue= static HandleQueuedRecv() {
       // Called from UI thread (RootForm idle timer callback)
+      Page *pg;
+
+      if(maybe != b_queued_recv_detect_ack_ui)
+      {
+         loginfo "Seq process "+(b_queued_recv_detect_ack_ui?"connected":"disconnected");
+         pg <= root_form.getCurrentPage();
+         // pg.pageHandleSeqConnect(b_queued_recv_detect_ack_ui);
+         b_queued_recv_detect_ack_ui = maybe;
+      }
 
       if(-1 != queued_recv_bpm)
       {

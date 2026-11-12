@@ -16,6 +16,7 @@
 // ----          07Jul2024, 15Nov2024, 14Mar2025, 22May2025, 13Jun2025, 18Dec2025, 19Dec2025
 // ----          20Dec2025, 03Jan2026, 06Apr2026, 14Apr2026, 16Apr2026, 25Apr2026, 01May2026
 // ----          11Jul2026, 13Jul2026, 03Aug2026, 09Aug2026, 29Oct2026, 30Oct2026, 31Oct2026
+// ----          12Nov2026
 // ----
 // ----
 // ----
@@ -169,7 +170,7 @@ class SysEx {
    define int WAIT_REPLY_NUM_RETRIES = 500;
    define int WAIT_REPLY_SLEEP_MS = 10;
 
-   define int SYX_MSGID_EXT                       =  0;  // unused
+   define int SYX_MSGID_QUIT                      =  0;  // INOUT  other process quit
    define int SYX_MSGID_DETECT                    =  1;  // IN     detect presence
    define int SYX_MSGID_DETECT_ACK                =  2;  // OUT    audio process is active
    define int SYX_MSGID_SEQ_START                 =  3;  // INOUT  sequencer replay has begun / send replay start request
@@ -268,15 +269,21 @@ class SysEx {
    static STX_MIDIOutDevice *audio2rpn_out_dev;  // see MIDI.InitMIDIOutDevices()
 
    define int AUDIO_DETECT_INTERVAL_MS = 1500;
+   define int AUDIO_DETECT_TIMEOUT_MS  = 8000;
+   static boolean b_queued_recv_quit;
+   static boolean b_queued_send_quit;
    static boolean b_audio_connected;
    static int last_audio_detect_ms;
-   static boolean b_audio_detect_ack;
+   static int last_audio_detect_ack_ms;
+   static boolean b_queued_recv_detect_ack;
+   static boolean b_queued_recv_detect_ack_ui;
 
    static float queued_send_bpm;
    static int   queued_send_ppq;
    static String *queued_send_project_name;
    static String *queued_send_project_load;
    static String *queued_send_project_save;
+   static boolean b_queued_recv_project_load;  // true=ok, false=fail, maybe=unchanged
    static boolean b_seq_start_from_daw;  // 1=replay started in DAW (send SEQ_START_ACK)
    static boolean b_queued_send_seq_start;
    static float   queued_send_seq_start_song_pos_beats;
@@ -565,6 +572,9 @@ class SysEx {
       remote_event_queue.alloc(100);
 
       queued_send_atrk_msgid = -1;
+
+      b_queued_recv_detect_ack_ui = maybe;
+      b_queued_recv_project_load = maybe;
    }
 
    // <method.png>
@@ -657,7 +667,7 @@ class SysEx {
 
    // <method.png>
    public static Handle(Buffer _syx) {
-      // log4 "xxx SysEx.Handle(syx.offset="+_syx.offset+")";
+      // log4 "SysEx.Handle(syx.offset="+_syx.offset+")";
       // (note) msg w/o 0xF0 / 0xF7 bytes
 
       Buffer raw;
@@ -682,6 +692,10 @@ class SysEx {
 
          switch(msgId)
          {
+            case SYX_MSGID_QUIT:
+               b_queued_recv_quit = true;
+               break;
+
             case SYX_MSGID_DETECT:
                raw.offset = 0;
                audio_native_process_id    = raw.i32;
@@ -696,11 +710,10 @@ class SysEx {
                raw.offset = 0;
                audio_native_process_id    = raw.i32;
                Utils.ReadString(raw, audio_native_window_handle);
-               log3 "SysEx::Handle<DETECT_ACK>: audio_native_window_handle="+audio_native_window_handle+" audio_native_process_id="+audio_native_process_id;
+               log1 "SysEx::Handle<DETECT_ACK>: audio_native_window_handle="+audio_native_window_handle+" audio_native_process_id="+audio_native_process_id;
                if(0 != audio_native_process_id)
                   SDL.allowShowNativeWindow(audio_native_process_id);
-               b_audio_detect_ack = true;
-               // log4 "SysEx::Handle: set b_audio_detect_ack = true";
+               b_queued_recv_detect_ack = true;
                break;
 
             case SYX_MSGID_SEQ_START:
@@ -731,10 +744,18 @@ class SysEx {
                log3 "SysEx::Handle: set project name to \""+s+"\"";
                break;
 
-            case SYX_MSGID_PROJECT_LOAD:
-               raw.offset = 0;
-               Utils.ReadString(raw, s);
-               log3 "SysEx::Handle: load project file \""+s+"\"";
+            // // case SYX_MSGID_PROJECT_LOAD:
+            // //    raw.offset = 0;
+            // //    Utils.ReadString(raw, s);
+            // //    log3 "SysEx::Handle: load project file \""+s+"\"";
+            // //    break;
+
+            case SYX_MSGID_PROJECT_LOAD_OK:
+               b_queued_recv_project_load = true;
+               break;
+
+            case SYX_MSGID_PROJECT_LOAD_FAIL:
+               b_queued_recv_project_load = false;
                break;
 
             case SYX_MSGID_PROJECT_SAVE:
@@ -868,7 +889,7 @@ class SysEx {
                }
                b_queued_recv_smp_peaks = true;
                log3 "SysEx::Handle: SYX_MSGID_REPLY_SMP_PEAKS: read "+raw.offset+" bytes. #peaks="+numPeaks;
-               // trace "xxx peaks="+#(queued_recv_smp_peaks);
+               // log4 "peaks="+#(queued_recv_smp_peaks);
                break;
 
             case SYX_MSGID_REPLY_SMP_ZONES_TO_MIDI:
@@ -1037,7 +1058,7 @@ class SysEx {
 
    // <method.png>
    public static Send(int _msgId, Buffer _payloadOrNull) {
-      // trace "xxx SysEx.Send(msgId="+_msgId+")";
+      // log4 "SysEx.Send(msgId="+_msgId+")";
       // (note) payload.offset determines size
       if(null != out_dev)
       {
@@ -1048,7 +1069,7 @@ class SysEx {
             syx.size = MAX_PAYLOAD_SIZE_SYX;
          }
          Encode(_payloadOrNull, syx, 0/*devId*/, _msgId);
-         // trace "xxx SysEx::Send: syx.offset="+syx.offset;
+         // log4 "SysEx::Send: syx.offset="+syx.offset;
          // Utils.HexDump(syx, 0, syx.offset);
          out_dev.sysExHidden(syx);
 
@@ -1064,7 +1085,23 @@ class SysEx {
 
    // <method_get.png>
    public static IsAudioConnected() : boolean {
-      return b_audio_connected && b_audio_detect_ack;
+      return b_audio_connected;
+   }
+
+   // <method.png>
+   public static SendQuit() {
+      Send(SYX_MSGID_QUIT, null/*payload*/);
+   }
+
+   // <method.png>
+   public =sysexqueue= static QueueSendQuit() {
+      b_queued_send_quit = true;
+   }
+
+   // <method.png>
+   public static WaitSendQuit() {
+      while(b_queued_send_quit)
+         Thread.Delay();
    }
 
    // <method.png>
@@ -1073,7 +1110,6 @@ class SysEx {
       send_raw.i32 = SDL.nativeProcessId;
       Utils.WriteString(send_raw, SDL.nativeWindowHandle);
       Send(SYX_MSGID_DETECT, send_raw/*payload*/);
-      b_audio_connected = true; // xxxxx
    }
 
    // <method.png>
@@ -1098,7 +1134,7 @@ class SysEx {
    public =sysexqueue= static QueueSendSeqStart() {
       b_queued_send_seq_start = true;
       queued_send_seq_start_song_pos_beats = float(current_song.song_offset) / current_song.getNumTicksPerBeat();
-      // trace "xxx QueueSendSeqStart: song_offset="+current_song.song_offset+" beats="+queued_send_seq_start_song_pos_beats;
+      // log4 "QueueSendSeqStart: song_offset="+current_song.song_offset+" beats="+queued_send_seq_start_song_pos_beats;
    }
 
    // <method.png>
@@ -1107,7 +1143,7 @@ class SysEx {
       {
          b_queued_send_seq_start = true;
          queued_send_seq_start_song_pos_beats = float(current_song.song_offset) / current_song.getNumTicksPerBeat();
-         // trace "xxx QueueSendSeqStart: song_offset="+current_song.song_offset+" beats="+queued_send_seq_start_song_pos_beats;
+         // log4 "QueueSendSeqStart: song_offset="+current_song.song_offset+" beats="+queued_send_seq_start_song_pos_beats;
       }
    }
 
@@ -1177,12 +1213,9 @@ class SysEx {
 
    // <method.png>
    public static SendProjectLoad(String _projectName) {
-      if(b_audio_connected)
-      {
-         send_raw.offset = 0;
-         Utils.WriteString(send_raw, _projectName);
-         Send(SYX_MSGID_PROJECT_LOAD, send_raw/*payload*/);
-      }
+      send_raw.offset = 0;
+      Utils.WriteString(send_raw, _projectName);
+      Send(SYX_MSGID_PROJECT_LOAD, send_raw/*payload*/);
    }
 
    // <method.png>
@@ -1205,21 +1238,21 @@ class SysEx {
       queued_send_project_save <= String(_name);
    }
 
-   // <method.png>
-   public static SendProjectLoadReply(boolean _bOk) {
-      if(b_audio_connected)
-      {
-         Send(_bOk ? SYX_MSGID_PROJECT_LOAD_OK : SYX_MSGID_PROJECT_LOAD_FAIL, null/*payload*/);
-      }
-   }
+   // // <method.png>
+   // public static SendProjectLoadReply(boolean _bOk) {
+   //    if(b_audio_connected)
+   //    {
+   //       Send(_bOk ? SYX_MSGID_PROJECT_LOAD_OK : SYX_MSGID_PROJECT_LOAD_FAIL, null/*payload*/);
+   //    }
+   // }
 
-   // <method.png>
-   public static SendProjectSaveReply(boolean _bOk) {
-      if(b_audio_connected)
-      {
-         Send(_bOk ? SYX_MSGID_PROJECT_SAVE_OK : SYX_MSGID_PROJECT_SAVE_FAIL, null/*payload*/);
-      }
-   }
+   // // <method.png>
+   // public static SendProjectSaveReply(boolean _bOk) {
+   //    if(b_audio_connected)
+   //    {
+   //       Send(_bOk ? SYX_MSGID_PROJECT_SAVE_OK : SYX_MSGID_PROJECT_SAVE_FAIL, null/*payload*/);
+   //    }
+   // }
 
    // <method.png>
    public static QueueRecordStop() {
@@ -1269,7 +1302,7 @@ class SysEx {
       send_raw.i32 = _instanceId;
       send_raw.i32 = _paramIdx;
       send_raw.f32 = _paramValue;
-      // trace "xxx SendRemoteParamUpdate("+_instanceId+","+_paramIdx+","+_paramValue+")";
+      // log4 "SendRemoteParamUpdate("+_instanceId+","+_paramIdx+","+_paramValue+")";
       Send(SYX_MSGID_REMOTE_PARAM_UPDATE, send_raw/*payload*/);
    }
 
@@ -1279,7 +1312,7 @@ class SysEx {
       send_raw.i32 = _instanceId;
       send_raw.i32 = _paramIdx;
       send_raw.f32 = _paramValueRel;
-      // trace "xxx SendRemoteParamUpdateRel("+_instanceId+","+_paramIdx+","+_paramValue+")";
+      // log4 "SendRemoteParamUpdateRel("+_instanceId+","+_paramIdx+","+_paramValue+")";
       Send(SYX_MSGID_REMOTE_PARAM_UPDATE_REL, send_raw/*payload*/);
    }
 
@@ -1534,7 +1567,7 @@ class SysEx {
       send_raw.f32 = queued_send_smp_peaks_interval_ms;
       Send(SYX_MSGID_QUERY_SMP_PEAKS, send_raw/*payload*/);
       b_queued_send_smp_peaks = false;
-      // trace "xxx SysEx::SendSmpPeaks: uid="+queued_send_smp_peaks_uid+" interval="+queued_send_smp_peaks_interval_ms+"ms";
+      // log4 "SysEx::SendSmpPeaks: uid="+queued_send_smp_peaks_uid+" interval="+queued_send_smp_peaks_interval_ms+"ms";
    }
 
    // <method.png>
@@ -1646,7 +1679,7 @@ class SysEx {
 
    // <method.png>
    public static SendTrackShowByMIDIPort() {
-      // // trace "xxx SysEx::SendTrackShowByMIDIPort";
+      // // log4 "SysEx::SendTrackShowByMIDIPort";
       send_raw.offset = 0;
       send_raw.i8 = queued_send_track_show_dev;
       send_raw.i8 = queued_send_track_show_ch;
@@ -1868,7 +1901,7 @@ class SysEx {
          // // MIDIPipeFrame frameMasterInject <= replay.frame_master_inject;
 
          // if(numEv > 0)
-         //    trace "xxx sysex midiin numEvents="+numEv;
+         //    log4 "sysex midiin numEvents="+numEv;
 
          loop(numEv)
          {
@@ -1877,18 +1910,18 @@ class SysEx {
             if(recEv.isLongMessage())
             {
                // (note) must copy long message buffer since event buffer ptr is only valid temporarily
-               // trace "xxx SysEx::ParseMIDIInputEvents: recEv.size="+recEv.size;
+               // log4 "SysEx::ParseMIDIInputEvents: recEv.size="+recEv.size;
                Buffer sysexBuffer <= new Buffer;
                sysexBuffer.size = recEv.size;
                recEv.copyToStream(sysexBuffer);  // copy w/o 0xF0 / 0xF7 bytes
-               // trace "xxx SysEx::ParseMIDIInputEvents: copy longmessage SYSEX event, size="+sysexBuffer.size;
+               // log4 "SysEx::ParseMIDIInputEvents: copy longmessage SYSEX event, size="+sysexBuffer.size;
                Handle(sysexBuffer);
             }
             else
             {
                MIDIMapEvent midiMapEvent <= replay.midi_map_rt_event_queue.nextFree;
                midiMapEvent.initFromRecordedMIDIEvent(audio2rpn_in_dev, recEv);
-               // trace "xxx add Audio2RPN event to rt_event_queue";
+               // log4 "add Audio2RPN event to rt_event_queue";
 
                // // mev.addToFrame(frameMasterInject, 0/*noteDuration*/, false/*bDiscard*/);
             }
@@ -1904,6 +1937,12 @@ class SysEx {
 
          if(b_audio_connected)
          {
+            if(b_queued_send_quit)
+            {
+               SendQuit();
+               b_queued_send_quit = false;
+            }
+
             if(null != queued_send_project_name)
             {
                SendProjectNameSet(queued_send_project_name);
@@ -2110,24 +2149,47 @@ class SysEx {
 
    // <method.png>
    public static SendPeriodicAudioDetect() {
+      // called in audio thread by SendMIDIOutputEvents()
       int t = milliSeconds();
+
+      if(b_queued_recv_detect_ack)
+      {
+         b_queued_recv_detect_ack = false;
+         if(!b_audio_connected)
+         {
+            // Audio process connected
+            logverbose "SysEx: audio process connected at t="+t+", sending BPM/PPQ+project name";
+            b_audio_connected = true;
+            SendSeqTempoSet(current_song.getBPM(), current_song.getPPQ());
+            SendProjectNameSet(current_song.song_name);
+            b_queued_recv_detect_ack_ui = true;
+         }
+         last_audio_detect_ack_ms = t;
+      }
+      else if(b_queued_recv_quit)
+      {
+         b_queued_recv_quit = false;
+         if(b_audio_connected)
+         {
+            logverbose "SysEx: audio process disconnected at t="+t;
+            b_queued_recv_detect_ack_ui = false;
+            b_audio_connected = false;
+         }
+      }
+
+      if(b_audio_connected)
+      {
+         if((t - last_audio_detect_ack_ms) >= AUDIO_DETECT_TIMEOUT_MS)
+         {
+            logverbose "SysEx: audio process timed out at t="+t;
+            b_queued_recv_detect_ack_ui = false;
+            b_audio_connected = false;
+         }
+      }
 
       if((t - last_audio_detect_ms) >= AUDIO_DETECT_INTERVAL_MS)
       {
-         if(!b_audio_connected && b_audio_detect_ack)
-         {
-            // Audio process just connected
-            b_audio_connected = true;
-            logverbose "SysEx: audio process connected at t="+t+", sending BPM/PPQ+project name";
-            SendSeqTempoSet(current_song.getBPM(), current_song.getPPQ());
-            SendProjectNameSet(current_song.song_name);
-         }
-         else
-         {
-            // Keep alive or disconnect
-            b_audio_connected = b_audio_detect_ack;
-         }
-         b_audio_detect_ack = false;
+         // log4 "SendPeriodicAudioDetect: b_audio_connected="+b_audio_connected+" b_queued_recv_detect_ack_ui="+b_queued_recv_detect_ack_ui;
          last_audio_detect_ms = t;
          SendDetect();
       }
@@ -2149,7 +2211,7 @@ class SysEx {
          ev.param_idx   = _paramIdx;
          ev.param_value = _paramValue;
          ev.param_name  = _paramName;
-         // trace "xxx queue remote event "+(remote_event_queue.numElements-1);
+         // log4 "queue remote event "+(remote_event_queue.numElements-1);
       }
       else
       {
@@ -2163,6 +2225,20 @@ class SysEx {
    }
    private =sysexqueue= static HandleQueuedRecv2() {
       // Called from UI thread
+      Page *pg;
+
+      if(maybe != b_queued_recv_detect_ack_ui)
+      {
+         if(b_queued_recv_detect_ack_ui)
+            logsuccess "Audio process connected";
+         else
+            loginfo "Audio process disconnected";
+         if(b_queued_recv_detect_ack_ui)
+            root_form.scheduleAudioConnect();
+         else
+            root_form.scheduleAudioDisconnect();
+         b_queued_recv_detect_ack_ui = maybe;
+      }
 
       if(b_queued_recv_seq_start)
       {
@@ -2240,7 +2316,7 @@ class SysEx {
       if(b_queued_recv_remotereplyinstanceids)
       {
          b_queued_recv_remotereplyinstanceids = false;
-         // trace "xxx b_queued_recv_remotereplyinstanceid: remote_event_listener="+#(remote_event_listener);
+         // log4 "b_queued_recv_remotereplyinstanceid: remote_event_listener="+#(remote_event_listener);
 
          if(remote_event_listener instanceof RemoteEventListener)
          {
@@ -2338,6 +2414,21 @@ class SysEx {
                                       );
       }
 
+      if(maybe != b_queued_recv_project_load)
+      {
+         if(b_queued_recv_project_load)
+         {
+            logsuccess "Audio project loaded";
+            root_form.scheduleLoadAudioProjectOk();
+         }
+         else
+         {
+            logerror "Failed to load audio project";
+            root_form.scheduleLoadAudioProjectFailed();
+         }
+         b_queued_recv_project_load = maybe;
+      }
+
    }
 
    // <method.png>
@@ -2393,7 +2484,7 @@ class SysEx {
 
    // <method.png>
    public static WaitForSmpEdit() : boolean {
-      // trace "xxx WaitForSmpEdit: b_queued_recv_smpedit="+b_queued_recv_smpedit;
+      // log4 "WaitForSmpEdit: b_queued_recv_smpedit="+b_queued_recv_smpedit;
       loop(WAIT_REPLY_NUM_RETRIES)
       {
          if(b_queued_recv_smpedit)
@@ -2411,7 +2502,7 @@ class SysEx {
 
    // <method.png>
    public static WaitForTrackShow() : boolean {
-      // trace "xxx WaitForTrackShow: b_queued_recv_track_show="+b_queued_recv_track_show;
+      // log4 "WaitForTrackShow: b_queued_recv_track_show="+b_queued_recv_track_show;
       loop(WAIT_REPLY_NUM_RETRIES)
       {
          if(b_queued_recv_track_show)

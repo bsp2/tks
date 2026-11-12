@@ -31,7 +31,7 @@
 // ----          19Nov2023, 26Nov2023, 02Dec2023, 22Mar2024, 05Apr2024, 11Apr2024, 22Aug2024
 // ----          23Aug2024, 05Oct2024, 06Oct2024, 13Dec2024, 23Jan2025, 31Jan2025, 29Mar2025
 // ----          07Jun2025, 08Jun2025, 09Sep2025, 18Dec2025, 20Dec2025, 25Apr2026, 09Jul2026
-// ----          13Jul2026, 03Aug2026, 21Sep2026, 26Sep2026, 30Oct2026
+// ----          13Jul2026, 03Aug2026, 21Sep2026, 26Sep2026, 30Oct2026, 12Nov2026
 // ----
 // ----
 // ----
@@ -81,6 +81,10 @@ class RootForm : XMLForm, ActionProvider, MIDIMapContext, StatusBarListener {
    define String TA_SCENE_OVERLAY;
    define String TA_PAGECTLTAG;
    define String TA_SHOW_BPM;
+   define String TA_AUDIO_CONNECT;
+   define String TA_AUDIO_DISCONNECT;
+   define String TA_LOAD_AUDIO_PROJECT_OK;
+   define String TA_LOAD_AUDIO_PROJECT_FAILED;
 
    protected TimerAction *ta_exit;
    protected TimerAction *ta_redraw_all;
@@ -88,6 +92,10 @@ class RootForm : XMLForm, ActionProvider, MIDIMapContext, StatusBarListener {
    protected TimerAction *ta_scene_overlay;
    protected TimerAction *ta_pagectltag;
    protected TimerAction *ta_show_bpm;
+   protected TimerAction *ta_audio_connect;
+   protected TimerAction *ta_audio_disconnect;
+   protected TimerAction *ta_load_audio_project_ok;
+   protected TimerAction *ta_load_audio_project_failed;
 
    define int REDRAW_TIMEOUT_SHORT  = 33;
    define int REDRAW_TIMEOUT_MEDIUM = 100;
@@ -646,14 +654,18 @@ class RootForm : XMLForm, ActionProvider, MIDIMapContext, StatusBarListener {
    }
 
    public method initTimers() {
-      ta_replay_timer    <= TimerAction.New(TA_REPLAY_TIMER,   this, 30);
-      ta_key_speed       <= TimerAction.New(TA_KEY_SPEED,      this, 400);
-      ta_replaytime      <= TimerAction.New(TA_REPLAYTIME,     this, 50);
+      ta_replay_timer     <= TimerAction.New(TA_REPLAY_TIMER, this, 30);
+      ta_key_speed        <= TimerAction.New(TA_KEY_SPEED,    this, 400);
+      ta_replaytime       <= TimerAction.New(TA_REPLAYTIME,   this, 50);
       ta_replaytime.setDefaultTicks(50/*def*/, 50/*short*/, 250/*medium*/, 250/*long*/);
-      ta_redraw_all      <= TimerAction.New(TA_REDRAW_ALL,     this, REDRAW_TIMEOUT_MEDIUM); // dynamic timeout
-      ta_scene_overlay   <= TimerAction.New(TA_SCENE_OVERLAY,  this, 2*400);
-      ta_pagectltag      <= TimerAction.New(TA_PAGECTLTAG,     this, 700);
-      ta_show_bpm        <= TimerAction.New(TA_SHOW_BPM,       this, 3000);
+      ta_redraw_all       <= TimerAction.New(TA_REDRAW_ALL,   this, REDRAW_TIMEOUT_MEDIUM); // dynamic timeout
+      ta_scene_overlay        <= TimerAction.New(TA_SCENE_OVERLAY,        this, 2*400);
+      ta_pagectltag           <= TimerAction.New(TA_PAGECTLTAG,           this, 700);
+      ta_show_bpm             <= TimerAction.New(TA_SHOW_BPM,             this, 3000);
+      ta_audio_connect        <= TimerAction.New(TA_AUDIO_CONNECT,        this, 10);
+      ta_audio_disconnect     <= TimerAction.New(TA_AUDIO_DISCONNECT,     this, 10);
+      ta_load_audio_project_ok     <= TimerAction.New(TA_LOAD_AUDIO_PROJECT_OK,     this, 10);
+      ta_load_audio_project_failed <= TimerAction.New(TA_LOAD_AUDIO_PROJECT_FAILED, this, 10);
 
       ta_replaytime.scheduleLong();
    }
@@ -1147,7 +1159,7 @@ class RootForm : XMLForm, ActionProvider, MIDIMapContext, StatusBarListener {
          {
             if(push_kbd.handleEventUI(_ev))
             {
-               // trace "xxx mmc: handled by push_kbd";
+               // log4 "mmc: handled by push_kbd";
                return true;
             }
          }
@@ -1181,7 +1193,7 @@ class RootForm : XMLForm, ActionProvider, MIDIMapContext, StatusBarListener {
             }
          }
 
-         // trace "xxx RootForm.mmcHandleEvent 2";
+         // log4 "RootForm.mmcHandleEvent 2";
          // trace "[>>>] RootForm::mmcHandleEvent 2: _ev.type="+_ev.type+" ext_type="+_ev.ext_type+" dev="+#(_ev.dev);
 
          MIDIMapEvent boundEv <= mmcGetBindingByEvent(_ev);
@@ -1190,7 +1202,7 @@ class RootForm : XMLForm, ActionProvider, MIDIMapContext, StatusBarListener {
          {
             String targetName <= boundEv.bound_target.target_name;
 
-            // trace "xxx RootForm.mmcHandleEvent 2 targetName=\""+targetName+"\"";
+            // log4 "RootForm.mmcHandleEvent 2 targetName=\""+targetName+"\"";
 
             boolean bLiveRecVisible = IsAudioLiveRecFormVisible();
 
@@ -2165,7 +2177,7 @@ class RootForm : XMLForm, ActionProvider, MIDIMapContext, StatusBarListener {
                return false;
             }
 
-            // trace "xxx switch targetName=\""+targetName+"\".";
+            // log4 "switch targetName=\""+targetName+"\".";
 
             switch(targetName)
             {
@@ -2220,7 +2232,7 @@ class RootForm : XMLForm, ActionProvider, MIDIMapContext, StatusBarListener {
                   return true;
 
                case MMT_GLOBAL_KBDFOCUS:
-                  // trace "xxx MMT_GLOBAL_KBDFOCUS ext="+_ev.class_type_ext;
+                  // log4 "MMT_GLOBAL_KBDFOCUS ext="+_ev.class_type_ext;
                   force_kbdfocusselmode_usecount = 0;
                   queueSynKey(319, 0, _ev.class_type_ext);
                   return true;
@@ -2861,7 +2873,7 @@ class RootForm : XMLForm, ActionProvider, MIDIMapContext, StatusBarListener {
          k.released = _code;
       }
 
-      // trace "xxx RootForm: queueSynKey: k="+k.name;
+      // log4 "RootForm: queueSynKey: k="+k.name;
       syn_key_queue.add(#(deref k));
 
       Events.SendSynKey();
@@ -2913,7 +2925,7 @@ class RootForm : XMLForm, ActionProvider, MIDIMapContext, StatusBarListener {
 
       foreach k in syn_key_queue
       {
-         // trace "xxx RootForm: processSynKeyQueue: k="+k.name;
+         // log4 "RootForm: processSynKeyQueue: k="+k.name;
          UI.OnKeyboard(k);
       }
 
@@ -3058,10 +3070,10 @@ class RootForm : XMLForm, ActionProvider, MIDIMapContext, StatusBarListener {
 
       ta_replay_timer.schedule();
 
-      // trace "xxx -----------------------------";
+      // log4 "-----------------------------";
       log1 "RootForm::showPage: idx="+_idx+" bAllowHistory="+_bAllowHistory;
-      // trace "xxx beg showPage: history="+page_history.string;
-      // trace "xxx beg showPage: history_idx="+page_history_idx;
+      // log4 "beg showPage: history="+page_history.string;
+      // log4 "beg showPage: history_idx="+page_history_idx;
 
       Page pg <= getCurrentPage();
       Page newPg <= getPageByIdx(_idx);
@@ -3112,8 +3124,8 @@ class RootForm : XMLForm, ActionProvider, MIDIMapContext, StatusBarListener {
 
       UI.RedrawAll();
 
-      // trace "xxx end showPage: history="+page_history.string;
-      // trace "xxx end showPage: history_idx="+page_history_idx;
+      // log4 "end showPage: history="+page_history.string;
+      // log4 "end showPage: history_idx="+page_history_idx;
    }
 
    // <ui_page.png>
@@ -3197,9 +3209,9 @@ class RootForm : XMLForm, ActionProvider, MIDIMapContext, StatusBarListener {
 
       if(!isDialogActive())
       {
-         // trace "xxx -----------------------------";
-         // trace "xxx beg showPagePrev: history="+page_history.string;
-         // trace "xxx beg showPagePrev: history_idx="+page_history_idx;
+         // log4 "-----------------------------";
+         // log4 "beg showPagePrev: history="+page_history.string;
+         // log4 "beg showPagePrev: history_idx="+page_history_idx;
 
          int pgNr;
 
@@ -3239,8 +3251,8 @@ class RootForm : XMLForm, ActionProvider, MIDIMapContext, StatusBarListener {
                redraw();
             }
 
-            // trace "xxx end showPagePrev: history="+page_history.string;
-            // trace "xxx end showPagePrev: history_idx="+page_history_idx;
+            // log4 "end showPagePrev: history="+page_history.string;
+            // log4 "end showPagePrev: history_idx="+page_history_idx;
          }
       }
    }
@@ -3250,9 +3262,9 @@ class RootForm : XMLForm, ActionProvider, MIDIMapContext, StatusBarListener {
 
       if(!isCurrentPageModal())
       {
-         // trace "xxx -----------------------------";
-         // trace "xxx beg showPageNext: history="+page_history.string;
-         // trace "xxx beg showPageNext: history_idx="+page_history_idx;
+         // log4 "-----------------------------";
+         // log4 "beg showPageNext: history="+page_history.string;
+         // log4 "beg showPageNext: history_idx="+page_history_idx;
 
          page_history_idx--;
          if(page_history_idx < 0)
@@ -3282,8 +3294,8 @@ class RootForm : XMLForm, ActionProvider, MIDIMapContext, StatusBarListener {
 
                redraw();
 
-               // trace "xxx end showPageNext: history="+page_history.string;
-               // trace "xxx end showPageNext: history_idx="+page_history_idx;
+               // log4 "end showPageNext: history="+page_history.string;
+               // log4 "end showPageNext: history_idx="+page_history_idx;
             }
          }
       }
@@ -3305,7 +3317,7 @@ class RootForm : XMLForm, ActionProvider, MIDIMapContext, StatusBarListener {
 
          int parIdx = pg.pageGetParent();
 
-         // trace "xxx showPageParent: pg="+#(pg)+" parIdx="+parIdx;
+         // log4 "showPageParent: pg="+#(pg)+" parIdx="+parIdx;
 
          if(-1 != parIdx)
          {
@@ -3456,7 +3468,7 @@ class RootForm : XMLForm, ActionProvider, MIDIMapContext, StatusBarListener {
 
       // Queue SCENESELECT notification (RPN)
       STX_MIDIOutDevice outDev <= MIDI.GetMIDIOutDeviceByAliasOrName(STConfig.midimorph_scene_selection_device_name);
-      // trace "xxx handleSceneChanged: rpn outDev="+#(outDev);
+      // log4 "handleSceneChanged: rpn outDev="+#(outDev);
       if(null != outDev)
       {
          replay.queueRPN(outDev.dev_idx,
@@ -3557,7 +3569,7 @@ class RootForm : XMLForm, ActionProvider, MIDIMapContext, StatusBarListener {
       // (note) time label shows time while replay is running and BPM when it's not
       Label *lb;
 
-      // trace "xxx RootForm::updateReplayTimeLabel: songOff="+current_song.song_offset+" songEnd="+current_song.current_end_offset;
+      // log4 "RootForm::updateReplayTimeLabel: songOff="+current_song.song_offset+" songEnd="+current_song.current_end_offset;
 
       // SongPos
       int songTicks = current_song.getSongOffset();
@@ -3570,7 +3582,7 @@ class RootForm : XMLForm, ActionProvider, MIDIMapContext, StatusBarListener {
          float numTicksPerBeat = (numTicksPerNote / float(current_song.sig_notelen));
          float numTicksPerBar = numTicksPerBeat * current_song.sig_beats;
 
-         // trace "xxx songTicks="+songTicks+" numTicksPerBeat="+numTicksPerBeat+" ioTick="+(songTicks % numTicksPerBeat);
+         // log4 "songTicks="+songTicks+" numTicksPerBeat="+numTicksPerBeat+" ioTick="+(songTicks % numTicksPerBeat);
 
          float beatAnim = 1.0f - 0.1 * ((int(10*songTicks) % int(10*numTicksPerBeat)) / numTicksPerBeat);
          int lbTint;
@@ -3594,7 +3606,7 @@ class RootForm : XMLForm, ActionProvider, MIDIMapContext, StatusBarListener {
          // Show time or BPM
          lb <= bt_time;
 
-         // trace "xxx updateReplayTimeLabel: b_force_show_bpm="+b_force_show_bpm;
+         // log4 "updateReplayTimeLabel: b_force_show_bpm="+b_force_show_bpm;
 
          if(replay.b_playing && !b_force_show_bpm)
          {
@@ -3645,8 +3657,18 @@ class RootForm : XMLForm, ActionProvider, MIDIMapContext, StatusBarListener {
    }
 
    // <log.png>
+   public method beginStatusMessageLock() {
+      sb_status.scheduleMsgTimer(-1);
+   }
+
+   // <log.png>
    public method endStatusMessageLock() {
       sb_status.endMessageLock();
+   }
+
+   // <log.png>
+   public method setEnableStatusMessages(boolean _bEnable) {
+      sb_status.setEnableMessages(_bEnable);
    }
 
    // <log.png>
@@ -3668,7 +3690,7 @@ class RootForm : XMLForm, ActionProvider, MIDIMapContext, StatusBarListener {
 
    // <ui_update.png>
    public method updateSongWidgets() {
-      // trace "xxx updateSongWidgets: masterlevel="+current_song.getMasterLevel();
+      // log4 "updateSongWidgets: masterlevel="+current_song.getMasterLevel();
       fp_bpm.setValue(current_song.getBPM());
    }
 
@@ -3778,7 +3800,7 @@ class RootForm : XMLForm, ActionProvider, MIDIMapContext, StatusBarListener {
       {
          if(null != pg_node.editor)
          {
-            // trace "xxx call editor.handleStopPlaying: bAllowBookmark="+_bAllowBookmark;
+            // log4 "call editor.handleStopPlaying: bAllowBookmark="+_bAllowBookmark;
             pg_node.editor.handleStopPlaying(_bAllowBookmark);
          }
       }
@@ -3801,7 +3823,7 @@ class RootForm : XMLForm, ActionProvider, MIDIMapContext, StatusBarListener {
 
                if(node.nodeIsRTRecordActive())
                {
-                  // trace "xxx call handleStopPlaying";
+                  // log4 "call handleStopPlaying";
                   node.nodeHandleStopRecording();
                }
 
@@ -3846,7 +3868,6 @@ class RootForm : XMLForm, ActionProvider, MIDIMapContext, StatusBarListener {
 
    // <ui_render.png>
    public method queueRedrawAll() {
-      // Calls renderAndRedrawAll() when timer expires
       ta_redraw_all.scheduleShort();
    }
 
@@ -3885,7 +3906,7 @@ class RootForm : XMLForm, ActionProvider, MIDIMapContext, StatusBarListener {
    // <api.png>
    public method pageEditMMC() {
 
-      // trace "xxx pageEditMMC";
+      // log4 "pageEditMMC";
 
       if(!isDialogActive())
       {
@@ -4716,14 +4737,14 @@ class RootForm : XMLForm, ActionProvider, MIDIMapContext, StatusBarListener {
 
    // <method.png>
    public method toggleNodeMute() {
-      // trace "xxx RootForm::toggleNodeMute";
+      // log4 "RootForm::toggleNodeMute";
       pg_pipe.toggleSelectedNodeMuteState();
       pg_node.updateTextFieldNodeState();
    }
 
    // <method.png>
    public method togglePipeOrNodeMute() {
-      // trace "xxx RootForm::togglePipeOrNodeMute";
+      // log4 "RootForm::togglePipeOrNodeMute";
       MIDIPipeNode n <= pg_pipe.getSelectedNode();
       if(null != n)
       {
@@ -4975,6 +4996,11 @@ class RootForm : XMLForm, ActionProvider, MIDIMapContext, StatusBarListener {
    }
 
    // <method_get.png>
+   public method isPageNodeVisible() : boolean {
+      return (PAGE_NODE == current_page);
+   }
+
+   // <method_get.png>
    public method isTrackerEditorVisible() : boolean {
       return (PAGE_NODE == current_page) && (pg_node.editor instanceof NodeTrackerEditor);
    }
@@ -4999,7 +5025,7 @@ class RootForm : XMLForm, ActionProvider, MIDIMapContext, StatusBarListener {
       if(maybe == _bForce) // toggle?
          _bForce = false;
 
-      if(SysEx.b_audio_detect_ack)
+      if(SysEx.IsAudioConnected())
       {
          if(null == dlg_audio_record)
          {
@@ -5032,7 +5058,7 @@ class RootForm : XMLForm, ActionProvider, MIDIMapContext, StatusBarListener {
       if(maybe == _bForce) // toggle?
          _bForce = false;
 
-      if(SysEx.b_audio_detect_ack)
+      if(SysEx.IsAudioConnected())
       {
          dlg_audio_liverec.setEnableModal(_bForce);
          f_audio_liverec.setRecipient(_recipient);
@@ -5154,11 +5180,11 @@ class RootForm : XMLForm, ActionProvider, MIDIMapContext, StatusBarListener {
          {
             float avgBeatMS = (milliSeconds() - tap_tempo_start_millisec) / (tap_tempo_num_taps-1);
 
-            // trace "xxx avgBeatMS="+avgBeatMS+" #taps="+tap_tempo_num_taps;
+            // log4 "avgBeatMS="+avgBeatMS+" #taps="+tap_tempo_num_taps;
 
             float avgBPM = (1000 * 60) / avgBeatMS;
 
-            // trace "xxx avgBPM="+avgBPM;
+            // log4 "avgBPM="+avgBPM;
 
             // if(tap_tempo_num_taps > 4)
             // {
@@ -5377,7 +5403,7 @@ class RootForm : XMLForm, ActionProvider, MIDIMapContext, StatusBarListener {
          // //    // SDL.showOtherWindow(SysEx.audio_native_window_handle);
          // //    // SDL.showOtherWindow(SDL.nativeWindowHandle);
 
-         // // // trace "xxx onRootLayerActivate: self to top";
+         // // // log4 "onRootLayerActivate: self to top";
          // // // SDL.bringWindowToTop(SDL.nativeWindowHandle);
       }
    }
@@ -5427,7 +5453,7 @@ class RootForm : XMLForm, ActionProvider, MIDIMapContext, StatusBarListener {
 
    // <ui_kbd.png>
    public virtual onTriadKey(Key _k) : boolean {
-      // // trace "xxx RootForm: onTriadKey: _k.code="+_k.code;
+      // // log4 "RootForm: onTriadKey: _k.code="+_k.code;
       int subSongIdx = -1;
 
       switch(_k.pressed)
@@ -5601,7 +5627,7 @@ class RootForm : XMLForm, ActionProvider, MIDIMapContext, StatusBarListener {
          }
       }
 
-      // // trace "xxx RootForm: k.code="+_k.code+" k.pressed="+_k.pressed+" k.mod="+_k.mod+" _k.modCtrl()="+_k.modCtrl();
+      // // log4 "RootForm: k.code="+_k.code+" k.pressed="+_k.pressed+" k.mod="+_k.mod+" _k.modCtrl()="+_k.modCtrl();
       if(_k.modCtrl())
       {
          switch(_k.pressed)
@@ -5740,7 +5766,7 @@ class RootForm : XMLForm, ActionProvider, MIDIMapContext, StatusBarListener {
 
       if(!XMLForm::onKey(_k))
       {
-         // trace "xxx RootForm: !XMLForm::onKey  k.code="+_k.code+" k.pressed="+_k.pressed+" k.mod="+_k.mod;
+         // log4 "RootForm: !XMLForm::onKey  k.code="+_k.code+" k.pressed="+_k.pressed+" k.mod="+_k.mod;
 
          // Global keyjazz
          if(_k.modNone())
@@ -6115,7 +6141,7 @@ class RootForm : XMLForm, ActionProvider, MIDIMapContext, StatusBarListener {
          }
 
          // Hack for cycling buttons with cursor keys, independent of tab cycle groups
-         // // trace "xxx RootForm: KeyboardFocus="+#(UI.GetKeyboardFocus());
+         // // log4 "RootForm: KeyboardFocus="+#(UI.GetKeyboardFocus());
          if(_k.mod)
          {
             if(!_k.modCtrl())
@@ -6190,7 +6216,7 @@ class RootForm : XMLForm, ActionProvider, MIDIMapContext, StatusBarListener {
             }
          }
 
-         //trace "xxx unhandled k.code="+_k.code+" k.mod="+_k.mod+" k.pressed="+_k.pressed;
+         //log4 "unhandled k.code="+_k.code+" k.mod="+_k.mod+" k.pressed="+_k.pressed;
 
          pg <= getCurrentPage();
          return pg.pageHandleAutoFocusKey(_k);
@@ -6235,6 +6261,51 @@ class RootForm : XMLForm, ActionProvider, MIDIMapContext, StatusBarListener {
       if(ksTicks < 20)
          ksTicks = 20;
       ta_key_speed.scheduleTicks(ksTicks);
+   }
+
+   // <method.png>
+   public method scheduleAudioConnect() {
+      ta_audio_connect.reschedule();
+   }
+
+   // <method.png>
+   public method scheduleAudioDisconnect() {
+      ta_audio_disconnect.reschedule();
+   }
+
+
+   // <method.png>
+   public method scheduleLoadAudioProjectOk() {
+      ta_load_audio_project_ok.reschedule();
+   }
+
+   // <method.png>
+   public method scheduleLoadAudioProjectFailed() {
+      ta_load_audio_project_failed.reschedule();
+   }
+
+   // <method.png>
+   protected method handleAudioConnect() {
+      Page pg <= getCurrentPage();
+      pg.pageHandleAudioConnect(true);
+   }
+
+   // <method.png>
+   protected method handleAudioDisconnect() {
+      Page pg <= getCurrentPage();
+      pg.pageHandleAudioConnect(false);
+   }
+
+   // <method.png>
+   protected method handleLoadAudioProjectOk() {
+      Page pg <= getCurrentPage();
+      pg.pageHandleAudioProjectLoaded(true);
+   }
+
+   // <method.png>
+   protected method handleLoadAudioProjectFailed() {
+      Page pg <= getCurrentPage();
+      pg.pageHandleAudioProjectLoaded(false);
    }
 
    // <ui_timer.png>
@@ -6314,7 +6385,7 @@ class RootForm : XMLForm, ActionProvider, MIDIMapContext, StatusBarListener {
       // called by (some) Node editors.
       //  see handleReplayTimer() for a constantly periodic callback
 
-      // trace "xxx RootForm::handleReplayTickUI";
+      // log4 "RootForm::handleReplayTickUI";
 
       if(-1 != queued_show_node_gid)
       {
@@ -6450,7 +6521,7 @@ class RootForm : XMLForm, ActionProvider, MIDIMapContext, StatusBarListener {
          {
             Node n <= clazz;
             NodeEditor editor <= n.nodeGetEditorIfExists();
-            // trace "xxx RootForm::recursiveOnResize: n="+#(n)+" editor="+#(editor);
+            // log4 "RootForm::recursiveOnResize: n="+#(n)+" editor="+#(editor);
             if(null != editor)
             {
                // Force relayout
@@ -6830,7 +6901,7 @@ class RootForm : XMLForm, ActionProvider, MIDIMapContext, StatusBarListener {
          // ctl_1..16 (modmatrix)
          int ctlIdx = 0;
          FloatArray aCtl <= syxTrack.ctl_status;
-         // trace "xxx aCtl="+aCtl;
+         // log4 "aCtl="+aCtl;
          loop(16)
          {
             BidiCtl.QueueBidirectionalRemoteAudioRPNUpdate(100+ctlIdx,
@@ -6844,8 +6915,8 @@ class RootForm : XMLForm, ActionProvider, MIDIMapContext, StatusBarListener {
          int paramSetIdx = 0;
          FloatArray paramSetAbs    <= syxTrack.last_param_set_abs;
          FloatArray paramSetSmooth <= syxTrack.last_param_set_smooth;
-         // // trace "xxx paramSetAbs="+paramSetAbs;
-         // // trace "xxx paramSetSmooth="+paramSetSmooth;
+         // // log4 "paramSetAbs="+paramSetAbs;
+         // // log4 "paramSetSmooth="+paramSetSmooth;
          loop(5)
          {
             BidiCtl.QueueBidirectionalRemoteAudioRPNUpdate(70+paramSetIdx,
@@ -6878,7 +6949,7 @@ class RootForm : XMLForm, ActionProvider, MIDIMapContext, StatusBarListener {
       StringAction *sac;
       IntAction *iac;
 
-      // // trace "xxx RootForm::consumeAction: acName=\""+acName+"\".";
+      // // log4 "RootForm::consumeAction: acName=\""+acName+"\".";
 
       switch(@(ap))
       {
@@ -6944,15 +7015,13 @@ class RootForm : XMLForm, ActionProvider, MIDIMapContext, StatusBarListener {
 
                case TA_REDRAW_ALL:
                {
-                  ////trace "xxx onRedrawAllTimer expired";
-                  // redraw();//renderAndRedrawAll();
                   UI.RedrawAll();
                }
                return true;
 
                case TA_REPLAYTIME:
                {
-                  // trace "xxx onReplayTimeTimer";
+                  // log4 "onReplayTimeTimer";
                   if(replay.b_playing) ta_replaytime.scheduleShort();
                   else ta_replaytime.scheduleLong();
                   updateReplayTimeLabel(false/*bForceUpdate*/);
@@ -6970,6 +7039,22 @@ class RootForm : XMLForm, ActionProvider, MIDIMapContext, StatusBarListener {
 
                case TA_SHOW_BPM:
                   handleShowBPMTimer();
+                  return true;
+
+               case TA_AUDIO_CONNECT:
+                  handleAudioConnect();
+                  return true;
+
+               case TA_AUDIO_DISCONNECT:
+                  handleAudioDisconnect();
+                  return true;
+
+               case TA_LOAD_AUDIO_PROJECT_OK:
+                  handleLoadAudioProjectOk();
+                  return true;
+
+               case TA_LOAD_AUDIO_PROJECT_FAILED:
+                  handleLoadAudioProjectFailed();
                   return true;
             }
             return false;
@@ -7001,7 +7086,7 @@ class RootForm : XMLForm, ActionProvider, MIDIMapContext, StatusBarListener {
             return true;
 
          case @(pm_transport_markers):
-            // trace "xxx pm_transport_markers acName="+acName;
+            // log4 "pm_transport_markers acName="+acName;
             switch(acName)
             {
                default:
@@ -7059,7 +7144,7 @@ class RootForm : XMLForm, ActionProvider, MIDIMapContext, StatusBarListener {
             return true;
 
          case @(pm_transport_cycle):
-            // trace "xxx pm_transport_cycle acName="+acName;
+            // log4 "pm_transport_cycle acName="+acName;
             switch(acName)
             {
                default:
@@ -7149,7 +7234,7 @@ class RootForm : XMLForm, ActionProvider, MIDIMapContext, StatusBarListener {
             return true;
 
          case @(pm_transport_stop):
-            // trace "xxx pm_transport_stop acName="+acName;
+            // log4 "pm_transport_stop acName="+acName;
             switch(acName)
             {
                default:
