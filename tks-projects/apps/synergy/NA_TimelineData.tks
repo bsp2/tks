@@ -21,7 +21,7 @@
 // ----          07Jan2025, 24Jan2025, 25Jan2025, 26Jan2025, 31Jan2025, 28Feb2025, 07Mar2025
 // ----          08Mar2025, 09Mar2025, 22May2025, 11Sep2025, 12Sep2025, 17Sep2025, 03Oct2025
 // ----          10Oct2025, 02Jan2026, 03Jan2026, 18Apr2026, 16May2026, 17May2026, 30Oct2026
-// ----          31Oct2026, 12Nov2026, 13Nov2026
+// ----          31Oct2026, 12Nov2026, 13Nov2026, 14Nov2026
 // ----
 // ----
 // ----
@@ -146,6 +146,18 @@ class NA_TimelineData : Control {
    public static NA_ClipCtlDialog *dlg_clipctl;
 
    protected static PopupMenu *pm_context;
+
+   protected static IntArray clipctl_colors =
+      [ #FF005FaF,   // 0: MW
+        #FF00F4B7,   // 1: BC
+        #FFAF0000,   // 2: FC
+        #FFDFDF00,   // 3: EX
+        #FF6F6F00,   // 4: GP1
+        #FFaFDFC0,   // 5: GP2
+        #FF9241D0,   // 6: GP3
+        #FF83DC70,   // 7: GP4
+        ];
+
 
 
    // <method_init.png>
@@ -318,9 +330,10 @@ class NA_TimelineData : Control {
             showClipCtlDialog(firstClip);
 
             if(null != _k &&
-               VKEY_MINUS != _k.pressed &&
-               VKEY_SLASH != _k.pressed &&
-               VKEY_LESS  != _k.pressed
+               VKEY_MINUS  != _k.pressed &&
+               VKEY_SLASH  != _k.pressed &&
+               VKEY_LESS   != _k.pressed &&
+               VKEY_PERIOD != _k.pressed
                )
             {
                Layer lFocus <= UI.GetKeyboardFocus();
@@ -3551,7 +3564,7 @@ class NA_TimelineData : Control {
          numTracks = drag_end_track_sorted - drag_start_track_sorted + 1;
       }
 
-      // // log4 "createNewClips: trackIdx="+trackIdx+" numTracks="+numTracks;
+      // log4 "createNewClips: trackIdx="+trackIdx+" numTracks="+numTracks;
       int trackIdx;
       int numCreated = 0;
       int firstClipTicks = -1;
@@ -3575,7 +3588,7 @@ class NA_TimelineData : Control {
       findSelectionMinMaxTicks(selMinTicks, selMaxTicks);
       int selNumTicks = mathMaxi(0, selMaxTicks - selMinTicks);
 
-      if(_bAllowReplaceClips && (selNumTicks > 0))
+      if(_bAllowReplaceClips && selNumTicks > 0)
       {
          // Check if there already are any clips after the selected range and
          //  create new patterns / samples (replace clip patterns) in that case
@@ -3664,6 +3677,9 @@ class NA_TimelineData : Control {
                if(bCanCreate)
                {
                   clip <= track.newClip(newStartTicks, newEndTicks, true/*bSort*/);
+
+                  if(null != lastClip)
+                     clip.initial_ctl = lastClip.initial_ctl;
 
                   if(_bAllowFindLastClip) // not called from mouse-drag ?
                   {
@@ -4558,6 +4574,56 @@ class NA_TimelineData : Control {
       redraw();
 
       loginfo "Delete region tracks=("+drag_start_track_sorted+";"+drag_end_track_sorted+") tick=("+drag_start_ticks_sorted+";"+drag_end_ticks_sorted+")";
+   }
+
+   // <method.png>
+   protected method deleteSelectionClipCtls() {
+      if(haveSelection())
+      {
+         tstate.undoAdd(clip_selection);
+
+         int nodeGID;
+         int clipUID;
+         int i = 0;
+
+         int bbMinTicks = 99999999;
+         int bbMaxTicks = 0;
+         int minTrackIdx = 999999;
+         int maxTrackIdx = 0;
+         int trackIdx;
+         NA_Track *track;
+
+         loop(clip_selection.numElements / 2)
+         {
+            nodeGID = clip_selection[i + 0];
+            clipUID = clip_selection[i + 1];
+
+            track <= tstate.findTrackByGID(nodeGID);
+
+            if(null != track)
+            {
+               trackIdx = tstate.getTrackIdxByTrack(track);
+               if(trackIdx < minTrackIdx)
+                  minTrackIdx = trackIdx;
+               if(trackIdx > maxTrackIdx)
+                  maxTrackIdx = trackIdx;
+               NA_Clip clip <= track.findClipByUID(clipUID);
+
+               if(null != clip)
+               {
+                  clip.clearInitCtls();
+               }
+            }
+
+            // Next selected clip
+            i += 2;
+         }
+
+         tstate.undoEnd(clip_selection);
+         redraw();
+
+         loginfo "Delete clip ctls";
+      }
    }
 
    // <method.png>
@@ -6188,6 +6254,7 @@ class NA_TimelineData : Control {
 
          // Draw clips
          sdvg_SetStrokeWidth(1.0f);
+         IntArray aClipCtlColors <= clipctl_colors;
 
          float py = 2 + topSy;
          int trackIdx = 0;
@@ -6313,6 +6380,36 @@ class NA_TimelineData : Control {
                      float cy;
                      float lx;
                      float ly;
+
+                     // Draw clipctl
+                     FloatArray aCtl <= clip.initial_ctl;
+                     cx = 0;
+                     float ctlW = 8;
+                     int ctlIdx = 0;
+                     loop(NA_Clip.NUM_INITCTL)
+                     {
+                        if(-1 != aCtl.get(ctlIdx))
+                        {
+                           if((cx + ctlW) <= pw)
+                           {
+                              int c32Ctl = clipctl_colors.get(ctlIdx);
+                              if(tstate.clip_edit_mode != NA_State.CLIP_EDIT_MODE_DEFAULT &&
+                                 (ctlIdx + 1) != tstate.clip_edit_mode
+                                 )
+                              {
+                                 c32Ctl = sdvg_MixARGBf(c32Ctl, c32Clip, 0.86);
+                              }
+                              UIRenderer.DrawFilledRectangle(px + shiftX + cx,
+                                                             py,
+                                                             ctlW,
+                                                             4,
+                                                             c32Ctl
+                                                             );
+                           }
+                        }
+                        cx += ctlW;
+                        ctlIdx++;
+                     }
 
                      if(null != envRPNSmpPeak)
                      {
@@ -7509,6 +7606,10 @@ class NA_TimelineData : Control {
                deleteSelection(_k.modShift()/*bMoveClips*/, _k.modCtrl()/*bMutedOnly*/);
                selectNone();
             }
+            return true;
+
+         case VKEY_BACKSPACE:
+            deleteSelectionClipCtls();
             return true;
 
          case 'a':

@@ -406,6 +406,8 @@ As root, edit `/usr/share/X11/xkb/symbols/<your country code>` (e.g. `de`) and r
 | lshift - DELETE               | Delete selected clips and move OR delete on all tracks in grid-cursor mode
 | lctrl - DELETE                | Delete selected clips (muted only)
 | lctrl - lshift - DELETE       | Delete selected clips and move (muted only)
+| BACKSPACE                     | 
+|+lctrl - BACKSPACE             |+Delete clip ctls
 | lctrl - a                     | Select all track clips (when clip is selected), then all marker section clips or all clips
 | lshift - a                    | Select all clips within marker section (if any)
 | lctrl - lshift - a            | Select none
