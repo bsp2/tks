@@ -145,6 +145,8 @@ class NA_TimelineData : Control {
 
    public static NA_ClipCtlDialog *dlg_clipctl;
 
+   protected static PopupMenu *pm_context;
+
 
    // <method_init.png>
    public method init(NA_TimelineForm _parentForm) : boolean {
@@ -299,7 +301,7 @@ class NA_TimelineData : Control {
       dlg_clipctl.showClipCtlDialog(parent_form.parent_editor,
                                     parent_node,
                                     _clip,
-                                    (tstate.clip_edit_mode - 1)/*ctlIdx*/
+                                    (tstate.clip_edit_mode - 1)/*edit_mode => ctlIdx*/
                                     );
    }
 
@@ -315,7 +317,11 @@ class NA_TimelineData : Control {
 
             showClipCtlDialog(firstClip);
 
-            if(null != _k)
+            if(null != _k &&
+               VKEY_MINUS != _k.pressed &&
+               VKEY_SLASH != _k.pressed &&
+               VKEY_LESS  != _k.pressed
+               )
             {
                Layer lFocus <= UI.GetKeyboardFocus();
                if(null != lFocus)
@@ -333,10 +339,15 @@ class NA_TimelineData : Control {
    }
 
    // <ui_handle.png>
-   public method cycleClipEditMode(int _delta) {
-      tstate.clip_edit_mode = mathClampi(tstate.clip_edit_mode + _delta, 0, NA_State.NUM_CLIP_EDIT_MODES-1);
+   public method setClipEditMode(int _abs) {
+      tstate.clip_edit_mode = _abs;
       redraw();
       loginfo "Clip edit mode is \'"+(NA_State.clip_edit_mode_names.get(tstate.clip_edit_mode))+"\'";
+   }
+
+   // <ui_handle.png>
+   public method cycleClipEditMode(int _delta) {
+      setClipEditMode( mathClampi(tstate.clip_edit_mode + _delta, 0, NA_State.NUM_CLIP_EDIT_MODES-1) );
    }
 
    // <ui_handle.png>
@@ -7038,6 +7049,38 @@ class NA_TimelineData : Control {
       sdvg_DisableScissor();
    }
 
+   // <ui_show.png>
+   protected showContextMenu() {
+
+      pm_context <= PopupMenu.New(this);
+      PopupMenuButton *pmb;
+      PopupMenu pm <= pm_context;
+
+      pmb <= pm.addDefaultButton("Cut", "cut");
+      // pmb.setToolTipCaption("");
+      pmb.setAccelerators("", "lctrl-w");
+
+      pmb <= pm.addDefaultButton("Copy", "copy");
+      // pmb.setToolTipCaption("");
+      pmb.setAccelerators("", "lctrl-c");
+
+      pm.addSeparator();
+      pmb <= pm.addDefaultButton("Paste", "paste");
+      pmb.setAccelerators("", "lctrl-v");
+
+      pmb <= pm.addDefaultButton("Paste (shift)", "paste_shift");
+      pmb.setAccelerators("", "lctrl-lshift-v");
+
+      // pm.addSeparator();
+      // pmb <= pm.addCheckButton("x", tstate.b_show_marker, "xxx");
+      // // pmb.setAccelerators("", "");
+
+      pm.resizeToMinimum();
+      pm.showNearMouse(-20, -20);
+
+      loginfo "Show context menu.";
+   }
+
    // <ui_kbd.png>
    protected method handlePatternKeyHome(boolean _bShift, boolean _bCtrl) {
       if(_bShift)
@@ -7346,6 +7389,11 @@ class NA_TimelineData : Control {
    }
 
    // <ui_kbd.png>
+   public method refocusDefault() {
+      UI.SetKeyboardFocus(this);
+   }
+
+   // <ui_kbd.png>
    public virtual onKeyboardFocus() {
       compositeAll();
       return Control::onKeyboardFocus();
@@ -7359,7 +7407,7 @@ class NA_TimelineData : Control {
 
    // <ui_kbd.png>
    public virtual onKey(Key _k) : boolean {
-      // log4 "NA_TimelineData::onKey: _k.pressed="+_k.pressed+" _k.mod="+_k.mod;
+      log4 "NA_TimelineData::onKey: _k.pressed="+_k.pressed+" _k.mod="+_k.mod;
 
       switch(_k.released)
       {
@@ -7382,6 +7430,7 @@ class NA_TimelineData : Control {
          case '.':
          case '-':
          case '/':
+         case '<':  // when '/' / '<' swap is active
             if(_k.modNone())
             {
                editFirstSelectedClipCtl(true/*bWarpMouse*/, _k);
@@ -7411,11 +7460,11 @@ class NA_TimelineData : Control {
             break;
 
          case VKEY_PAGEUP:
-            cycleClipEditMode(1);
+            cycleClipEditMode(-1);
             return true;
 
          case VKEY_PAGEDOWN:
-            cycleClipEditMode(-1);
+            cycleClipEditMode(1);
             return true;
 
          case '/':  // '-' (de)
@@ -7718,7 +7767,6 @@ class NA_TimelineData : Control {
                if( _k.modCtrl() || (_k.modCmd() && UI.b_key_cmd_copy_paste) )
                {
                   lazySelectGridCursorClips();
-
                   copySelectedClipsToClipboard(false/*bCut*/);
                   return true;
                }
@@ -8198,10 +8246,7 @@ class NA_TimelineData : Control {
 
          if(_ev.isRightButton())
          {
-            // Edit clip sequence
-            selectNone();
-            selectClipAtEv(_ev, false/*bAllowToggle*/, (VMOD_LCTRL == UI.GetKeyMod())/*bAdd*/);
-            editFirstSelectedClip(false/*bEditSample*/);
+            showContextMenu();
             return true;
          }
          else if(_ev.isMiddleButton())
@@ -8690,10 +8735,21 @@ class NA_TimelineData : Control {
 
    // <ui_mouse.png>
    public virtual onMouseHold(MouseEvent _startEv) : boolean {
-      selectNone();
-      selectClipAtEv(_startEv, false/*bAllowToggle*/, false/*bAdd*/);
-      showComboBoxPopupPatternNrOrSampleDialog(false/*bWarpMouse*/);
-      return false;
+      if(_startEv.isRightButtonDown())
+      {
+         // Edit clip sequence
+         selectNone();
+         selectClipAtEv(_startEv, false/*bAllowToggle*/, (VMOD_LCTRL == UI.GetKeyMod())/*bAdd*/);
+         editFirstSelectedClip(false/*bEditSample*/);
+         return true;
+      }
+      else
+      {
+         selectNone();
+         selectClipAtEv(_startEv, false/*bAllowToggle*/, false/*bAdd*/);
+         showComboBoxPopupPatternNrOrSampleDialog(false/*bWarpMouse*/);
+         return false;
+      }
    }
 
    // <ui_consume.png>
@@ -8708,6 +8764,41 @@ class NA_TimelineData : Control {
 
       switch(@(ap))
       {
+         case @(pm_context):
+            log2 "NA_TimelineData: pm_context acName="+acName;
+            if(!PopupMenu.IsFocusAction(_action))
+               refocusDefault();
+            switch(acName)
+            {
+               case PopupMenu.ACTION_CANCEL:
+               case "":
+                  loginfo "Close tools menu.";
+                  return true;
+
+               default:
+                  loginfo "Select: "+acName;
+                  return true;
+
+               case "cut":
+                  lazySelectGridCursorClips();
+                  copySelectedClipsToClipboard(true/*bCut*/);
+                  return true;
+
+               case "copy":
+                  lazySelectGridCursorClips();
+                  copySelectedClipsToClipboard(false/*bCut*/);
+                  return true;
+
+               case "paste":
+                  pasteClipboard(false/*bInsertSilence*/);
+                  return true;
+
+               case "paste_shift":
+                  pasteClipboard(true/*bInsertSilence*/);
+                  return true;
+            }
+            return true;
+
          case @(cmp_pattern_nr):
             if(ComboBoxPopup.ACTION_OPTIONSELECTED == acName)
             {
