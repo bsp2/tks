@@ -21,7 +21,7 @@
 // ----          07Jan2025, 24Jan2025, 25Jan2025, 26Jan2025, 31Jan2025, 28Feb2025, 07Mar2025
 // ----          08Mar2025, 09Mar2025, 22May2025, 11Sep2025, 12Sep2025, 17Sep2025, 03Oct2025
 // ----          10Oct2025, 02Jan2026, 03Jan2026, 18Apr2026, 16May2026, 17May2026, 30Oct2026
-// ----          31Oct2026, 12Nov2026, 13Nov2026, 14Nov2026
+// ----          31Oct2026, 12Nov2026, 13Nov2026, 14Nov2026, 15Nov2026
 // ----
 // ----
 // ----
@@ -272,7 +272,7 @@ class NA_TimelineData : Control {
 
       if(parent_node.nodeIsMaster())
       {
-         setEditOffsetToTicks(getGridAlignedTicks(current_song.song_offset));
+         setEditOffsetToTicksAndQueuePlayOffset(getGridAlignedTicks(current_song.song_offset));
          centerReplayOffset();
       }
    }
@@ -681,6 +681,19 @@ class NA_TimelineData : Control {
    }
 
    // <method.png>
+   public static RemoveArrayFromSelection(IntArray _selection, IntArray _newSelection) {
+      int off = 0;
+      int num = _newSelection.numElements / 2;
+      loop(num)
+      {
+         int nodeGID = _newSelection[off + 0];
+         int clipUID = _newSelection[off + 1];
+         RemoveFromSelection(_selection, nodeGID, clipUID);
+         off += 2;
+      }
+   }
+
+   // <method.png>
    protected method reduceSelectionToFirstMarkerClip() : boolean {
       int i = 0;
       int bestUID = -1;
@@ -1020,7 +1033,9 @@ class NA_TimelineData : Control {
             selIdx += 2;
          }
 
-         makeRegionVisible(minTicks, maxTicks);
+         makeRegionVisible(mathMini(minTicks, tstate.edit_offset),
+                           mathMaxi(maxTicks, tstate.edit_offset)
+                           );
       }
    }
 
@@ -1139,6 +1154,18 @@ class NA_TimelineData : Control {
       parent_form.b_update_knob_size = true;
    }
 
+   // <method_set.png>
+   protected method setGridCursorOffset(int _ticks) {
+      tstate.edit_offset = _ticks;
+      drag_start_ticks = _ticks;
+      // // if(tstate.b_grid_cursor_mode)
+         drag_end_ticks = drag_start_ticks + tstate.calcGridTicks();
+      // // else
+      // //    drag_end_ticks = _ticks;
+      drag_start_ticks_sorted = drag_start_ticks;
+      drag_end_ticks_sorted = drag_end_ticks;
+   }
+
    // <method.png>
    protected method setEditOffsetToPx(float _px) {
       // Set edit position
@@ -1162,14 +1189,17 @@ class NA_TimelineData : Control {
    }
 
    // <method.png>
-   namespace method setEditOffsetToTicks(int ticks) {
-      // log4 "setEditOffsetToTicks("+ticks+")";
+   namespace method setEditOffsetToTicksAndQueuePlayOffset(int _ticks) {
+      // log4 "setEditOffsetToTicksAndQueue("+ticks+")";
       // Set edit position
-      tstate.edit_offset = ticks;
+      tstate.edit_offset = _ticks;
+
+      if(!tstate.b_grid_cursor_mode)
+         setGridCursorOffset(_ticks);
 
       if(!replay.b_playing)
       {
-         tstate.queuePlayOffset(ticks, false/*bReplay*/);
+         tstate.queuePlayOffset(_ticks, false/*bReplay*/);
 
          // // if(parent_node.nodeIsMaster())
          // // {
@@ -1332,7 +1362,7 @@ class NA_TimelineData : Control {
          {
             if(tstate.b_grid_cursor_mode)
             {
-               setEditOffsetToTicks(clip.start_ticks);
+               setEditOffsetToTicksAndQueuePlayOffset(clip.start_ticks);
                drag_start_ticks = clip.start_ticks;
                drag_end_ticks = drag_start_ticks + tstate.calcGridTicks();
                sortDragSelection();
@@ -1342,7 +1372,7 @@ class NA_TimelineData : Control {
             else
             {
                NA_Clip firstClip <= getFirstSelectedClip();
-               setEditOffsetToTicks(clip.start_ticks);
+               setEditOffsetToTicksAndQueuePlayOffset(clip.start_ticks);
                if(null != firstClip)
                {
                   int trackIdx = getFirstSelectedTrackIdx();
@@ -1384,8 +1414,8 @@ class NA_TimelineData : Control {
    }
 
    // <method.png>
-   public method moveToNextMarker() {
-
+   public method moveToNextMarker(boolean _bSelect) : boolean {
+      boolean ret = false;
       int oldCursorTrack = drag_start_track_sorted;
 
       NA_Track track <= tstate.getTrackByIdx(0); // 0=marker track
@@ -1396,7 +1426,7 @@ class NA_TimelineData : Control {
          {
             if(tstate.b_grid_cursor_mode)
             {
-               setEditOffsetToTicks(clip.start_ticks);
+               setEditOffsetToTicksAndQueuePlayOffset(clip.start_ticks);
                drag_start_ticks = clip.start_ticks;
                drag_end_ticks = drag_start_ticks + tstate.calcGridTicks();
                sortDragSelection();
@@ -1406,27 +1436,30 @@ class NA_TimelineData : Control {
             else
             {
                NA_Clip firstClip <= getFirstSelectedClip();
-               setEditOffsetToTicks(clip.start_ticks);
+               setEditOffsetToTicksAndQueuePlayOffset(clip.start_ticks);
                if(null != firstClip)
                {
                   int trackIdx = getFirstSelectedTrackIdx();
 
-                  // Prefer drag selection start track (stay on same track)
-                  selectClipsAtEditOffset(tstate.calcGridTicks(), drag_start_track_sorted);
+                  if(1)//_bSelect)
+                  {
+                     // Prefer drag selection start track (stay on same track)
+                     selectClipsAtEditOffset(tstate.calcGridTicks(), drag_start_track_sorted);
 
-                  if(!haveSelection())
-                  {
-                     selectClipsAtEditOffset(tstate.calcGridTicks(), trackIdx);
-                  }
-                  if(!haveSelection())
-                  {
-                     // Select on last seen drag selection track
-                     selectClipsAtEditOffset(clip.end_ticks - clip.start_ticks, drag_start_track_sorted);
-                  }
-                  if(!haveSelection())
-                  {
-                     // Select in marker range
-                     selectClipsAtEditOffset(clip.end_ticks - clip.start_ticks, trackIdx);
+                     if(!haveSelection())
+                     {
+                        selectClipsAtEditOffset(tstate.calcGridTicks(), trackIdx);
+                     }
+                     if(!haveSelection())
+                     {
+                        // Select on last seen drag selection track
+                        selectClipsAtEditOffset(clip.end_ticks - clip.start_ticks, drag_start_track_sorted);
+                     }
+                     if(!haveSelection())
+                     {
+                        // Select in marker range
+                        selectClipsAtEditOffset(clip.end_ticks - clip.start_ticks, trackIdx);
+                     }
                   }
                }
                makeRegionVisible(clip.start_ticks, clip.end_ticks);
@@ -1438,12 +1471,36 @@ class NA_TimelineData : Control {
                   selectClipsAtEditOffset(1/*range*/, 0/*trackIdx*/);
                }
             }
+            ret = true;
+         } // if clip
+         else
+         {
+            // Move to end of marker clip
+            clip <= track.findClipNear(tstate.edit_offset);
+            if(null != clip)
+            {
+               makeRegionVisible(clip.start_ticks, clip.end_ticks);
+               setEditOffsetToTicksAndQueuePlayOffset(clip.end_ticks);
+               if(_bSelect)
+               {
+                  selectAllClipsAtEditOffset(clip.end_ticks - clip.start_ticks, _bSelect);
+               }
+               else
+               {
+                  selectNone();
+                  if(!tstate.b_grid_cursor_mode)
+                     selectClipsAtEditOffset(tstate.calcGridTicks(), drag_start_track_sorted);
+               }
+               redraw();
+               ret = true;
+            }
          }
-      }
+      } // if track
 
       drag_start_track_sorted = oldCursorTrack;
       drag_start_track = oldCursorTrack;
       // log4 "next marker: restore drag_start_track="+drag_start_track;
+      return ret;
    }
 
    // <method.png>
@@ -1616,6 +1673,12 @@ class NA_TimelineData : Control {
       if(bSelectNone)
       {
          parent_form.updateClip(null, 0);
+         // // // loginfo "Select none";
+      }
+      else
+      {
+         Integer selMinTicks, selMaxTicks; findSelectionMinMaxTicks(selMinTicks, selMaxTicks);
+         loginfo "Select "+(clip_selection.numElements/2)+" clip"+Utils.GetPluralString(clip_selection.numElements/2)+" within tick range=("+selMinTicks+";"+selMaxTicks+") len="+(selMaxTicks-selMinTicks);
       }
    }
 
@@ -1696,7 +1759,7 @@ class NA_TimelineData : Control {
 
       // log4 "selectClips: 3";
 
-      loginfo "Select "+(clip_selection.numElements/2)+" clip"+Utils.GetPluralString(clip_selection.numElements/2)+" within tick range=("+drag_start_ticks_sorted+";"+drag_end_ticks_sorted+")";
+      logverbose "Select "+(clip_selection.numElements/2)+" clip"+Utils.GetPluralString(clip_selection.numElements/2)+" within tick range=("+drag_start_ticks_sorted+";"+drag_end_ticks_sorted+")";
 
       // log4 "selectClips: 4 (END)";
 
@@ -1729,7 +1792,11 @@ class NA_TimelineData : Control {
    }
 
    // <method.png>
-   namespace method selectFirstClipNearTicks(int _ticks, boolean _bDown, boolean _bSetEditOffset) : boolean {
+   namespace method selectFirstClipNearTicks(int _ticks,
+                                             boolean _bDown,
+                                             boolean _bPreferRightEdge,
+                                             boolean _bSetEditOffset
+                                             ) : boolean {
       // returns true when clip has been selected
       // 'bDown': true=prefer lower tracks, false=prefer upper tracks
 
@@ -1753,7 +1820,14 @@ class NA_TimelineData : Control {
          makeRegionVisible(clip.start_ticks, clip.end_ticks);
 
          if(_bSetEditOffset)
-            setEditOffsetToTicks(clip.start_ticks);
+         {
+            setEditOffsetToTicksAndQueuePlayOffset( (_bPreferRightEdge && clip.end_ticks != tstate.edit_offset)
+                                                    ? clip.end_ticks
+                                                    : clip.start_ticks
+                                                    );
+            drag_end_ticks = drag_start_ticks;
+            drag_end_ticks_sorted = drag_start_ticks_sorted;
+         }
       }
 
       handleSelectionChanged();
@@ -2181,7 +2255,7 @@ class NA_TimelineData : Control {
 
             foreach track in tstate.tracks
             {
-               if((tstate.b_show_marker && track.isMarker()) || !track.isMarker())
+               if(!track.isMarker() || tstate.b_show_marker)
                   totalNumClips += track.clips.numElements;
             }
 
@@ -2192,7 +2266,7 @@ class NA_TimelineData : Control {
             {
                foreach track in tstate.tracks
                {
-                  if((tstate.b_show_marker && track.isMarker()) || !track.isMarker()) // paranoia
+                  if(!track.isMarker() || tstate.b_show_marker)
                   {
                      foreach clip in track.clips
                      {
@@ -2256,53 +2330,6 @@ class NA_TimelineData : Control {
          }
       }
    }
-
-   // // <method.png>
-   // //       // if((track.isMarker() && tstate.b_show_marker) || !track.isMarker())
-   // // protected method selectFirstVisibleClip(boolean _bAdd) {
-   // //    NA_Track *track;
-   // //    NA_Clip clip <= null;
-   // //    int nodeGID;
-   // //    int clipUID;
-
-   // //    foreach track in tstate.tracks
-   // //    {
-   // //       clip <= track.findClipNear(tstate.view_offset);
-
-   // //       if(null != clip)
-   // //       {
-   // //          nodeGID = track.node_gid;
-   // //          clipUID = clip.clip_uid;
-   // //          break;
-   // //       }
-   // //    }
-
-   // //    if(null == clip)
-   // //    {
-   // //       foreach track in tstate.tracks
-   // //       {
-   // //          clip <= track.clips.get(0);
-
-   // //          if(null != clip)
-   // //          {
-   // //             nodeGID = track.node_gid;
-   // //             clipUID = clip.clip_uid;
-   // //             break;
-   // //          }
-   // //       }
-   // //    }
-
-   // //    if(!_bAdd)
-   // //    {
-   // //       clip_selection.empty();
-   // //    }
-
-   // //    if(null != clip)
-   // //    {
-   // //       clip_selection.add(nodeGID);
-   // //       clip_selection.add(clipUID);
-   // //    }
-   // // }
 
    // <method.png>
    protected method getFirstSelectedTrack() : NA_Track {
@@ -2528,12 +2555,12 @@ class NA_TimelineData : Control {
    }
 
    // <method.png>
-   protected method selectAllClipsAtEditOffset(int _range) {
+   protected method selectAllClipsAtEditOffset(int _range, boolean _bAdd) {
       drag_start_ticks_sorted = tstate.edit_offset;
       drag_end_ticks_sorted = tstate.edit_offset + _range;
       drag_start_track_sorted = 0;
       drag_end_track_sorted = tstate.getNumTracks() - 1;
-      selectClips(false/*bAllowToggle*/, false/*bAdd*/);
+      selectClips(false/*bAllowToggle*/, _bAdd);
       handleSelectionChanged();
       makeSelectionVisible();
    }
@@ -2617,9 +2644,16 @@ class NA_TimelineData : Control {
          }
       }
 
+      if(_bAdd)
+         RemoveArrayFromSelection(newSelection, clip_selection);
+
       ret = (newSelection.numElements > 0);
+
       if(ret)
       {
+         // log4 "selectClipUpNearSelection: clip_selection="+clip_selection;
+         // log4 "selectClipUpNearSelection: newSelection="+newSelection;
+
          if(_bAdd)
             clip_selection.join(clip_selection, newSelection);
          else
@@ -2645,19 +2679,27 @@ class NA_TimelineData : Control {
          NA_Track track <= tstate.getTrackByIdx(trackIdx);
          if(null != track)
          {
-            NA_Clip clip <= track.findClipAt(tstate.edit_offset);
-            if(null == clip)
-               clip <= track.findClipBefore(tstate.edit_offset);
+            boolean bFound = false;
+            NA_Clip clip <= track.findClipWithinRange(tstate.edit_offset, tstate.edit_offset+1);
             if(null != clip)
             {
-               if(clip.start_ticks == tstate.edit_offset || clip.end_ticks == tstate.edit_offset)
-               {
-                  setGridCursorTrack(trackIdx);
-                  makeTrackVisible(drag_start_track);
-                  selectNone();
-                  trySelectClipAtEditOffset();
-                  return true;
-               }
+               bFound = true;
+            }
+            else
+            {
+               clip <= track.findClipAt(tstate.edit_offset);
+               if(null == clip)
+                  clip <= track.findClipBefore(tstate.edit_offset);
+               if(null != clip)
+                  bFound = (clip.start_ticks == tstate.edit_offset || clip.end_ticks == tstate.edit_offset);
+            }
+            if(bFound)
+            {
+               setGridCursorTrack(trackIdx);
+               makeTrackVisible(drag_start_track);
+               selectNone();
+               trySelectClipAtEditOffset();
+               return true;
             }
          }
       }
@@ -2667,7 +2709,7 @@ class NA_TimelineData : Control {
    // <method.png>
    protected method selectClipUp(boolean _bAdd) {
 
-      if(!_bAdd && tstate.b_edge_selection_mode)
+      if(!_bAdd)//// && tstate.b_edge_selection_mode)
       {
          if(tryMoveCursorToClipBoundaryUp())
             return;
@@ -2677,8 +2719,13 @@ class NA_TimelineData : Control {
       {
          if(null == getLastSelectedClip())
          {
-            selectFirstClipNearTicks(tstate.edit_offset, false/*bDown*/, true/*bSetEditOffset*/);
-            centerFirstSelectedTrack();
+            // // selectFirstClipNearTicks(tstate.edit_offset, false/*bDown*/, true/*bSetEditOffset*/);
+            // // makeFirstSelectedTrackVisible();
+            if(!_bAdd)
+            {
+               moveGridCursorUp(false/*bAdd*/);
+               makeSelectionVisible();
+            }
             return;
          }
 
@@ -2689,7 +2736,9 @@ class NA_TimelineData : Control {
             int trackIdx = tstate.getTrackIdxByTrack(track);
             if(trackIdx > 0)
             {
-               NA_Clip clip <= getLastSelectedClip();
+               NA_Clip clipLast <= getLastSelectedClip();
+
+               Integer selMinTicks, selMaxTicks; findSelectionMinMaxTicks(selMinTicks, selMaxTicks);
 
                boolean bTryPrevTrack;
                do
@@ -2699,26 +2748,52 @@ class NA_TimelineData : Control {
                   track <= tstate.getTrackByIdx(trackIdx - 1);
                   if(null != track)
                   {
-                     if((track.getNumClips() > 0) && ((track.isMarker() && tstate.b_show_marker) || !track.isMarker()))
+                     if((track.getNumClips() > 0) && (!track.isMarker() || tstate.b_show_marker))
                      {
-                        clip <= track.findClipNearUICursor(clip.start_ticks, clip.end_ticks);
+                        NA_Clip clip <= track.findClipNearUICursor(clipLast.start_ticks, clipLast.end_ticks);
                         if(null != clip)
                         {
-                           if(!_bAdd)
-                              clip_selection.empty();
-
-                           clip_selection.add(track.node_gid);
-                           clip_selection.add(clip.clip_uid);
-
-                           if(false)
+                           if( (selMinTicks <= clip.start_ticks < selMaxTicks) ||
+                               (selMinTicks <  clip.end_ticks <= selMaxTicks)
+                               )
                            {
-                              setEditOffsetToTicks(clip.start_ticks);
-                              makeRegionVisible(clip.start_ticks, clip.end_ticks);
-                           }
+                              if(!isClipSelected(track.node_gid, clip.clip_uid))
+                              {
+                                 if(!_bAdd)
+                                    clip_selection.empty();
 
-                           setGridCursorTrack(trackIdx - 1);
-                           handleSelectionChanged();
-                           redraw();
+                                 clip_selection.add(track.node_gid);
+                                 clip_selection.add(clip.clip_uid);
+
+                                 if(false)
+                                 {
+                                    setEditOffsetToTicksAndQueuePlayOffset(clip.start_ticks);
+                                    makeRegionVisible(clip.start_ticks, clip.end_ticks);
+                                 }
+
+                                 setGridCursorTrack(trackIdx - 1);
+                                 handleSelectionChanged();
+                                 redraw();
+                                 makeSelectionVisible();
+                                 makeFirstSelectedTrackVisible();
+                                 return true;
+                              } // if selected
+                              else
+                              {
+                                 bTryPrevTrack = (trackIdx - 2) >= 0;
+                                 trackIdx--;
+                              }
+                           } // if intersects current selection
+                           else
+                           {
+                              bTryPrevTrack = (trackIdx - 2) >= 0;
+                              trackIdx--;
+                           }
+                        } // if clip
+                        else
+                        {
+                           bTryPrevTrack = (trackIdx - 2) >= 0;
+                           trackIdx--;
                         }
                      }
                      else
@@ -2736,12 +2811,17 @@ class NA_TimelineData : Control {
                while(bTryPrevTrack);
 
                makeSelectionVisible();
-               centerFirstSelectedTrack();
+               makeFirstSelectedTrackVisible();
 
             } // if trackIdx > 0
          } // if track
       }
 
+      if(!_bAdd)
+      {
+         moveGridCursorUp(false/*bAdd*/);
+         makeSelectionVisible();
+      }
    }
 
    // <method.png>
@@ -2781,10 +2861,15 @@ class NA_TimelineData : Control {
                }
             }
 
+            if(_bAdd)
+               RemoveArrayFromSelection(newSelection, clip_selection);
+
             ret = (newSelection.numElements > 0);
 
             if(ret)
             {
+               // log4 "selectClipDownNearSelection: clip_selection="+clip_selection;
+               // log4 "selectClipDownNearSelection: newSelection="+newSelection;
                if(_bAdd)
                   clip_selection.join(clip_selection, newSelection);
                else
@@ -2809,19 +2894,27 @@ class NA_TimelineData : Control {
          NA_Track track <= tstate.getTrackByIdx(trackIdx);
          if(null != track)
          {
-            NA_Clip clip <= track.findClipAt(tstate.edit_offset);
-            if(null == clip)
-               clip <= track.findClipBefore(tstate.edit_offset);
+            boolean bFound = false;
+            NA_Clip clip <= track.findClipWithinRange(tstate.edit_offset, tstate.edit_offset+1);
             if(null != clip)
             {
-               if(clip.start_ticks == tstate.edit_offset || clip.end_ticks == tstate.edit_offset)
-               {
-                  setGridCursorTrack(trackIdx);
-                  makeTrackVisible(trackIdx);
-                  selectNone();
-                  trySelectClipAtEditOffset();
-                  return true;
-               }
+               bFound = true;
+            }
+            else
+            {
+               clip <= track.findClipAt(tstate.edit_offset);
+               if(null == clip)
+                  clip <= track.findClipBefore(tstate.edit_offset);
+               if(null != clip)
+                  bFound = (clip.start_ticks == tstate.edit_offset || clip.end_ticks == tstate.edit_offset);
+            }
+            if(bFound)
+            {
+               setGridCursorTrack(trackIdx);
+               makeTrackVisible(drag_start_track);
+               selectNone();
+               trySelectClipAtEditOffset();
+               return true;
             }
          }
       }
@@ -2831,7 +2924,7 @@ class NA_TimelineData : Control {
    // <method.png>
    protected method selectClipDown(boolean _bAdd) {
 
-      if(!_bAdd && tstate.b_edge_selection_mode)
+      if(!_bAdd)/// && tstate.b_edge_selection_mode)
       {
          if(tryMoveCursorToClipBoundaryDown())
             return;
@@ -2839,10 +2932,16 @@ class NA_TimelineData : Control {
 
       if(!selectClipDownNearSelection(_bAdd))
       {
+         // // log4 "getLastSelectedClip()="+#(getLastSelectedClip());
          if(null == getLastSelectedClip())
          {
-            selectFirstClipNearTicks(tstate.edit_offset, true/*bDown*/, true/*bSetEditOffset*/);
-            centerFirstSelectedTrack();
+            // // selectFirstClipNearTicks(tstate.edit_offset, true/*bDown*/, true/*bSetEditOffset*/);
+            // // makeFirstSelectedTrackVisible();
+            if(!_bAdd)
+            {
+               moveGridCursorDown(false/*bAdd*/);
+               makeSelectionVisible();
+            }
             return;
          }
 
@@ -2854,61 +2953,96 @@ class NA_TimelineData : Control {
 
             if((trackIdx+1) < (tstate.tracks.numElements))
             {
-               NA_Clip clip <= getLastSelectedClip();
+               NA_Clip clipLast <= getLastSelectedClip();
 
-               if(null != clip)
+               if(null != clipLast)
                {
+                  Integer selMinTicks, selMaxTicks; findSelectionMinMaxTicks(selMinTicks, selMaxTicks);
+
                   boolean bTryNextTrack;
                   do
                   {
                      bTryNextTrack = false;
 
+                     // log4 "try next trackIdx="+(trackIdx + 1)+" tickRange=("+selMinTicks+","+selMaxTicks+")";
                      track <= tstate.getTrackByIdx(trackIdx + 1);
 
                      if(null != track)
                      {
-                        if((track.getNumClips() > 0) && ((track.isMarker() && tstate.b_show_marker) || !track.isMarker()))
+                        if((track.getNumClips() > 0) && (!track.isMarker() || tstate.b_show_marker))
                         {
-                           clip <= track.findClipNearUICursor(clip.start_ticks, clip.end_ticks);
-
+                           NA_Clip clip <= track.findClipNearUICursor(clipLast.start_ticks, clipLast.end_ticks);
                            if(null != clip)
                            {
-                              if(!_bAdd)
-                                 clip_selection.empty();
-
-                              clip_selection.add(track.node_gid);
-                              clip_selection.add(clip.clip_uid);
-
-                              if(false)
+                              if( (selMinTicks <= clip.start_ticks < selMaxTicks) ||
+                                  (selMinTicks <  clip.end_ticks <= selMaxTicks)
+                                  )
                               {
-                                 setEditOffsetToTicks(clip.start_ticks);
-                                 makeRegionVisible(clip.start_ticks, clip.end_ticks);
-                              }
+                                 if(!isClipSelected(track.node_gid, clip.clip_uid))
+                                 {
+                                    if(!_bAdd)
+                                       clip_selection.empty();
 
-                              setGridCursorTrack(trackIdx + 1);
-                              handleSelectionChanged();
-                              redraw();
+                                    clip_selection.add(track.node_gid);
+                                    clip_selection.add(clip.clip_uid);
+
+                                    if(false)
+                                    {
+                                       setEditOffsetToTicksAndQueuePlayOffset(clip.start_ticks);
+                                       makeRegionVisible(clip.start_ticks, clip.end_ticks);
+                                    }
+
+                                    setGridCursorTrack(trackIdx + 1);
+                                    handleSelectionChanged();
+                                    redraw();
+                                    makeSelectionVisible();
+                                    makeFirstSelectedTrackVisible();
+                                    return true;
+                                 } // if !selected
+                                 else
+                                 {
+                                    bTryNextTrack = ((trackIdx + 2) < (tstate.tracks.numElements));
+                                    trackIdx++;
+                                 }
+                              } // if intersects current selection
+                              else
+                              {
+                                 bTryNextTrack = ((trackIdx + 2) < (tstate.tracks.numElements));
+                                 trackIdx++;
+                              }
+                           } // if clip
+                           else
+                           {
+                              bTryNextTrack = ((trackIdx + 2) < (tstate.tracks.numElements));
+                              trackIdx++;
                            }
-                        }
+                        } // if track.getNumClips
                         else
                         {
                            bTryNextTrack = ((trackIdx + 2) < (tstate.tracks.numElements));
                            trackIdx++;
                         }
-                     }
+                     } // if track
                      else
                      {
                         bTryNextTrack = ((trackIdx + 2) < (tstate.tracks.numElements));
                         trackIdx++;
                      }
+                     // log4 "selectClipDown: bTryNextTrack="+bTryNextTrack;
                   }
                   while(bTryNextTrack);
 
                   makeSelectionVisible();
-                  centerFirstSelectedTrack();
-               } // if clip
+                  makeFirstSelectedTrackVisible();
+               } // if clipLast
             } // if have next track
          } // if track
+      }
+
+      if(!_bAdd)
+      {
+         moveGridCursorDown(false/*bAdd*/);
+         makeSelectionVisible();
       }
 
    }
@@ -2930,7 +3064,7 @@ class NA_TimelineData : Control {
          setGridCursorTrack(trackIdx);
 
          NA_Clip clip <= getFirstSelectedClip();
-         setEditOffsetToTicks(clip.start_ticks);
+         setEditOffsetToTicksAndQueuePlayOffset(clip.start_ticks);
          makeRegionVisible(clip.start_ticks, clip.end_ticks);
 
          clip_selection.empty();
@@ -2951,10 +3085,15 @@ class NA_TimelineData : Control {
    public method selectClipLeft(boolean _bAdd, boolean _bAllTracks) {
       if(null == getLastSelectedClip())
       {
-         if(!selectFirstClipNearTicks(tstate.edit_offset, false/*bDown*/, true/*bSetEditOffset*/))
+         if(!selectFirstClipNearTicks(tstate.edit_offset,
+                                      false/*bDown*/,
+                                      true/*bPreferRightEdge*/,
+                                      true/*bSetEditOffset*/
+                                      )
+            )
          {
             // No clips
-            setEditOffsetToTicks(0);
+            setEditOffsetToTicksAndQueuePlayOffset(0);
             selectNone();
          }
          return true;
@@ -2991,7 +3130,7 @@ class NA_TimelineData : Control {
                if(clip.start_ticks < tstate.edit_offset)
                {
                   // Move to clip start first
-                  setEditOffsetToTicks(clip.start_ticks);
+                  setEditOffsetToTicksAndQueuePlayOffset(clip.start_ticks);
                   makeRegionVisible(clip.start_ticks, clip.end_ticks);
                   clip_selection.empty();
                   clip_selection.add(clip.node_gid);
@@ -3013,7 +3152,7 @@ class NA_TimelineData : Control {
                         if(tstate.edit_offset > clipL.end_ticks)
                         {
                            // Move to previous clip end first
-                           setEditOffsetToTicks(clipL.end_ticks);
+                           setEditOffsetToTicksAndQueuePlayOffset(clipL.end_ticks);
                            makeRegionVisible(clipL.start_ticks, clipL.end_ticks);
                            clip_selection.empty();
                            clip_selection.add(track.node_gid);
@@ -3030,23 +3169,31 @@ class NA_TimelineData : Control {
 
             if(!bDone)
             {
-               clipIdx = track.getClipIdxByClip(clip);
-
-               // log4 "selectClipLeft: bAdd="+_bAdd+" clipIdx="+clipIdx;
-
-               if(clipIdx > 0)
+               NA_Clip clipCur <= clip;
+               do
                {
+                  clipIdx = track.getClipIdxByClip(clip);
+                  // log4 "selectClipLeft: bAdd="+_bAdd+" clipIdx="+clipIdx;
                   clip <= track.getClipByIdx(clipIdx - 1);
+               }
+               while(null != clip && isClipSelected(track.node_gid, clip.clip_uid));
+
+               if(null != clip)// && clipIdx > 0)
+               {
+                  // // clip <= track.getClipByIdx(clipIdx - 1);
 
                   if(!_bAdd)
                      clip_selection.empty();
+
+                  // log4 "clip_selection="+clip_selection;
+                  // log4 "   add track.node_gid="+track.node_gid+" clip.clip_uid="+clip.clip_uid;
 
                   clip_selection.add(track.node_gid);
                   clip_selection.add(clip.clip_uid);
 
                   // log4 "setEditOffsetToTicks(clip.start_ticks="+clip.start_ticks+")";
 
-                  setEditOffsetToTicks(clip.start_ticks);
+                  setEditOffsetToTicksAndQueuePlayOffset(clip.start_ticks);
 
                   if(_bAllTracks)
                   {
@@ -3070,7 +3217,8 @@ class NA_TimelineData : Control {
                }
                else
                {
-                  setEditOffsetToTicks(clip.start_ticks);
+                  clip <= clipCur;
+                  setEditOffsetToTicksAndQueuePlayOffset(clip.start_ticks);
                   makeRegionVisible(clip.start_ticks, clip.end_ticks);
                   if(!_bAdd)
                      selectClipsAtEditOffset(1/*range*/, tstate.getTrackIdxByTrack(track));
@@ -3089,7 +3237,7 @@ class NA_TimelineData : Control {
          if(!bClipSelected && !_bAdd)
          {
             // No clips or pressing LEFT on first clip
-            setEditOffsetToTicks(0);
+            setEditOffsetToTicksAndQueuePlayOffset(0);
             selectNone();
          }
       } // if track
@@ -3114,7 +3262,7 @@ class NA_TimelineData : Control {
          setGridCursorTrack(trackIdx);
 
          NA_Clip clip <= getLastSelectedClip();
-         setEditOffsetToTicks(clip.end_ticks);
+         setEditOffsetToTicksAndQueuePlayOffset(clip.end_ticks);
          makeRegionVisible(clip.start_ticks, clip.end_ticks);
 
          clip_selection.empty();
@@ -3137,7 +3285,7 @@ class NA_TimelineData : Control {
          NA_Clip clip <= track.findClipAfter(tstate.edit_offset);
          if(null != clip)
          {
-            setEditOffsetToTicks(clip.start_ticks);
+            setEditOffsetToTicksAndQueuePlayOffset(clip.start_ticks);
             selectNone();
             trySelectClipAtEditOffset();
             makeEditOffsetVisible();
@@ -3154,10 +3302,15 @@ class NA_TimelineData : Control {
          if(trySelectClipAfterEditOffset())
             return;
 
-         if(!selectFirstClipNearTicks(tstate.edit_offset, false/*bDown*/, true/*bSetEditOffset*/))
+         if(!selectFirstClipNearTicks(tstate.edit_offset,
+                                      false/*bDown*/,
+                                      false/*bPreferRightEdge*/,
+                                      true/*bSetEditOffset*/
+                                      )
+            )
          {
             // No clips
-            setEditOffsetToTicks(0);
+            setEditOffsetToTicksAndQueuePlayOffset(0);
             selectNone();
          }
          return;
@@ -3193,7 +3346,7 @@ class NA_TimelineData : Control {
                      if(clipR.start_ticks != clip.end_ticks)
                      {
                         // Move to clip end first
-                        setEditOffsetToTicks(clip.end_ticks);
+                        setEditOffsetToTicksAndQueuePlayOffset(clip.end_ticks);
                         makeRegionVisible(clip.start_ticks, clip.end_ticks);
                         clip_selection.empty();
                         clip_selection.add(clip.node_gid);
@@ -3210,7 +3363,7 @@ class NA_TimelineData : Control {
                   else
                   {
                      // No right-hand-side clip, move to clip end
-                     setEditOffsetToTicks(clip.end_ticks);
+                     setEditOffsetToTicksAndQueuePlayOffset(clip.end_ticks);
                      makeRegionVisible(clip.start_ticks, clip.end_ticks);
                      selectClipsAtEditOffset(1/*range*/, tstate.getTrackIdxByTrack(track));  // select none
                      handleSelectionChanged();
@@ -3235,7 +3388,7 @@ class NA_TimelineData : Control {
                   clip_selection.add(track.node_gid);
                   clip_selection.add(clip.clip_uid);
 
-                  setEditOffsetToTicks(clip.start_ticks);
+                  setEditOffsetToTicksAndQueuePlayOffset(clip.start_ticks);
 
                   if(_bAllTracks)
                   {
@@ -3259,11 +3412,11 @@ class NA_TimelineData : Control {
                   {
                      // Move cursor right after last clip
                      // // // clip_selection.empty();
-                     setEditOffsetToTicks(clip.end_ticks);
+                     setEditOffsetToTicksAndQueuePlayOffset(clip.end_ticks);
                   }
                   else
                   {
-                     setEditOffsetToTicks(clip.start_ticks);
+                     setEditOffsetToTicksAndQueuePlayOffset(clip.start_ticks);
                   }
                   makeRegionVisible(clip.start_ticks, clip.end_ticks);
                   handleSelectionChanged();
@@ -3281,7 +3434,7 @@ class NA_TimelineData : Control {
          if(!bClipSelected && !_bAdd)
          {
             // No clips
-            setEditOffsetToTicks(0);
+            setEditOffsetToTicksAndQueuePlayOffset(0);
             selectNone();
          }
       } // if track
@@ -3819,7 +3972,7 @@ class NA_TimelineData : Control {
          if(firstClipTicks >= 0)
          {
             makeRegionVisible(firstClipTicks, lastClipTicks);
-            setEditOffsetToTicks(firstClipTicks);
+            setEditOffsetToTicksAndQueuePlayOffset(firstClipTicks);
          }
 
          loginfo "Create "+numCreated+" new clip"+Utils.GetPluralString(numCreated)+" ticks=("+drag_start_ticks_sorted+";"+drag_end_ticks_sorted+")";
@@ -4842,7 +4995,7 @@ class NA_TimelineData : Control {
       }
       sortDragSelection();
 
-      setEditOffsetToTicks(drag_start_ticks_sorted);
+      setEditOffsetToTicksAndQueuePlayOffset(drag_start_ticks_sorted);
 
       makeRegionVisible(drag_start_ticks_sorted, drag_end_ticks_sorted);
       selectNone();
@@ -4871,7 +5024,7 @@ class NA_TimelineData : Control {
 
       sortDragSelection();
 
-      setEditOffsetToTicks(drag_start_ticks_sorted);
+      setEditOffsetToTicksAndQueuePlayOffset(drag_start_ticks_sorted);
 
       makeRegionVisible(drag_start_ticks_sorted, drag_end_ticks_sorted);
       selectNone();
@@ -6070,7 +6223,7 @@ class NA_TimelineData : Control {
    }
 
    // <method.png>
-   public method centerFirstSelectedTrack() {
+   public method makeFirstSelectedTrackVisible() {
       if(haveSelection())
       {
          int trackIdx = getFirstSelectedTrackIdx();
@@ -6094,7 +6247,7 @@ class NA_TimelineData : Control {
       parent_form.relayout();
       UI.RedrawAll();
 
-      centerFirstSelectedTrack();
+      makeFirstSelectedTrackVisible();
 
       loginfo "Inc: Track size is "+idx;
    }
@@ -6110,7 +6263,7 @@ class NA_TimelineData : Control {
       parent_form.relayout();
       UI.RedrawAll();
 
-      centerFirstSelectedTrack();
+      makeFirstSelectedTrackVisible();
 
       loginfo "Dec: Track size is "+idx;
    }
@@ -7704,9 +7857,14 @@ class NA_TimelineData : Control {
             if(_k.modCtrl())
             {
                if(_k.modShift())
+               {
                   selectNone();
+                  loginfo "Select none";
+               }
                else
+               {
                   selectAll();
+               }
                return true;
             }
             else if(_k.modShiftOnly())
@@ -7747,7 +7905,7 @@ class NA_TimelineData : Control {
                   }
                   else
                   {
-                     selectAllClipsAtEditOffset(1/*range*/);
+                     selectAllClipsAtEditOffset(1/*range*/, false/*bAdd*/);
                   }
                   return true;
                }
@@ -7782,7 +7940,7 @@ class NA_TimelineData : Control {
                   }
                   else
                   {
-                     selectAllClipsAtEditOffset(1/*range*/);
+                     selectAllClipsAtEditOffset(1/*range*/, false/*bAdd*/);
                   }
                   return true;
                }
@@ -7870,7 +8028,7 @@ class NA_TimelineData : Control {
             {
                if(_k.modCtrl())
                {
-                  moveToNextMarker();
+                  moveToNextMarker(false/*bSelect*/);
                   return true;
                }
             }
@@ -7915,7 +8073,10 @@ class NA_TimelineData : Control {
                   {
                      if(!_k.modShift())
                      {
-                        moveToNextMarker();
+                        if(!moveToNextMarker(false/*bSelect*/))
+                        {
+                           selectClipRight(false/*bAdd*/, false/*bAllTracks*/);
+                        }
                         return true;
                      }
                   }
@@ -8186,7 +8347,7 @@ class NA_TimelineData : Control {
                if(!haveSelection() || getNumSelectedTracks() >= 2)
                   selectClipsAtEditOffset(999999/*range*/, grid_cursor_track_hint);
                else
-                  selectAllClipsAtEditOffset(999999/*range*/);
+                  selectAllClipsAtEditOffset(999999/*range*/, false/*bAdd*/);
                return true;
             }
             break;
