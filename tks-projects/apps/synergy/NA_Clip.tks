@@ -60,16 +60,69 @@ class NA_Clip : NodePattern, NA_Defs {
    String  cached_audio_smp_name;   // sample name (displayed as clip name)
    boolean b_audio_timeline;        // 1=clip refers to SampleTimeline   0=clip refers to audio sample   copied from NA_Track
 
-   define int INITCTL_MW  = 0;  // CC#1: Modwheel
-   define int INITCTL_BC  = 1;  // CC#2: Breath Control
-   define int INITCTL_FC  = 2;  // CC#4: Foot Control
-   define int INITCTL_EX  = 3;  // CC#11: Expression
-   define int INITCTL_GP1 = 4;  // CC#16: General Purpose 1
-   define int INITCTL_GP2 = 5;  // CC#17: General Purpose 2
-   define int INITCTL_GP3 = 6;  // CC#18: General Purpose 3
-   define int INITCTL_GP4 = 7;  // CC#19: General Purpose 4
+   define int INITCTL_MW  = 0;  // CC#1: Modwheel            OR  tracker CTL_USR1
+   define int INITCTL_BC  = 1;  // CC#2: Breath Control      OR  tracker CTL_USR2
+   define int INITCTL_FC  = 2;  // CC#4: Foot Control        OR  tracker CTL_USR3
+   define int INITCTL_EX  = 3;  // CC#11: Expression         OR  tracker CTL_USR4
+   define int INITCTL_GP1 = 4;  // CC#16: General Purpose 1  OR  tracker CTL_USR5
+   define int INITCTL_GP2 = 5;  // CC#17: General Purpose 2  OR  tracker CTL_USR6
+   define int INITCTL_GP3 = 6;  // CC#18: General Purpose 3  OR  tracker CTL_USR7
+   define int INITCTL_GP4 = 7;  // CC#19: General Purpose 4  OR  tracker CTL_USR8
    define int NUM_INITCTL = 8;
    FloatArray initial_ctl;   // -1=skip. 0..127 otherwise
+
+   // isAudio() initial controller names
+   static StringArray initctl_names_audio_long = [ /* 0 */ "CC#001 ModWheel",
+                                                   /* 1 */ "CC#002 BreathCtl",
+                                                   /* 2 */ "CC#004 FootCtl",
+                                                   /* 3 */ "CC#011 Expr",
+                                                   /* 4 */ "CC#016 GP1",
+                                                   /* 5 */ "CC#017 GP2",
+                                                   /* 6 */ "CC#018 GP3",
+                                                   /* 7 */ "CC#019 GP4"
+                                                           ];
+
+   static StringArray initctl_names_audio_short = [ /* 0 */ "MW",
+                                                    /* 1 */ "BC",
+                                                    /* 2 */ "FC",
+                                                    /* 3 */ "EX",
+                                                    /* 4 */ "GP1",
+                                                    /* 5 */ "GP2",
+                                                    /* 6 */ "GP3",
+                                                    /* 7 */ "GP4"
+                                                            ];
+
+   // isMarker() initial controller names (no-op)
+   static StringArray initctl_names_marker = [ /* 0 */ "mrk1",
+                                               /* 1 */ "mrk2",
+                                               /* 2 */ "mrk3",
+                                               /* 3 */ "mrk4",
+                                               /* 4 */ "mrk5",
+                                               /* 5 */ "mrk6",
+                                               /* 6 */ "mrk7",
+                                               /* 7 */ "mrk8"
+                                                       ];
+
+   static StringArray initctl_names_unknown_seq = [ /* 0 */ "Seq1",
+                                                    /* 1 */ "Seq2",
+                                                    /* 2 */ "Seq3",
+                                                    /* 3 */ "Seq4",
+                                                    /* 4 */ "Seq5",
+                                                    /* 5 */ "Seq6",
+                                                    /* 6 */ "Seq7",
+                                                    /* 7 */ "Seq8"
+                                                            ];
+
+   // isSeq() tracker node initial controller names
+   static StringArray initctl_names_tracker = [ /* 0 */ "USR1",
+                                                /* 1 */ "USR2",
+                                                /* 2 */ "USR3",
+                                                /* 3 */ "USR4",
+                                                /* 4 */ "USR5",
+                                                /* 5 */ "USR6",
+                                                /* 6 */ "USR7",
+                                                /* 7 */ "USR8"
+                                                        ];
 
 
    // <method_init.png>
@@ -401,7 +454,7 @@ class NA_Clip : NodePattern, NA_Defs {
    }
 
    // <method.png>
-   protected method sendInitCtls(MIDIPipeFrame _fr, int _devIdx, byte _midiCh) {
+   protected method sendInitCtlsAudio(MIDIPipeFrame _fr, int _devIdx, byte _midiCh) {
       float f;
 
       f = initial_ctl.get(INITCTL_MW);
@@ -437,6 +490,21 @@ class NA_Clip : NodePattern, NA_Defs {
          _fr.cc(true/*bSet*/, _devIdx, _midiCh, 19/*gp4*/, f);
    }
 
+   // <method.png>
+   protected method sendInitCtlsInjectUsrCtl(MIDIPipeFrame _fr, int _devIdx, byte _midiCh) {
+      int ctlIdx = 0;
+      int rpn = NodeTracker.RPN_TRACKER_INJECT_CTL32; // CTL_USR1
+      loop(NUM_INITCTL)
+      {
+         float f = initial_ctl.get(ctlIdx);
+         if(f >= 0.0f)
+            _fr.rpn(true/*bSet*/, _devIdx, _midiCh, rpn, f);
+         // Next controller
+         ctlIdx++;
+         rpn++;
+      }
+   }
+
    // <replay.png>
    public method startStopClip(MIDIPipeFrame _framePlay,
                                int           _extraOffsetTicks,
@@ -454,7 +522,7 @@ class NA_Clip : NodePattern, NA_Defs {
          IntArray vstToOutDev <= NodeArranger.cached_vst_device_indices;
          int devIdx = vstToOutDev.get(_parentTrack.audio_dev_idx);
          byte midiCh = mathMaxi(0, _parentTrack.audio_midi_ch);
-         byte note = _parentTrack.b_audio_timeline ? NA_Track.AUDIO_TIMELINE_SEQ_TRIG_NOTE/*C-3*/ : (5*12/*c-5*/);
+         byte note = _parentTrack.b_audio_timeline ? NA_Track.AUDIO_TIMELINE_SEQ_TRIG_NOTE/*C-3*/ : (5*12/*C-5*/);
          byte vel = 127;
 
          if(!_bStop && replay.b_playing && !b_mute && ! _parentTrack.b_mute)
@@ -502,7 +570,7 @@ class NA_Clip : NodePattern, NA_Defs {
                            );
 
             // Send initial controllers
-            sendInitCtls(_framePlay, devIdx, midiCh);
+            sendInitCtlsAudio(_framePlay, devIdx, midiCh);
 
             // Send note-on
             if(0 == replay.ticks_to_play)  // don't start clip when moving edit offset, just update mute/solo states and pattern selection
@@ -573,7 +641,9 @@ class NA_Clip : NodePattern, NA_Defs {
                // // }
 
                // Send initial controllers
-               sendInitCtls(_framePlay, devIdx, ch);
+               //  (note) (potentially) handled by NodeTracker
+               //         (mapped to currently focused track keyjazz instrument usrctl 1..8)
+               sendInitCtlsInjectUsrCtl(_framePlay, devIdx, ch);
 
                if(bSendOffset)
                {

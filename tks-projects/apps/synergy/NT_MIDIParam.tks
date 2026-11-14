@@ -81,8 +81,8 @@ class NT_MIDIParam {
    float   reset;         // Reset value
    boolean b_reset_select;// 1=send reset value when instrument is selected
    boolean b_reset_note  ;// 1=send reset value when note is played
-   byte    cc_msb_id;     // 7bit controller number (MSB) (used if type is TYPE_CC)
-   byte    cc_lsb_id;     // 7bit controller number (LSB) (used if type is TYPE_CC and b_lsb=true)
+   byte    cc_msb_id;     // 7bit controller number (MSB) (used if type is TYPE_CC and msblsb_mode includes MSB)
+   byte    cc_lsb_id;     // 7bit controller number (LSB) (used if type is TYPE_CC and msblsb_mode includes LSB)
    short   rpn_id;        // 14bit parameter number (MSB<<7 | LSB) (used if type is TYPE_NRPN) (todo)
    short   nrpn_id;       // 14bit parameter number (MSB<<7 | LSB) (used if type is TYPE_NRPN)
    byte    msblsb_mode;   // see MSBLSB_xxx
@@ -146,6 +146,86 @@ class NT_MIDIParam {
    // <method_get.png>
    public method getTypeString() : String {
       return midi_short_type_names.get(type);
+   }
+
+   // <method_get.png>
+   public method getCCShortNameByCtl(NT_Instrument _ins) {
+      STX_MIDIOutDevice outDev <= (null != forced_dev) ? forced_dev : _ins.out_device;
+      if(null != outDev)
+      {
+         byte outCh = (0 != forced_ch) ? (forced_ch - 1) : _ins.midi_channel;
+         byte ccIdx = (MSBLSB_ONLYLSB == msblsb_mode) ? cc_lsb_id : cc_msb_id;
+         return outDev.getCCShortNameByCtl(outCh, ccIdx);
+      }
+      return null;
+   }
+
+   // <method_get.png>
+   public method getRPNShortNameByNr(NT_Instrument _ins) {
+      STX_MIDIOutDevice outDev <= (null != forced_dev) ? forced_dev : _ins.out_device;
+      if(null != outDev)
+      {
+         byte outCh = (0 != forced_ch) ? (forced_ch - 1) : _ins.midi_channel;
+         return outDev.getRPNShortNameByNr(outCh, rpn_id);
+      }
+      return null;
+   }
+
+   // <method_get.png>
+   public method getNRPNShortNameByNr(NT_Instrument _ins) {
+      STX_MIDIOutDevice outDev <= (null != forced_dev) ? forced_dev : _ins.out_device;
+      if(null != outDev)
+      {
+         byte outCh = (0 != forced_ch) ? (forced_ch - 1) : _ins.midi_channel;
+         return outDev.getNRPNShortNameByNr(outCh, nrpn_id);
+      }
+      return null;
+   }
+
+   // <method_get.png>
+   public method getShortName(NT_Instrument _ins) : String {
+      String *s;
+      if(!name.isBlank() && name.numChars <= 8)
+         return name;
+      switch(type)
+      {
+         default:
+            return "?";
+
+         case TYPE_CC:
+            s <= getCCShortNameByCtl(_ins);
+            if(null != s && s.numChars <= 8)
+               return deref s;
+            switch(msblsb_mode)
+            {
+               default:
+               case MSBLSB_ONLYMSB:
+               case MSBLSB_BOTH:     return "CC#"+cc_msb_id;
+               case MSBLSB_ONLYLSB:  return "CC#"+cc_lsb_id;
+            }
+            break;
+
+         case TYPE_RPN:
+            s <= getRPNShortNameByNr(_ins);
+            if(null != s && s.numChars <= 8)
+               return deref s;
+            return "RPN#"+rpn_id;
+
+         case TYPE_NRPN:
+            s <= getNRPNShortNameByNr(_ins);
+            if(null != s && s.numChars <= 8)
+               return deref s;
+            return "NRPN#"+nrpn_id;
+
+         case TYPE_SYSEX:
+            return "SysEx";
+
+         case TYPE_PRGCHG:
+            return "PrgChg";
+
+         case TYPE_REMOTE:
+            return "R#"+remote_param_idx;
+      }
    }
 
    // <method_get.png>
@@ -263,7 +343,7 @@ class NT_MIDIParam {
                // log4 "mapCtlVal: midiChannel="+midiChannel+" value="+_value;
                if([TYPE_RPN, TYPE_NRPN].contains(type))
                {
-                  // Special case: always use 0..16383 range
+                  // send 14bit value as-is
                   intValue = mathClampi(_value, 0, 16383);
                }
                else
@@ -302,15 +382,15 @@ class NT_MIDIParam {
                }
                else
                {
-                  // use value as-is (RPN/NRPN)
                   if([TYPE_RPN, TYPE_NRPN].contains(type))
                   {
-                     // Special case: always use 0..16383 range
+                     // send 14bit value as-is
                      intValue = mathClampi(_value, 0, 16383);
                   }
                   else
                   {
-                     intValue = mathClampi(_value, 0, 127);
+                     // send 8bit value as-is
+                     intValue = mathClampi(_value, 0, 255);
                   }
                }
             }
@@ -345,7 +425,7 @@ class NT_MIDIParam {
                   }
                   else
                   {
-                     intValue = mathClampi(_value, 0, 127);
+                     intValue = mathClampi(_value, 0, 255);
                   }
                }
             }

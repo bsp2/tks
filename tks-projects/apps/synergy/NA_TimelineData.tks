@@ -147,7 +147,8 @@ class NA_TimelineData : Control {
 
    protected static PopupMenu *pm_context;
 
-   protected static IntArray clipctl_colors =
+   // see NA_Clip.initial_ctl and NA_State.CLIP_EDIT_MODE_xxx / clip_edit_mode_names
+   protected static IntArray initialctl_colors =
       [ #FF005FaF,   // 0: MW
         #FF00F4B7,   // 1: BC
         #FFAF0000,   // 2: FC
@@ -304,16 +305,112 @@ class NA_TimelineData : Control {
       }
    }
 
+   // <method_get.png>
+   public method getGridCursorTrackClipEditModeName(boolean _bShort) : String {
+      if(tstate.clip_edit_mode > NA_State.CLIP_EDIT_MODE_DEFAULT)
+      {
+         NA_Track track <= tstate.getTrackByIdx(grid_cursor_track_hint);
+         if(null != track)
+         {
+            if(track.isMarker())
+            {
+               return NA_State.clip_edit_mode_names_marker.get(tstate.clip_edit_mode);
+            }
+            else if(track.isAudio())
+            {
+               return NA_State.clip_edit_mode_names_audio.get(tstate.clip_edit_mode);
+            }
+            else if(track.isSeq())
+            {
+               Node node <= current_song.findNodeByGID(track.node_gid);
+               if(null != node)
+               {
+                  String sUsrNameHint <= node.nodeGetUsrCtlParamName(tstate.clip_edit_mode - 1, _bShort);
+                  if(null != sUsrNameHint)
+                  {
+                     if(_bShort)
+                        sUsrNameHint <= sUsrNameHint.substring(0, 8);
+                     return tstate.clip_edit_mode+":"+sUsrNameHint;
+                  }
+                  if(node instanceof NodeTracker)
+                     return NA_State.clip_edit_mode_names_tracker.get(tstate.clip_edit_mode);
+               }
+            }
+         }
+      }
+      // Default or 1..8
+      return NA_State.clip_edit_mode_names_generic.get(tstate.clip_edit_mode);
+   }
+
+   // <method_set.png>
+   public method setClipEditMode(int _abs) {
+      tstate.clip_edit_mode = _abs;
+      redraw();
+      loginfo "Clip edit mode is \'"+getGridCursorTrackClipEditModeName(false/*bShort*/)+"\'";
+   }
+
+   // <method_set.png>
+   public method cycleClipEditMode(int _delta) {
+      setClipEditMode( mathClampi(tstate.clip_edit_mode + _delta, 0, NA_State.NUM_CLIP_EDIT_MODES-1) );
+   }
+
+   // <method_get.png>
+   public method getGridCursorTrackClipCtlNames(boolean _bShort) : StringArray {
+      NA_Track track <= tstate.getTrackByIdx(grid_cursor_track_hint);
+      if(null != track)
+      {
+         if(track.isMarker())
+         {
+            return NA_Clip.initctl_names_marker;
+         }
+         else if(track.isAudio())
+         {
+            return _bShort ? NA_Clip.initctl_names_audio_short : NA_Clip.initctl_names_audio_long;
+         }
+         else if(track.isSeq())
+         {
+            Node node <= current_song.findNodeByGID(track.node_gid);
+            if(null != node)
+            {
+               local StringArray aNames <= new StringArray;
+               int ctlIdx = 0;
+               loop(NA_Clip.NUM_INITCTL)
+               {
+                  String sUsrNameHint <= node.nodeGetUsrCtlParamName(ctlIdx, _bShort);
+                  if(null != sUsrNameHint)
+                  {
+                     if(_bShort)
+                        sUsrNameHint <= sUsrNameHint.substring(0, 8);
+                     aNames.add(Object(sUsrNameHint));
+                  }
+                  else if(node instanceof NodeTracker)
+                  {
+                     aNames.add(NA_Clip.initctl_names_tracker.get(ctlIdx));
+                  }
+                  else
+                  {
+                     aNames.add(NA_Clip.initctl_names_unknown_seq.get(ctlIdx));
+                  }
+
+                  // Next clip controller
+                  ctlIdx++;
+               }
+               return deref aNames;
+            }
+            return NA_Clip.initctl_names_unknown_seq;
+         }
+      }
+      // Default or 1..8
+      return _bShort ? NA_Clip.initctl_names_audio_short : NA_Clip.initctl_names_audio_long;
+   }
+
    // <ui_show.png>
    protected method showClipCtlDialog(NA_Clip _clip) {
-
-      if(tstate.clip_edit_mode < NA_State.CLIP_EDIT_MODE_INITCTL_MW)
-         tstate.clip_edit_mode = NA_State.CLIP_EDIT_MODE_INITCTL_MW;
-
       dlg_clipctl.showClipCtlDialog(parent_form.parent_editor,
-                                    parent_node,
                                     _clip,
-                                    (tstate.clip_edit_mode - 1)/*edit_mode => ctlIdx*/
+                                    mathMaxi(NA_Clip.INITCTL_MW, tstate.clip_edit_mode - 1)/*ctlIdx*/,
+                                    getGridCursorTrackClipCtlNames(false/*bShort*/),
+                                    getGridCursorTrackClipCtlNames(true/*bShort*/)
                                     );
    }
 
@@ -345,22 +442,10 @@ class NA_TimelineData : Control {
          }
          else
          {
-            logwarning "Marker clip has no initial controllers";
+            // // logwarning "Marker clip has no initial controllers";
          }
       }
       return false;
-   }
-
-   // <ui_handle.png>
-   public method setClipEditMode(int _abs) {
-      tstate.clip_edit_mode = _abs;
-      redraw();
-      loginfo "Clip edit mode is \'"+(NA_State.clip_edit_mode_names.get(tstate.clip_edit_mode))+"\'";
-   }
-
-   // <ui_handle.png>
-   public method cycleClipEditMode(int _delta) {
-      setClipEditMode( mathClampi(tstate.clip_edit_mode + _delta, 0, NA_State.NUM_CLIP_EDIT_MODES-1) );
    }
 
    // <ui_handle.png>
@@ -2863,7 +2948,7 @@ class NA_TimelineData : Control {
    }
 
    // <method.png>
-   protected method selectClipLeft(boolean _bAdd, boolean _bAllTracks) {
+   public method selectClipLeft(boolean _bAdd, boolean _bAllTracks) {
       if(null == getLastSelectedClip())
       {
          if(!selectFirstClipNearTicks(tstate.edit_offset, false/*bDown*/, true/*bSetEditOffset*/))
@@ -3063,7 +3148,7 @@ class NA_TimelineData : Control {
    }
 
    // <method.png>
-   protected method selectClipRight(boolean _bAdd, boolean _bAllTracks) {
+   public method selectClipRight(boolean _bAdd, boolean _bAllTracks) {
       if(null == getLastSelectedClip())
       {
          if(trySelectClipAfterEditOffset())
@@ -3260,7 +3345,9 @@ class NA_TimelineData : Control {
    }
 
    // <method.png>
-   protected method editFirstSelectedClip(boolean _bEditSample) {
+   protected method editFirstSelectedClip(boolean _bForceCtl,
+                                          boolean _bEditSample
+                                          ) {
 
       lazySelectGridCursorClips();
 
@@ -3272,7 +3359,7 @@ class NA_TimelineData : Control {
 
          if(null != clip)
          {
-            if(tstate.clip_edit_mode >= NA_State.CLIP_EDIT_MODE_INITCTL_MW)
+            if(_bForceCtl || tstate.clip_edit_mode >= NA_State.CLIP_EDIT_MODE_INITCTL_MW)
                if(editFirstSelectedClipCtl(true/*bWarpMouse*/, null/*k*/))
                   return true;
 
@@ -6040,7 +6127,7 @@ class NA_TimelineData : Control {
       int tickOffset = tstate.view_offset;
       float px = (tstate.edit_offset - tickOffset) * pixPerTick;  // relative to shiftX
       float py = (drag_start_track + _bBelow) * currentTrackSY;
-      log2 "warpMouseToEditCursor: p=("+px+";"+py+") edit_offset="+tstate.edit_offset+" trackIdx="+drag_start_track;
+      log3 "warpMouseToEditCursor: p=("+px+";"+py+") edit_offset="+tstate.edit_offset+" trackIdx="+drag_start_track;
       warpTo(px + shiftX, py + shiftY);
    }
 
@@ -6254,7 +6341,6 @@ class NA_TimelineData : Control {
 
          // Draw clips
          sdvg_SetStrokeWidth(1.0f);
-         IntArray aClipCtlColors <= clipctl_colors;
 
          float py = 2 + topSy;
          int trackIdx = 0;
@@ -6392,7 +6478,7 @@ class NA_TimelineData : Control {
                         {
                            if((cx + ctlW) <= pw)
                            {
-                              int c32Ctl = clipctl_colors.get(ctlIdx);
+                              int c32Ctl = initialctl_colors.get(ctlIdx);
                               if(tstate.clip_edit_mode != NA_State.CLIP_EDIT_MODE_DEFAULT &&
                                  (ctlIdx + 1) != tstate.clip_edit_mode
                                  )
@@ -7573,7 +7659,9 @@ class NA_TimelineData : Control {
             break;
 
          case VKEY_RETURN:
-            editFirstSelectedClip(_k.modShift()/*bEditSample*/);
+            editFirstSelectedClip(_k.modCtrl()/*bForceCtl*/,
+                                  _k.modShift()/*bEditSample*/
+                                  );
             return true;
 
          case VKEY_INSERT:
@@ -8355,7 +8443,9 @@ class NA_TimelineData : Control {
             // Edit "audio pattern" sample in Eureka
             selectNone();
             selectClipAtEv(_ev, false/*bAllowToggle*/, (VMOD_LCTRL == UI.GetKeyMod())/*bAdd*/);
-            editFirstSelectedClip(true/*bEditSample*/);
+            editFirstSelectedClip(false/*bForceCtl*/,
+                                  true/*bEditSample*/
+                                  );
             return true;
          }
 
@@ -8841,7 +8931,9 @@ class NA_TimelineData : Control {
          // Edit clip sequence
          selectNone();
          selectClipAtEv(_startEv, false/*bAllowToggle*/, (VMOD_LCTRL == UI.GetKeyMod())/*bAdd*/);
-         editFirstSelectedClip(false/*bEditSample*/);
+         editFirstSelectedClip(false/*bForceCtl*/,
+                               false/*bEditSample*/
+                               );
          return true;
       }
       else

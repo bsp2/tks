@@ -23,11 +23,16 @@ use namespace st2;
 class NA_ClipCtlDialog extends Dialog, KeyboardFocusListener {
    protected NodeArrangerEditor *parent_editor;
    protected NodeArranger       *parent_arranger;
+   protected NA_TimelineData    *parent_data;
    protected NA_State           *parent_tstate;
    protected NA_Clip            *clip;
 
    XMLForm xfm;
 
+   // (note) actual target depends on node type
+   //         - MARKER: n/a
+   //         -  AUDIO: mw/bc/fc/ex/gp?
+   //         -    SEQ: tracker: inject CTL_USR1..8
    protected Button     *bt_default;
    protected Button     *bt_ctl_mw;
    protected FloatParam *fp_ctl_mw;
@@ -47,7 +52,14 @@ class NA_ClipCtlDialog extends Dialog, KeyboardFocusListener {
    protected FloatParam *fp_ctl_gp4;
    protected FloatParam *fp_tmp;
 
-   protected int def_ctl_idx;  // NA_Clip.INITCTL_xxx (0=default, 1=mw, ..)
+   protected PointerArray a_buttons;
+   protected PointerArray a_floatparams;
+
+   protected int def_ctl_idx;  // NA_Clip.INITCTL_xxx
+   protected int clip_edit_mode_restore;
+
+   protected StringArray *a_ctl_names_long;
+   protected StringArray *a_ctl_names_short;
 
 
    // <ui_init.png>
@@ -61,14 +73,27 @@ class NA_ClipCtlDialog extends Dialog, KeyboardFocusListener {
 
       xfm.autoResolveIds(this);
 
-      bt_ctl_mw .setForegroundColor(lnf_colors.get(LookAndFeel.COLOR_LABEL_CAPTION_FG));
-      bt_ctl_bc .setForegroundColor(lnf_colors.get(LookAndFeel.COLOR_LABEL_CAPTION_FG));
-      bt_ctl_fc .setForegroundColor(lnf_colors.get(LookAndFeel.COLOR_LABEL_CAPTION_FG));
-      bt_ctl_ex .setForegroundColor(lnf_colors.get(LookAndFeel.COLOR_LABEL_CAPTION_FG));
-      bt_ctl_gp1.setForegroundColor(lnf_colors.get(LookAndFeel.COLOR_LABEL_CAPTION_FG));
-      bt_ctl_gp2.setForegroundColor(lnf_colors.get(LookAndFeel.COLOR_LABEL_CAPTION_FG));
-      bt_ctl_gp3.setForegroundColor(lnf_colors.get(LookAndFeel.COLOR_LABEL_CAPTION_FG));
-      bt_ctl_gp4.setForegroundColor(lnf_colors.get(LookAndFeel.COLOR_LABEL_CAPTION_FG));
+      a_buttons.add(bt_ctl_mw);
+      a_buttons.add(bt_ctl_bc);
+      a_buttons.add(bt_ctl_fc);
+      a_buttons.add(bt_ctl_ex);
+      a_buttons.add(bt_ctl_gp1);
+      a_buttons.add(bt_ctl_gp2);
+      a_buttons.add(bt_ctl_gp3);
+      a_buttons.add(bt_ctl_gp4);
+
+      a_floatparams.add(fp_ctl_mw);
+      a_floatparams.add(fp_ctl_bc);
+      a_floatparams.add(fp_ctl_fc);
+      a_floatparams.add(fp_ctl_ex);
+      a_floatparams.add(fp_ctl_gp1);
+      a_floatparams.add(fp_ctl_gp2);
+      a_floatparams.add(fp_ctl_gp3);
+      a_floatparams.add(fp_ctl_gp4);
+
+      Button *bt;
+      foreach bt in a_buttons
+         bt.setForegroundColor(lnf_colors.get(LookAndFeel.COLOR_LABEL_CAPTION_FG));
 
       fp_tmp.setMinMaxValues(-1, 127);
       fp_tmp.setPrecision(3);
@@ -100,16 +125,24 @@ class NA_ClipCtlDialog extends Dialog, KeyboardFocusListener {
 
    // <ui_show.png>
    public method showClipCtlDialog(NodeArrangerEditor _editor,
-                                   NodeArranger       _arranger,
                                    NA_Clip            _clip,
-                                   int                _ctlIdx
+                                   int                _ctlIdx,
+                                   StringArray        _aCtlNamesLong,
+                                   StringArray        _aCtlNamesShort
                                    ) {
-      parent_editor   <= _editor;
-      parent_arranger <= _arranger;
-      parent_tstate   <= _editor.timeline.data.tstate;
-      clip            <= _clip;
-      def_ctl_idx      = _ctlIdx;
+      parent_editor     <= _editor;
+      parent_arranger   <= _editor.arranger;
+      parent_data       <= _editor.timeline.data;
+      parent_tstate     <=  parent_data.tstate;
+      clip              <= _clip;
+      def_ctl_idx        = _ctlIdx;
+      a_ctl_names_short <= _aCtlNamesShort;
+      a_ctl_names_long  <= _aCtlNamesLong;
 
+      clip_edit_mode_restore = parent_tstate.clip_edit_mode;
+      parent_tstate.clip_edit_mode = _ctlIdx + 1;
+
+      updateLabels();
       updateFloatParams();
 
       showNearMouse(-10*UI.font_scaling, -10*UI.font_scaling);
@@ -118,15 +151,25 @@ class NA_ClipCtlDialog extends Dialog, KeyboardFocusListener {
    }
 
    // <ui_update.png>
+   protected method updateLabels() {
+      int ctlIdx = 0;
+      loop(NA_Clip.NUM_INITCTL/*8*/)
+      {
+         Button bt <= a_buttons.get(ctlIdx);
+         bt.setCaption(a_ctl_names_short.get(ctlIdx));
+         ctlIdx++;
+      }
+   }
+
+   // <ui_update.png>
    protected method updateFloatParams() {
-      fp_ctl_mw .setValue(clip.getInitCtl(NA_Clip.INITCTL_MW));
-      fp_ctl_bc .setValue(clip.getInitCtl(NA_Clip.INITCTL_BC));
-      fp_ctl_fc .setValue(clip.getInitCtl(NA_Clip.INITCTL_FC));
-      fp_ctl_ex .setValue(clip.getInitCtl(NA_Clip.INITCTL_EX));
-      fp_ctl_gp1.setValue(clip.getInitCtl(NA_Clip.INITCTL_GP1));
-      fp_ctl_gp2.setValue(clip.getInitCtl(NA_Clip.INITCTL_GP2));
-      fp_ctl_gp3.setValue(clip.getInitCtl(NA_Clip.INITCTL_GP3));
-      fp_ctl_gp4.setValue(clip.getInitCtl(NA_Clip.INITCTL_GP4));
+      int ctlIdx = 0;
+      loop(NA_Clip.NUM_INITCTL/*8*/)
+      {
+         FloatParam fp <= a_floatparams.get(ctlIdx);
+         fp.setValue(clip.getInitCtl(ctlIdx));
+         ctlIdx++;
+      }
    }
 
    // <ui_show.png>
@@ -148,45 +191,23 @@ class NA_ClipCtlDialog extends Dialog, KeyboardFocusListener {
    public virtual hide() {
       UI.SetKeyboardFocusListener(null);
       Dialog::hide();
+      parent_tstate.clip_edit_mode = clip_edit_mode_restore;
+      parent_editor.redraw();
+   }
+
+   // <ui_kbd.png>
+   protected method focusFloatParamByIdx(int _idx) {
+      FloatParam fp <= a_floatparams.get(_idx);
+      if(null != fp)
+      {
+         UI.SetKeyboardFocus(fp);
+         fp.onTabFocus();
+      }
    }
 
    // <ui_kbd.png>
    protected method refocusDefault() {
-      // log4 "refocusDefault: fp_ctl_mw="+#(fp_ctl_mw);
-      switch(def_ctl_idx)
-      {
-         case NA_Clip.INITCTL_MW:
-            UI.SetKeyboardFocus(fp_ctl_mw);
-            break;
-
-         case NA_Clip.INITCTL_BC:
-            UI.SetKeyboardFocus(fp_ctl_bc);
-            break;
-
-         case NA_Clip.INITCTL_FC:
-            UI.SetKeyboardFocus(fp_ctl_fc);
-            break;
-
-         case NA_Clip.INITCTL_EX:
-            UI.SetKeyboardFocus(fp_ctl_ex);
-            break;
-
-         case NA_Clip.INITCTL_GP1:
-            UI.SetKeyboardFocus(fp_ctl_gp1);
-            break;
-
-         case NA_Clip.INITCTL_GP2:
-            UI.SetKeyboardFocus(fp_ctl_gp2);
-            break;
-
-         case NA_Clip.INITCTL_GP3:
-            UI.SetKeyboardFocus(fp_ctl_gp3);
-            break;
-
-         case NA_Clip.INITCTL_GP4:
-            UI.SetKeyboardFocus(fp_ctl_gp4);
-            break;
-      }
+      focusFloatParamByIdx(def_ctl_idx);
    }
 
    // <ui_kbd.png>
@@ -223,167 +244,126 @@ class NA_ClipCtlDialog extends Dialog, KeyboardFocusListener {
 
    // <method_get.png>
    public method getInitCtlString(NA_Clip _clip, int _ctlIdx) : String {
-      FloatParam fp <= [fp_ctl_mw,  fp_ctl_bc,  fp_ctl_fc,  fp_ctl_ex,
-                        fp_ctl_gp1, fp_ctl_gp2, fp_ctl_gp3, fp_ctl_gp4
-                        ].get(_ctlIdx);
+      FloatParam fp <= a_floatparams.get(_ctlIdx);
       fp_tmp.setDisplayType(fp.getDisplayType());
       fp_tmp.setValue(_clip.getInitCtl(_ctlIdx));
       return fp_tmp.getDisplayedText();
    }
 
+   // <method_find.png>
+   protected method findFocusIdx(Layer _l) {
+      int focusIdx = a_floatparams.indexOfPointer(_l, 0);
+      if(focusIdx < 0)
+         focusIdx = a_buttons.indexOfPointer(_l, 0);
+      return focusIdx;
+   }
+
    // <ui_handle.png>
    protected cycleClipEditMode(int _delta) {
-      Layer l <= UI.GetKeyboardFocus();
       NA_State tstate <= parent_editor.timeline.tstate;
-      switch(@(l))
+      int focusIdx = findFocusIdx(UI.GetKeyboardFocus());
+      Layer *l;
+      if(_delta > 0)
       {
-         default:
-         case @(bt_default):
-            if(_delta > 0)
-            {
-               def_ctl_idx = NA_Clip.INITCTL_MW;
-               parent_tstate.clip_edit_mode = def_ctl_idx + 1;
-               UI.SetKeyboardFocus(fp_ctl_mw);
-            }
-            break;
-
-         case @(bt_ctl_mw):
-         case @(fp_ctl_mw):
-            def_ctl_idx = NA_Clip.INITCTL_MW + _delta;
+         if(focusIdx + 1 < NA_Clip.NUM_INITCTL)
+         {
+            def_ctl_idx = focusIdx + 1;
             parent_tstate.clip_edit_mode = def_ctl_idx + 1;
-            UI.SetKeyboardFocus((_delta < 0) ? bt_default : fp_ctl_bc);
-            break;
-
-         case @(bt_ctl_bc):
-         case @(fp_ctl_bc):
-            def_ctl_idx = NA_Clip.INITCTL_BC + _delta;
-            parent_tstate.clip_edit_mode = def_ctl_idx + 1;
-            UI.SetKeyboardFocus((_delta < 0) ? fp_ctl_mw : fp_ctl_fc);
-            break;
-
-         case @(bt_ctl_fc):
-         case @(fp_ctl_fc):
-            def_ctl_idx = NA_Clip.INITCTL_FC + _delta;
-            parent_tstate.clip_edit_mode = def_ctl_idx + 1;
-            UI.SetKeyboardFocus((_delta < 0) ? fp_ctl_bc : fp_ctl_ex);
-            break;
-
-         case @(bt_ctl_ex):
-         case @(fp_ctl_ex):
-            def_ctl_idx = NA_Clip.INITCTL_EX + _delta;
-            parent_tstate.clip_edit_mode = def_ctl_idx + 1;
-            UI.SetKeyboardFocus((_delta < 0) ? fp_ctl_fc : fp_ctl_gp1);
-            break;
-
-         case @(bt_ctl_gp1):
-         case @(fp_ctl_gp1):
-            def_ctl_idx = NA_Clip.INITCTL_GP1 + _delta;
-            parent_tstate.clip_edit_mode = def_ctl_idx + 1;
-            UI.SetKeyboardFocus((_delta < 0) ? fp_ctl_ex : fp_ctl_gp2);
-            break;
-
-         case @(bt_ctl_gp2):
-         case @(fp_ctl_gp2):
-            def_ctl_idx = NA_Clip.INITCTL_GP2 + _delta;
-            parent_tstate.clip_edit_mode = def_ctl_idx + 1;
-            UI.SetKeyboardFocus((_delta < 0) ? fp_ctl_gp1 : fp_ctl_gp3);
-            break;
-
-         case @(bt_ctl_gp3):
-         case @(fp_ctl_gp3):
-            def_ctl_idx = NA_Clip.INITCTL_GP3 + _delta;
-            parent_tstate.clip_edit_mode = def_ctl_idx + 1;
-            UI.SetKeyboardFocus((_delta < 0) ? fp_ctl_gp2 : fp_ctl_gp4);
-            break;
-
-         case @(bt_ctl_gp4):
-         case @(fp_ctl_gp4):
-            if(_delta < 0)
-            {
-               def_ctl_idx = NA_Clip.INITCTL_GP4 + _delta;
-               parent_tstate.clip_edit_mode = def_ctl_idx + 1;
-               UI.SetKeyboardFocus(fp_ctl_gp3);
-            }
-            break;
+            l <= a_floatparams.get(def_ctl_idx);
+            UI.SetKeyboardFocus(l);
+            l.onTabFocus();
+         }
       }
+      else if(_delta < 0)
+      {
+         if(focusIdx > 0)
+         {
+            def_ctl_idx = focusIdx - 1;
+            parent_tstate.clip_edit_mode = def_ctl_idx - 1;
+            l <= (focusIdx >= 0) ? a_floatparams.get(def_ctl_idx) : bt_default;
+            UI.SetKeyboardFocus(l);
+         }
+         else
+         {
+            parent_tstate.clip_edit_mode = NA_State.CLIP_EDIT_MODE_DEFAULT;
+            l <= bt_default;
+         }
+         UI.SetKeyboardFocus(l);
+         l.onTabFocus();
+      }
+      // (note) "Clip edit mode is .." message is printed by handleKeyboardFocusChanged()
    }
 
    // <ui_kbd.png>
    public virtual handleKeyboardFocusChanged(Layer _newKeyboardLayer) {
       // KeyboardFocusListener
-      switch(@(_newKeyboardLayer))
+      if(null != _newKeyboardLayer)
       {
-         case @(bt_default):
+         boolean bChanged = false;
+         int focusIdx = findFocusIdx(_newKeyboardLayer);
+         if(focusIdx >= 0)
+         {
+            def_ctl_idx = focusIdx;
+            parent_tstate.clip_edit_mode = focusIdx + 1;
+            bChanged = true;
+         }
+         else if(@(_newKeyboardLayer) == @(bt_default))
+         {
             parent_tstate.clip_edit_mode = NA_State.CLIP_EDIT_MODE_DEFAULT;
             def_ctl_idx = -1;
-            break;
-
-         case @(bt_ctl_mw):
-         case @(fp_ctl_mw):
-            parent_tstate.clip_edit_mode = NA_State.CLIP_EDIT_MODE_INITCTL_MW;
-            def_ctl_idx = NA_Clip.INITCTL_MW;
-            break;
-
-         case @(bt_ctl_bc):
-         case @(fp_ctl_bc):
-            parent_tstate.clip_edit_mode = NA_State.CLIP_EDIT_MODE_INITCTL_BC;
-            def_ctl_idx = NA_Clip.INITCTL_BC;
-            break;
-
-         case @(bt_ctl_fc):
-         case @(fp_ctl_fc):
-            parent_tstate.clip_edit_mode = NA_State.CLIP_EDIT_MODE_INITCTL_FC;
-            def_ctl_idx = NA_Clip.INITCTL_FC;
-            break;
-
-         case @(bt_ctl_ex):
-         case @(fp_ctl_ex):
-            parent_tstate.clip_edit_mode = NA_State.CLIP_EDIT_MODE_INITCTL_EX;
-            def_ctl_idx = NA_Clip.INITCTL_EX;
-            break;
-
-         case @(bt_ctl_gp1):
-         case @(fp_ctl_gp1):
-            parent_tstate.clip_edit_mode = NA_State.CLIP_EDIT_MODE_INITCTL_GP1;
-            def_ctl_idx = NA_Clip.INITCTL_GP1;
-            break;
-
-         case @(bt_ctl_gp2):
-         case @(fp_ctl_gp2):
-            parent_tstate.clip_edit_mode = NA_State.CLIP_EDIT_MODE_INITCTL_GP2;
-            def_ctl_idx = NA_Clip.INITCTL_GP2;
-            break;
-
-         case @(bt_ctl_gp3):
-         case @(fp_ctl_gp3):
-            parent_tstate.clip_edit_mode = NA_State.CLIP_EDIT_MODE_INITCTL_GP3;
-            def_ctl_idx = NA_Clip.INITCTL_GP3;
-            break;
-
-         case @(bt_ctl_gp4):
-         case @(fp_ctl_gp4):
-            parent_tstate.clip_edit_mode = NA_State.CLIP_EDIT_MODE_INITCTL_GP4;
-            def_ctl_idx = NA_Clip.INITCTL_GP4;
-            break;
+            bChanged = true;
+         }
+         if(bChanged)
+         {
+            loginfo "Clip edit mode is \'"+parent_data.getGridCursorTrackClipEditModeName(false/*bShort*/)+"\'";
+            parent_editor.redraw();
+         }
       }
-      loginfo "Clip edit mode is \'"+(NA_State.clip_edit_mode_names.get(parent_tstate.clip_edit_mode))+"\'";
-      parent_editor.redraw();
    }
 
    // <method.png>
    protected method handleClear() {
-      NA_TimelineData parentData <= parent_editor.timeline.data;
-      parent_tstate.undoAdd(parentData.clip_selection);
+      parent_tstate.undoAdd(parent_data.clip_selection);
       clip.clearInitCtls();
       updateFloatParams();
-      parent_tstate.undoEnd(parentData.clip_selection);
-      Global.Print("Clear clip ctls");
+      parent_tstate.undoEnd(parent_data.clip_selection);
+      loginfo "Clear clip ctls";
       parent_editor.redraw();
+   }
+
+   // <method.png>
+   protected method selectPreviousClip() {
+      boolean bEdge = parent_tstate.b_edge_selection_mode;
+      int focusIdx = mathMaxi(0, findFocusIdx(UI.GetKeyboardFocus()));
+      parent_tstate.b_edge_selection_mode = false;
+
+      hide();
+      parent_data.selectClipLeft(false/*bAdd*/, false/*bAllTracks*/);
+      local Key k; k.pressed = VKEY_SLASH;
+      parent_data.editFirstSelectedClipCtl(true/*bWarpMouse*/, k);
+      focusFloatParamByIdx(focusIdx);
+
+      parent_tstate.b_edge_selection_mode = bEdge;
+   }
+
+   // <method.png>
+   protected method selectNextClip() {
+      boolean bEdge = parent_tstate.b_edge_selection_mode;
+      int focusIdx = mathMaxi(0, findFocusIdx(UI.GetKeyboardFocus()));
+      parent_tstate.b_edge_selection_mode = false;
+
+      hide();
+      parent_data.selectClipRight(false/*bAdd*/, false/*bAllTracks*/);
+      local Key k; k.pressed = VKEY_SLASH;
+      parent_data.editFirstSelectedClipCtl(true/*bWarpMouse*/, k);
+      focusFloatParamByIdx(focusIdx);
+
+      parent_tstate.b_edge_selection_mode = bEdge;
    }
 
    // <ui_kbd.png>
    public virtual onKey(Key _k) : boolean {
-      // log4 "NA_ClipCtlDialog: k.name="+_k.name+" pressed="+_k.pressed;
+      // log2 "NA_ClipCtlDialog: k.name="+_k.name+" pressed="+_k.pressed;
       switch(_k.pressed)
       {
          case VKEY_ESCAPE:
@@ -402,6 +382,33 @@ class NA_ClipCtlDialog extends Dialog, KeyboardFocusListener {
          case VKEY_PAGEDOWN:
             cycleClipEditMode(1);
             return true;
+
+         case VKEY_LEFT:
+            if(_k.modCtrlOnly())
+            {
+               selectPreviousClip();
+               return true;
+            }
+            break;
+
+         case VKEY_RIGHT:
+            if(_k.modCtrlOnly())
+            {
+               selectNextClip();
+               return true;
+            }
+            break;
+
+         case 'a':
+         case 'q':
+         case 's':
+            selectPreviousClip();
+            break;
+
+         case 'w':
+         case 'd':
+            selectNextClip();
+            break;
       }
 
       return false;
@@ -413,91 +420,25 @@ class NA_ClipCtlDialog extends Dialog, KeyboardFocusListener {
       ActionProvider ap <= _ac.getActionProvider();
       // log4 "NA_ClipCtlDialog::consumeAction: acName=\""+acName+"\"";
 
-      switch(@(ap))
+      int focusIdx = findFocusIdx(ap);
+      if(focusIdx >= 0)
       {
-         case @(bt_default):
-            handleKeyboardFocusChanged(bt_default);
+         if(ap instanceof Button)
+         {
+            toggleCtlDecHex(a_floatparams.get(focusIdx));
             return true;
-
-         case @(bt_ctl_mw):
-            toggleCtlDecHex(fp_ctl_mw);
-            return true;
-
-         case @(fp_ctl_mw):
-            handleCtlChanged("CC#001 ModWheel", NA_Clip.INITCTL_MW, fp_ctl_mw.getFloatValue());
+         }
+         else if(ap instanceof FloatParam)
+         {
+            FloatParam fp <= ap;
+            handleCtlChanged(a_ctl_names_long.get(focusIdx),
+                             focusIdx/*ctlIdx*/,
+                             fp.getFloatValue()
+                             );
             if(FloatParam.ACTION_VALUEENTERED == acName)
                hide();
             return true;
-
-         case @(bt_ctl_bc):
-            toggleCtlDecHex(fp_ctl_bc);
-            return true;
-
-         case @(fp_ctl_bc):
-            handleCtlChanged("CC#002 BreathCtl", NA_Clip.INITCTL_BC, fp_ctl_bc.getFloatValue());
-            if(FloatParam.ACTION_VALUEENTERED == acName)
-               hide();
-            return true;
-
-         case @(bt_ctl_fc):
-            toggleCtlDecHex(fp_ctl_fc);
-            return true;
-
-         case @(fp_ctl_fc):
-            handleCtlChanged("CC#004 FootCtl", NA_Clip.INITCTL_FC, fp_ctl_fc.getFloatValue());
-            if(FloatParam.ACTION_VALUEENTERED == acName)
-               hide();
-            return true;
-
-         case @(bt_ctl_ex):
-            toggleCtlDecHex(fp_ctl_ex);
-            return true;
-
-         case @(fp_ctl_ex):
-            handleCtlChanged("CC#011 Expr", NA_Clip.INITCTL_EX, fp_ctl_ex.getFloatValue());
-            if(FloatParam.ACTION_VALUEENTERED == acName)
-               hide();
-            return true;
-
-         case @(bt_ctl_gp1):
-            toggleCtlDecHex(fp_ctl_gp1);
-            return true;
-
-         case @(fp_ctl_gp1):
-            handleCtlChanged("CC#016 GP1", NA_Clip.INITCTL_GP1, fp_ctl_gp1.getFloatValue());
-            if(FloatParam.ACTION_VALUEENTERED == acName)
-               hide();
-            return true;
-
-         case @(bt_ctl_gp2):
-            toggleCtlDecHex(fp_ctl_gp2);
-            return true;
-
-         case @(fp_ctl_gp2):
-            handleCtlChanged("CC#017 GP2", NA_Clip.INITCTL_GP2, fp_ctl_gp2.getFloatValue());
-            if(FloatParam.ACTION_VALUEENTERED == acName)
-               hide();
-            return true;
-
-         case @(bt_ctl_gp3):
-            toggleCtlDecHex(fp_ctl_gp3);
-            return true;
-
-         case @(fp_ctl_gp3):
-            handleCtlChanged("CC#018 GP3", NA_Clip.INITCTL_GP3, fp_ctl_gp3.getFloatValue());
-            if(FloatParam.ACTION_VALUEENTERED == acName)
-               hide();
-            return true;
-
-         case @(bt_ctl_gp4):
-            toggleCtlDecHex(fp_ctl_gp4);
-            return true;
-
-         case @(fp_ctl_gp4):
-            handleCtlChanged("CC#019 GP4", NA_Clip.INITCTL_GP4, fp_ctl_gp4.getFloatValue());
-            if(FloatParam.ACTION_VALUEENTERED == acName)
-               hide();
-            return true;
+         }
       }
 
       return Dialog::consumeAction(_ac);
