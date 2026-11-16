@@ -17,7 +17,7 @@
 // ----          04Oct2023, 01Nov2023, 05Nov2023, 24Nov2023, 22Mar2024, 03Jul2024, 05Jul2024
 // ----          10Aug2024, 23Sep2024, 27Sep2024, 27Dec2024, 05Jan2025, 08Jan2025, 11Dec2025
 // ----          13Dec2025, 17Apr2026, 18Apr2026, 24Apr2026, 08May2026, 17May2026, 31Oct2026
-// ----          07Nov2026
+// ----          07Nov2026, 16Nov2026
 // ----
 // ----
 // ----
@@ -66,6 +66,7 @@ class ModGrid : Panel, Control {
    public ModGridVST2Button *[] mod_vst2_buttons;
    public ModGridSTFXButton *[] mod_stfx_buttons;
    public ModGridButton     *[] all_mod_buttons;  // refs
+   public ModGridButton     *[] all_buttons;  // refs. including ModGridEmptyButton
 
    protected ModGridButtonBase *[] idletimer_mod_buttons;  // ModGridButtonBase refs (gain+sample)
 
@@ -206,6 +207,7 @@ class ModGrid : Panel, Control {
       mod_vst2_buttons.free();
       mod_stfx_buttons.free();
       all_mod_buttons.free();
+      all_buttons.free();
 
       int gridX = 0;
 
@@ -450,12 +452,15 @@ class ModGrid : Panel, Control {
                btMod.setUserData(mod);
                btMod.setPadding4f(0, 0, 0, 0);
                btMod.setInnerPadding4f(0, 0, 0, 0);
+               btMod.setEnableSpaceKey(false);
+               btMod.setEnableCursorKeyTabCycling(false);
 
                btMod.setAlignment(Layout.EXPANDX);
                btMod.setRequiredSize2fScaled(MOD_W, MOD_H);
                mp.addLayer(deref btMod, Layout.CENTER);
 
                all_mod_buttons.add(btMod);
+               all_buttons.add(btMod);
 
                Button btModEnable <= new ModGridEnableButton;
                btModEnable.initButton();
@@ -491,6 +496,8 @@ class ModGrid : Panel, Control {
                btEmpty.initEmptyButton();
                btEmpty.setEnableLabelButton(true);
                btEmpty.setEnableKbdFocusOnMouse(false);
+               btEmpty.setEnableCursorKeyTabCycling(false);
+               btEmpty.setEnableSpaceKey(false);
                btEmpty.setAlignment(Layout.EXPANDX);
                btEmpty.setRequiredSizeYScaled(MOD_H);
                btEmpty.setBackgroundTint(#18ffffff);
@@ -498,6 +505,7 @@ class ModGrid : Panel, Control {
                btEmpty.grid_y = gridY;
                btEmpty.num_lanes = track.lanes.numElements;
                btEmpty.setUserData(UnsignedInteger.New((gridX << 16) | gridY));
+               all_buttons.add(btEmpty);
                mp.addLayer(deref btEmpty, Layout.CENTER);
 
                Button bt <= Button.New();
@@ -632,6 +640,76 @@ class ModGrid : Panel, Control {
          bt.handleEditMod();
    }
 
+   // <method_get.png>
+   public static SetCursorPos(int _x, int _y) {
+      PageTrack pgTrack <= root_form.pg_track;
+      ModGrid modgrid <= pgTrack.modgrid;
+      Track track <= pgTrack.track;
+      if(null != track)
+      {
+         track.setCursorPos(_x, _y);
+      }
+   }
+
+   // <method_get.png>
+   public static GetCursorX() : int {
+      PageTrack pgTrack <= root_form.pg_track;
+      Track track <= pgTrack.track;
+      return (null != track) ? track.cursor_x : -1;
+   }
+
+   // <method_get.png>
+   public static GetCursorY() : int {
+      PageTrack pgTrack <= root_form.pg_track;
+      Track track <= pgTrack.track;
+      return (null != track) ? track.cursor_y : -1;
+   }
+
+   // <method_get.png>
+   public static IsCursorPos(int _x, int _y) : boolean {
+      PageTrack pgTrack <= root_form.pg_track;
+      ModGrid modgrid <= pgTrack.modgrid;
+      Track track <= pgTrack.track;
+      if(null != track)
+         return (track.cursor_x == _x) && (track.cursor_y == _y);
+      return false;
+   }
+
+   // <method_get.png>
+   public doesAnyGridButtonHaveKeyboardFocus() : boolean {
+      if(1 || hierarchyHasKeyboardFocus())
+      {
+         Layer l <= UI.GetKeyboardFocus();
+         if(l instanceof ModGridButtonBase)
+         {
+            return true;
+         }
+      }
+      return false;
+   }
+
+   // <method_get.png>
+   public static IsCursorPosAndHasKeyboardFocus(int _x, int _y) : boolean {
+      PageTrack pgTrack <= root_form.pg_track;
+      ModGrid modgrid <= pgTrack.modgrid;
+      if(modgrid.doesAnyGridButtonHaveKeyboardFocus())
+      {
+         Track track <= pgTrack.track;
+         if(null != track)
+            return (track.cursor_x == _x) && (track.cursor_y == _y);
+      }
+      return false;
+   }
+
+   // <method.png>
+   public redrawKeyboardFocusGridButton() {
+      ModGridButtonBase bt <= UI.GetKeyboardFocus();
+      if(bt instanceof ModGridButtonBase)
+      {
+         bt.redraw();
+      }
+   }
+
    // <ui_timer.png>
    public method handleIdleTimer() {
       int laneIdx = 0;
@@ -720,6 +798,26 @@ class ModGrid : Panel, Control {
       return null;
    }
 
+   // <method_find.png>
+   public method findButtonAtXY(int _x, int _y) : ModGridButtonBase {
+      ModGridButtonBase *bt;
+      foreach bt in all_buttons
+      {
+         if(bt.grid_x == _x && bt.grid_y == _y)
+            return bt;
+      }
+      return null;
+   }
+
+   // <method_find.png>
+   public method findCursorButton() : ModGridButtonBase {
+      if(null != track)
+         return findButtonAtXY(track.cursor_x,
+                               track.cursor_y
+                               );
+      return null;
+   }
+
    // <ui_handle.png>
    public method handleDeleteMod(Mod _mod) {
       hideModParamSetDialog();
@@ -763,6 +861,7 @@ class ModGrid : Panel, Control {
 
       updateGrid(true/*bRelayout*/);
       loginfo("Delete "+numDeleted+" instance"+Utils.GetPluralString(numDeleted));
+      PageTrack.FocusCursorButton();
    }
 
    // <ui_handle.png>
@@ -1014,6 +1113,7 @@ class ModGrid : Panel, Control {
       updateLaneReorderMap();
       track.handleLaneReorder(lane_reorder_map);
       provideAction(IntAction.New(getProvidedActionAlias(ACTION_MODGRID_CHANGED), this, _laneIdx-1));
+      PageTrack.MoveGridCursorLeft();
    }
 
    // <ui_handle.png>
@@ -1024,6 +1124,7 @@ class ModGrid : Panel, Control {
       updateLaneReorderMap();
       track.handleLaneReorder(lane_reorder_map);
       provideAction(IntAction.New(getProvidedActionAlias(ACTION_MODGRID_CHANGED), this, _laneIdx+1));
+      PageTrack.MoveGridCursorRight();
    }
 
    // <ui_handle.png>
@@ -1035,6 +1136,7 @@ class ModGrid : Panel, Control {
       track.handleLaneReorder(lane_reorder_map);
       if(!_bQuiet)
          provideAction(IntAction.New(getProvidedActionAlias(ACTION_MODGRID_CHANGED), this, _laneIdx+1));
+      PageTrack.MoveGridCursorRight();
       return bRet;
    }
 
@@ -1048,6 +1150,7 @@ class ModGrid : Panel, Control {
       handleMoveLaneLeft(_laneIdx + 1, false/*bVerbose*/);
       if(!_bQuiet)
          provideAction(IntAction.New(getProvidedActionAlias(ACTION_MODGRID_CHANGED), this, _laneIdx+1));
+      PageTrack.MoveGridCursorLeft();
       return bRet;
    }
 
@@ -1059,6 +1162,8 @@ class ModGrid : Panel, Control {
       updateLaneReorderMap();
       track.handleLaneReorder(lane_reorder_map);
       provideAction(IntAction.New(getProvidedActionAlias(ACTION_MODGRID_CHANGED), this, _laneIdx-1));
+      if(ModGrid.GetCursorX() >= track.getNumLanes())
+         PageTrack.MoveGridCursorLeft();
    }
 
    // <ui_handle.png>
@@ -1113,6 +1218,7 @@ class ModGrid : Panel, Control {
                lane.insertModAtY(deref modNew, _gridY);
                updateGrid(true/*bRelayout*/);
                loginfo("Create mod "+modNew.getName());
+               PageTrack.FocusCursorButton();
             }
          }
       }
@@ -1121,7 +1227,6 @@ class ModGrid : Panel, Control {
    // <method.png>
    public method handleCreateNewLabelAt(int _gridX, int _gridY) {
       Lane lane <= track.getLaneByIdx(_gridX);
-
       if(null != lane)
       {
          if(0 <= _gridY < Lane.MAX_MODS_PER_LANE)
@@ -1133,6 +1238,7 @@ class ModGrid : Panel, Control {
                lane.insertModAtY(deref modNew, _gridY);
                updateGrid(true/*bRelayout*/);
                loginfo("Create mod "+modNew.getName());
+               PageTrack.FocusCursorButton();
             }
          }
       }
@@ -1156,7 +1262,6 @@ class ModGrid : Panel, Control {
    // <method.png>
    public method handleCreateNewEQ3At(int _gridX, int _gridY) : ModGridEQ3Button {
       Lane lane <= track.getLaneByIdx(_gridX);
-
       if(null != lane)
       {
          if(0 <= _gridY < Lane.MAX_MODS_PER_LANE)
@@ -1168,6 +1273,7 @@ class ModGrid : Panel, Control {
                lane.insertModAtY(deref modNew, _gridY);
                updateGrid(true/*bRelayout*/);
                loginfo("Create mod "+modNew.getName());
+               PageTrack.FocusCursorButton();
                return findButtonByMod(modNew);
             }
          }
@@ -1178,7 +1284,6 @@ class ModGrid : Panel, Control {
    // <method.png>
    public method handleCreateNewMidSideSplitAt(int _gridX, int _gridY) {
       Lane lane <= track.getLaneByIdx(_gridX);
-
       if(null != lane)
       {
          if(0 <= _gridY < Lane.MAX_MODS_PER_LANE)
@@ -1189,6 +1294,7 @@ class ModGrid : Panel, Control {
                modNew.init();
                lane.insertModAtY(deref modNew, _gridY);
                updateGrid(true/*bRelayout*/);
+               PageTrack.FocusCursorButton();
                loginfo("Create mod "+modNew.getName());
             }
          }
@@ -1198,7 +1304,6 @@ class ModGrid : Panel, Control {
    // <method.png>
    public method handleCreateNewMidSideMergeAt(int _gridX, int _gridY) {
       Lane lane <= track.getLaneByIdx(_gridX);
-
       if(null != lane)
       {
          if(0 <= _gridY < Lane.MAX_MODS_PER_LANE)
@@ -1209,6 +1314,7 @@ class ModGrid : Panel, Control {
                modNew.init();
                lane.insertModAtY(deref modNew, _gridY);
                updateGrid(true/*bRelayout*/);
+               PageTrack.FocusCursorButton();
                loginfo("Create mod "+modNew.getName());
             }
          }
@@ -1218,7 +1324,6 @@ class ModGrid : Panel, Control {
    // <method.png>
    public method handleCreateNewIdleDetectAt(int _gridX, int _gridY) {
       Lane lane <= track.getLaneByIdx(_gridX);
-
       if(null != lane)
       {
          if(0 <= _gridY < Lane.MAX_MODS_PER_LANE)
@@ -1229,6 +1334,7 @@ class ModGrid : Panel, Control {
                modNew.init();
                lane.insertModAtY(deref modNew, _gridY);
                updateGrid(true/*bRelayout*/);
+               PageTrack.FocusCursorButton();
                loginfo("Create mod "+modNew.getName());
             }
          }
@@ -1238,7 +1344,6 @@ class ModGrid : Panel, Control {
    // <method.png>
    public method handleCreateNewDelayAt(int _gridX, int _gridY) {
       Lane lane <= track.getLaneByIdx(_gridX);
-
       if(null != lane)
       {
          if(0 <= _gridY < Lane.MAX_MODS_PER_LANE)
@@ -1249,6 +1354,7 @@ class ModGrid : Panel, Control {
                modNew.init();
                lane.insertModAtY(deref modNew, _gridY);
                updateGrid(true/*bRelayout*/);
+               PageTrack.FocusCursorButton();
                loginfo("Create mod "+modNew.getName());
             }
          }
@@ -1258,7 +1364,6 @@ class ModGrid : Panel, Control {
    // <method.png>
    public method handleCreateNewSyncAt(int _gridX, int _gridY) {
       Lane lane <= track.getLaneByIdx(_gridX);
-
       if(null != lane)
       {
          if(0 <= _gridY < Lane.MAX_MODS_PER_LANE)
@@ -1269,6 +1374,7 @@ class ModGrid : Panel, Control {
                modNew.init();
                lane.insertModAtY(deref modNew, _gridY);
                updateGrid(true/*bRelayout*/);
+               PageTrack.FocusCursorButton();
                loginfo("Create mod "+modNew.getName());
             }
          }
@@ -1278,7 +1384,6 @@ class ModGrid : Panel, Control {
    // <method.png>
    public method handleCreateNewGate2AudioAt(int _gridX, int _gridY) {
       Lane lane <= track.getLaneByIdx(_gridX);
-
       if(null != lane)
       {
          if(0 <= _gridY < Lane.MAX_MODS_PER_LANE)
@@ -1289,6 +1394,7 @@ class ModGrid : Panel, Control {
                modNew.init();
                lane.insertModAtY(deref modNew, _gridY);
                updateGrid(true/*bRelayout*/);
+               PageTrack.FocusCursorButton();
                loginfo("Create mod "+modNew.getName());
             }
          }
@@ -1298,7 +1404,6 @@ class ModGrid : Panel, Control {
    // <method.png>
    public method handleCreateNewRPN2AudioAt(int _gridX, int _gridY) {
       Lane lane <= track.getLaneByIdx(_gridX);
-
       if(null != lane)
       {
          if(0 <= _gridY < Lane.MAX_MODS_PER_LANE)
@@ -1309,6 +1414,7 @@ class ModGrid : Panel, Control {
                modNew.init();
                lane.insertModAtY(deref modNew, _gridY);
                updateGrid(true/*bRelayout*/);
+               PageTrack.FocusCursorButton();
                loginfo("Create mod "+modNew.getName());
             }
          }
@@ -1318,7 +1424,6 @@ class ModGrid : Panel, Control {
    // <method.png>
    public method handleCreateNewAudio2RPNAt(int _gridX, int _gridY) {
       Lane lane <= track.getLaneByIdx(_gridX);
-
       if(null != lane)
       {
          if(0 <= _gridY < Lane.MAX_MODS_PER_LANE)
@@ -1329,6 +1434,7 @@ class ModGrid : Panel, Control {
                modNew.init();
                lane.insertModAtY(deref modNew, _gridY);
                updateGrid(true/*bRelayout*/);
+               PageTrack.FocusCursorButton();
                loginfo("Create mod "+modNew.getName());
             }
          }
@@ -1338,7 +1444,6 @@ class ModGrid : Panel, Control {
    // <method.png>
    public method handleCreateNewCVGate2AudioAt(int _gridX, int _gridY) {
       Lane lane <= track.getLaneByIdx(_gridX);
-
       if(null != lane)
       {
          if(0 <= _gridY < Lane.MAX_MODS_PER_LANE)
@@ -1349,6 +1454,7 @@ class ModGrid : Panel, Control {
                modNew.init();
                lane.insertModAtY(deref modNew, _gridY);
                updateGrid(true/*bRelayout*/);
+               PageTrack.FocusCursorButton();
                loginfo("Create mod "+modNew.getName());
             }
          }
@@ -1358,7 +1464,6 @@ class ModGrid : Panel, Control {
    // <method.png>
    public method handleCreateNewSampleAt(int _gridX, int _gridY) {
       Lane lane <= track.getLaneByIdx(_gridX);
-
       if(null != lane)
       {
          if(0 <= _gridY < Lane.MAX_MODS_PER_LANE)
@@ -1373,6 +1478,7 @@ class ModGrid : Panel, Control {
                if(null != sample)
                   modNew.setSampleIdx(current_project.getSampleIdx(sample));
                updateGrid(true/*bRelayout*/);
+               PageTrack.FocusCursorButton();
                loginfo("Create mod "+modNew.getName());
             }
          }
@@ -1384,7 +1490,6 @@ class ModGrid : Panel, Control {
       if(HaveModClipboard())
       {
          Lane lane <= track.getLaneByIdx(_gridX);
-
          if(null != lane)
          {
             if(0 <= _gridY < Lane.MAX_MODS_PER_LANE)
@@ -1402,6 +1507,7 @@ class ModGrid : Panel, Control {
                      lane.insertModAtY_Sync(deref modNew, _gridY);
                      updateGrid(true/*bRelayout*/);
                      loginfo("Create mod "+modNew.getName()+" from clipboard");
+                     PageTrack.FocusCursorButton();
                   }
 
                   VST2.PopIgnoreAutomation(bIgnoreAutoOrigVST2);
