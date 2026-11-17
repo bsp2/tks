@@ -22,6 +22,7 @@
 // ----          30Dec2024, 01Jan2025, 04Apr2025, 06Apr2025, 10Apr2025, 01May2025, 10Jun2025
 // ----          13Jun2025, 14Jun2025, 09Sep2025, 18Dec2025, 14Feb2026, 15Feb2026, 14Apr2026
 // ----          24Apr2026, 14Jul2026, 05Aug2026, 11Oct2026, 30Oct2026, 07Nov2026, 16Nov2026
+// ----          17Nov2026
 // ----
 // ----
 // ----
@@ -234,6 +235,7 @@ class PageTrack : Page, KeyboardFocusListener {
 
    // <ui_kbd.png>
    protected method focusDefaultList() {
+      TableView *tv;
       if(null != track && track.b_ui_browser_visible)
       {
          switch(cm_list_type.getSelectedOption())
@@ -243,6 +245,7 @@ class PageTrack : Page, KeyboardFocusListener {
             case LIST_TYPE_VSTFX:
                UI.SetKeyboardFocus(null);
                UI.SetKeyboardFocus(pluginlist_vst2.tv_plugins);
+               pluginlist_vst2.moveCursorToNextNonHeaderRow();
                break;
 
             case LIST_TYPE_PATCHVARIATIONS:
@@ -258,11 +261,13 @@ class PageTrack : Page, KeyboardFocusListener {
             case LIST_TYPE_STFX:
                UI.SetKeyboardFocus(null);
                UI.SetKeyboardFocus(pluginlist_stfx.tv_plugins);
+               pluginlist_stfx.moveCursorToNextNonHeaderRow();
                break;
 
             case LIST_TYPE_CLAP:
                UI.SetKeyboardFocus(null);
                UI.SetKeyboardFocus(pluginlist_clap.tv_plugins);
+               pluginlist_clap.moveCursorToNextNonHeaderRow();
                break;
          }
       }
@@ -1429,6 +1434,24 @@ class PageTrack : Page, KeyboardFocusListener {
       return (listType == cm_list_type.getSelectedOption());
    }
 
+   // <method_get.png>
+   protected method listHasKeyboardFocus() : boolean {
+      return
+         pluginlist_stfx    .hierarchyHasKeyboardFocus() ||
+         pluginlist_clap    .hierarchyHasKeyboardFocus() ||
+         pluginlist_vst2    .hierarchyHasKeyboardFocus() ||
+         tv_patch_variations.hierarchyHasKeyboardFocus() ||
+         tv_instances       .hierarchyHasKeyboardFocus() ;
+   }
+
+   // <method_get.png>
+   protected method pluginListHasKeyboardFocus() : boolean {
+      return
+         pluginlist_stfx.hierarchyHasKeyboardFocus() ||
+         pluginlist_clap.hierarchyHasKeyboardFocus() ||
+         pluginlist_vst2.hierarchyHasKeyboardFocus() ;
+   }
+
    // <ui_handle.png>
    public method toggleModMatrixAndPlugins() {
       if(cm_list_type.getSelectedOption() != LIST_TYPE_MODMATRIX)
@@ -1455,6 +1478,65 @@ class PageTrack : Page, KeyboardFocusListener {
       {
          last_selected_mod.toggleResample(_factor);
       }
+   }
+
+   // <method.png>
+   protected method tryInstantiateSelectedPluginListEntry() : boolean {
+      if(pluginListHasKeyboardFocus())
+      {
+         ModGridEmptyButton btEmpty <= modgrid.findCursorButton();
+         if(btEmpty instanceof ModGridEmptyButton)
+         {
+            // focusCursorButton();
+            log2 "tryInstantiateSelectedPluginListEntry()";
+            if(pluginlist_clap.hierarchyHasKeyboardFocus())
+            {
+               CLAPPluginEntry enCLAP <= pluginlist_clap.getSelectedEntry();
+               if(null != enCLAP)
+               {
+                  modgrid.createModCLAPAt(btEmpty.grid_x,
+                                          btEmpty.grid_y,
+                                          enCLAP.getUniqueIDString(),
+                                          getFilterPreset()
+                                          );
+                  modgrid.provideModGridChanged(btEmpty.grid_x);
+               }
+               focusCursorButton();
+               return true;
+            }
+            else if(pluginlist_vst2.hierarchyHasKeyboardFocus())
+            {
+               VSTScanEntry enVST2 <= pluginlist_vst2.getSelectedEntry();
+               if(null != enVST2)
+               {
+                  modgrid.createModVST2At(btEmpty.grid_x,
+                                          btEmpty.grid_y,
+                                          enVST2.getUniqueIDString(),
+                                          getFilterPreset()
+                                          );
+                  modgrid.provideModGridChanged(btEmpty.grid_x);
+               }
+               focusCursorButton();
+               return true;
+            }
+            else if(pluginlist_stfx.hierarchyHasKeyboardFocus())
+            {
+               StPluginInfo enSTFX <= pluginlist_stfx.getSelectedEntry();
+               if(null != enSTFX)
+               {
+                  modgrid.createModSTFXAt(btEmpty.grid_x,
+                                          btEmpty.grid_y,
+                                          enSTFX.getId(),
+                                          getFilterPreset()
+                                          );
+                  modgrid.provideModGridChanged(btEmpty.grid_x);
+               }
+               focusCursorButton();
+               return true;
+            }
+         }
+      }
+      return false;
    }
 
    // <ui_handle.png>
@@ -2282,6 +2364,17 @@ class PageTrack : Page, KeyboardFocusListener {
       b_ignore_next_key_escape = true;
    }
 
+   // <ui_handle.png>
+   public method handlePluginEditorClosed() {
+      ignoreNextKeyEscape();
+      if(@(this) == @(root_form.getCurrentPage()))
+      {
+         SDL.showNativeWindow(SDL.nativeWindowHandle, true/*bFocus*/);
+         // // pageFocusDefault();
+         focusCursorButton();
+      }
+   }
+
    // <ui_kbd.png>
    public virtual onTriadKey(Key _k) : boolean {
       // log2 "PageTrack::onTriadKey: name="+_k.name;
@@ -2382,17 +2475,35 @@ class PageTrack : Page, KeyboardFocusListener {
                return true;
 
             case VKEY_LEFT:
-               if(modgrid.doesAnyGridButtonHaveKeyboardFocus())
-                  moveGridCursorLeft();
+               if(0 == track.cursor_x)
+               {
+                  lazyShowBrowser();
+                  // // // selectDefaultPluginListType(false/*bAction*/);
+                  // // // handleListTypeChanged(false/*bQuiet*/);
+                  relayout();
+                  focusDefaultList();
+                  return true;
+               }
                else
-                  handleShowPreviousTrack();
+               {
+                  if(modgrid.doesAnyGridButtonHaveKeyboardFocus())
+                     moveGridCursorLeft();
+                  // // else
+                  // //    handleShowPreviousTrack();
+               }
                return true;
 
             case VKEY_RIGHT:
                if(modgrid.doesAnyGridButtonHaveKeyboardFocus())
                   moveGridCursorRight();
-               else
-                  handleShowNextTrack();
+               else if(listHasKeyboardFocus())  // !modgrid.hierarchyHasKeyboardFocus()
+               {
+                  if(tv_instances.hierarchyHasKeyboardFocus())
+                     toggleModMatrixAndPlugins();
+                  focusCursorButton();
+               }
+               // // else
+               // //    handleShowNextTrack();
                return true;
 
             case VKEY_F3:
@@ -2429,6 +2540,13 @@ class PageTrack : Page, KeyboardFocusListener {
                return true;
 
             case VKEY_RETURN:
+               if(listHasKeyboardFocus())
+               {
+                  if(tryInstantiateSelectedPluginListEntry())
+                     return true;
+                  return true;
+               }
+               // Fallback
                focusCursorButton();
                if(!handleEditModOrShowMenu(false/*bAllowEdit*/, (0 != _k.mod)/*bRand*/))
                   handleEditFirstOrLastSelectedMod();
@@ -2471,6 +2589,15 @@ class PageTrack : Page, KeyboardFocusListener {
                      lazyShowBrowser();
                      selectDefaultPluginListType(false/*bAction*/);
                      handleListTypeChanged(false/*bQuiet*/);
+                     focusDefaultList();
+                  }
+                  else if(modgrid.hierarchyHasKeyboardFocus())
+                  {
+                     focusDefaultList();
+                  }
+                  else
+                  {
+                     focusCursorButton();
                   }
                }
                return true;
@@ -2544,14 +2671,28 @@ class PageTrack : Page, KeyboardFocusListener {
                return true;
 
             case 'e':
-               lazyShowBrowser();
-               cm_list_type.setSelectedOption(LIST_TYPE_PATCHVARIATIONS);
-               handleListTypeChanged(false/*bQuiet*/);
-               focusDefaultList();
+               if(tv_patch_variations.hierarchyHasKeyboardFocus())
+               {
+                  focusCursorButton();
+               }
+               else
+               {
+                  lazyShowBrowser();
+                  cm_list_type.setSelectedOption(LIST_TYPE_PATCHVARIATIONS);
+                  handleListTypeChanged(false/*bQuiet*/);
+                  focusDefaultList();
+               }
                return true;
 
             case 'r':
-               toggleModMatrixAndPlugins();
+               if(modmatrix.hierarchyHasKeyboardFocus())
+               {
+                  focusCursorButton();
+               }
+               else
+               {
+                  toggleModMatrixAndPlugins();
+               }
                return true;
 
             case 't':
@@ -2562,9 +2703,17 @@ class PageTrack : Page, KeyboardFocusListener {
                }
                else
                {
-                  lazyShowBrowser();
-                  cm_list_type.setSelectedOption(LIST_TYPE_STFX);
-                  handleListTypeChanged(false/*bQuiet*/);
+                  if(pluginlist_stfx.hierarchyHasKeyboardFocus())
+                  {
+                     focusCursorButton();
+                  }
+                  else
+                  {
+                     lazyShowBrowser();
+                     cm_list_type.setSelectedOption(LIST_TYPE_STFX);
+                     handleListTypeChanged(false/*bQuiet*/);
+                     focusDefaultList();
+                  }
                }
                return true;
 
