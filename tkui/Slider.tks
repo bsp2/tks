@@ -14,6 +14,7 @@
 // ----          18Aug2020, 03Apr2021, 03Oct2023, 04Oct2023, 21Oct2023, 04Nov2023, 09Nov2023
 // ----          11Nov2023, 21Mar2024, 22Mar2024, 09Oct2024, 10Oct2024, 29Dec2024, 10Sep2025
 // ----          11Sep2025, 10Oct2025, 08Apr2026, 15Aug2026, 16Aug2026, 26Sep2026, 15Nov2026
+// ----          18Nov2026
 // ----
 // ----
 // ----
@@ -28,6 +29,10 @@ class Slider extends Control {
    define String ACTION_VALUECHANGED  = "onValueChanged";
    define String ACTION_MOUSE_ENTER   = "onMouseEnter";
    define String ACTION_MOUSE_LEAVE   = "onMouseLeave";
+   define String ACTION_CURSOR_LEFT;
+   define String ACTION_CURSOR_RIGHT;
+   define String ACTION_CURSOR_UP;
+   define String ACTION_CURSOR_DOWN;
 
    define String DELEGATE_GETSTEPCOARSE/* = "delGetStepCoarse"*/; // For dynamic step sizes (e.g. TableView)
 
@@ -47,6 +52,9 @@ class Slider extends Control {
 
    protected float       reset_value;
    protected FloatArray *cycle_reset_values;
+
+   protected boolean b_cursor_updown_events;
+   protected boolean b_cursor_leftright_events;
 
    // // protected boolean b_ignore_next_click; // after dblclick
 
@@ -128,13 +136,24 @@ class Slider extends Control {
    }
 
    public virtual getProvidedActionNames() : StringArray {
-      return [ACTION_VALUECHANGING, ACTION_VALUECHANGED, ACTION_MOUSE_ENTER, ACTION_MOUSE_LEAVE];
+      return [ACTION_VALUECHANGING, ACTION_VALUECHANGED, ACTION_MOUSE_ENTER, ACTION_MOUSE_LEAVE,
+              ACTION_CURSOR_LEFT, ACTION_CURSOR_RIGHT,
+              ACTION_CURSOR_UP,   ACTION_CURSOR_DOWN
+              ];
    }
 
    public virtual setLayerStyle(int _style) {
       Control::setLayerStyle(_style);
       if(LookAndFeel.STYLE_FLAT == layer_style)
          border_size = 0;
+   }
+
+   public method setEnableCursorUpDown(boolean _bEnable) {
+      b_cursor_updown_events = _bEnable;
+   }
+
+   public method setEnableCursorLeftRight(boolean _bEnable) {
+      b_cursor_leftright_events = _bEnable;
    }
 
    public method setEnableProvideMouseEnterLeave(boolean _bEnable) {
@@ -213,6 +232,10 @@ class Slider extends Control {
       redraw();
    }
 
+   public virtual onKeyboardFocus() {
+      redraw();
+   }
+
    public virtual onKeyboardFocusLost(boolean _bQuiet) {
       if(!_bQuiet)
          redraw();
@@ -226,7 +249,7 @@ class Slider extends Control {
    }
 
    public virtual onMouseKey(Key _k) : boolean {
-      // // log4 "Slider::onMouseKey: k.name="+_k.name+" k.pressed="+_k.pressed+" _k.released="+_k.released+" _k.mod="+_k.mod;
+      // log4 "Slider::onMouseKey: k.name="+_k.name+" k.pressed="+_k.pressed+" _k.released="+_k.released+" _k.mod="+_k.mod;
 
       switch(_k.pressed)
       {
@@ -260,61 +283,103 @@ class Slider extends Control {
    }
 
    public virtual onKey(Key _k) : boolean {
-      if(_k.modNone())
+      // (note) lctrl modifier quantizes value
+      switch(_k.pressed)
       {
-         switch(_k.pressed)
-         {
-            case VKEY_ESCAPE:
+         case VKEY_ESCAPE:
+            if(_k.modNone())
+            {
                if(b_grabbed)
                {
                   endGrabMiniUndo();
                   return true;
                }
-               return false;
-
-            case VKEY_HOME:
+            }
+            break;
+               
+         case VKEY_HOME:
+            if(_k.modNone())
+            {
                setValue(min_value);
                handleValueChanged();
                return true;
+            }
+            break;
 
-            case VKEY_END:
+         case VKEY_END:
+            if(_k.modNone())
+            {
                setValue(max_value);
                handleValueChanged();
                return true;
+            }
+            break;
 
-            case VKEY_LEFT:
-               if(!b_vertical)
-               {
+         case VKEY_LEFT:
+            if(b_cursor_leftright_events)
+            {
+               provideAction(Action.New(getProvidedActionAlias(ACTION_CURSOR_LEFT), this));
+               return true;
+            }
+            if(!b_vertical)
+            {
+               if(_k.modShift())
+                  decCoarseFast();
+               else
                   decCoarse();
-                  return true;
-               }
-               break;
+               return true;
+            }
+            break;
 
-            case VKEY_UP:
-               if(b_vertical)
-               {
+         case VKEY_UP:
+            if(b_cursor_updown_events)
+            {
+               provideAction(Action.New(getProvidedActionAlias(ACTION_CURSOR_UP), this));
+               return true;
+            }
+            if(b_vertical)
+            {
+               if(_k.modShift())
+                  decCoarseFast();
+               else
                   decCoarse();
-                  return true;
-               }
-               break;
+               return true;
+            }
+            break;
 
-            case VKEY_RIGHT:
-               if(!b_vertical)
-               {
+         case VKEY_RIGHT:
+            if(b_cursor_leftright_events)
+            {
+               provideAction(Action.New(getProvidedActionAlias(ACTION_CURSOR_RIGHT), this));
+               return true;
+            }
+            if(!b_vertical)
+            {
+               if(_k.modShift())
+                  incCoarseFast();
+               else
                   incCoarse();
-                  return true;
-               }
-               break;
+               return true;
+            }
+            break;
 
-            case VKEY_DOWN:
-               if(b_vertical)
-               {
+         case VKEY_DOWN:
+            if(b_cursor_updown_events)
+            {
+               provideAction(Action.New(getProvidedActionAlias(ACTION_CURSOR_DOWN), this));
+               return true;
+            }
+            if(b_vertical)
+            {
+               if(_k.modShift())
+                  incCoarseFast();
+               else
                   incCoarse();
-                  return true;
-               }
-               break;
-         }
+               return true;
+            }
+            break;
       }
+
       return Control::onKey(_k);
    }
 
@@ -428,20 +493,27 @@ class Slider extends Control {
       repeat_count = 0;
    }
 
-   public method incCoarse() : boolean {
-      explain "Add step_coarse to current slider value";
-
-      if(cur_value < max_value)
+   protected method incCoarseEx(boolean _bQuantize, float _mul) : boolean {
+      float f = mathMinf(cur_value + getStepCoarse() * _mul, max_value);
+      if(_bQuantize)
+         f = quantizeValue(f);
+      if(f != cur_value)
       {
-         float f = cur_value + getStepCoarse();
-         if(UI.KeyModCtrl())
-            f = quantizeValue(f);
          setValue(f);
          handleValueChanged();
          redraw();
          return true;
       }
       return false;
+   }
+
+   public method incCoarse() : boolean {
+      explain "Add step_coarse to current slider value";
+      return incCoarseEx(UI.KeyModCtrl()/*bQuantize*/, 1.0f/*mul*/);
+   }
+
+   public method incCoarseFast() : boolean {
+      return incCoarseEx(UI.KeyModCtrl()/*bQuantize*/, 8.0f/*mul*/);
    }
 
    public method incFine() : boolean {
@@ -451,23 +523,27 @@ class Slider extends Control {
       return false;
    }
 
-   public method decCoarse() : boolean {
-      explain "Subtract step_coarse from current slider value";
-
-      if(isEditable())
+   protected method decCoarseEx(boolean _bQuantize, float _mul) : boolean {
+      float f = mathMaxf(min_value, cur_value - getStepCoarse() * _mul);
+      if(_bQuantize)
+         f = quantizeValue(f);
+      if(f != cur_value)
       {
-         if(cur_value > min_value)
-         {
-            float f = cur_value - getStepCoarse();
-            if(UI.KeyModCtrl())
-               f = quantizeValue(f);
-            setValue(f);
-            handleValueChanged();
-            redraw();
-            return true;
-         }
+         setValue(f);
+         handleValueChanged();
+         redraw();
+         return true;
       }
       return false;
+   }
+
+   public method decCoarse() : boolean {
+      explain "Subtract step_coarse from current slider value";
+      return decCoarseEx(UI.KeyModCtrl()/*bQuantize*/, 1.0f/*mul*/);
+   }
+
+   public method decCoarseFast() : boolean {
+      return decCoarseEx(UI.KeyModCtrl()/*bQuantize*/, 8.0f/*mul*/);
    }
 
    public method decFine() : boolean {
@@ -1356,6 +1432,14 @@ class Slider extends Control {
 
                case "providemouseenterleave":
                   setEnableProvideMouseEnterLeave(int(atval));
+                  break;
+
+               case "cursorupdown":
+                  setEnableCursorUpDown(int(atval));
+                  break;
+
+               case "cursorleftright":
+                  setEnableCursorLeftRight(int(atval));
                   break;
             }
          }
