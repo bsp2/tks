@@ -49,9 +49,9 @@ class TrianglesTexUVFlat14_2AlphaSDF : public ShaderVG_Shape {
       "uniform float     u_a_min; \n"
       "uniform float     u_a_max; \n"
       "uniform float     u_a_maxmin_scale; \n"
-#ifdef SHADERVG_AA_EXP
+#ifdef SHADERVG_SDF_AA_EXP
       "uniform float     u_a_exp; \n"
-#endif // SHADERVG_AA_EXP
+#endif // SHADERVG_SDF_AA_EXP
       " \n"
       "VARYING_IN vec2 v_uv; \n"
       " \n"
@@ -62,9 +62,9 @@ class TrianglesTexUVFlat14_2AlphaSDF : public ShaderVG_Shape {
       "  else if(a > u_a_max) a = 1.0; \n"
       "  else a = (a - u_a_min) * (u_a_maxmin_scale); \n"
       " \n"
-#ifdef SHADERVG_AA_EXP
+#ifdef SHADERVG_SDF_AA_EXP
       "  a = pow(a, u_a_exp); \n"
-#endif // SHADERVG_AA_EXP
+#endif // SHADERVG_SDF_AA_EXP
       "  OUT_FRAGCOLOR = vec4(u_color_fill.rgb, a * u_color_fill.a); \n"
       "} \n"
       ;
