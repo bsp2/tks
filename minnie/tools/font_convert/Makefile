@@ -58,6 +58,10 @@ sdf36:
 sdf32:
 	tks font_convert $(TTF_NORMAL) default normal 32 sdf
 
+.PHONY: sdf30
+sdf30:
+	tks font_convert $(TTF_NORMAL) default normal 30 sdf
+
 .PHONY: sdf
 # sdf512 sdf128 sdf64 sdf48 sdf36 sdf32 sdf96
 sdf: sdf256
