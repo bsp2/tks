@@ -1,0 +1,2126 @@
+// ----
+// ---- file   : KeyJazz.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2026 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   :
+// ----
+// ---- created: 19Nov2026
+// ---- changed: 20Nov2026, 21Nov2026, 22Nov2026
+// ----
+// ----
+// ----
+
+module MKeyJazz;
+
+use namespace ui;
+use namespace st2;
+
+// // MIDIOut midiout;
+// // boolean bMIDI = midiout.openByName("Peak");
+// // loginfo "bMIDI="+bMIDI;
+// // Buffer midibuf; midibuf.size = 256;
+// // IntArray pending_noteoffs;
+// // if(bMIDI)
+// // {
+// //    midibuf.offset = 0;
+// //    midibuf.i8 = 0xB0;
+// //    midibuf.i8 = 127;
+// //    midibuf.i8 = 0;
+// //    midiout.sendBuffer(midibuf);
+// // }
+
+// <class.png>
+class KeyJazz_UndoEntry {
+   tag int last_mode;
+   tag int last_root_key;
+   tag int last_cursor_x;
+   tag int last_cursor_y;
+   tag int last_note;
+   tag int last_note_idx;
+   tag int last_note_abs;
+   tag int chord_mode;
+   tag int chord_inversion;
+
+   public method init() {
+      last_mode       = 0;
+      last_root_key   = 0;
+      last_cursor_x   = 0;
+      last_cursor_y   = 0;
+      last_note       = 0;
+      last_note_idx   = 0;
+      last_note_abs   = 5*12;
+      chord_mode      = 0;
+      chord_inversion = 0;
+   }
+
+   public method copyFrom(KeyJazz_UndoEntry _o) {
+      last_mode       = _o.last_mode;
+      last_root_key   = _o.last_root_key;
+      last_cursor_x   = _o.last_cursor_x;
+      last_cursor_y   = _o.last_cursor_y;
+      last_note       = _o.last_note;
+      last_note_idx   = _o.last_note_idx;
+      last_note_abs   = _o.last_note_abs;
+      chord_mode      = _o.chord_mode;
+      chord_inversion = _o.chord_inversion;
+   }
+}
+
+// <class.png>
+class KeyJazz : Layer {
+   define int VP_W = 600;
+   define int VP_H = 600;
+
+   define int NUM_UNDO_IO_SLOTS = 9;  // KP1..9
+   protected Buffer *[] undo_io_slots;
+
+   float x;
+   float y;
+   float w;
+   float h;
+   float r = 0.1;
+   float g = 0.15;
+   float b = 0.3;
+
+   int cursor_x;  // 0..11
+   int cursor_y;  // 0..1
+   boolean b_queue_cursor_note;
+   boolean b_queued_noteon_cursor;
+
+   int mode;
+   int root_key;  // -12..12
+   int base_note = 5*12;
+   int last_note;
+   int last_note_idx;
+   int last_note_abs;
+
+   // // protected Buffer midibuf;
+   protected MIDIPipeFrame midi_frame;
+   protected IntArray pending_noteoffs;
+
+   define int CHORD_OFF               = 0;
+   define int CHORD_DYAD_DEFAULT_3    = 20; // maj/min
+   define int CHORD_DYAD_5            = 21;
+   define int CHORD_DYAD_OCT          = 22;
+   define int CHORD_DYAD_DEFAULT_35   = 23; // maj/min
+   define int CHORD_DYAD_DEFAULT_6    = 24; // maj/min
+   define int CHORD_DYAD_4            = 25;
+   define int CHORD_DYAD_9            = 26;
+   define int CHORD_DYAD_3            = 27;
+   define int CHORD_DYAD_8            = 28;
+   define int CHORD_DYAD_6            = 29;
+   define int CHORD_TRIAD_DEFAULT     = 30; // maj/min
+   define int CHORD_TRIAD_MAJ         = 31;
+   define int CHORD_TRIAD_MIN         = 32;
+   define int CHORD_TRIAD_DIM         = 33;
+   define int CHORD_TETRAD_DEFAULT    = 40; // maj7/min7
+   define int CHORD_TETRAD_MAJ7       = 41;
+   define int CHORD_TETRAD_MIN7       = 42;
+   define int CHORD_TETRAD_DIMMAJ7    = 43;
+   define int CHORD_EXT_DEFAULT_9     = 50; // maj/min
+   define int CHORD_EXT_DEFAULT_11    = 51; // maj/min
+   define int CHORD_EXT_DEFAULT_7ADD5 = 52; // maj/min
+   define int CHORD_EXT_MAJ9          = 53;
+   define int CHORD_EXT_MAJ11         = 54;
+   define int CHORD_EXT_MIN9          = 55;
+   define int CHORD_EXT_MIN11         = 56;
+   define int NUM_CHORDS              = 57;
+   int chord_mode;
+   boolean b_allow_chord;
+   int chord_inversion;
+   static IntArray chord_modes_dyad   = [ CHORD_OFF, CHORD_DYAD_DEFAULT_3, CHORD_DYAD_5, CHORD_DYAD_OCT, CHORD_DYAD_DEFAULT_35, CHORD_DYAD_DEFAULT_6,
+                                          CHORD_DYAD_4, CHORD_DYAD_9, CHORD_DYAD_3, CHORD_DYAD_8, CHORD_DYAD_6
+                                          ];
+   static IntArray chord_modes_triad  = [ CHORD_OFF, CHORD_TRIAD_DEFAULT, CHORD_TRIAD_MAJ, CHORD_TRIAD_MIN, CHORD_TRIAD_DIM ];
+   static IntArray chord_modes_tetrad = [ CHORD_OFF, CHORD_TETRAD_DEFAULT, CHORD_TETRAD_MAJ7, CHORD_TETRAD_MIN7, CHORD_TETRAD_DIMMAJ7 ];
+   static IntArray chord_modes_ext5   = [ CHORD_OFF, CHORD_EXT_DEFAULT_9, CHORD_EXT_DEFAULT_7ADD5, CHORD_EXT_MAJ9, CHORD_EXT_MIN9 ];
+   static IntArray chord_modes_ext6   = [ CHORD_OFF, CHORD_EXT_DEFAULT_11, CHORD_EXT_MAJ11, CHORD_EXT_MIN11 ];
+   static StringArray chord_names;
+   static StringArray chord_inversion_names = [ "-", "I", "II", "III", "IV" ];
+
+   protected ClassArray undo_entries;
+   protected int undo_idx;
+
+   protected float stroke_w;
+   MinnieDrawable drawable;
+
+   protected float dmin_outer;
+   protected float dmax_outer;
+
+   protected float dmin_inner;
+   protected float dmax_inner;
+
+   protected float model_rot;
+   protected int model_frot_damp_countdown;
+
+   protected static StringArray note_names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+
+   // ionian: maj,min,min,maj,maj,min,dim  indexed by cursor_x   0=maj  1=min  2=dim
+   // mode shifts tbl to the left
+   protected static IntArray chord_tbl = [0, 1, 1, 0, 0, 1, 2];
+
+   // ionian whole,whole,half,whole,whole,whole,half
+   // mode shifts tbl to the left
+   protected static IntArray interval_tbl = [2, 2, 1, 2, 2, 2, 1];
+
+   // updated when mode changes
+   protected IntArray semi_tbl; // = [0, 2, 4, 5, 7, 9, 11];
+
+   protected static IntArray mode_major_tbl = [
+      1, 0, 0, 1, 1, 0, 0,
+                                               ];
+
+   protected static StringArray mode_names = [
+      /*0*/"Ionian",
+      /*1*/"Dorian",
+      /*2*/"Phrygian",
+      /*3*/"Lydian",
+      /*4*/"Mixolydian",
+      /*5*/"Aeolian",
+      /*6*/"Locrian"
+
+                                              ];
+
+   protected IntArray   hl_notes;
+   protected FloatArray hl_notes_amt;
+
+   float frot;
+   float frotspd;
+   boolean b_rot;  // F12
+
+   boolean b_fonts_loaded;
+
+   Texture       font_30_tex;  // 30
+   Buffer        font_30_bin;
+   ShaderVG_Font font_30;
+
+   Texture       font_256_sdf_tex;  // 256
+   Buffer        font_256_sdf_bin;
+   ShaderVG_Font font_256_sdf;
+
+   define float FONT_30_SCL_MED_X = 1.0f;
+   define float FONT_30_SCL_MED_Y = 1.0f;
+
+   define float FONT_256_SCL_BIG_X = (48.0 / 256.0);
+   define float FONT_256_SCL_BIG_Y = (48.0 / 256.0) * 1.0;
+
+   define float FONT_256_SCL_MED_X = (30.0 / 256.0);
+   define float FONT_256_SCL_MED_Y = (30.0 / 256.0) * 0.96;
+
+   KeyJazzDialog *parent_dialog;  // or null
+
+
+   // <method_init.png>
+   protected method initInt(float _x, float _y,
+                            float _w, float _h,
+                            float _r, _g, _b
+                            ) {
+      x = _x;
+      y = _y;
+      w = _w;
+      h = _h;
+      r = _r;
+      g = _g;
+      b = _b;
+      setRequiredSize2f(VP_W, VP_H);
+
+      dmin_outer = 0.7;
+      dmax_outer = 1.0;
+
+      dmin_inner = 0.4;
+      dmax_inner = 0.668;
+
+      stroke_w = 12;
+
+      b_rot = true;
+
+      drawable.init();
+      drawable.alloc(64*1024/*maxGLBufSize*/,
+                     16*1024/*maxDrawBufSize*/
+                     );
+
+      genChordNames();
+
+      undo_io_slots.alloc(NUM_UNDO_IO_SLOTS);
+      loop(NUM_UNDO_IO_SLOTS)
+         undo_io_slots.add(#(new Buffer));
+
+      loadDefaults();
+      last_note_abs = base_note;
+      updateSemiTbl();
+      b_queue_cursor_note = false;
+
+      // // midibuf.size = 256;
+   }
+
+   // <method_init.png>
+   public method init() {
+      initLayer();
+      initInt(VP_W*0.5, VP_H*0.5,
+              VP_W*0.48, VP_H*0.48,
+              0.075, 0.1, 0.12
+              );
+   }
+
+   protected method loadDefaults() {
+      root_key = 0;
+      mode = 0; // Ionian
+      chord_mode = CHORD_OFF;
+      chord_inversion = 0;
+      b_allow_chord = true;
+
+      undo_entries.template = KeyJazz_UndoEntry;
+      undo_entries.alloc(16);
+      undo_entries.useAll();
+      KeyJazz_UndoEntry *en;
+      foreach en in undo_entries
+         en.last_note_abs = base_note;
+      undo_idx = 0;
+
+      loginfo "loadDefaults()";
+      if(null != parent_dialog)
+         parent_dialog.setWindowTitle("");
+
+      cursor_x = 0;
+      cursor_y = 0;
+      model_frot_damp_countdown = 50;
+      updateSemiTbl();
+   }
+
+   protected method setRootKey(int _rootKey) {
+      int rootKeyOct0 = mathWrapi(_rootKey, 0, 12);
+      int rootKey57 = mathWrapi(_rootKey, -5, 7);
+      int rootKeyOctM1 = mathWrapi(_rootKey, -12, 0);
+
+      if( abs(rootKeyOct0 - root_key) < abs(rootKey57 - root_key) )
+      {
+         if( abs(rootKeyOct0 - root_key) < abs(rootKeyOctM1 - root_key) )
+            root_key = rootKeyOct0;
+         else
+            root_key = rootKeyOctM1;
+      }
+      else
+      {
+         if( abs(rootKey57 - root_key) < abs(rootKeyOctM1 - root_key) )
+            root_key = rootKey57;
+         else
+            root_key = rootKeyOctM1;
+      }
+
+      root_key = mathWrapi(root_key, -7, 5);
+   }
+
+   protected method calcSemiTbl(IntArray _a, int _mode) {
+      int i = 0;
+      int semi = 0;
+      _a.empty();
+      loop(7*2)
+      {
+         _a.add(semi);
+         semi += interval_tbl.get((i++ + _mode) % 7);
+      }
+   }
+
+   protected method updateSemiTbl() {
+      calcSemiTbl(semi_tbl, mode);
+      log2 "updateSemiTbl: semi_tbl="+semi_tbl;
+      int note;
+      int idx = 0;
+      loop(7)
+      {
+         log2 "["+idx+"] "+note_names.get(mathWrapi(root_key + semi_tbl.get(idx), 0, 12));
+         idx++;
+      }
+   }
+
+   protected method highlightNote(byte _note) {
+      byte note = mathWrapi(_note, 0, 12);
+      int idx = hl_notes.indexOf(note, 0);
+      if(idx < 0)
+      {
+         hl_notes.add(note);
+         idx = hl_notes.numElements -1;
+      }
+      hl_notes_amt[idx] = 1.0f;
+   }
+
+   protected method highlightNotesDecay(float _dt) {
+      int idx = 0;
+      loop(hl_notes.numElements)
+      {
+         float a = hl_notes_amt[idx];
+         if(a > 0.0001)
+            a = a * mathPowerf(0.94, _dt);
+         else
+            a = 0;
+         hl_notes_amt[idx] = a;
+         idx++;
+      }
+
+      idx = hl_notes.numElements - 1;
+      while(idx >= 0)
+      {
+         if(hl_notes_amt[idx] < 0.0001)
+         {
+            hl_notes_amt.delete(idx);
+            hl_notes.delete(idx);
+         }
+         idx--;
+      }
+   }
+
+   protected method addPendingNoteOffsToBuffer() {
+      int note;
+      foreach note in pending_noteoffs
+      {
+         // log4 "pending noteOff("+note+")";
+         midi_frame.noteOff(true/*bSet*/, SysEx.out_dev_idx, 0/*midiCh*/, note, 0/*vel*/);
+      }
+      pending_noteoffs.empty();
+   }
+
+   protected method beginMIDIFrame() {
+      midi_frame.empty();
+   }
+
+   protected method endMIDIFrame() {
+      // // log4 "noteon midibuf.offset="+midibuf.offset;
+      // (todo) midiout.sendBuffer(midibuf);
+      replay.injectFrameRec(midi_frame);
+      midi_frame.empty();
+   }
+
+   protected method releasePendingNoteOffs() {
+      beginMIDIFrame();
+      addPendingNoteOffsToBuffer();
+      endMIDIFrame();
+   }
+
+   protected method noteOff(byte _note) {
+      // log2 "noteOff("+_note+")";
+      beginMIDIFrame();
+      midi_frame.noteOff(true/*bSet*/, SysEx.out_dev_idx, 0/*midiCh*/, _note, 0/*vel*/);
+      endMIDIFrame();
+      int idx = pending_noteoffs.indexOf(_note, 0);
+      if(idx >= 0)
+         pending_noteoffs.delete(idx);
+   }
+
+   protected method addNoteOnToBuffer(byte _note) {
+      midi_frame.noteOn(true/*bSet*/, SysEx.out_dev_idx, 0/*midiCh*/, _note, 127/*vel*/, 0/*dur*/);
+      pending_noteoffs.add(_note);
+   }
+
+   protected method noteOn(byte _note) {
+      log2 "noteOn("+_note+") "+note_names.get(_note%12);
+      beginMIDIFrame();
+      addNoteOnToBuffer(_note);
+      endMIDIFrame();
+   }
+
+   protected method addNotesToBufferChordInvert(IntArray _notes) {
+      int idx = 0;
+      stdout "[trc] addNotesToBufferChordInvert: notes=";
+      loop(_notes.numElements)
+      {
+         byte note = _notes.get(idx) + ((idx < chord_inversion)?12:0);
+         stdout " "+note_names.get(mathWrapi(note,0,12))+"-"+(note/12);
+         addNoteOnToBuffer(note);
+         highlightNote(note);
+         idx++;
+      }
+      trace "";
+   }
+
+   protected method addNotesChordDef(IntArray notes, byte _noteIdx, byte _noteAbs, int _minMajDim) {
+      switch(_minMajDim)
+      {
+         case 0: // maj
+            notes.add(_noteAbs + 0);
+            notes.add(_noteAbs + 4);
+            notes.add(_noteAbs + 7);
+            break;
+
+         case 1: // min
+            notes.add(_noteAbs + 0);
+            notes.add(_noteAbs + 3);
+            notes.add(_noteAbs + 7);
+            break;
+
+         case 2: // dim
+            notes.add(_noteAbs + 0);
+            notes.add(_noteAbs + 3);
+            notes.add(_noteAbs + 6);
+            break;
+      }
+   }
+
+   protected method noteOnChord(byte _noteIdx, int _noteAbs) {
+      last_note = _noteAbs % 12;
+      last_note_idx = _noteIdx;
+      last_note_abs = _noteAbs;
+      beginMIDIFrame();
+      addPendingNoteOffsToBuffer();
+      int minMajDim = chord_tbl.get((_noteIdx + mode)%7);
+      boolean bMaj = (0 == minMajDim);
+      log2 "noteOnChord: note="+note_names.get(mathWrapi(_noteAbs,0,12))+" bMaj="+bMaj;
+      IntArray notes; notes.empty();
+      switch(chord_mode)
+      {
+         case CHORD_OFF:
+            // Should not be reachable
+            break;
+
+         case CHORD_DYAD_DEFAULT_3:
+            notes.add(_noteAbs + 0);
+            notes.add(_noteAbs + (bMaj?4:3));
+            break;
+
+         case CHORD_DYAD_5:
+            notes.add(_noteAbs + 0);
+            notes.add(_noteAbs + 7);
+            break;
+
+         case CHORD_DYAD_OCT:
+            notes.add(_noteAbs + 0);
+            notes.add(_noteAbs + 12);
+            break;
+
+         case CHORD_DYAD_DEFAULT_35:
+            notes.add(_noteAbs + (bMaj?4:3));
+            notes.add(_noteAbs + 7);
+            break;
+
+         case CHORD_DYAD_DEFAULT_6:
+            notes.add(_noteAbs + 0);
+            notes.add(_noteAbs + (bMaj?9:8));
+            break;
+
+         case CHORD_DYAD_4:
+            notes.add(_noteAbs + 0);
+            notes.add(_noteAbs + 4);
+            break;
+
+         case CHORD_DYAD_9:
+            notes.add(_noteAbs + 0);
+            notes.add(_noteAbs + 9);
+            break;
+
+         case CHORD_DYAD_3:
+            notes.add(_noteAbs + 0);
+            notes.add(_noteAbs + 3);
+            break;
+
+         case CHORD_DYAD_8:
+            notes.add(_noteAbs + 0);
+            notes.add(_noteAbs + 8);
+            break;
+
+         case CHORD_DYAD_6:
+            notes.add(_noteAbs + 0);
+            notes.add(_noteAbs + 6);
+            break;
+
+         case CHORD_TRIAD_DEFAULT:
+            addNotesChordDef(notes, _noteIdx, _noteAbs, minMajDim);
+            break;
+
+         case CHORD_TRIAD_MAJ:
+            notes.add(_noteAbs + 0);
+            notes.add(_noteAbs + 4);
+            notes.add(_noteAbs + 7);
+            break;
+
+         case CHORD_TRIAD_MIN:
+            notes.add(_noteAbs + 0);
+            notes.add(_noteAbs + 3);
+            notes.add(_noteAbs + 7);
+            break;
+
+         case CHORD_TRIAD_DIM:
+            notes.add(_noteAbs + 0);
+            notes.add(_noteAbs + 3);
+            notes.add(_noteAbs + 6);
+            break;
+
+         case CHORD_TETRAD_DEFAULT:
+            notes.add(_noteAbs + 0);
+            notes.add(_noteAbs + (bMaj?4:3));
+            notes.add(_noteAbs + 7);
+            notes.add(_noteAbs + (bMaj?11:10));
+            break;
+
+         case CHORD_TETRAD_MAJ7:
+            notes.add(_noteAbs + 0);
+            notes.add(_noteAbs + 4);
+            notes.add(_noteAbs + 7);
+            notes.add(_noteAbs + 11);
+            break;
+
+         case CHORD_TETRAD_MIN7:
+            notes.add(_noteAbs + 0);
+            notes.add(_noteAbs + 3);
+            notes.add(_noteAbs + 7);
+            notes.add(_noteAbs + 10);
+            break;
+
+         case CHORD_TETRAD_DIMMAJ7:
+            notes.add(_noteAbs + 0);
+            notes.add(_noteAbs + 3);
+            notes.add(_noteAbs + 6);
+            notes.add(_noteAbs + 11);
+            break;
+
+         case CHORD_EXT_DEFAULT_9:
+            notes.add(_noteAbs + 0);
+            notes.add(_noteAbs + (bMaj?4:3));
+            notes.add(_noteAbs + 7);
+            notes.add(_noteAbs + (bMaj?11:10));
+            notes.add(_noteAbs + 14);
+            break;
+
+         case CHORD_EXT_DEFAULT_11:
+            notes.add(_noteAbs + 0);
+            notes.add(_noteAbs + (bMaj?4:3));
+            notes.add(_noteAbs + 7);
+            notes.add(_noteAbs + (bMaj?11:10));
+            notes.add(_noteAbs + 14);
+            notes.add(_noteAbs + (bMaj?18:17));
+            break;
+
+         case CHORD_EXT_DEFAULT_7ADD5:
+            notes.add(_noteAbs + 0);
+            notes.add(_noteAbs + (bMaj?4:3));
+            notes.add(_noteAbs + 7);
+            notes.add(_noteAbs + (bMaj?9:8));
+            notes.add(_noteAbs + (bMaj?11:10));
+            break;
+
+         case CHORD_EXT_MAJ9:
+            notes.add(_noteAbs + 0);
+            notes.add(_noteAbs + 4);
+            notes.add(_noteAbs + 7);
+            notes.add(_noteAbs + 11);
+            notes.add(_noteAbs + 14);
+            break;
+
+         case CHORD_EXT_MAJ11:
+            notes.add(_noteAbs + 0);
+            notes.add(_noteAbs + 4);
+            notes.add(_noteAbs + 7);
+            notes.add(_noteAbs + 11);
+            notes.add(_noteAbs + 14);
+            notes.add(_noteAbs + 18);
+            break;
+
+         case CHORD_EXT_MIN9:
+            notes.add(_noteAbs + 0);
+            notes.add(_noteAbs + 3);
+            notes.add(_noteAbs + 7);
+            notes.add(_noteAbs + 10);
+            notes.add(_noteAbs + 14);
+            break;
+
+         case CHORD_EXT_MIN11:
+            notes.add(_noteAbs + 0);
+            notes.add(_noteAbs + 3);
+            notes.add(_noteAbs + 7);
+            notes.add(_noteAbs + 10);
+            notes.add(_noteAbs + 14);
+            notes.add(_noteAbs + 17);
+            break;
+      }
+      addNotesToBufferChordInvert(notes);
+      endMIDIFrame();
+   }
+
+   protected method noteOnSingleOrChord(byte _noteIdx, int _oct/*+-12*/) {
+      int note = base_note + root_key + semi_tbl.get(_noteIdx) + _oct;
+      if(b_allow_chord && CHORD_OFF != chord_mode)
+      {
+         noteOnChord(_noteIdx, note);
+      }
+      else
+      {
+         last_note = note % 12;
+         last_note_idx = _noteIdx;
+         last_note_abs = note;
+         noteOn(note);
+         highlightNote(note);
+      }
+   }
+
+   protected method noteOffSingleOrChord(byte _noteIdx, int _oct/*+-12*/) {
+      int note = base_note + root_key + semi_tbl.get(_noteIdx) + _oct;
+      log2 "noteOffSingleOrChord: note="+note;
+      if(CHORD_OFF == chord_mode)
+      {
+         noteOff(note);
+      }
+      else
+      {
+         releasePendingNoteOffs();
+      }
+   }
+
+   public method getRelativeNoteOffset(boolean _bInner) : int {
+      if(_bInner)
+      {
+         if(mode_major_tbl.get(mode))
+            return -3;
+         else
+            return 3;
+      }
+      else
+      {
+         return 0;
+      }
+   }
+
+   protected method noteOnCursor() {
+      noteOn(60 + mathWrapi(root_key + ((cursor_x*7)%12), 0, 12) + getRelativeNoteOffset(1 == cursor_y));
+   }
+
+   protected method noteOffCursor() {
+      noteOff(60 + mathWrapi(root_key + ((cursor_x*7)%12), 0, 12) + getRelativeNoteOffset(1 == cursor_y));
+   }
+
+   protected method noteOnLastAbs() {
+      log2 "noteOnLastAbs: last_note_abs="+last_note_abs;
+      if(b_allow_chord && CHORD_OFF != chord_mode)
+         noteOnChord(last_note_idx, last_note_abs);
+      else
+         noteOn(last_note_abs);
+   }
+
+   protected method findModeForGridPos(int _gridX, int _gridY, Integer _retNote, boolean _bDebug) : int {
+      // root_key +
+      if(_bDebug) log2 "--------------------------------------------";
+      int note = mathWrapi(_gridX*7,0,12) + getRelativeNoteOffset(1 == _gridY);
+      note = mathWrapi(note, 0, 12); //  + root_key
+      if(_bDebug) log2 "findModeForCursorNoteIdx: note="+note+" root_key="+root_key+" semi_tbl="+semi_tbl;
+      int semiIdx = semi_tbl.indexOf(note, 0);
+      if(_bDebug) log2 "findModeForCursorNoteIdx: note="+note+" => semiIdx="+semiIdx;
+      if(null != _retNote)
+         _retNote = note;
+      if(semiIdx >= 0)
+      {
+         if(_bDebug) log2 "mode+semiIdx="+mode+"+"+semiIdx+"="+(mode+semiIdx);
+         int newMode = mathWrapi(mode + semiIdx, 0, 7);
+         if(null != _retNote)
+            _retNote = mathWrapi(note + root_key, -12, 12);
+         return newMode;
+      }
+      return -1;
+   }
+
+   protected method undoReplace(int _idx) {
+      KeyJazz_UndoEntry en <= undo_entries.get(_idx);
+      en.last_mode       = mode;
+      en.last_root_key   = root_key;
+      en.last_cursor_x   = cursor_x;
+      en.last_cursor_y   = cursor_y;
+      en.last_note       = last_note;
+      en.last_note_idx   = last_note_idx;
+      en.last_note_abs   = last_note_abs;
+      en.chord_mode      = chord_mode;
+      en.chord_inversion = chord_inversion;
+      log4 "undoReplace: save last_note_abs="+last_note_abs;
+   }
+
+   protected method undoRestore(int _idx) {
+      KeyJazz_UndoEntry en <= undo_entries.get(_idx);
+      mode            = en.last_mode;
+      root_key        = en.last_root_key;
+      cursor_x        = en.last_cursor_x;
+      cursor_y        = en.last_cursor_y;
+      last_note       = en.last_note;
+      last_note_idx   = en.last_note_idx;
+      last_note_abs   = en.last_note_abs;
+      chord_mode      = en.chord_mode;
+      chord_inversion = en.chord_inversion;
+      updateSemiTbl();
+      log4 "undoRestore: reload last_note_abs="+last_note_abs;
+   }
+
+   protected method undoDelete() {
+      if(undo_entries.numElements > 0)
+      {
+         KeyJazz_UndoEntry en <= undo_entries.getDeref(undo_idx);
+         en.init();
+         undo_entries.delete(undo_idx);
+         undo_entries.add(#(deref en));
+         log1 "undoDelete("+undo_idx+")";
+         undoRestore(undo_idx);
+      }
+   }
+
+   protected method undoInsert() {
+      if(undo_idx + 1 < undo_entries.maxElements)
+      {
+         // Duplicate current
+         KeyJazz_UndoEntry en <= undo_entries.get(undo_idx);
+         KeyJazz_UndoEntry enIns <= undo_entries.getDeref(undo_entries.numElements - 1);
+         enIns.copyFrom(en);
+         undo_entries.delete(undo_entries.numElements - 1);
+         undo_entries.insert(undo_idx, #(deref enIns));
+         log1 "undoInsert("+undo_idx+")";
+      }
+   }
+
+   protected method undoMoveDown() {
+      if(undo_idx > 0)
+      {
+         undo_entries.swap(undo_idx-1, undo_idx);
+         undo_idx--;
+         handleUndoIdxChanged();
+      }
+   }
+
+   protected method undoMoveUp() {
+      if(undo_idx + 1 < undo_entries.maxElements)
+      {
+         undo_entries.swap(undo_idx+1, undo_idx);
+         undo_idx++;
+         handleUndoIdxChanged();
+      }
+   }
+
+   protected method handleUndoIdxChanged() {
+      if(null != parent_dialog)
+         parent_dialog.setWindowTitle(String((undo_idx+1)));
+      log2 "undo_idx is "+undo_idx;
+      model_frot_damp_countdown = 50;
+   }
+
+   protected method undoPush() {
+      if(undo_idx + 1 < undo_entries.maxElements)
+      {
+         undoReplace(undo_idx);
+         undo_idx++;
+         handleUndoIdxChanged();
+      }
+   }
+
+   protected method undoPop() {
+      if(undo_idx > 0)
+      {
+         undoReplace(undo_idx);
+         undoRestore(--undo_idx);
+         handleUndoIdxChanged();
+      }
+   }
+
+   protected method redo() {
+      if(undo_idx + 1 < undo_entries.maxElements)
+      {
+         undoRestore(++undo_idx);
+         handleUndoIdxChanged();
+      }
+   }
+
+   protected method handleRedo() {
+      undoReplace(undo_idx);
+      redo();
+      loginfo "redo("+undo_idx+")";
+   }
+
+   protected method handleReplace() {
+      undoReplace(undo_idx);
+      loginfo "undoReplace("+undo_idx+")";
+   }
+
+   protected method handleUndo() {
+      undoPop();
+      loginfo "undo("+undo_idx+")";
+   }
+
+   protected method setRootKeyToCursor() {
+      int relOff = getRelativeNoteOffset(1 == cursor_y);
+      int note = mathWrapi(root_key + cursor_x*7, 0, 12) + relOff;
+      undoPush();
+      log2 "ROOT_KEY  note="+note+"("+note_names.get(mathWrapi(note,0,12))+")";
+
+      setRootKey(note);
+      cursor_x = 0;
+      cursor_y = 0;
+      model_frot_damp_countdown = 50;
+   }
+
+   protected method setModeToCursorNoteIdx(boolean _bMode) : int {
+      log2 "setModeToCursorNoteIdx(bMode="+_bMode+")";
+      if(_bMode && 0 == cursor_x)
+      {
+         // force next mode that contains rootKey and plays last note on same noteIdx
+         int rootKey = mathWrapi(root_key, 0, 12);
+         int i = 1;
+         IntArray semiTbl;
+         loop(7)
+         {
+            calcSemiTbl(semiTbl, mathWrapi(mode + i, 0, 7));
+            int idxRoot = semiTbl.indexOf(rootKey, 0);
+            log2 "setModeToCursorNoteIdx: bMode/cursor_x=0 mode="+mode+" tryNextMode="+mathWrapi(mode+i,0,7)+" semiTbl="+semiTbl+" rootKey="+rootKey+"("+note_names.get(rootKey)+") idxRoot="+idxRoot;
+            if(idxRoot >= 0)
+            {
+               undoPush();
+
+               mode = mathWrapi(mode + i, 0, 7);
+               model_frot_damp_countdown = 50;
+               updateSemiTbl();
+               // set cursor to cell that matches rootKey
+               int cellX = 0;
+               int innerOff = getRelativeNoteOffset(true/*bInner*/);
+               loop(12)
+               {
+                  if( ((cellX*7)%12) == rootKey )
+                  {
+                     cursor_x = 0;//cellX;
+                     cursor_y = 0;
+                     log2 "setModeToCursorNoteIdx: bMode/cursor_x=0  found cellX="+cellX+" outer";
+                     break;
+                  }
+                  else if( mathWrapi((((cellX*7)%12) + innerOff),0,12) == rootKey )
+                  {
+                     cursor_x = 0;//cellX;
+                     cursor_y = 1;
+                     log2 "setModeToCursorNoteIdx: bMode/cursor_x=0  found cellX="+cellX+" inner";
+                     break;
+                  }
+                  cellX++;
+               }
+               log2 "setModeToCursorNoteIdx: bMode/cursor_x=0 mode="+mode+" tryNextMode="+mathWrapi(mode+i,0,7)+" semiTbl="+semiTbl+" rootKey="+rootKey+" idxRoot="+idxRoot;
+               // // cursor_x = mathWrapi(cursor_x - idxRoot, 0, 12);
+               setRootKey(rootKey);
+               int newNote = (base_note + root_key + semi_tbl.get(last_note_idx)) % 12;
+               if(newNote != last_note)
+               {
+                  log2 "setModeToCursorNoteIdx: bMode/cursor_x=0: shift rootKey by "+(last_note - newNote)+" to match last_note="+last_note+" at last_note_idx="+last_note_idx+" (newNote="+newNote+")";
+                  setRootKey(root_key + (last_note - newNote));
+               }
+               return;
+            }
+            i++;
+         }
+         return;
+      }
+
+      if(_bMode)
+      {
+         Integer retNote;
+         int newMode = findModeForGridPos(cursor_x, cursor_y, retNote, true/*bDebug*/);
+
+         undoPush();
+
+         if(newMode >= 0)
+         {
+            mode = newMode;
+            setRootKey(retNote -/*+??*/ getRelativeNoteOffset(1 == cursor_y));
+            cursor_x = 0;
+            model_frot_damp_countdown = 50;
+            updateSemiTbl();
+            log2 "setModeToCursorNoteIdx: note="+retNote+" ====> mode="+mode+"  newRootKey="+root_key+" newSemiTbl="+semi_tbl;
+         }
+         else
+         {
+            setRootKeyToCursor();
+         }
+      }
+      else
+      {
+         setRootKeyToCursor();
+      }
+   }
+
+   protected method genChordName(int _chordMode) : String {
+      String s = TKS.scriptClassConstantToString(#(_chordMode), this, "CHORD_");
+      return
+         s
+         .replace("CHORD_", "")
+         .replace("OFF","-")
+         .replace("TRIAD_DEFAULT","a3")
+         .replace("TETRAD_DEFAULT","a4")
+         .replace("EXT_DEFAULT_","")
+         .replace("DEFAULT_","")
+         .replace("TRIAD_","")
+         .replace("TETRAD_","")
+         .replace("EXT_","")
+         .toLower()
+         ;
+   }
+
+   protected method genChordNames() {
+      int chordIdx = 0;
+      chord_names.empty();
+      loop(NUM_CHORDS)
+         chord_names.add(genChordName(chordIdx++));
+   }
+
+   protected method getChordName() : String {
+      return chord_names.get(chord_mode);
+   }
+
+   protected method cycleChordMode(IntArray _aModes) {
+      int idx = _aModes.indexOf(chord_mode, 0);
+      log4 "cycleChordMode: idx="+idx;
+      chord_mode = _aModes.get(mathWrapi(++idx, 0, _aModes.numElements));
+      log2 "cycleChordMode: new idx="+idx+" new chord_mode="+chord_mode;
+      loginfo "chord_mode is "+getChordName();
+      if(b_queue_cursor_note)
+         noteOnLastAbs();
+   }
+
+   protected method cycleChordInversion(int _dir) {
+      chord_inversion = mathWrapi(chord_inversion + _dir, 0, chord_inversion_names.numElements);
+      loginfo "chord_inversion is "+chord_inversion+" \""+chord_inversion_names.get(chord_inversion)+"\"";
+      if(b_queue_cursor_note)
+         noteOnLastAbs();
+   }
+
+   protected method cycleMode(int _dir) {
+      mode = mathWrapi(mode + _dir, 0, 7);
+      updateSemiTbl();
+   }
+
+   protected method saveUndoInt(Stream ofs) {
+      ofs.i8 = 1;
+      ofs << undo_entries;
+      ofs.i8 = undo_idx;
+   }
+
+   protected method saveUndoByIndex(int _idx) {
+      Buffer b <= undo_io_slots.get(_idx);
+
+      log1 "save "+undo_entries.numElements+" undo entries";
+
+      local DummyStream ds;
+      ds.offset = 0;
+      saveUndoInt(ds);
+
+      b.size = ds.offset;
+      b.offset = 0;
+      saveUndoInt(b);
+
+      loginfo "Undo saved to slot "+(_idx+1);
+   }
+
+   protected method loadUndoByIndex(int _idx) {
+      Buffer b <= undo_io_slots.get(_idx);
+      b.offset = 0;
+      byte ver = b.i8;
+      if(1 == ver)
+      {
+         undo_entries << b;
+         undo_idx = b.u8;
+         loginfo "Undo restored from slot "+(_idx+1);
+         undoRestore(undo_idx);
+      }
+   }
+
+   // <method.png>
+   protected method trackerRestartRecording(Key _k) {
+      PageNode pgNode <= root_form.pg_node;
+      NodeTracker nt <= pgNode.script_node;
+      NodeTrackerEditor ntEditor <= pgNode.editor;
+      NT_PatternView pv <= ntEditor.pattern_view;
+      UI.SetKeyboardFocus(pv);  // isEditable() required kbdfocus
+      if(replay.b_playing && pv.isEditable() && (0 == _k.mod))
+         ntEditor.cmd_edit_undo(); // undo and restart recording
+      else
+         pv.handleKeyRShift(_k.modCtrl());  // start recording
+      UI.SetKeyboardFocus(this);
+   }
+
+   // <method.png>
+   protected method trackerToggleEditMode() {
+      PageNode pgNode <= root_form.pg_node;
+      NodeTracker nt <= pgNode.script_node;
+      NodeTrackerEditor ntEditor <= pgNode.editor;
+      NT_PatternView pv <= ntEditor.pattern_view;
+      UI.SetKeyboardFocus(pv);  // isEditable() required kbdfocus
+      pv.handleKeyRCtrl(false/*bShift*/);
+      UI.SetKeyboardFocus(this);
+   }
+
+   // <method.png>
+   protected method tryTrackerHandleKeyUp(Key _k) : boolean {
+      boolean bHandled = false;
+      PageNode pgNode <= root_form.pg_node;
+      NodeTracker nt <= pgNode.script_node;
+      NodeTrackerEditor ntEditor <= pgNode.editor;
+      NT_PatternView pv <= ntEditor.pattern_view;
+      UI.SetKeyboardFocus(pv);  // isEditable() required kbdfocus
+      if(pv.isEditable())
+      {
+         pv.handleKeyUp(_k);
+         bHandled = true;
+      }
+      UI.SetKeyboardFocus(this);
+      return bHandled;
+   }
+
+   // <method.png>
+   protected method tryTrackerHandleKeyDown(Key _k) : boolean {
+      boolean bHandled = false;
+      PageNode pgNode <= root_form.pg_node;
+      NodeTracker nt <= pgNode.script_node;
+      NodeTrackerEditor ntEditor <= pgNode.editor;
+      NT_PatternView pv <= ntEditor.pattern_view;
+      UI.SetKeyboardFocus(pv);  // isEditable() required kbdfocus
+      if(pv.isEditable())
+      {
+         pv.handleKeyDown(_k);
+         bHandled = true;
+      }
+      UI.SetKeyboardFocus(this);
+      return bHandled;
+   }
+
+   // <method.png>
+   protected method tryTrackerPatternClear() : boolean {
+      boolean bHandled = false;
+      PageNode pgNode <= root_form.pg_node;
+      NodeTracker nt <= pgNode.script_node;
+      NodeTrackerEditor ntEditor <= pgNode.editor;
+      NT_PatternView pv <= ntEditor.pattern_view;
+      UI.SetKeyboardFocus(pv);  // isEditable() required kbdfocus
+      if(pv.isEditable())
+      {
+         pv.patternClear();
+         bHandled = true;
+      }
+      UI.SetKeyboardFocus(this);
+      return bHandled;
+   }
+
+   public virtual wantKeyRepeat(Key _k) : boolean {
+      return false;
+   }
+
+   // <ui_kbd.png>
+   public method onKey(Key _k) : boolean {
+      switch(_k.pressed)
+      {
+         case VKEY_F3:
+            if(root_form.isTrackerEditorVisible())
+            {
+               if(tryTrackerPatternClear())
+                  return true;
+            }
+            break;
+
+         case VKEY_RSHIFT:
+            if(root_form.isTrackerEditorVisible())
+            {
+               trackerRestartRecording(_k);
+               return true;
+            }
+            break;
+
+         case VKEY_RCTRL:
+            if(root_form.isTrackerEditorVisible())
+            {
+               trackerToggleEditMode();
+               return true;
+            }
+            break;
+
+         case VKEY_F12:
+            b_rot = !b_rot;
+            loginfo "b_rot="+b_rot;
+            break;
+
+         case '1':
+            chord_mode = CHORD_OFF;
+            loginfo "chord_mode is "+chord_mode;
+            return true;
+
+         case '2':
+            cycleChordMode(chord_modes_dyad);
+            return true;
+
+         case '3':
+            cycleChordMode(chord_modes_triad);
+            return true;
+
+         case '4':
+            cycleChordMode(chord_modes_tetrad);
+            return true;
+
+         case '5':
+            cycleChordMode(chord_modes_ext5);
+            return true;
+
+         case '[':  // de:ue
+            // // cycleChordInversion(-1);
+            return true;
+
+         case ']':  // de:+
+            // // cycleChordInversion(1);
+            return true;
+
+         case '6':
+            cycleChordMode(chord_modes_ext6);
+            return true;
+
+         case VKEY_TAB:
+            b_allow_chord = !b_allow_chord;
+            loginfo "b_allow_chord is "+b_allow_chord;
+            return true;
+
+         case VKEY_RETURN:
+            if(_k.modAlt() || (VMOD_LMETA == _k.mod))
+            {
+               handleReplace();
+            }
+            else
+            {
+               boolean bSetMode = !(_k.modCtrl());
+               setModeToCursorNoteIdx(bSetMode);
+            }
+            return true;
+
+         case VKEY_BACKSPACE:
+            if(_k.modCtrl())
+            {
+               handleRedo();
+            }
+            else if(_k.modAlt() || (VMOD_LMETA == _k.mod))
+            {
+               handleReplace();
+            }
+            else if(_k.modShift())
+            {
+               if(root_form.isTrackerEditorVisible())
+               {
+                  if(tryTrackerPatternClear())
+                     return true;
+               }
+            }
+            else
+            {
+               handleUndo();
+            }
+            return true;
+
+         case VKEY_INSERT:
+            if(_k.modShift())
+            {
+               undoInsert();
+            }
+            else
+            {
+               if(root_key < 12)
+                  root_key++;
+            }
+            return true;
+
+         case VKEY_DELETE:
+            if(_k.modShift())
+            {
+               undoDelete();
+            }
+            else
+            {
+               if(root_key > -12)
+                  root_key--;
+            }
+            return true;
+
+         case VKEY_PAGEUP:
+            if(_k.modCtrl())
+            {
+               undoMoveDown();
+            }
+            else
+            {
+               handleUndo();
+               if(b_queue_cursor_note)
+                  noteOnLastAbs();
+            }
+            return true;
+
+         case VKEY_PAGEDOWN:
+            if(_k.modCtrl())
+            {
+               undoMoveUp();
+            }
+            else
+            {
+               handleRedo();
+               if(b_queue_cursor_note)
+                  noteOnLastAbs();
+            }
+            return true;
+
+         case VKEY_SPACE:
+            if(_k.modAlt() || (VMOD_LMETA == _k.mod))
+            {
+               return false;
+            }
+            if(0 != _k.mod)
+            {
+               noteOnLastAbs();  
+            }
+            else
+            {
+               if(replay.b_playing)
+               {
+                  root_form.handleToggleReplay(false/*bShift*/);
+               }
+               if(null != parent_dialog)
+                  parent_dialog.hide();
+
+               // noteOnCursor(); // (todo) find a different kbd shortcut for this
+            }
+            return true;
+
+         case VKEY_LEFT:
+            cursor_x = mathWrapi(cursor_x - 1, 0, 12);
+            if(b_queue_cursor_note)
+               b_queued_noteon_cursor = true;
+            model_frot_damp_countdown = 50;
+            return true;
+
+         case VKEY_RIGHT:
+            cursor_x = mathWrapi(cursor_x + 1, 0, 12);
+            if(b_queue_cursor_note)
+               b_queued_noteon_cursor = true;
+            model_frot_damp_countdown = 50;
+            return true;
+
+         case VKEY_HOME:
+            cycleMode(1);
+            return true;
+
+         case VKEY_END:
+            cycleMode(-1);
+            return true;
+
+         case VKEY_UP:
+            if(_k.modCtrl())
+            {
+            }
+            else
+            {
+               if(root_form.isTrackerEditorVisible())
+               {
+                  if(tryTrackerHandleKeyUp(_k))
+                     return true;
+               }
+               if(cursor_y > 0)
+               {
+                  cursor_y = 0;
+               }
+               else
+               {
+                  cursor_x = mathWrapi(cursor_x + 6, 0, 12);
+               }
+            }
+            if(b_queue_cursor_note)
+               b_queued_noteon_cursor = true;
+            model_frot_damp_countdown = 50;
+            return true;
+
+         case VKEY_DOWN:
+            if(_k.modCtrl())
+            {
+            }
+            else
+            {
+               if(root_form.isTrackerEditorVisible())
+               {
+                  if(tryTrackerHandleKeyDown(_k))
+                     return true;
+               }
+               if(0 == cursor_y)
+               {
+                  cursor_y = 1;
+               }
+               else
+               {
+                  cursor_y = 1;
+                  cursor_x = mathWrapi(cursor_x + 6, 0, 12);
+               }
+            }
+            if(b_queue_cursor_note)
+               b_queued_noteon_cursor = true;
+            model_frot_damp_countdown = 50;
+            return true;
+
+         case 'z':  // de:y
+            noteOnSingleOrChord(3, -12);
+            return true;
+
+         case 'x':
+            noteOnSingleOrChord(4, -12);
+            return true;
+
+         case 'c':
+            noteOnSingleOrChord(5, -12);
+            return true;
+
+         case 'v':
+            noteOnSingleOrChord(6, -12);
+            return true;
+
+         case 'b':
+            noteOnSingleOrChord(0, 0);
+            return true;
+
+         case 'n':
+            noteOnSingleOrChord(1, 0);
+            return true;
+
+         case 'm':
+            noteOnSingleOrChord(2, 0);
+            return true;
+
+         case 'a':
+            noteOnSingleOrChord(0, 0);
+            return true;
+
+         case 's':
+            noteOnSingleOrChord(1, 0);
+            return true;
+
+         case 'd':
+            noteOnSingleOrChord(2, 0);
+            return true;
+
+         case 'f':
+            noteOnSingleOrChord(3, 0);
+            return true;
+
+         case 'g':
+            noteOnSingleOrChord(4, 0);
+            return true;
+
+         case 'h':
+            noteOnSingleOrChord(5, 0);
+            return true;
+
+         case 'j':
+            noteOnSingleOrChord(6, 0);
+            return true;
+
+         case 'k':
+            noteOnSingleOrChord(7, 0);
+            return true;
+
+         case 'l':
+            noteOnSingleOrChord(8, 0);
+            return true;
+
+         case 'q':
+            noteOnSingleOrChord(4, 0);
+            return true;
+
+         case 'w':
+            noteOnSingleOrChord(5, 0);
+            return true;
+
+         case 'e':
+            noteOnSingleOrChord(6, 0);
+            return true;
+
+         case 'r':
+            noteOnSingleOrChord(0, 12);
+            return true;
+
+         case 't':
+            noteOnSingleOrChord(1, 12);
+            return true;
+
+         // case 'z':
+         case 'y':
+            noteOnSingleOrChord(2, 12);
+            return true;
+
+         case 'u':
+            noteOnSingleOrChord(3, 12);
+            return true;
+
+         case 'i':
+            noteOnSingleOrChord(4, 12);
+            return true;
+
+         case 'o':
+            noteOnSingleOrChord(5, 12);
+            return true;
+
+         case 'p':
+            noteOnSingleOrChord(6, 12);
+            return true;
+
+         case VKEY_F11:
+            b_queue_cursor_note = !b_queue_cursor_note;
+            loginfo "b_queue_cursor_note="+b_queue_cursor_note;
+            if(b_queue_cursor_note)
+               b_queued_noteon_cursor = true;
+            return true;
+
+         case VKEY_PERIOD:
+            cycleChordInversion(-1);
+            return true;
+
+         case VKEY_SLASH:  // de:-
+            cycleChordInversion(1);
+            return true;
+
+         case VKEY_KP_0:
+         case VKEY_KP_PERIOD:
+            loadDefaults();
+            return true;
+
+         case VKEY_KP1:
+         case VKEY_KP2:
+         case VKEY_KP3:
+         case VKEY_KP4:
+         case VKEY_KP5:
+         case VKEY_KP6:
+         case VKEY_KP7:
+         case VKEY_KP8:
+            if(_k.modCtrl())
+               saveUndoByIndex(_k.pressed - VKEY_KP1);  // undo/[0..7].dat
+            else if(0 == _k.mod)
+               loadUndoByIndex(_k.pressed - VKEY_KP1);
+            handleUndoIdxChanged();
+            return true;
+      }
+
+      switch(_k.released)
+      {
+         case VKEY_KP0:
+         case VKEY_LEFT:
+         case VKEY_RIGHT:
+         case VKEY_UP:
+         case VKEY_DOWN:
+         case VKEY_SPACE:
+         case VKEY_F11:
+         case VKEY_PAGEUP:
+         case VKEY_PAGEDOWN:
+         case VKEY_BACKSPACE:
+         case VKEY_SLASH:
+         case VKEY_TAB:
+         case '[':  // de:ue
+         case ']':  // de:+
+         case '1':
+         case '2':
+         case '3':
+         case '4':
+         case '5':
+         case '6':
+            releasePendingNoteOffs();
+            return true;
+
+         case 'z':  // de:y
+            noteOffSingleOrChord(3, -12);
+            return true;
+
+         case 'x':
+            noteOffSingleOrChord(4, -12);
+            return true;
+
+         case 'c':
+            noteOffSingleOrChord(5, -12);
+            return true;
+
+         case 'v':
+            noteOffSingleOrChord(6, -12);
+            return true;
+
+         case 'b':
+            noteOffSingleOrChord(0, 0);
+            return true;
+
+         case 'n':
+            noteOffSingleOrChord(1, 0);
+            return true;
+
+         case 'm':
+            noteOffSingleOrChord(2, 0);
+            return true;
+
+         case 'a':
+            noteOffSingleOrChord(0, 0);
+            return true;
+
+         case 's':
+            noteOffSingleOrChord(1, 0);
+            return true;
+
+         case 'd':
+            noteOffSingleOrChord(2, 0);
+            return true;
+
+         case 'f':
+            noteOffSingleOrChord(3, 0);
+            return true;
+
+         case 'g':
+            noteOffSingleOrChord(4, 0);
+            return true;
+
+         case 'h':
+            noteOffSingleOrChord(5, 0);
+            return true;
+
+         case 'j':
+            noteOffSingleOrChord(6, 0);
+            return true;
+
+         case 'k':
+            noteOffSingleOrChord(7, 0);
+            return true;
+
+         case 'l':
+            noteOffSingleOrChord(8, 0);
+            return true;
+
+         case 'q':
+            noteOffSingleOrChord(4, 0);
+            return true;
+
+         case 'w':
+            noteOffSingleOrChord(5, 0);
+            return true;
+
+         case 'e':
+            noteOffSingleOrChord(6, 0);
+            return true;
+
+         case 'r':
+            noteOffSingleOrChord(0, 12);
+            return true;
+
+         case 't':
+            noteOffSingleOrChord(1, 12);
+            return true;
+
+         case 'y':
+            noteOffSingleOrChord(2, 12);
+            return true;
+
+         case 'u':
+            noteOffSingleOrChord(3, 12);
+            return true;
+
+         case 'i':
+            noteOffSingleOrChord(4, 12);
+            return true;
+
+         case 'o':
+            noteOffSingleOrChord(5, 12);
+            return true;
+
+         case 'p':
+            noteOffSingleOrChord(6, 12);
+            return true;
+      }
+      return false;
+   }
+
+   protected method drawableAddRadialPanel(float _angCtr,
+                                           float _angOff,
+                                           float _angBorder,
+                                           float _dMin,
+                                           float _dMax
+                                           ) {
+      // polar to cartesian:
+      //  x' = d * cos(a)
+      //  y' = d * sin(a)
+
+      float angMinL = (_angCtr - _angOff + (_angBorder * 1/*_dMax*/));
+      float angMinR = (_angCtr + _angOff - (_angBorder * 1/*_dMax*/));
+      float angMaxL = (_angCtr - _angOff + (_angBorder * 1/*_dMin*/));
+      float angMaxR = (_angCtr + _angOff - (_angBorder * 1/*_dMin*/));
+
+      float saMinL = sin(angMinL);
+      float caMinL = cos(angMinL);
+      float saMaxL = sin(angMaxL);
+      float caMaxL = cos(angMaxL);
+      float saMinR = sin(angMinR);
+      float caMinR = cos(angMinR);
+      float saMaxR = sin(angMaxR);
+      float caMaxR = cos(angMaxR);
+
+      float ltx = caMaxL * w * _dMax + x;
+      float lty = saMaxL * h * _dMax + y;
+
+      float rtx = caMaxR * w * _dMax + x;
+      float rty = saMaxR * h * _dMax + y;
+
+      float rbx = caMinR * w * _dMin + x;
+      float rby = saMinR * h * _dMin + y;
+
+      float lbx = caMinL * w * _dMin + x;
+      float lby = saMinL * h * _dMin + y;
+
+      int pid = minBeginPathConvex();
+      minMoveTo(ltx, lty);
+      minArcTo(w*_dMax,
+               h*_dMax,
+               0/*rot*/,
+               0/*bLargeArc*/,
+               1/*bArcSweep*/,
+               rtx, rty
+               );
+      minLineTo(rbx, rby);
+      minArcTo(w*_dMin,
+               h*_dMin,
+               0/*rot*/,
+               0/*bLargeArc*/,
+               0/*bArcSweep*/,
+               lbx, lby
+               );
+      minEndPathClosed();
+      if(1)
+      {
+         minFill();
+         minDrawPath(pid);
+      }
+
+      minStrokeWidth(stroke_w);
+      // minJoinMiter();
+      minJoinBevel();
+      minCapNone();
+      minDrawPath(pid);
+   }
+
+   protected method drawableAddRadialPanels(float _dMin, float _dMax, float _angBorderAmt, float _lum, int _gridY) {
+
+      float angStep = 2PI / 12;
+      float angBorder = angStep * _angBorderAmt;
+      float angOff = angStep*0.5;
+      float ang = 0;
+
+      int gridX = 0;
+      loop(12)
+      {
+         float lum = (gridX == cursor_x && _gridY == cursor_y) ? _lum * 2.7 : _lum;
+         if(-1 == findModeForGridPos(gridX, _gridY, null/*retNote*/, false/*bDebug*/))
+            lum *= 0.7;
+
+         int note = mathWrapi(root_key + ((gridX * 7) + getRelativeNoteOffset(1 == _gridY)), 0, 12);
+         // if(gridX == cursor_x && _gridY == cursor_y)
+         //    log2 "note="+note+" semi_tbl="+semi_tbl;
+         if(-1 != semi_tbl.indexOf(note, 0))
+            lum *= 1.5;
+
+         int hlIdx = hl_notes.indexOf(note, 0);
+         if(0 == _gridY)
+            log4 "gridX="+gridX+" note="+note+"("+note_names.get(note)+" hl_notes="+hl_notes+" hl_notes_amt="+hl_notes_amt+" => hlIdx="+hlIdx;
+         if(hlIdx >= 0)
+            lum += 1.5 * hl_notes_amt[hlIdx];
+
+         minColorFill(sdvg_ARGBf(1.0, r*lum, g*lum, b*lum));
+
+         drawableAddRadialPanel(ang, angOff, angBorder,
+                                _dMin, _dMax
+                                );
+
+         ang += angStep;
+         gridX++;
+      }
+   }
+
+   protected method createDrawable() {
+      float lum;
+      float angBorderAmt = 0.0375;
+      drawable.begin();
+
+      // log2 "cursor=("+cursor_x+","+cursor_y+")";
+
+      lum = 1.1;
+      minColorStroke(sdvg_ARGBf(1.0,r*lum,g*lum,b*lum));
+
+      // Outer
+      if(1)
+      {
+         lum = 4.0;
+         if(cursor_y == 0) lum *= 1.05;
+         drawableAddRadialPanels(dmin_outer, dmax_outer, angBorderAmt, lum, 0/*gridY*/);
+      }
+
+      // Inner
+      if(1)
+      {
+         lum = 2.5;
+         if(cursor_y == 1) lum *= 1.05;
+         drawableAddRadialPanels(dmin_inner, dmax_inner, angBorderAmt, lum, 1/*gridY*/);
+      }
+
+      drawable.end();
+      drawable.setSize2f(VP_W, VP_H);
+   }
+
+   protected method drawLabels() {
+      String *s;
+      Float minX, maxX, minY, maxY;
+      float w;
+      float h;
+
+      sdvg_SetAlphaSDFRange(0.51, 0.956);
+      sdvg_SetAlphaSDFExp(1.4f);
+
+      sdvg_ModelInitIdentity();
+
+      sdvg_SetFillColor4f(1.0f, 1.0f, 1.0f, 1.0);
+      sdvg_SetStrokeColor4f(1.0f, 1.0f, 1.0f, 1.0);
+
+      sdvg_BindFont(font_30, false/*bFilter*/);
+      sdvg_SetFontScaling(FONT_30_SCL_MED_X, FONT_30_SCL_MED_Y);
+
+      // Key + Mode
+      s <= note_names.get(mathWrapi(root_key, 0, 12))+" "+mode_names.get(mode);
+      sdvg_DrawText(s, 4, 0);
+
+      // Maj / min
+      s <= mode_major_tbl.get(mode) ? "maj" : "min";
+      sdvg_TextBBox(font_30, s, minX, maxX, minY, maxY);
+      w = (maxX - minX);
+      sdvg_DrawText(s, VP_W - w - 8, 0);
+
+      // Root key
+      if(0 == root_key)
+         s <= "0";
+      else if(root_key > 0)
+         s <= "+"+root_key;
+      else
+         s <= String(root_key);
+      sdvg_TextBBox(font_30, s, minX, maxX, minY, maxY);
+      h = (maxY - minY);
+      sdvg_DrawText(s, 4, VP_H - h - 16);
+
+      // Inversion
+      s <= getChordName()+" "+chord_inversion_names.get(chord_inversion);
+      sdvg_TextBBox(font_30, s, minX, maxX, minY, maxY);
+      w = (maxX - minX);
+      sdvg_DrawText(s, VP_W - w - 8, VP_H - h - 16);
+
+      // Rotated outer + inner labels
+      if(1)
+      {
+         float angStep = 2PI / 12;
+
+         float sx = VP_W;
+         float sy = VP_H;
+
+         float x;
+         float y;
+         int gridX = 0;
+         int noteIdx = 0;
+         float ang = model_rot;
+         float scl;
+         int note;
+         int hlIdx;
+
+         // Outer
+         sdvg_BindFont(font_256_sdf, true/*bFilter*/);
+         sdvg_SetFontScaling(FONT_256_SCL_BIG_X, FONT_256_SCL_BIG_Y);
+
+         loop(12)
+         {
+            sdvg_ModelInitIdentity();
+            sdvg_ModelTranslate2f(sx*0.5, sy*0.5);
+            sdvg_ModelRotatef(ang);
+
+            if(0 == cursor_y && gridX == cursor_x)
+               sdvg_SetColorARGB(#FF000000);
+            else
+               sdvg_SetColorARGB(#FFe6e6e6);
+
+            note = mathWrapi(root_key+noteIdx, 0, 12);
+            hlIdx = hl_notes.indexOf(note, 0);
+            // // if(hlIdx >=0 && 0 == note)
+            // //    log4 "hl_notes_amt["+hlIdx+"]="+hl_notes_amt[hlIdx];
+            scl = 1.0 + ((hlIdx >= 0) ? (0.25 * hl_notes_amt[hlIdx]) : 0.0f);
+            sdvg_SetFontScaling(FONT_256_SCL_BIG_X*scl, FONT_256_SCL_BIG_Y*scl);
+
+            s <= note_names.get(note);
+            sdvg_TextBBox(font_256_sdf, s, minX, maxX, minY, maxY);
+            w = (maxX - minX);
+            h = (maxY - minY);
+            x = -w*0.5;
+            y = -0.5*sy * (dmax_outer+dmin_outer)*0.5 - h*0.6;
+            sdvg_DrawText(s, x, y);
+
+            // Next cel
+            noteIdx += 7;
+            ang += angStep;
+            gridX++;
+         }
+
+         // Inner
+         sdvg_SetFontScaling(FONT_256_SCL_MED_X, FONT_256_SCL_MED_Y);
+
+         gridX = 0;
+         noteIdx = 0;
+         ang = model_rot;
+         loop(12)
+         {
+            sdvg_ModelInitIdentity();
+            sdvg_ModelTranslate2f(sx*0.5, sy*0.5);
+            sdvg_ModelRotatef(ang);
+
+            if(1 == cursor_y && gridX == cursor_x)
+               sdvg_SetColorARGB(#FF000000);
+            else
+               sdvg_SetColorARGB(#7Fe6e6e6);
+
+            s <= note_names.get( mathWrapi(root_key + noteIdx + getRelativeNoteOffset(true), 0, 12) );
+            sdvg_TextBBox(font_256_sdf, s, minX, maxX, minY, maxY);
+            w = (maxX - minX);
+            h = (maxY - minY);
+            x = -w*0.5;
+            y = -0.5*sy * (dmax_inner+dmin_inner)*0.5 - h*0.6;
+            sdvg_DrawText(s, x, y);
+
+            // Next cel
+            noteIdx += 7;
+            ang += angStep;
+            gridX++;
+         }
+      }
+
+      sdvg_UnbindFont();
+      sdvg_SetFontScaling(1.0, 1.0);
+   }
+
+   protected method loadFont(String _pathPrefix, ShaderVG_Font _font, Buffer _fontBin, Texture _fontTex) : boolean {
+      local PakFile fBin;
+      if(fBin.open(_pathPrefix+".bin"))
+      {
+         fBin.readBuffer(_fontBin, 0, fBin.size, true/*bResize*/);
+         fBin.close();
+         _fontBin.offset = _fontBin.size;
+
+         if(_fontTex.loadImage(_pathPrefix+".png", 0,0,1))
+         {
+            if(sdvg_InitFont(_font, _fontBin, _fontTex, _fontTex.sx, _fontTex.sy))
+            {
+               loginfo "KeyJazz::loadFont: OK, font \""+_pathPrefix+"\" loaded. tex.sz=("+_fontTex.sx+","+_fontTex.sy+")";
+               return true;
+            }
+            else
+            {
+               logerror "KeyJazz::loadFont: sdvg_InitFont() failed\n";
+            }
+         }
+         else
+         {
+            logerror "KeyJazz::loadFont: failed to load font-texture from \""+_pathPrefix+".png\"";
+         }
+      }
+      else
+      {
+         logerror "KeyJazz::loadFont: failed to load font-data from \""+_pathPrefix+".bin\"";
+      }
+      return false;
+   }
+
+   public method draw(float _dt) {
+
+      sdvg_SetStrokeWidth(1.0f);
+      sdvg_SetFillColor4f(0.1f, 0.4f, 0.25f, 1.0f);
+      sdvg_SetStrokeColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+      sdvg_SetGlobalAlpha(1.0f);
+      sdvg_PaintSolid();
+
+      sdvg_ModelInitIdentity();
+      sdvg_SetColorARGB(#FFe6e6e6);
+
+      log4 "KeyJazz::draw: getSizeX()="+getSizeX()+" getSizeY()="+getSizeY();
+
+      UIRenderer.DrawFilledRectangle(0, 0, getSizeX(), getSizeY(),
+                                     sdvg_ARGBf(1.0, r, g, b)
+                                     );
+      createDrawable();
+
+      model_rot = sin(frot) * PI * 0.25 * 0.5;
+
+      if(1)
+      {
+         drawable.setScale2f(1.0f, 1.0f);
+         drawable.setRotation(model_rot - PI*0.5);
+         drawable.setTranslate2f(0, 0);
+         MinnieVG.SetTransformForDrawable(drawable);
+         drawable.draw();
+         sdvg_UnbindVBO();
+      }
+
+      drawLabels();
+
+      if(b_queued_noteon_cursor)
+      {
+         b_queued_noteon_cursor = false;
+         noteOnCursor();
+      }
+
+      if(model_frot_damp_countdown > 0)
+      {
+         model_frot_damp_countdown--;
+         frot *= mathPowerf(0.91, _dt);
+         frotspd *= mathPowerf(0.91, _dt);
+      }
+      else
+      {
+         if(frotspd < (1 * (1.0 / 360)))
+            frotspd += 0.000005 * _dt;
+         else
+            frotspd = (1 * (1.0 / 360));
+      }
+
+      highlightNotesDecay(_dt);
+
+      if(b_rot)
+      {
+         frot = mathWrapf(frot + _dt * frotspd, 0, 2PI);
+      }
+   }
+
+   public virtual is3d() : boolean {
+      return true;
+   }
+
+   public virtual onOpen() {
+      log1 "KeyJazz::onOpen() b_fonts_loaded="+b_fonts_loaded;
+      if(b_fonts_loaded)
+      {
+         sdvg_FontOnOpen(font_30);
+         sdvg_FontOnOpen(font_256_sdf);
+      }
+   }
+
+   public virtual onDraw() {
+      log4 "KeyJazz::onDraw: .................................................";
+
+      if(!b_fonts_loaded)
+      {
+         b_fonts_loaded = 1
+            && loadFont("fonts/default_30", font_30, font_30_bin, font_30_tex)
+            && loadFont("fonts/default_256_sdf", font_256_sdf, font_256_sdf_bin, font_256_sdf_tex)
+            ;
+         onOpen();
+      }
+
+      sdvg_PaintSolid();
+      sdvg_EnableBlendingKeepAlpha();
+      sdvg_ProjInit2D(getSizeX(), getSizeY());
+
+      if(1)
+      {
+         draw(1.0);
+         redraw();
+      }
+      else
+      {
+         sdvg_SetColorARGB(#FF007F7F);
+
+         if(sdvg_BeginLines(2))
+         {
+            sdvg_Vertex2f(0,0);
+            sdvg_Vertex2f(100,100);
+            sdvg_End();
+         }
+
+         if(1)
+         {
+            sdvg_BindFont(font_30, false/*bFilter*/);
+            sdvg_DrawText("hello, world.", 100, 100);
+            sdvg_UnbindFont();
+         }
+         else
+         {
+            sdvg_BindFont(font_30, false/*bFilter*/);
+            sdvg_SetColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+            float w = 1024;
+            float h = 180;
+            float x = 40;
+            float y = 40;
+            sdvg_BindShader(0);  // use built-in shader
+            if(sdvg_BeginTexturedTriangles(2*3))
+            {
+               // 1
+               sdvg_TexCoord2f(0.0f, 0.0f);
+               sdvg_Vertex2f(x, y);
+
+               sdvg_TexCoord2f(1.0f, 0.0f);
+               sdvg_Vertex2f(x+w, y);
+
+               sdvg_TexCoord2f(1.0f, 1.0f);
+               sdvg_Vertex2f(x+w, y+h);
+
+               // 2
+               sdvg_TexCoord2f(0.0f, 0.0f);
+               sdvg_Vertex2f(x, y);
+
+               sdvg_TexCoord2f(1.0f, 1.0f);
+               sdvg_Vertex2f(x+w, y+h);
+
+               sdvg_TexCoord2f(0.0f, 1.0f);
+               sdvg_Vertex2f(x, y+h);
+
+               sdvg_End();
+            }
+            sdvg_UnbindTexture2D();
+         }
+
+      }
+
+      log4 "KeyJazz::onDraw: LEAVE";
+   }
+
+   // <save.png>
+   public method saveState(Stream ofs) {
+      ofs.i8 = 1; // ver
+      ofs.i8 = undo_io_slots.numElements;
+
+      Buffer *b;
+      foreach b in undo_io_slots
+      {
+         ofs.i32 = b.size;
+         if(b.size > 0)
+         {
+            ofs.writeBuffer(b, 0, b.size);
+         }
+      }
+   }
+
+   // <load.png>
+   public method loadState(Stream ifs) : boolean {
+      byte ver = ifs.u8;
+      if(ver >= 1)
+      {
+         byte numSlots = ifs.u8;
+         loop(mathMaxi(numSlots, NUM_UNDO_IO_SLOTS))
+            undo_io_slots.add(#(new Buffer));
+
+         int slotIdx = 0;
+         loop(numSlots)
+         {
+            Buffer b <= undo_io_slots.get(slotIdx);
+            int bSz = ifs.i32;
+            if(bSz > 0)
+            {
+               ifs.readBuffer(b, 0, bSz, true/*bResize*/);
+            }
+
+            // Next I/O slot
+            slotIdx++;
+         }
+
+         // Succeeded
+         return true;
+      }
+      else
+      {
+         logerror "invalid KeyJazz ver="+ver;
+      }
+      return false;
+   }
+
+}

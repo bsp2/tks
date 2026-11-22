@@ -1,8 +1,8 @@
 % Synergy MIDI Tracker - Keyboard Shortcuts
 % bsp
-% 14-Nov-2026
+% 22-Nov-2026
 >>>
-17Nov2019, 15May2020, 30Oct2020, 19Apr2021, 13May2021, 14May2021, 02Jun2021, 13Feb2022, 24Feb2022, 07May2022, 08May2022, 24Jun2022, 19Nov2022, 04Feb2023, 18Mar2023, 24Mar2023, 23Jun2023, 24Jun2023, 17Aug2023, 31Oct2023, 03Nov2023, 10Nov2023, 14Nov2023, 16Nov2023, 17Nov2023, 19Nov2023, 02Dec2023, 16Dec2023, 02Feb2024, 03Feb2024, 01Oct2024, 05Oct2024, 06Oct2024, 02Nov2024, 07Jan2025, 16Jan2025, 25Jan2025, 26Jan2025, 28Feb2025, 07Mar2025, 09Mar2025, 28May2025, 01Jun2025, 12Jun2025, 13Jun2025, 20Jun2025, 18Dec2025, 02Jan2026, 14Apr2026, 09May2026, 10May2026, 16May2026, 31Jul2026, 24Oct2026, 28Oct2026, 13Nov2026, 14Nov2026
+17Nov2019, 15May2020, 30Oct2020, 19Apr2021, 13May2021, 14May2021, 02Jun2021, 13Feb2022, 24Feb2022, 07May2022, 08May2022, 24Jun2022, 19Nov2022, 04Feb2023, 18Mar2023, 24Mar2023, 23Jun2023, 24Jun2023, 17Aug2023, 31Oct2023, 03Nov2023, 10Nov2023, 14Nov2023, 16Nov2023, 17Nov2023, 19Nov2023, 02Dec2023, 16Dec2023, 02Feb2024, 03Feb2024, 01Oct2024, 05Oct2024, 06Oct2024, 02Nov2024, 07Jan2025, 16Jan2025, 25Jan2025, 26Jan2025, 28Feb2025, 07Mar2025, 09Mar2025, 28May2025, 01Jun2025, 12Jun2025, 13Jun2025, 20Jun2025, 18Dec2025, 02Jan2026, 14Apr2026, 09May2026, 10May2026, 16May2026, 31Jul2026, 24Oct2026, 28Oct2026, 13Nov2026, 14Nov2026, 22Nov2026
 <<<
 $(var:header)
 
@@ -144,12 +144,80 @@ As root, edit `/usr/share/X11/xkb/symbols/<your country code>` (e.g. `de`) and r
 |                             |+(`^` on german kbd)
 | \`: (twice)                 | Edit current MIDI morph scene
 |                             |+(`^` on german kbd)
+| lctrl - x BACKSPACE         | Show KeyJazz dialog
 | RIGHT MENU KEY              | Toggle keyboard focus selection mode
 | ESC                         | Go to previous or parent page / cancel dialog
 | lctrl - x ESC               | Open "stop" menu
 | lctrl - x x                 | Bring *Eureka* window to front (if process is running)
 | lshift - q                  | Quit application (dialog)
 ].kbd_table Global keyboard shortcuts
+
+
+# KeyJazz
+
+| Key Sequence               :|:Description
+| ESC                         | Close dialog
+| SPACE                       | Close dialog and stop replay
+| lctrl - SPACE               | Play last played note (saved per undo step)
+| q..p, a..l, y..m            | Play notes (or chords)
+| UP                          | Select relative key
+| DOWN                        | Select relative key
+| LEFT                        | Select previous note
+| RIGHT                       | Select next note
+| F11                         | Toggle cursor-note-on mode
+| F12                         | Toggle rotation anim
+| INSERT                      | Select next root key (transpose up)
+| lshift - INSERT             | Insert / duplicate undo step
+| DELETE                      | Select previous root key (transpose down)
+| lshift - DELETE             | Delete undo step
+| HOME                        | Select next mode
+| END                         | Select previous mode
+| RETURN                      | Find next mode by cursor note and create new undo step
+| lctrl - RETURN              | Set root key to cursor note and create new undo step
+| lalt - RETURN               | Replace current undo step
+| BACKSPACE                   | 
+|+PAGEUP                      |+Select previous undo step
+| lctrl - PAGEUP              | Move undo step up
+| lctrl - BACKSPACE           | 
+|+PAGEDOWN                    |+Select next undo step
+| lctrl - PAGEDOWN            | Move undo step down
+| TAB                         | Toggle chords
+| 2                           | Cycle dyad chords
+| 3                           | Cycle triad chords
+| 4                           | Cycle tetrad chords
+| 5                           | Cycle ext5 chords
+| 6                           | Cycle ext6 chords
+| .                           | Select previous chord inversion
+| /                           | Select next chord inversion
+| (NUMPAD) 0                  | Load defaults
+| (NUMPAD) 1                  | Load undo slot 1
+| (NUMPAD) 2                  | Load undo slot 2
+| (NUMPAD) 3                  | Load undo slot 3
+| (NUMPAD) 4                  | Load undo slot 4
+| (NUMPAD) 5                  | Load undo slot 5
+| (NUMPAD) 6                  | Load undo slot 6
+| (NUMPAD) 7                  | Load undo slot 7
+| (NUMPAD) 8                  | Load undo slot 8
+| (NUMPAD) 9                  | Load undo slot 9
+| (NUMPAD) lctrl - 1          | Save undo slot 1
+| (NUMPAD) lctrl - 2          | Save undo slot 2
+| (NUMPAD) lctrl - 3          | Save undo slot 3
+| (NUMPAD) lctrl - 4          | Save undo slot 4
+| (NUMPAD) lctrl - 5          | Save undo slot 5
+| (NUMPAD) lctrl - 6          | Save undo slot 6
+| (NUMPAD) lctrl - 7          | Save undo slot 7
+| (NUMPAD) lctrl - 8          | Save undo slot 8
+| (NUMPAD) lctrl - 9          | Save undo slot 9
+| RSHIFT                      | (when tracker editor is visible) (re-)start recording
+| RCTRL                       | (when tracker editor is visible) toggle edit mode
+| lshift - BACKSPACE          | 
+|+F3                          |+(when tracker editor is visible and editable) clear pattern
+| UP                          | (when tracker editor is visible) go to previous step
+| DOWN                        | (when tracker editor is visible) go to next step
+].kbd_table KeyJazz dialog keyboard shortcuts
+
+note: the 9 undo(-seq) slots are saved / restored per project
+note: each slot stores up to 16 notes / chords
 
 
 # Bezier Edit
@@ -344,7 +412,7 @@ As root, edit `/usr/share/X11/xkb/symbols/<your country code>` (e.g. `de`) and r
 | (NUMPAD) lshift - 8    | Select used node pattern #8
 | (NUMPAD) lshift - 9    | Select used node pattern #9
 | (NUMPAD) lshift - 0    | Select empty pattern (--/)
-| lctrl - x BACKSPACE    | Toggle ignore seek / prgchg / mute (per-node setting)
+| lalt - BACKSPACE       | Toggle ignore seek / prgchg / mute (per-node setting)
 ].kbd_table Common Node Editor keyboard shortcuts
 
 
