@@ -1534,11 +1534,13 @@ static void loc_map_buffer(Dsdvg_buffer_ref_t _buf, sUI _size) {
                                      _buf
                                      )
                    );
+      Dsdvg_tracecall("[trc] loc_map_buffer: post zglMapBufferRange: mapped_user_vbo_id=%u current_vbo_id=%u(scratch=%u) _size=%u => _buf->size=%u\n", mapped_user_vbo_id, current_vbo_id, scratch_vbo_id, _size, _buf->size);
       _buf->io_offset = 0u;
    }
 #ifndef SHADERVG_GLES
    else
    {
+      // Dsdvg_tracecall("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ sdvg_int_b_glcore=%d buf=%p scratch_buffer=%p\n", sdvg_int_b_glcore, _buf, scratch_buffer);
       Dsdvg_glcall(zglMapBuffer(GL_ARRAY_BUFFER, GL_WRITE_ONLY, _buf, _size));
    }
 #endif // SHADERVG_GLES
@@ -1585,10 +1587,19 @@ void YAC_CALL sdvg_UnmapVBO(void) {
 
 void YAC_CALL sdvg_UnbindVBO(void) {
    Dsdvg_tracecall("[trc] sdvg_UnbindVBO  current_vbo_id=%u\n", current_vbo_id);
+
+   // // sdvg_int_attrib_enable_mask = 0;
+   // // sdvg_int_attrib_divisor_mask = 0;
+   // // Dsdvg_handle_queued_attrib_enable_and_divisor();
+
    if(current_vbo_id == scratch_vbo_id)
    {
       Dsdvg_glcall(glUnmapBuffer(GL_ARRAY_BUFFER));
    }
+   // // else
+   // // {
+   // //    Dsdvg_glcall(glUnmapBuffer(GL_ARRAY_BUFFER)); // xxxxxxxx
+   // // }
    Dsdvg_glcall(glBindBuffer(GL_ARRAY_BUFFER, 0u));
    current_vbo_id = 0u;
 }
@@ -1602,6 +1613,8 @@ void YAC_CALL sdvg_DestroyVBO(sUI _vboId) {
 
 sUI YAC_CALL sdvg_CreateTexture2D(sUI _texfmt, sUI _w, sUI _h, const void *_data, sUI _dataSz) {
    sUI texId = 0u;
+
+   Dsdvg_tracecall("[trc] sdvg_CreateTexture2D: texfmt=%u w=%u h=%u data=%p dataSz=%u\n", _texfmt, _w, _h, _data, _dataSz);
 
    GLenum intFormat;
    GLenum pixFormat;
@@ -1692,6 +1705,7 @@ sUI YAC_CALL sdvg_CreateTexture2D(sUI _texfmt, sUI _w, sUI _h, const void *_data
 
          Dsdvg_glcall(glBindTexture(GL_TEXTURE_2D, texId));
          Dsdvg_glcall(glPixelStorei(GL_UNPACK_ALIGNMENT, bytesPerPixel));
+         Dsdvg_glcall(glPixelStorei(GL_UNPACK_ROW_LENGTH, _w));
          Dsdvg_glcall(glTexImage2D(GL_TEXTURE_2D,
                                    0/*level*/,
                                    intFormat,
@@ -1704,6 +1718,8 @@ sUI YAC_CALL sdvg_CreateTexture2D(sUI _texfmt, sUI _w, sUI _h, const void *_data
                                    )
                       );
          Dsdvg_glcall(glBindTexture(GL_TEXTURE_2D, 0u));
+
+         Dsdvg_tracecall("[trc] sdvg_CreateTexture2D:   => intFormat=0x%04x pixFormat=0x%04x type=0x%04x texId=%u\n", intFormat, pixFormat, type, texId);
       }
       else
       {
@@ -1736,6 +1752,7 @@ sUI YAC_CALL _sdvg_CreateTexture2D(sUI _texfmt, sUI _w, sUI _h, YAC_Object *_dat
 #endif // SHADERVG_SCRIPT_API
 
 void YAC_CALL sdvg_UpdateTexture2D(sUI _texfmt, sUI _w, sUI _h, const void *_data, sUI _dataSz) {
+   Dsdvg_tracecall("[trc] sdvg_UpdateTexture2D: texFmt=%u w=%u h=%u data=%p dataSz=%u\n", _texfmt, _w, _h, (void*)_data, _dataSz);
    // GLenum intFormat;
    GLenum pixFormat;
    GLenum type = GL_NONE;
@@ -1834,6 +1851,7 @@ void YAC_CALL sdvg_UpdateTexture2D(sUI _texfmt, sUI _w, sUI _h, const void *_dat
 
 #ifdef SHADERVG_SCRIPT_API
 void YAC_CALL _sdvg_UpdateTexture2D(sUI _texfmt, sUI _w, sUI _h, YAC_Object *_data) {
+   Dsdvg_tracecall("[trc] sdvg_UpdateTexture2D: texfmt=%u w=%u h=%u data=%p\n", _texfmt, _w, _h, (void*)_data);
    if(YAC_VALID(_data))
    {
       const void *data = (const void*)_data->yacArrayGetPointer();
@@ -1848,8 +1866,9 @@ void YAC_CALL _sdvg_UpdateTexture2D(sUI _texfmt, sUI _w, sUI _h, YAC_Object *_da
 
 void YAC_CALL sdvg_BindMultiTexture2D(sUI _unitIdx, sUI _texId, sBool _bRepeat, sBool _bFilter) {
 
-   Dsdvg_glcall(glActiveTexture(GL_TEXTURE0 + GLenum(_unitIdx)));
+   Dsdvg_tracecall("[trc] sdvg_BindMultiTexture2D: unitIdx=%u texId=%u bRepeat=%d bFilter=%d\n", _unitIdx, _texId, _bRepeat, _bFilter);
 
+   Dsdvg_glcall(glActiveTexture(GL_TEXTURE0 + GLenum(_unitIdx)));
    Dsdvg_glcall(glBindTexture(GL_TEXTURE_2D, _texId));
 
    sSI wrap = _bRepeat ? GL_REPEAT : GL_CLAMP_TO_EDGE;
@@ -1861,13 +1880,14 @@ void YAC_CALL sdvg_BindMultiTexture2D(sUI _unitIdx, sUI _texId, sBool _bRepeat, 
    Dsdvg_glcall(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filter));
 }
 
-void YAC_CALL sdvg_UnbindMultiTexture2D(sUI _unitIdx) {
-   Dsdvg_glcall(glActiveTexture(GL_TEXTURE0 + GLenum(_unitIdx)));
-   Dsdvg_glcall(glBindTexture(GL_TEXTURE_2D, 0));
-}
-
 void YAC_CALL sdvg_BindTexture2D(sUI _texId, sBool _bRepeat, sBool _bFilter) {
    sdvg_BindMultiTexture2D(0u/*unitIdx*/, _texId, _bRepeat, _bFilter);
+}
+
+void YAC_CALL sdvg_UnbindMultiTexture2D(sUI _unitIdx) {
+   Dsdvg_tracecall("[trc] sdvg_UnbindMultiTexture2D: unitIdx=%u\n", _unitIdx);
+   Dsdvg_glcall(glActiveTexture(GL_TEXTURE0 + GLenum(_unitIdx)));
+   Dsdvg_glcall(glBindTexture(GL_TEXTURE_2D, 0));
 }
 
 void YAC_CALL sdvg_UnbindTexture2D(void) {
@@ -6169,16 +6189,22 @@ void sdvg_int_BindScratchBuffer(void) {
    Dsdvg_tracecall("[trc] sdvg_int_BindScratchBuffer current_vbo_id=%u scratch_vbo_id=%u\n", current_vbo_id, scratch_vbo_id);
    if(current_vbo_id != scratch_vbo_id)
    {
-      Dsdvg_debugprintfv("[trc] sdvg_int_BindScratchBuffer: scratch_vbo_id=%u\n", scratch_vbo_id);
+      // // Dsdvg_glcall(glUnmapBuffer(GL_ARRAY_BUFFER)); // xxxxxxxx
+      Dsdvg_debugprintfv("[trc] sdvg_int_BindScratchBuffer: bind scratch_vbo_id=%u\n", scratch_vbo_id);
       Dsdvg_glcall(glBindBuffer(GL_ARRAY_BUFFER, scratch_vbo_id));
       current_vbo_id = scratch_vbo_id;
+      if(1)
+      {
+         sUI bufSz = Dsdvg_glcall(zglGetBufferParameter(GL_ARRAY_BUFFER, GL_BUFFER_SIZE));
+         Dsdvg_debugprintfv("[trc] sdvg_int_BindScratchBuffer: zglGetBufferParameter(GL_BUFFER_SIZE) returned bufSz=%u\n", bufSz);
+      }
       // map GPU buffer to virtual address and reset io_offset
       sUI oldOffset = scratch_buffer->io_offset;
-      Dsdvg_debugprintfv("[trc] sdvg_int_BindScratchBuffer: map scratch_buffer_sz=%u\n", scratch_buffer_sz);
 #ifndef SHADERVG_USE_SCRATCHBUFFERSUBDATA
+      Dsdvg_debugprintfv("[trc] sdvg_int_BindScratchBuffer: begin map scratch_buffer_sz=%u\n", scratch_buffer_sz);
       loc_map_buffer(scratch_buffer, scratch_buffer_sz);
-#endif // SHADERVG_USE_SCRATCHBUFFERSUBDATA
       Dsdvg_debugprintfv("[trc] sdvg_int_BindScratchBuffer: map => scratch_buffer.size=%u\n", scratch_buffer->size);
+#endif // SHADERVG_USE_SCRATCHBUFFERSUBDATA
       scratch_buffer->io_offset = oldOffset;
    }
 }
@@ -7091,7 +7117,7 @@ void YAC_CALL sdvg_ReturnToGL(void) {
 
 void YAC_CALL sdvg_EndFrame(void) {
    Dsdvg_tracecall("[trc] sdvg_EndFrame\n");
-   sdvg_DisableBlending();
+   // // sdvg_DisableBlending();
    if(0 != mapped_user_vbo_id)
       sdvg_UnmapVBO();
    sdvg_BindVBO(0);
@@ -7812,6 +7838,7 @@ static void loc_get_vbo_size(sUI &bufSize, sBool &bScratch) {
    {
       bufSize = scratch_buffer->size;
       bScratch = YAC_TRUE;
+      Dsdvg_tracecall("[trc] shadervg:loc_get_vbo_size: scratch bufSize=%u (scratch_buffer_sz=%u)\n", bufSize, scratch_buffer_sz);
 #if 0
       {
          sUI scrbufSize = Dsdvg_glcall(zglGetBufferParameter(GL_ARRAY_BUFFER, GL_BUFFER_SIZE));
@@ -7823,6 +7850,7 @@ static void loc_get_vbo_size(sUI &bufSize, sBool &bScratch) {
    {
       // User VBO
       bufSize = Dsdvg_glcall(zglGetBufferParameter(GL_ARRAY_BUFFER, GL_BUFFER_SIZE));
+      Dsdvg_tracecall("loc_get_vbo_size: user current_vbo_id=%u bufSize=%u\n", current_vbo_id, bufSize);
    }
 }
 

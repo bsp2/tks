@@ -49,6 +49,8 @@
 #endif // SHADERVG_SCRIPT_API
 
 static const sdvg_font_t *shadervg_cur_font;
+static       sF32         shadervg_cur_font_scl_x = 1.0f;  // 1.0=original size
+static       sF32         shadervg_cur_font_scl_y = 1.0f;  // 1.0=original size
 
 void sdvg_int_reset_font(void) {
    shadervg_cur_font = NULL;
@@ -103,6 +105,7 @@ sBool YAC_CALL sdvg_InitFont(sdvg_font_t *_font,
 
 sBool YAC_CALL sdvg_FontOnOpen(sdvg_font_t *_font) {
    sBool r = YAC_FALSE;
+   Dsdvg_tracecall("[trc] sdvg_FontOnOpen: font=%p font->info=%p\n", _font, (NULL != _font) ? _font->info : NULL);
    if(NULL != _font && NULL != _font->info)
    {
       _font->tex_id = sdvg_CreateTexture2D(SDVG_TEXFMT_ALPHA8,
@@ -112,12 +115,21 @@ sBool YAC_CALL sdvg_FontOnOpen(sdvg_font_t *_font) {
                                            );
       r = (0u != _font->tex_id);
    }
+   else
+   {
+      Dsdvg_errorprintf("[---] sdvg_FontOnOpen: font=%p font->info=%p\n", _font, (NULL != _font) ? _font->info : NULL);
+   }
    return r;
 }
 
-void YAC_CALL sdvg_TextExtents(const sdvg_font_t *_font, const char *_text, sSI *_retW, sSI *_retH) {
-   sSI retW = 0;
-   sSI retH = 0;
+void YAC_CALL sdvg_SetFontScaling(sF32 _sclX, sF32 _sclY) {
+   shadervg_cur_font_scl_x = _sclX;
+   shadervg_cur_font_scl_y = _sclY;
+}
+
+void YAC_CALL sdvg_TextExtents(const sdvg_font_t *_font, const char *_text, sF32 *_retW, sF32 *_retH) {
+   sF32 retW = 0.0f;
+   sF32 retH = 0.0f;
    if(NULL != _font && NULL != _font->info)
    {
       if(NULL != _text)
@@ -173,25 +185,25 @@ void YAC_CALL sdvg_TextExtents(const sdvg_font_t *_font, const char *_text, sSI 
    {
       Dsdvg_errorprintf("[---] shadervg:sdvg_TextExtents: font is NULL\n");
    }
-   *_retW = retW;
-   *_retH = retH;
+   *_retW = retW * shadervg_cur_font_scl_x;
+   *_retH = retH * shadervg_cur_font_scl_y;
 }
 
-sSI YAC_CALL sdvg_TextWidth(const sdvg_font_t *_font, const char *_text) {
-   sSI retW;
-   sSI retH;
+sF32 YAC_CALL sdvg_TextWidth(const sdvg_font_t *_font, const char *_text) {
+   sF32 retW;
+   sF32 retH;
    sdvg_TextExtents(_font, _text, &retW, &retH);
    return retW;
 }
 
-sSI YAC_CALL sdvg_TextHeight(const sdvg_font_t *_font, const char *_text) {
-   sSI retW;
-   sSI retH;
+sF32 YAC_CALL sdvg_TextHeight(const sdvg_font_t *_font, const char *_text) {
+   sF32 retW;
+   sF32 retH;
    sdvg_TextExtents(_font, _text, &retW, &retH);
    return retH;
 }
 
-void YAC_CALL sdvg_TextBBox(const sdvg_font_t *_font, const char *_text, sSI *_retMinX, sSI *_retMaxX, sSI *_retMinY, sSI *_retMaxY) {
+void YAC_CALL sdvg_TextBBox(const sdvg_font_t *_font, const char *_text, sF32 *_retMinX, sF32 *_retMaxX, sF32 *_retMinY, sF32 *_retMaxY) {
    sSI minX = 999999;
    sSI maxX = -1;
    sSI minY = 999999;
@@ -267,29 +279,30 @@ void YAC_CALL sdvg_TextBBox(const sdvg_font_t *_font, const char *_text, sSI *_r
    }
 
    if(minX < 999999)
-      *_retMinX = minX;
+      *_retMinX = minX * shadervg_cur_font_scl_x;
    else
       *_retMinX = 0;
 
    if(maxX > 0)
-      *_retMaxX = maxX;
+      *_retMaxX = maxX * shadervg_cur_font_scl_x;
    else
       *_retMaxX = 0;
 
    if(minY < 999999)
-      *_retMinY = minY;
+      *_retMinY = minY * shadervg_cur_font_scl_y;
    else
       *_retMinY = 0;
 
    if(maxY > 0)
-      *_retMaxY = maxY;
+      *_retMaxY = maxY * shadervg_cur_font_scl_y;
    else
       *_retMaxY = 0;
 }
 
-sSI YAC_CALL sdvg_TextIndexAtX(const sdvg_font_t *_font, const char *_text, sSI _x) {
+sSI YAC_CALL sdvg_TextIndexAtX(const sdvg_font_t *_font, const char *_text, sF32 _x) {
    if(NULL != _text)
    {
+      _x = (0.0f != shadervg_cur_font_scl_x) ? (_x * (1.0f / shadervg_cur_font_scl_x)) : _x;
       sSI w = 0;
       sUI charIdx = 0u;
       for(;;)
@@ -302,7 +315,7 @@ sSI YAC_CALL sdvg_TextIndexAtX(const sdvg_font_t *_font, const char *_text, sSI 
                c -= _font->info->first_glyph;
                const sdvg_glyph_t *g = &_font->glyphs[c];
                w += g->advance_x;
-               if(w > (_x + sSI(sUI(g->advance_x)/2u)))
+               if(sF32(w) > (_x + sSI(sUI(g->advance_x)/2u)))
                   return sSI(charIdx - 1u);
             }
          }
@@ -316,7 +329,7 @@ sSI YAC_CALL sdvg_TextIndexAtX(const sdvg_font_t *_font, const char *_text, sSI 
 }
 
 void YAC_CALL sdvg_BindFont(const sdvg_font_t *_font, sBool _bFilter) {
-   shadervg_cur_font = _font;
+   shadervg_cur_font       = _font;
    sdvg_BindTexture2D(shadervg_cur_font->tex_id, YAC_FALSE/*bRepeat*/, _bFilter);
 }
 
@@ -328,12 +341,16 @@ void YAC_CALL sdvg_DrawText(const char *_text, sF32 _x, sF32 _y) {
          _x += 0.375f;
          _y += 0.375f;
          sF32 cx = _x;
-         sF32 cy = _y + shadervg_cur_font->info->ascender;
+         sF32 cy = _y + shadervg_cur_font->info->ascender * shadervg_cur_font_scl_y;
          sUI charIdx = 0u;
          sUI quadIdx = 0u;
          const sF32 us = shadervg_cur_font->info->us;
          const sF32 vs = shadervg_cur_font->info->vs;
          const sF32 sdfRadius = sF32(shadervg_cur_font->info->sdf_radius);
+         const sF32 sdfRadiusSclX = sdfRadius * shadervg_cur_font_scl_x;
+         const sF32 sdfRadiusSclY = sdfRadius * shadervg_cur_font_scl_y;
+         const sF32 sdfRadiusSclX2 = sdfRadiusSclX * 2.0f;
+         const sF32 sdfRadiusSclY2 = sdfRadiusSclY * 2.0f;
          // (note) always use 32bit float draw mode (custom shaders, e.g. TC55)
          if(sdfRadius > 0.0f)
             (void)sdvg_BeginTexturedTrianglesAlphaSDF32(SHADERVG_TEXT_BATCH_SIZE * (2u * 3u));
@@ -347,7 +364,7 @@ void YAC_CALL sdvg_DrawText(const char *_text, sF32 _x, sF32 _y) {
                if(sUI('\n') == c)
                {
                   cx = _x;
-                  cy += shadervg_cur_font->info->height;
+                  cy += shadervg_cur_font->info->height * shadervg_cur_font_scl_y;
                }
                else if(c >= shadervg_cur_font->info->first_glyph)
                {
@@ -372,10 +389,10 @@ void YAC_CALL sdvg_DrawText(const char *_text, sF32 _x, sF32 _y) {
                      sF32 vt = (g->y          - sdfRadius) * vs;
                      sF32 vb = ((g->y + g->h) + sdfRadius) * vs;
 
-                     sF32 xl = cx + g->offset_x - sdfRadius;
-                     sF32 xr = xl + g->w        + sdfRadius*2;
-                     sF32 yt = cy - g->offset_y - sdfRadius;
-                     sF32 yb = yt + g->h        + sdfRadius*2;
+                     sF32 xl = cx - sdfRadiusSclX  + (g->offset_x * shadervg_cur_font_scl_x);
+                     sF32 xr = xl + sdfRadiusSclX2 + (g->w        * shadervg_cur_font_scl_x);
+                     sF32 yt = cy - sdfRadiusSclY  - (g->offset_y * shadervg_cur_font_scl_y);
+                     sF32 yb = yt + sdfRadiusSclY2 + (g->h        * shadervg_cur_font_scl_y);
 
                      // Dprintf("xxx char=\'%c\' yt=%f yb=%f w=%d h=%d off=(%d, %d)\n", char(c+shadervg_cur_font->info->first_glyph), yt, yb, g->w, g->h, g->offset_x, g->offset_y);
 
@@ -400,7 +417,7 @@ void YAC_CALL sdvg_DrawText(const char *_text, sF32 _x, sF32 _y) {
                      sdvg_Vertex2f(xl, yb);
 
                      // Next char
-                     cx += g->advance_x;
+                     cx += g->advance_x * shadervg_cur_font_scl_x;
                      quadIdx++;
                   }
                   // else: invalid glyph (skip)
@@ -435,13 +452,17 @@ void YAC_CALL sdvg_DrawTextClipped(const char *_text, sF32 _x, sF32 _y, sF32 _cl
          const sF32 us = shadervg_cur_font->info->us;
          const sF32 vs = shadervg_cur_font->info->vs;
          const sF32 sdfRadius = sF32(shadervg_cur_font->info->sdf_radius);
+         const sF32 sdfRadiusSclX = sF32(shadervg_cur_font->info->sdf_radius) * shadervg_cur_font_scl_x;
+         const sF32 sdfRadiusSclY = sF32(shadervg_cur_font->info->sdf_radius) * shadervg_cur_font_scl_y;
+         const sF32 sdfRadiusSclX2 = sdfRadiusSclX * 2.0f;
+         const sF32 sdfRadiusSclY2 = sdfRadiusSclY * 2.0f;
          // (note) always use 32bit float draw mode (custom shaders, e.g. TC55)
          if(sdfRadius > 0.0f)
             (void)sdvg_BeginTexturedTrianglesAlphaSDF32(SHADERVG_TEXT_BATCH_SIZE * (2u * 3u));
          else
             (void)sdvg_BeginTexturedTrianglesAlpha32(SHADERVG_TEXT_BATCH_SIZE * (2u * 3u));
          sF32 cx = _x;
-         sF32 cy = _y + shadervg_cur_font->info->ascender;
+         sF32 cy = _y + shadervg_cur_font->info->ascender * shadervg_cur_font_scl_y;
          for(;;)
          {
             sUI c = sUI(_text[charIdx++]);
@@ -450,7 +471,7 @@ void YAC_CALL sdvg_DrawTextClipped(const char *_text, sF32 _x, sF32 _y, sF32 _cl
                if(sUI('\n') == c)
                {
                   cx = _x;
-                  cy += shadervg_cur_font->info->height;
+                  cy += shadervg_cur_font->info->height * shadervg_cur_font_scl_y;
                }
                else if(c >= shadervg_cur_font->info->first_glyph)
                {
@@ -475,10 +496,10 @@ void YAC_CALL sdvg_DrawTextClipped(const char *_text, sF32 _x, sF32 _y, sF32 _cl
                      sF32 vt = g->y          - sdfRadius;
                      sF32 vb = (g->y + g->h) + sdfRadius;
 
-                     sF32 xl = cx + g->offset_x - sdfRadius;
-                     sF32 xr = xl + g->w        + sdfRadius*2;
-                     sF32 yt = cy - g->offset_y - sdfRadius;
-                     sF32 yb = yt + g->h        + sdfRadius*2;
+                     sF32 xl = cx - sdfRadiusSclX  + (g->offset_x * shadervg_cur_font_scl_x);
+                     sF32 xr = xl + sdfRadiusSclX2 + (g->w        * shadervg_cur_font_scl_x);
+                     sF32 yt = cy - sdfRadiusSclY  - (g->offset_y * shadervg_cur_font_scl_y);
+                     sF32 yb = yt + sdfRadiusSclY2 + (g->h        * shadervg_cur_font_scl_y);
 
                      if(xr >= _clipLeft && xl < _clipRight &&
                         yb >= _clipTop  && yt < _clipBottom
@@ -539,7 +560,7 @@ void YAC_CALL sdvg_DrawTextClipped(const char *_text, sF32 _x, sF32 _y, sF32 _cl
                      }
 
                      // Next char
-                     cx += g->advance_x;
+                     cx += g->advance_x * shadervg_cur_font_scl_x;
                   }
                   // else: invalid glyph (skip)
                }
@@ -569,10 +590,12 @@ void YAC_CALL sdvg_DrawTextUnderline(const char *_text, sF32 _x, sF32 _y) {
          // // _x += 0.375f;
          // // _y += 0.375f;
          sF32 cx = _x;
-         sF32 cy = _y + shadervg_cur_font->info->ascender - (shadervg_cur_font->info->underline_position * (1.0f / 64.0f));
+         sF32 cy = _y + (shadervg_cur_font->info->ascender
+                         - (shadervg_cur_font->info->underline_position * (1.0f / 64.0f))
+                         ) * shadervg_cur_font_scl_y;
          sUI charIdx = 0u;
          sUI lineIdx = 0u;
-         sdvg_SetStrokeRadius(shadervg_cur_font->info->underline_thickness * (0.5f / 64.0f));
+         sdvg_SetStrokeRadius(shadervg_cur_font->info->underline_thickness * (0.5f / 64.0f) * shadervg_cur_font_scl_y);
          (void)sdvg_BeginLinesAA(SHADERVG_TEXT_BATCH_SIZE * 2u);
          for(;;)
          {
@@ -587,7 +610,7 @@ void YAC_CALL sdvg_DrawTextUnderline(const char *_text, sF32 _x, sF32 _y) {
                      sdvg_Vertex2f(cx, cy);
                   }
                   cx = _x;
-                  cy += shadervg_cur_font->info->height;
+                  cy += shadervg_cur_font->info->height * shadervg_cur_font_scl_y;
                }
                else if(c >= shadervg_cur_font->info->first_glyph)
                {
@@ -603,7 +626,7 @@ void YAC_CALL sdvg_DrawTextUnderline(const char *_text, sF32 _x, sF32 _y) {
                      }
 
                      const sdvg_glyph_t *g = &shadervg_cur_font->glyphs[c];
-                     cx += g->advance_x;
+                     cx += g->advance_x * shadervg_cur_font_scl_x;
 
                      // Next char
                      lineIdx++;
@@ -641,10 +664,12 @@ void YAC_CALL sdvg_DrawTextUnderlineClipped(const char *_text, sF32 _x, sF32 _y,
          // // _x += 0.375f;
          // // _y += 0.375f;
          sF32 cx = _x;
-         sF32 cy = _y + shadervg_cur_font->info->ascender - (shadervg_cur_font->info->underline_position * (1.0f / 64.0f));
+         sF32 cy = _y + (shadervg_cur_font->info->ascender
+                         - (shadervg_cur_font->info->underline_position * (1.0f / 64.0f))
+                         ) * shadervg_cur_font_scl_y;
          sUI charIdx = 0u;
          sUI lineIdx = 0u;
-         const sF32 strokeW = shadervg_cur_font->info->underline_thickness * (0.5f / 64.0f);
+         const sF32 strokeW = shadervg_cur_font->info->underline_thickness * (0.5f / 64.0f) * shadervg_cur_font_scl_y;
          sdvg_SetStrokeRadius(strokeW);
          (void)sdvg_BeginLinesAA(SHADERVG_TEXT_BATCH_SIZE * 2u);
          for(;;)
@@ -673,7 +698,7 @@ void YAC_CALL sdvg_DrawTextUnderlineClipped(const char *_text, sF32 _x, sF32 _y,
                      }
                   }
                   cx = _x;
-                  cy += shadervg_cur_font->info->height;
+                  cy += shadervg_cur_font->info->height * shadervg_cur_font_scl_y;
                }
                else if(c >= shadervg_cur_font->info->first_glyph)
                {
@@ -689,7 +714,7 @@ void YAC_CALL sdvg_DrawTextUnderlineClipped(const char *_text, sF32 _x, sF32 _y,
                      }
 
                      const sdvg_glyph_t *g = &shadervg_cur_font->glyphs[c];
-                     cx += g->advance_x;
+                     cx += g->advance_x * shadervg_cur_font_scl_x;
 
                      // Next char
                      lineIdx++;
@@ -740,11 +765,13 @@ void YAC_CALL sdvg_DrawTextAccel(const char *_text, sF32 _x, sF32 _y) {
          // // _x += 0.375f;
          // // _y += 0.375f;
          sF32 cx = _x;
-         sF32 cy = _y + shadervg_cur_font->info->ascender - (shadervg_cur_font->info->underline_position * (1.0f / 64.0f));
+         sF32 cy = _y + (shadervg_cur_font->info->ascender
+                         - (shadervg_cur_font->info->underline_position * (1.0f / 64.0f))
+                         ) * shadervg_cur_font_scl_y;
          sUI charIdx = 0u;
          sUI lineIdx = 0u;
          sBool bNextIsAccel = YAC_FALSE;
-         sdvg_SetStrokeRadius(shadervg_cur_font->info->underline_thickness * (0.5f / 64.0f));
+         sdvg_SetStrokeRadius(shadervg_cur_font->info->underline_thickness * (0.5f / 64.0f) * shadervg_cur_font_scl_y);
          (void)sdvg_BeginLinesAA(SHADERVG_TEXT_BATCH_SIZE * 2u);
          for(;;)
          {
@@ -755,7 +782,7 @@ void YAC_CALL sdvg_DrawTextAccel(const char *_text, sF32 _x, sF32 _y) {
                {
                   bNextIsAccel = YAC_FALSE;
                   cx = _x;
-                  cy += shadervg_cur_font->info->height;
+                  cy += shadervg_cur_font->info->height * shadervg_cur_font_scl_y;
                }
                else if(sUI('\a') == c)
                {
@@ -781,10 +808,10 @@ void YAC_CALL sdvg_DrawTextAccel(const char *_text, sF32 _x, sF32 _y) {
                         bNextIsAccel = YAC_FALSE;
 
                         sdvg_Vertex2f(cx, cy);
-                        sdvg_Vertex2f(cx + g->advance_x, cy);
+                        sdvg_Vertex2f(cx + g->advance_x * shadervg_cur_font_scl_x, cy);
                      }
 
-                     cx += g->advance_x;
+                     cx += g->advance_x * shadervg_cur_font_scl_x;
 
                      // Next char
                      lineIdx++;
@@ -817,11 +844,13 @@ void YAC_CALL sdvg_DrawTextAccelClipped(const char *_text, sF32 _x, sF32 _y, sF3
          // // _x += 0.375f;
          // // _y += 0.375f;
          sF32 cx = _x;
-         sF32 cy = _y + shadervg_cur_font->info->ascender - (shadervg_cur_font->info->underline_position * (1.0f / 64.0f));
+         sF32 cy = _y + (shadervg_cur_font->info->ascender
+                         - (shadervg_cur_font->info->underline_position * (1.0f / 64.0f))
+                         ) * shadervg_cur_font_scl_y;
          sUI charIdx = 0u;
          sUI lineIdx = 0u;
          sBool bNextIsAccel = YAC_FALSE;
-         const sF32 strokeW = shadervg_cur_font->info->underline_thickness * (0.5f / 64.0f);
+         const sF32 strokeW = shadervg_cur_font->info->underline_thickness * (0.5f / 64.0f) * shadervg_cur_font_scl_y;
          sdvg_SetStrokeRadius(strokeW);
          (void)sdvg_BeginLinesAA(SHADERVG_TEXT_BATCH_SIZE * 2u);
          for(;;)
@@ -833,7 +862,7 @@ void YAC_CALL sdvg_DrawTextAccelClipped(const char *_text, sF32 _x, sF32 _y, sF3
                {
                   bNextIsAccel = YAC_FALSE;
                   cx = _x;
-                  cy += shadervg_cur_font->info->height;
+                  cy += shadervg_cur_font->info->height * shadervg_cur_font_scl_y;
                }
                else if(sUI('\a') == c)
                {
@@ -859,7 +888,7 @@ void YAC_CALL sdvg_DrawTextAccelClipped(const char *_text, sF32 _x, sF32 _y, sF3
                         bNextIsAccel = YAC_FALSE;
 
                         sF32 x1 = cx;
-                        sF32 x2 = cx + g->advance_x;
+                        sF32 x2 = cx + g->advance_x * shadervg_cur_font_scl_x;
                         if(x2 >= _clipLeft && x1 < _clipRight &&
                            ((cy - strokeW) >= _clipTop) &&
                            ((cy + strokeW)  < _clipBottom)
@@ -875,7 +904,7 @@ void YAC_CALL sdvg_DrawTextAccelClipped(const char *_text, sF32 _x, sF32 _y, sF3
                         }
                      }
 
-                     cx += g->advance_x;
+                     cx += g->advance_x * shadervg_cur_font_scl_x;
 
                      // Next char
                      lineIdx++;
@@ -906,6 +935,11 @@ void YAC_CALL sdvg_UnbindFont(void) {
 }
 
 #ifdef SHADERVG_SCRIPT_API
+void YAC_CALL _sdvg_SetFontScaling(sF32 _sclX, sF32 _sclY) {
+   shadervg_cur_font_scl_x = _sclX;
+   shadervg_cur_font_scl_y = _sclY;
+}
+
 sBool YAC_CALL _sdvg_InitFont(YAC_Object *_font, YAC_Object *_data, YAC_Object *_texData, sUI _texW, sUI _texH) {
    sBool r = YAC_FALSE;
    if(YAC_CHK(_font, clid_ShaderVG_Font))
@@ -971,8 +1005,8 @@ sBool YAC_CALL _sdvg_FontOnOpen(YAC_Object *_font) {
 }
 
 void YAC_CALL _sdvg_TextExtents(YAC_Object *_font, YAC_String *_text, YAC_Object *_retW, YAC_Object *_retH) {
-   sSI retW = 0;
-   sSI retH = 0;
+   sF32 retW = 0.0f;
+   sF32 retH = 0.0f;
    if(YAC_CHK(_font, clid_ShaderVG_Font))
    {
       YAC_CAST_ARG(_ShaderVG_Font, font, _font);
@@ -989,14 +1023,14 @@ void YAC_CALL _sdvg_TextExtents(YAC_Object *_font, YAC_String *_text, YAC_Object
    }
 
    if(YAC_VALID(_retW))
-      _retW->yacValueOfI(retW);
+      _retW->yacValueOfF32(retW);
 
    if(YAC_VALID(_retH))
-      _retH->yacValueOfI(retH);
+      _retH->yacValueOfF32(retH);
 }
 
-sSI YAC_CALL _sdvg_TextWidth(YAC_Object *_font, YAC_String *_text) {
-   sSI r = 0;
+sF32 YAC_CALL _sdvg_TextWidth(YAC_Object *_font, YAC_String *_text) {
+   sF32 r = 0.0f;
    if(YAC_CHK(_font, clid_ShaderVG_Font))
    {
       YAC_CAST_ARG(_ShaderVG_Font, font, _font);
@@ -1014,8 +1048,8 @@ sSI YAC_CALL _sdvg_TextWidth(YAC_Object *_font, YAC_String *_text) {
    return r;
 }
 
-sSI YAC_CALL _sdvg_TextHeight(YAC_Object *_font, YAC_String *_text) {
-   sSI r = 0;
+sF32 YAC_CALL _sdvg_TextHeight(YAC_Object *_font, YAC_String *_text) {
+   sF32 r = 0.0f;
    if(YAC_CHK(_font, clid_ShaderVG_Font))
    {
       YAC_CAST_ARG(_ShaderVG_Font, font, _font);
@@ -1033,10 +1067,10 @@ sSI YAC_CALL _sdvg_TextHeight(YAC_Object *_font, YAC_String *_text) {
 }
 
 void YAC_CALL _sdvg_TextBBox(YAC_Object *_font, YAC_String *_text, YAC_Object *_retMinX, YAC_Object *_retMaxX, YAC_Object *_retMinY, YAC_Object *_retMaxY) {
-   sSI retMinX = 0;
-   sSI retMaxX = 0;
-   sSI retMinY = 0;
-   sSI retMaxY = 0;
+   sF32 retMinX = 0.0f;
+   sF32 retMaxX = 0.0f;
+   sF32 retMinY = 0.0f;
+   sF32 retMaxY = 0.0f;
    if(YAC_CHK(_font, clid_ShaderVG_Font))
    {
       YAC_CAST_ARG(_ShaderVG_Font, font, _font);
@@ -1052,19 +1086,19 @@ void YAC_CALL _sdvg_TextBBox(YAC_Object *_font, YAC_String *_text, YAC_Object *_
    }
 
    if(YAC_VALID(_retMinX))
-      _retMinX->yacValueOfI(retMinX);
+      _retMinX->yacValueOfF32(retMinX);
 
    if(YAC_VALID(_retMaxX))
-      _retMaxX->yacValueOfI(retMaxX);
+      _retMaxX->yacValueOfF32(retMaxX);
 
    if(YAC_VALID(_retMinY))
-      _retMinY->yacValueOfI(retMinY);
+      _retMinY->yacValueOfF32(retMinY);
 
    if(YAC_VALID(_retMaxY))
-      _retMaxY->yacValueOfI(retMaxY);
+      _retMaxY->yacValueOfF32(retMaxY);
 }
 
-sSI YAC_CALL _sdvg_TextIndexAtX(YAC_Object *_font, YAC_String *_text, sSI _x) {
+sSI YAC_CALL _sdvg_TextIndexAtX(YAC_Object *_font, YAC_String *_text, sF32 _x) {
    sSI r = -1;
    if(YAC_CHK(_font, clid_ShaderVG_Font))
    {

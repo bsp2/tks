@@ -104,27 +104,31 @@ sBool YAC_CALL sdvg_InitFont (sdvg_font_t *_font, const void *_data, sUI _dataSz
 */
 sBool YAC_CALL sdvg_FontOnOpen (sdvg_font_t *_font);  // create + upload texture. must be called in onOpen()
 
-/* @function sdvg_TextExtents,ShaderVG_Font,String text,Integer retW,Integer retH
+/* @function sdvg_SetFontScaling,float sclX,float sclY
 */
-void YAC_CALL sdvg_TextExtents (const sdvg_font_t *_font, const char *_text, sSI *_retW, sSI *_retH);
+void YAC_CALL sdvg_SetFontScaling (const sF32 _sclX, const sF32 _sclY);
 
-/* @function sdvg_TextWidth,ShaderVG_Font,String text:int
+/* @function sdvg_TextExtents,ShaderVG_Font,String text,Float retW,Float retH
 */
-sSI YAC_CALL sdvg_TextWidth (const sdvg_font_t *_font, const char *_text);
+void YAC_CALL sdvg_TextExtents (const sdvg_font_t *_font, const char *_text, sF32 *_retW, sF32 *_retH);
 
-/* @function sdvg_TextHeight,ShaderVG_Font,String text:int
+/* @function sdvg_TextWidth,ShaderVG_Font,String text:float
 */
-sSI YAC_CALL sdvg_TextHeight (const sdvg_font_t *_font, const char *_text);
+sF32 YAC_CALL sdvg_TextWidth (const sdvg_font_t *_font, const char *_text);
 
-/* @function sdvg_TextBBox,ShaderVG_Font,String text,Integer retMinX,Integer retMaxX,Integer retMinY,Integer retMaxY
+/* @function sdvg_TextHeight,ShaderVG_Font,String text:float
 */
-void YAC_CALL sdvg_TextBBox (const sdvg_font_t *_font, const char *_text, sSI *_retMinX, sSI *_retMaxX, sSI *_retMinY, sSI *_retMaxY);
+sF32 YAC_CALL sdvg_TextHeight (const sdvg_font_t *_font, const char *_text);
 
-/* @function sdvg_TextIndexAtX,ShaderVG_Font,String text,int x:int
+/* @function sdvg_TextBBox,ShaderVG_Font,String text,Float retMinX,Float retMaxX,Float retMinY,Float retMaxY
 */
-sSI YAC_CALL sdvg_TextIndexAtX (const sdvg_font_t *_font, const char *_text, sSI _x);
+void YAC_CALL sdvg_TextBBox (const sdvg_font_t *_font, const char *_text, sF32 *_retMinX, sF32 *_retMaxX, sF32 *_retMinY, sF32 *_retMaxY);
 
-/* @function sdvg_BindFont,ShaderVG_Font
+/* @function sdvg_TextIndexAtX,ShaderVG_Font,String text,float x:int
+*/
+sSI YAC_CALL sdvg_TextIndexAtX (const sdvg_font_t *_font, const char *_text, sF32 _x);
+
+/* @function sdvg_BindFont,ShaderVG_Font,boolean bFilter
 */
 void YAC_CALL sdvg_BindFont (const sdvg_font_t *_font, sBool _bFilter);
 
@@ -158,11 +162,12 @@ YF void YAC_CALL sdvg_UnbindFont (void);
 #ifdef SHADERVG_SCRIPT_API
 YF sBool YAC_CALL _sdvg_InitFont (YAC_Object *_font, YAC_Object *_data, YAC_Object *_texData, sUI _texW, sUI _texH);
 YF sBool YAC_CALL _sdvg_FontOnOpen (YAC_Object *_font);
+YF void YAC_CALL _sdvg_SetFontScaling (sF32 _sclX, sF32 _sclY);
 YF void YAC_CALL _sdvg_TextExtents (YAC_Object *_font, YAC_String *_text, YAC_Object *_retW, YAC_Object *_retH);
-YF sSI YAC_CALL _sdvg_TextWidth (YAC_Object *_font, YAC_String *_text);
-YF sSI YAC_CALL _sdvg_TextHeight (YAC_Object *_font, YAC_String *_text);
+YF sF32 YAC_CALL _sdvg_TextWidth (YAC_Object *_font, YAC_String *_text);
+YF sF32 YAC_CALL _sdvg_TextHeight (YAC_Object *_font, YAC_String *_text);
 YF void YAC_CALL _sdvg_TextBBox (YAC_Object *_font, YAC_String *_text, YAC_Object *_retMinX, YAC_Object *_retMaxX, YAC_Object *_retMinY, YAC_Object *_retMaxY);
-YF sSI YAC_CALL _sdvg_TextIndexAtX (YAC_Object *_font, YAC_String *_text, sSI _x);
+YF sSI YAC_CALL _sdvg_TextIndexAtX (YAC_Object *_font, YAC_String *_text, sF32 _x);
 YF void YAC_CALL _sdvg_BindFont (YAC_Object *_font, sBool _bFilter);
 YF void YAC_CALL _sdvg_DrawText (YAC_String *_text, sF32 _x, sF32 _y);
 YF void YAC_CALL _sdvg_DrawTextClipped (YAC_String *_text, sF32 _x, sF32 _y, sF32 _clipLeft, sF32 _clipTop, sF32 _clipRight, sF32 _clipBottom);

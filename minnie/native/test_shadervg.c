@@ -1693,7 +1693,7 @@ static void TestText_1(void) {
    sdvg_SetFillColor4f(1.0f, 1.0f, 1.0f, fill_alpha);
    const char *s = "hello, world.\nmulti\nline\ntext.";
 
-   sSI minX, maxX, minY, maxY;
+   sF32 minX, maxX, minY, maxY;
    sdvg_TextBBox(&font, s, &minX, &maxX, &minY, &maxY);
    sSI w = (maxX - minX);
    sSI h = (maxY - minY);
@@ -1715,7 +1715,7 @@ static void TestText_2_Clip(void) {
 
    const char *s = "############\ntext*text*text*text\nclip*clip*clip*clip*\ntest*test*test*test.\n############";
 
-   sSI minX, maxX, minY, maxY;
+   sF32 minX, maxX, minY, maxY;
    sdvg_TextBBox(&font, s, &minX, &maxX, &minY, &maxY);
    sSI w = (maxX - minX);
    sSI h = (maxY - minY);
@@ -1951,7 +1951,7 @@ static void TestText_4_Ul(void) {
 
    const char *s = "hell\ao, wo\arld.\n\amulti\nlin\ae\nte\axt.";
 
-   sSI minX, maxX, minY, maxY;
+   sF32 minX, maxX, minY, maxY;
    sdvg_TextBBox(&font, s, &minX, &maxX, &minY, &maxY);
    sSI w = (maxX - minX);
    sSI h = (maxY - minY);
@@ -1980,7 +1980,7 @@ static void TestText_5_Ul_Clip(void) {
 
    const char *s = "############\ntext*text*text*text\nclip*clip*clip*clip*\ntest*test*test*test.\n############";
 
-   sSI minX, maxX, minY, maxY;
+   sF32 minX, maxX, minY, maxY;
    sdvg_TextBBox(&font, s, &minX, &maxX, &minY, &maxY);
    sSI w = (maxX - minX);
    sSI h = (maxY - minY);
@@ -2015,7 +2015,7 @@ static void TestText_6_Accel(void) {
 
    const char *s = "hell\ao, wo\arld.\n\amulti\nlin\ae\nte\axt.";
 
-   sSI minX, maxX, minY, maxY;
+   sF32 minX, maxX, minY, maxY;
    sdvg_TextBBox(&font, s, &minX, &maxX, &minY, &maxY);
    sSI w = (maxX - minX);
    sSI h = (maxY - minY);
@@ -2042,7 +2042,7 @@ static void TestText_7_Accel_Clip(void) {
 
    const char *s = "############\n\atext*t\aext*te\axt*tex\at\n\aclip*c\alip*cl\aip*cli\ap*\n\atest*t\aest*te\ast*tes\at.\n############";
 
-   sSI minX, maxX, minY, maxY;
+   sF32 minX, maxX, minY, maxY;
    sdvg_TextBBox(&font, s, &minX, &maxX, &minY, &maxY);
    sSI w = (maxX - minX);
    sSI h = (maxY - minY);
@@ -2079,7 +2079,7 @@ static void TestText_8_Zoom(sBool _bSDF) {
 
    const char *s = "Hello, world.\nmulti-line\ntext-test.";
 
-   sSI minX, maxX, minY, maxY;
+   sF32 minX, maxX, minY, maxY;
    sdvg_TextBBox(f, s, &minX, &maxX, &minY, &maxY);
    sSI w = (maxX - minX);
    sSI h = (maxY - minY);
