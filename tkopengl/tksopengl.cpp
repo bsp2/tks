@@ -5761,6 +5761,10 @@ void YAC_CALL _zglMapBuffer(sSI _target, sSI _access, YAC_Object *_buffer, sUI _
             b->size      = _byteSize;
             b->io_offset = 0u;
          }
+         else
+         {
+            Dyac_host_printf("[!!!] zglMapBuffer returned data=NULL (_byteSize=%u) => b->size=%u  glGetError=0x%04x\n", _byteSize, b->size, ::glGetError());
+         }
       }
    }
    else
@@ -5785,13 +5789,17 @@ void YAC_CALL _zglMapBufferRange(sSI _target, sUI _offset, sUI _length, sSI _acc
          // Free previous buffer data (if any)
          b->yacArrayAlloc(0, 0, 0, 0);
 
-         // Dyac_host_printf("xxx call zglMapBufferRange: offset=%u length=%u => data=%p\n", _offset, _length, data);
+         // Dyac_host_printf("[>>>] call zglMapBufferRange: offset=%u length=%u => data=%p\n", _offset, _length, data);
          if(NULL != data)
          {
             b->buffer    = (sU8*)data;
             b->deleteme  = YAC_FALSE;
             b->size      = _length;
             b->io_offset = 0u;
+         }
+         else
+         {
+            Dyac_host_printf("[!!!] zglMapBufferRange returned data=NULL (offset=%u length=%u) glGetError=0x%04x\n", _offset, _length, ::glGetError());
          }
       }
       else
