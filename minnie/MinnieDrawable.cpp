@@ -134,8 +134,11 @@ void _MinnieDrawable::freeGL(void) {
    if(0u != gl_buf_id)
    {
       reset();
-
+#if 1
+      sdvg_DestroyVBO(gl_buf_id);
+#else
       Dsdvg_glcall(zglDeleteBuffer(gl_buf_id));
+#endif
       gl_buf_id = 0u;
    }
 }
@@ -151,6 +154,10 @@ void _MinnieDrawable::lazyAllocGL(void) {
    // Create vertex attrib buffer
    if(0u == gl_buf_id && NULL != buf_gl && buf_gl->size > 0u)
    {
+#if 1
+      gl_buf_id = sdvg_CreateVBO(buf_gl->size);
+      sdvg_BindVBO(0);
+#else
       gl_buf_id = Dsdvg_glcall(zglGenBuffer());
       Dsdvg_glcall(glBindBuffer(GL_ARRAY_BUFFER, gl_buf_id));
       Dsdvg_glcall(zglBufferData(GL_ARRAY_BUFFER, buf_gl->size, NULL, GL_STATIC_DRAW));
@@ -160,6 +167,7 @@ void _MinnieDrawable::lazyAllocGL(void) {
       {
          Dyac_host_printf("[dbg] MinnieDrawable::lazyAllocGL: VBO last error is %d\n", lastError);
       }
+#endif
    }
 }
 
@@ -296,9 +304,14 @@ void _MinnieDrawable::drawTint32(sU32 _tint32Fill, sU32 _tint32Stroke) {
       if(b_gl_buf_update_pending)
       {
          b_gl_buf_update_pending = false;
+#if 1
+         sdvg_UpdateVBO(gl_buf_id, 0, Dstream_get_offset(buf_gl), buf_gl);
+         sdvg_BindVBO(0);
+#else
          Dsdvg_glcall(glBindBuffer(GL_ARRAY_BUFFER, gl_buf_id));
          Dsdvg_glcall(zglBufferSubData(GL_ARRAY_BUFFER, 0, Dstream_get_offset(buf_gl), buf_gl));
          Dsdvg_glcall(glBindBuffer(GL_ARRAY_BUFFER, 0));
+#endif
       }
 
       minExecDrawListEx(buf_draw, gl_buf_id, b_debug, _tint32Fill, _tint32Stroke);
