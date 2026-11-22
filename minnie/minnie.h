@@ -13587,17 +13587,17 @@ Dmin_fxn_decl(void, minPaintUpdate, sUI _paintId);
 #endif // MINNIE_USE_CONTEXT_ARG
 Dmin_fxn_decl(void, minPaint, sUI _paintId);
 
-// YF void YAC_CALL minExecDrawListEx(YAC_Buffer *_bufDraw, sUI _glBufId, sBool _bDebug, sU32 _tint32Fill, sU32 _tint32Stroke);
+// YF void YAC_CALL minExecDrawListEx(YAC_Buffer *_bufDraw, sUI _vboId, sBool _bDebug, sU32 _tint32Fill, sU32 _tint32Stroke);
 #ifdef MINNIE_USE_CONTEXT_ARG
 #define minExecDrawListEx(...) minExecDrawListExImpl(minnie_context, __VA_ARGS__)
 #endif // MINNIE_USE_CONTEXT_ARG
-Dmin_fxn_decl(void, minExecDrawListEx, YAC_Buffer *_bufDraw, sUI _glBufId, sBool _bDebug, sU32 _tint32Fill, sU32 _tint32Stroke);
+Dmin_fxn_decl(void, minExecDrawListEx, YAC_Buffer *_bufDraw, sUI _vboId, sBool _bDebug, sU32 _tint32Fill, sU32 _tint32Stroke);
 
-// YF void YAC_CALL minExecDrawList(YAC_Buffer *_bufDraw, sUI _glBufId);
+// YF void YAC_CALL minExecDrawList(YAC_Buffer *_bufDraw, sUI _vboId);
 #ifdef MINNIE_USE_CONTEXT_ARG
 #define minExecDrawList(...) minExecDrawListImpl(minnie_context, __VA_ARGS__)
 #endif // MINNIE_USE_CONTEXT_ARG
-Dmin_fxn_decl(void, minExecDrawList, YAC_Buffer *_bufDraw, sUI _glBufId);
+Dmin_fxn_decl(void, minExecDrawList, YAC_Buffer *_bufDraw, sUI _vboId);
 
 #ifdef __cplusplus
 } // extern "C"
