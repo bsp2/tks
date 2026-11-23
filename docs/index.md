@@ -121,7 +121,7 @@ note: Software written in TkScript may use any license (FOSS, closed source, ..)
 |cols=1,1
 | macOS 26 arm64            :|:[tks-macos_arm64.zip](files/current/tks-macos_arm64.zip) (v0.9.94.2, 06Nov2026)
 | Debian GNU/Linux 13 arm64 :|:[tks-aarch64-raspberry.tar.gz](files/current/tks-aarch64-raspberry.tar.gz) (v0.9.94.2, 06Nov2026)
-| Windows 10 x86\_64        :|:[tks.zip](files/current/tks.zip) (v0.9.94.2, 06Nov2026)
+| Windows 10 x86\_64        :|:[tks.zip](files/current/tks.zip) (v0.9.94.4, 23Nov2026)
 ].table_noborder
 
 tip: on macOS, copy the extracted the files to `/usr/local/` (optional). use `brew install sdl3 libpng freetype portaudio` to install the core library dependencies.
