@@ -268,7 +268,7 @@ class KeyJazz : Layer {
          en.last_note_abs = base_note;
       undo_idx = 0;
 
-      loginfo "loadDefaults()";
+      loginfo "Load defaults";
       if(null != parent_dialog)
          parent_dialog.setWindowTitle("");
 
@@ -753,7 +753,9 @@ class KeyJazz : Layer {
          enIns.copyFrom(en);
          undo_entries.delete(undo_entries.numElements - 1);
          undo_entries.insert(undo_idx, #(deref enIns));
-         log1 "undoInsert("+undo_idx+")";
+         undo_idx++;
+         handleUndoIdxChanged();
+         loginfo "Duplicate undo (nr="+(undo_idx+1)+")";
       }
    }
 
@@ -763,6 +765,7 @@ class KeyJazz : Layer {
          undo_entries.swap(undo_idx-1, undo_idx);
          undo_idx--;
          handleUndoIdxChanged();
+         loginfo "Undo move down (nr="+(undo_idx+1)+")";
       }
    }
 
@@ -772,6 +775,7 @@ class KeyJazz : Layer {
          undo_entries.swap(undo_idx+1, undo_idx);
          undo_idx++;
          handleUndoIdxChanged();
+         loginfo "Undo move up (nr="+(undo_idx+1)+")";
       }
    }
 
@@ -811,24 +815,24 @@ class KeyJazz : Layer {
    protected method handleRedo() {
       undoReplace(undo_idx);
       redo();
-      loginfo "redo("+undo_idx+")";
+      loginfo "Redo (nr="+(undo_idx+1)+")";
    }
 
    protected method handleReplace() {
       undoReplace(undo_idx);
-      loginfo "undoReplace("+undo_idx+")";
+      loginfo "Undo-replace (nr="+(undo_idx+1)+")";
    }
 
    protected method handleUndo() {
       undoPop();
-      loginfo "undo("+undo_idx+")";
+      loginfo "Undo (nr="+(undo_idx+1)+")";
    }
 
    protected method setRootKeyToCursor() {
       int relOff = getRelativeNoteOffset(1 == cursor_y);
       int note = mathWrapi(root_key + cursor_x*7, 0, 12) + relOff;
       undoPush();
-      log2 "ROOT_KEY  note="+note+"("+note_names.get(mathWrapi(note,0,12))+")";
+      loginfo "Set root key to \'"+note_names.get(mathWrapi(note,0,12))+"\'";
 
       setRootKey(note);
       cursor_x = 0;
@@ -885,6 +889,7 @@ class KeyJazz : Layer {
                {
                   log2 "setModeToCursorNoteIdx: bMode/cursor_x=0: shift rootKey by "+(last_note - newNote)+" to match last_note="+last_note+" at last_note_idx="+last_note_idx+" (newNote="+newNote+")";
                   setRootKey(root_key + (last_note - newNote));
+                  loginfo "Select mode \'"+mode_names.get(mode)+"\', root key="+note_names.get(mathWrapi(root_key, 0, 12));
                }
                return;
             }
@@ -908,6 +913,7 @@ class KeyJazz : Layer {
             model_frot_damp_countdown = 50;
             updateSemiTbl();
             log2 "setModeToCursorNoteIdx: note="+retNote+" ====> mode="+mode+"  newRootKey="+root_key+" newSemiTbl="+semi_tbl;
+            loginfo "Select mode \'"+mode_names.get(mode)+"\', root key="+note_names.get(mathWrapi(root_key, 0, 12));
          }
          else
          {
@@ -953,14 +959,14 @@ class KeyJazz : Layer {
       log4 "cycleChordMode: idx="+idx;
       chord_mode = _aModes.get(mathWrapi(++idx, 0, _aModes.numElements));
       log2 "cycleChordMode: new idx="+idx+" new chord_mode="+chord_mode;
-      loginfo "chord_mode is "+getChordName();
+      loginfo "Select chord "+getChordName();
       if(b_queue_cursor_note)
          noteOnLastAbs();
    }
 
    protected method cycleChordInversion(int _dir) {
       chord_inversion = mathWrapi(chord_inversion + _dir, 0, chord_inversion_names.numElements);
-      loginfo "chord_inversion is "+chord_inversion+" \""+chord_inversion_names.get(chord_inversion)+"\"";
+      loginfo "Select chord inversion \""+chord_inversion_names.get(chord_inversion)+"\"("+chord_inversion+")";
       if(b_queue_cursor_note)
          noteOnLastAbs();
    }
@@ -968,6 +974,7 @@ class KeyJazz : Layer {
    protected method cycleMode(int _dir) {
       mode = mathWrapi(mode + _dir, 0, 7);
       updateSemiTbl();
+      loginfo "Select mode \'"+mode_names.get(mode)+"\'";
    }
 
    protected method saveUndoInt(Stream ofs) {
@@ -1018,6 +1025,7 @@ class KeyJazz : Layer {
       {
          note_velocity = 96;
       }
+      log3 "KeyJazz: note_velocity="+note_velocity;
    }
 
    // <method.png>
@@ -1102,7 +1110,7 @@ class KeyJazz : Layer {
       NodeSeqEditor seqEditor <= pgNode.editor;
       NSQ_Arranger arr <= seqEditor.arr;
       UI.SetKeyboardFocus(arr);
-      if(arr.isEditable())
+      if(arr.isEditable() && seq.b_rec)
       {
          arr.moveCursorLeft(_bShift);
          bHandled = true;
@@ -1136,7 +1144,7 @@ class KeyJazz : Layer {
       NodeSeqEditor seqEditor <= pgNode.editor;
       NSQ_Arranger arr <= seqEditor.arr;
       UI.SetKeyboardFocus(arr);
-      if(arr.isEditable())
+      if(arr.isEditable() && seq.b_rec)
       {
          arr.moveCursorRight(_bShift);
          bHandled = true;
@@ -1156,6 +1164,8 @@ class KeyJazz : Layer {
       if(pv.isEditable())
       {
          pv.patternClear();
+         if(!replay.b_playing)
+            pv.kjMoveCursorToStart();
          bHandled = true;
       }
       UI.SetKeyboardFocus(this);
@@ -1163,7 +1173,44 @@ class KeyJazz : Layer {
    }
 
    // <method.png>
-   protected method trySeqPatternClear() {
+   protected method trySeqPatternClear(boolean _bWhenRecording) {
+      boolean bHandled = false;
+      PageNode pgNode <= root_form.pg_node;
+      NodeSeq seq <= pgNode.script_node;
+      NodeSeqEditor seqEditor <= pgNode.editor;
+      NSQ_Arranger arr <= seqEditor.arr;
+      UI.SetKeyboardFocus(arr);
+      if(arr.isEditable() && (!_bWhenRecording || seq.b_rec))
+      {
+         arr.handleClearSelection(true/*bUndo*/);
+         bHandled = true;
+      }
+      UI.SetKeyboardFocus(this);
+      return bHandled;
+   }
+
+   // <method.png>
+   protected method tryTrackerUndoRedo(boolean _bRedo) : boolean {
+      boolean bHandled = false;
+      PageNode pgNode <= root_form.pg_node;
+      NodeTracker nt <= pgNode.script_node;
+      NodeTrackerEditor ntEditor <= pgNode.editor;
+      NT_PatternView pv <= ntEditor.pattern_view;
+      UI.SetKeyboardFocus(pv);  // isEditable() required kbdfocus
+      if(pv.isEditable())
+      {
+         if(_bRedo)
+            ntEditor.cmd_edit_redo();
+         else
+            ntEditor.cmd_edit_undo();
+         bHandled = true;
+      }
+      UI.SetKeyboardFocus(this);
+      return bHandled;
+   }
+
+   // <method.png>
+   protected method trySeqUndoRedo(boolean _bRedo) {
       boolean bHandled = false;
       PageNode pgNode <= root_form.pg_node;
       NodeSeq seq <= pgNode.script_node;
@@ -1172,7 +1219,10 @@ class KeyJazz : Layer {
       UI.SetKeyboardFocus(arr);
       if(arr.isEditable())
       {
-         arr.handleClearSelection(true/*bUndo*/);
+         if(_bRedo)
+            seqEditor.redo();
+         else
+            seqEditor.undo();
          bHandled = true;
       }
       UI.SetKeyboardFocus(this);
@@ -1213,7 +1263,7 @@ class KeyJazz : Layer {
             }
             else if(root_form.isSeqEditorVisible())
             {
-               if(trySeqPatternClear())
+               if(trySeqPatternClear(false/*bWhenRecording*/))
                   return true;
             }
             break;
@@ -1246,12 +1296,12 @@ class KeyJazz : Layer {
 
          case VKEY_F12:
             b_rot = !b_rot;
-            loginfo "b_rot="+b_rot;
+            loginfo "Rotation is "+Utils.GetEnableString(b_rot);
             break;
 
          case '1':
             chord_mode = CHORD_OFF;
-            loginfo "chord_mode is "+chord_mode;
+            loginfo "Select chord "+chord_names.get(chord_mode);
             return true;
 
          case '2':
@@ -1284,7 +1334,7 @@ class KeyJazz : Layer {
 
          case VKEY_TAB:
             b_allow_chord = !b_allow_chord;
-            loginfo "b_allow_chord is "+b_allow_chord;
+            loginfo "Chords are "+Utils.GetEnableString(b_allow_chord);
             return true;
 
          case VKEY_RETURN:
@@ -1317,7 +1367,7 @@ class KeyJazz : Layer {
                }
                else if(root_form.isSeqEditorVisible())
                {
-                  if(trySeqPatternClear())
+                  if(trySeqPatternClear(false/*bWhenRecording*/))
                      return true;
                }
             }
@@ -1340,9 +1390,14 @@ class KeyJazz : Layer {
             return true;
 
          case VKEY_DELETE:
-            if(replay.b_playing && root_form.isSeqEditorVisible())
+            if(root_form.isTrackerEditorVisible())
             {
-               if(trySeqPatternClear())
+               if(tryTrackerPatternClear())
+                  return true;
+            }
+            else if(root_form.isSeqEditorVisible())
+            {
+               if(trySeqPatternClear(true/*bWhenRecording*/))
                   return true;
             }
             if(_k.modShift())
@@ -1488,6 +1543,19 @@ class KeyJazz : Layer {
             return true;
 
          case 'z':  // de:y
+            if(_k.modCtrl())
+            {
+               if(root_form.isTrackerEditorVisible())
+               {
+                  if(tryTrackerUndoRedo(_k.modShift()/*bRedo*/))
+                     return true;
+               }
+               else if(root_form.isSeqEditorVisible())
+               {
+                  if(trySeqUndoRedo(_k.modShift()/*bRedo*/))
+                     return true;
+               }
+            }
             noteOnSingleOrChord(3, -12);
             return true;
 
@@ -1582,8 +1650,20 @@ class KeyJazz : Layer {
             noteOnSingleOrChord(1, 12);
             return true;
 
-         // case 'z':
          case 'y':
+            if(_k.modCtrl())
+            {
+               if(root_form.isTrackerEditorVisible())
+               {
+                  if(tryTrackerUndoRedo(_k.modShift()/*bRedo*/))
+                     return true;
+               }
+               else if(root_form.isSeqEditorVisible())
+               {
+                  if(trySeqUndoRedo(_k.modShift()/*bRedo*/))
+                     return true;
+               }
+            }
             noteOnSingleOrChord(2, 12);
             return true;
 
@@ -1605,7 +1685,7 @@ class KeyJazz : Layer {
 
          case VKEY_F11:
             b_queue_cursor_note = !b_queue_cursor_note;
-            loginfo "b_queue_cursor_note="+b_queue_cursor_note;
+            loginfo "Note auto-play is "+Utils.GetEnableString(b_queue_cursor_note);
             if(b_queue_cursor_note)
                b_queued_noteon_cursor = true;
             return true;
@@ -1665,7 +1745,10 @@ class KeyJazz : Layer {
             return true;
 
          case 'z':  // de:y
-            noteOffSingleOrChord(3, -12);
+            if(_k.modNone())
+            {
+               noteOffSingleOrChord(3, -12);
+            }
             return true;
 
          case 'x':
@@ -1749,7 +1832,10 @@ class KeyJazz : Layer {
             return true;
 
          case 'y':
-            noteOffSingleOrChord(2, 12);
+            if(_k.modNone())
+            {
+               noteOffSingleOrChord(2, 12);
+            }
             return true;
 
          case 'u':
@@ -2050,7 +2136,7 @@ class KeyJazz : Layer {
          {
             if(sdvg_InitFont(_font, _fontBin, _fontTex, _fontTex.sx, _fontTex.sy))
             {
-               loginfo "KeyJazz::loadFont: OK, font \""+_pathPrefix+"\" loaded. tex.sz=("+_fontTex.sx+","+_fontTex.sy+")";
+               log1 "KeyJazz::loadFont: OK, font \""+_pathPrefix+"\" loaded. tex.sz=("+_fontTex.sx+","+_fontTex.sy+")";
                return true;
             }
             else

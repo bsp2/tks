@@ -213,10 +213,13 @@ As root, edit `/usr/share/X11/xkb/symbols/<your country code>` (e.g. `de`) and r
 | lshift - BACKSPACE          | 
 |+F3                          |+(when tracker or seq editor is visible and editable) clear pattern / seq.selection
 | UP                          | (when tracker editor is visible) go to previous step
-| LEFT                        | (when seq editor is visible) go to previous bar
+| LEFT                        | (when seq editor is visible and record-enabled) go to previous bar
 | DOWN                        | (when tracker editor is visible) go to next step
-| RIGHT                       | (when seq editor is visible) go to next bar
+| RIGHT                       | (when seq editor is visible and record-enabled) go to next bar
+| DELETE                      | (when tracker or seq editor is visible and record-enabled) clear pattern / selection
 | lctrl - a                   | (when seq editor is visible) select block
+| lctrl - z/y                 | (when tracker or seq editor is visible) undo
+| lctrl - lshift - z/y        | (when tracker or seq editor is visible) redo
 ].kbd_table KeyJazz dialog keyboard shortcuts
 
 note: the 9 undo(-seq) slots are saved / restored per project
