@@ -35,7 +35,7 @@
 // ----          11Feb2022, 12Feb2022, 20Feb2022, 18Mar2022, 19Mar2022, 08May2022, 03Nov2022
 // ----          03Apr2023, 29Jul2023, 20Sep2023, 04Oct2023, 14Oct2023, 15Oct2023, 07Jul2024
 // ----          01Oct2024, 05Oct2024, 06Oct2024, 16Jan2025, 28Feb2025, 07Jun2025, 13Jun2025
-// ----          27Dec2025, 30Oct2026, 01Nov2026, 12Nov2026, 14Nov2026
+// ----          27Dec2025, 30Oct2026, 01Nov2026, 12Nov2026, 14Nov2026, 23Nov2026
 // ----
 // ----
 // ----
@@ -3801,11 +3801,12 @@ class NodeTracker : Node {
    // <method.png>
    public =replay= method getRecordPatOffsetMidiRec(local boolean _bMayQuantize,
                                                     local boolean _bForceReplayPos,
-                                                    local boolean _bFramePlay
+                                                    local boolean _bFramePlay,
+                                                    local Boolean _bPlayImmediately
                                                     ) : int {
       local int patOffset;
+      _bPlayImmediately = true;
 
-      ////if(!replay.b_playing)
       if(!b_rt_record && !_bForceReplayPos)
       {
          // Use quantized edit cursor offset
@@ -3814,13 +3815,13 @@ class NodeTracker : Node {
       else
       {
          // Use current replay tick (to be played in current ST_Song::tick())
-         /////patOffset = current_song.song_offset - parent_node.last_pattern_start_editor_song_offset;
          patOffset = getPlayPatOffset();
          // log4 "getRecordPatOffsetMidiRec: patOffset="+patOffset;
 
          local int patLen = getCurrentEditMetaPatternLength();
 
          patOffset = patOffset % patLen;  // [05Jun2017] REC_MODE_RASTER fix
+         local int patOffsetOrig = patOffset;
 
          if(!_bFramePlay)
          {
@@ -3831,10 +3832,15 @@ class NodeTracker : Node {
             patOffset -= current_pipe_root.pipeDelay;
             // log4 "rec patOffset="+patOffset+" pipeDelay="+current_pipe_root.pipeDelay;
             if(patOffset < 0)
+            {
                patOffset += patLen;
+               _bPlayImmediately = true;
+            }
          }
 
-         local boolean bQuantize = STConfig.b_node_tracker_recordquantize && _bMayQuantize;
+         local boolean bQuantize = false;
+
+         bQuantize = (STConfig.b_node_tracker_recordquantize && _bMayQuantize);
 
          if(b_rec_quantize_last_step)
          {
@@ -3846,13 +3852,23 @@ class NodeTracker : Node {
 
          if(bQuantize)
          {
-            patOffset = int( (patOffset + pv_step_resolution/2) / pv_step_resolution) * pv_step_resolution;
-            patOffset = patOffset % patLen;  // [02Jul2017] qlast fix
+            if(patOffset >= (patLen - pv_step_resolution/2))
+            {
+               patOffset = 0;
+               _bPlayImmediately = false;
+            }
+            else
+            {
+               patOffset = int( (patOffset + pv_step_resolution/2) / pv_step_resolution) * pv_step_resolution;
+               patOffset = patOffset % patLen;
+               _bPlayImmediately = (patOffset < patOffsetOrig);
+               log4 "nt: getRecordPatOffsetMidiRec: bPlayImmediately="+_bPlayImmediately+" patOffset="+patOffset+" patOffsetOrig="+patOffsetOrig;
+            }
          }
-
-         // // if(patOffset >= patLen)
-         // //    patOffset -= patLen;
-         // // // patOffset = patOffset % patLen;  // [05Jun2017] REC_MODE_RASTER fix
+         else
+         {
+            _bPlayImmediately = true;
+         }
       }
 
       return patOffset;
@@ -5659,20 +5675,26 @@ class NodeTracker : Node {
       int velCtlId;
       boolean bFutureEv = false;
       int ctlId;
+      Boolean bPlayImmediately;
 
       // log4 "recordMIDINote: note="+_note+" vel="+_vel+" dur="+_dur+" bFramePlay="+_bFramePlay;
 
       Integer recRes = STConfig.b_node_tracker_recordquantize ? pv_step_resolution : 1;
 
       // Current cursor pos in step-editor mode or replay position
-      int patOffsetRecRaw = getRecordPatOffsetMidiRec(false/*bMayQuantize*/, false/*bForceReplayPos*/, _bFramePlay);
+      int patOffsetRecRaw = getRecordPatOffsetMidiRec(false/*bMayQuantize*/,
+                                                      false/*bForceReplayPos*/,
+                                                      _bFramePlay,
+                                               /*out*/bPlayImmediately
+                                                      );
       // log4 "patOffsetRecRaw="+patOffsetRecRaw;
 
       int patLen = getCurrentEditMetaPatternLength();
 
       int patOffsetRecStep = (patOffsetRecRaw / pv_step_resolution) * pv_step_resolution;  // for raster clear
-      int patOffsetPlay = getPlayPatOffset();
-      int patOffsetPlayStep = ((patOffsetPlay % patLen) / pv_step_resolution) * pv_step_resolution;
+      int patOffsetPlay = getPlayPatOffset() % patLen;
+      // // int patOffsetPlayStep = ((patOffsetPlay % patLen) / pv_step_resolution) * pv_step_resolution;
+      int patOffsetPlayStep = (patOffsetPlay / pv_step_resolution) * pv_step_resolution;
 
       boolean bRTRecord = b_rt_record;
       int recRaster = bRTRecord ? recRes : pv_step_resolution;
@@ -5745,7 +5767,8 @@ class NodeTracker : Node {
                patOffsetRec = getRecordPatOffsetMidiRec(
                   !STConfig.b_node_tracker_recordnoteoff_dur/*bMayQuantize*/,
                   false/*bForceReplayPos*/,
-                  _bFramePlay
+                  _bFramePlay,
+                  /*out*/bPlayImmediately
                                                         );
 
                // log4 "recordMIDINote<off>: offPlay="+patOffsetPlay+" offRec="+patOffsetRec;
@@ -5753,6 +5776,7 @@ class NodeTracker : Node {
                if(!bRTRecord)
                {
                   patOffsetRec = fixOffsetToExistingTrackEventAtWindow(track, cel.ctl_id, patOffsetRec, recRaster);
+                  bPlayImmediately = true;
                }
 
                // Try to place note-off in cel that currently belongs to an active note-on
@@ -5809,12 +5833,14 @@ class NodeTracker : Node {
 
                patOffsetRec = getRecordPatOffsetMidiRec(true/*bMayQuantize*/,
                                                         false/*bForceReplayPos*/,
-                                                        _bFramePlay
+                                                        _bFramePlay,
+                                                 /*out*/bPlayImmediately
                                                         );
 
                if(!bRTRecord)
                {
                   patOffsetRec = fixOffsetToExistingTrackEventAtWindow(track, cel.ctl_id, patOffsetRec, recRaster);
+                  bPlayImmediately = true;
                }
 
                // log4 "recordMIDINote<on>: offPlay="+patOffsetPlay+" offRec="+patOffsetRec;
@@ -5945,7 +5971,6 @@ class NodeTracker : Node {
 
                if(DoRecordNoteOff() && !STConfig.b_node_tracker_recordnoteoff_dur)
                {
-                  /////if(replay.b_playing)
                   if(b_rt_record)
                   {
                      if(REC_MODE_RASTER == rec_mode)
@@ -6061,14 +6086,12 @@ class NodeTracker : Node {
                recNoteOnSongTicks[_note] = current_song.tick_nr;  // for CTL_DURn
                recNoteOnPatNrs   [_note] = edit_pattern_nr;  // for CTL_DURn (multi-pattern recording)
 
-               /////if(replay.b_playing)
                if(b_rt_record)
                {
                   if(REC_MODE_RASTER == rec_mode)
                   {
                      // log4 "patOffsetRecStep="+patOffsetRecStep+" patOffsetPlayStep="+patOffsetPlayStep+" numRec="+parent_node.num_rec_notes+" rec_clear_last_step="+parent_node.rec_clear_last_step;
                      if( (0 == num_rec_notes) ||
-                         /////(patOffsetRecStep != patOffsetPlayStep) && (0 == (parent_node.tick_nr % step_resolution))
                          (patOffsetRecStep != patOffsetPlayStep)
                          )
                      {
@@ -6108,7 +6131,7 @@ class NodeTracker : Node {
                   durCtlId = NT_TrackPattern.CTL_DUR1;
                }
 
-               // log4 "velCtlId="+velCtlId+" durCtlId="+durCtlId+" dur="+_dur;
+               // log4 "nt::recordMIDINote: velCtlId="+velCtlId+" durCtlId="+durCtlId+" dur="+_dur;
 
                if(0 != _dur)
                {
@@ -6231,15 +6254,11 @@ class NodeTracker : Node {
 
                if(bRecorded)
                {
-                  if(b_rt_record && (patOffsetRec >= patOffsetPlay))
+                  log4 "nt::recordMIDINote: b_rt_record="+b_rt_record+" bPlayImmediately="+bPlayImmediately+" patOffsetRec="+patOffsetRec+" patOffsetPlay="+patOffsetPlay;
+                  if(b_rt_record && !int(bPlayImmediately))
                   {
                      // Note will be triggered by replay
-                     // log4 "nt: patOffsetRec="+patOffsetRec+" patOffsetPlay="+patOffsetPlay;
                      bFutureEv = replay.b_playing;
-                  }
-                  else
-                  {
-                     // Before play offset, play keyjazz
                   }
                }
 
@@ -6265,16 +6284,24 @@ class NodeTracker : Node {
       NT_CEL *cel;
       var e;
       boolean bFutureEv = false;
+      Boolean bPlayImmediately;
 
       int recRes = STConfig.b_node_tracker_recordquantize ? pv_step_resolution : 1;
+      int patLen = getCurrentEditMetaPatternLength();
 
       // Current cursor pos in step-editor mode or replay position
-      int patOffsetRecRaw = getRecordPatOffsetMidiRec(false/*bMayQuantize*/, false/*bForceReplayPos*/, _bFramePlay);
-
-      int patOffsetRec = getRecordPatOffsetMidiRec(true/*bMayQuantize*/, false/*bForceReplayPos*/, _bFramePlay);
-
+      int patOffsetRecRaw = getRecordPatOffsetMidiRec(false/*bMayQuantize*/,
+                                                      false/*bForceReplayPos*/,
+                                                      _bFramePlay,
+                                            /*out*/bPlayImmediately
+                                                      );
+      int patOffsetRec = getRecordPatOffsetMidiRec(true/*bMayQuantize*/,
+                                                   false/*bForceReplayPos*/,
+                                                   _bFramePlay,
+                                            /*out*/bPlayImmediately
+                                                   );
       int patOffsetRecStep = (patOffsetRecRaw / pv_step_resolution) * pv_step_resolution;
-      int patOffsetPlay = getPlayPatOffset();
+      int patOffsetPlay = getPlayPatOffset() % patLen;
       int patOffsetPlayStep = (patOffsetPlay / pv_step_resolution) * pv_step_resolution;  // REC_MODE_RASTER
 
       boolean bRTRecord = b_rt_record;
@@ -6326,6 +6353,7 @@ class NodeTracker : Node {
                if(!bRTRecord)
                {
                   patOffsetRec = fixOffsetToExistingTrackEventAtWindow(track, _ctlId, patOffsetRec, recRaster);
+                  bPlayImmediately = true;
                }
 
                if(_bAllowRec)
@@ -6362,7 +6390,7 @@ class NodeTracker : Node {
 
             if(bRecorded)
             {
-               if(patOffsetRec >= patOffsetPlay)
+               if(!int(bPlayImmediately))
                {
                   // Event will be triggered by replay
                   bFutureEv = b_rt_record;
@@ -6383,7 +6411,12 @@ class NodeTracker : Node {
    // <method.png>
    public =replay= method recordUsrCtlParamValue(NT_Track _track, NT_MIDIParam _param, float _paramValue) {
       // Called from UI thread
-      int patOff = getRecordPatOffsetMidiRec(true/*bMayQuantize*/, false/*bForceReplayPos*/, false/*bFramePlay*/);
+      Boolean bPlayImmediately;
+      int patOff = getRecordPatOffsetMidiRec(true/*bMayQuantize*/,
+                                             false/*bForceReplayPos*/,
+                                             false/*bFramePlay*/,
+                                      /*out*/bPlayImmediately
+                                             );
       undoBeginNested("record MIDI");
       insertReplaceEventAtRes(_track,
                               NT_TrackPattern.CTL_USR + _param.id,
@@ -6559,6 +6592,7 @@ class NodeTracker : Node {
       boolean bDelegatePerfCtl = STConfig.b_node_tracker_delegate_perf_events && bEditFocus && !_bMuted;
       NT_Instrument *kjInstr;
       boolean bFutureEv;
+      Boolean bPlayImmediately;
 
       // if(_frameRec.numEventsPrgChg > 0)
       //    log4 "recordFrame this name="+parent_pipenode.name+" numEv="+_frameRec.numEvents+" bFramePlay="+_bFramePlay;
@@ -6609,7 +6643,8 @@ class NodeTracker : Node {
                      {
                         int patOffsetRecRaw = getRecordPatOffsetMidiRec(false/*bMayQuantize*/,
                                                                         false/*bForceReplayPos*/,
-                                                                        _bFramePlay
+                                                                        _bFramePlay,
+                                                                 /*out*/bPlayImmediately
                                                                         );
                         // log4 "nt: clear raster patOffsetRecRaw="+patOffsetRecRaw+" num_rec_notes="+num_rec_notes;
                         // log4 "nt: clear raster last_rec_soff="+last_rec_soff+" last_rec_eoff="+last_rec_eoff;
@@ -6781,9 +6816,9 @@ class NodeTracker : Node {
                               if(bEditable)
                               {
                                  track.rec_num_active_notes++;
-                                 // log4 "track.rec_num_active_notes="+track.rec_num_active_notes;
+                                 log4 "track.rec_num_active_notes="+track.rec_num_active_notes;
                                  bFutureEv = recordMIDINote(track, ev.note, ev.velocity, ev.duration, _bFramePlay);
-                                 // log4 "nt: bRemoveEv="+bRemoveEv+" tick_nr="+tick_nr+" song_offset="+current_song.song_offset;
+                                 // log4 "nt: rec noteon bFutureEv="+bFutureEv+" tick_nr="+tick_nr+" song_offset="+current_song.song_offset;
                               }
                               else
                               {
@@ -6803,6 +6838,7 @@ class NodeTracker : Node {
                               {
                                  if(!_bFramePlay && bEditFocus && !_bMuted)
                                  {
+                                    log2 "nt:   rec noteon keyJazzQueueAdd ev.note="+ev.note;
                                     keyJazzQueueAdd(curTrackIdx,
                                                     track.keyjazz_instr_nr,
                                                     ev.note,
@@ -9130,7 +9166,12 @@ class NodeTracker : Node {
 
                if(PV_EDIT_NONE != pv_edit_mode) // isEditable() ?
                {
-                  int tapModeRecOffset = getRecordPatOffsetMidiRec(true/*bMayQuantize*/, false/*bForceReplayPos*/, false/*bFramePlay*/);
+                  Boolean bPlayImmediately;
+                  int tapModeRecOffset = getRecordPatOffsetMidiRec(true/*bMayQuantize*/,
+                                                                   false/*bForceReplayPos*/,
+                                                                   false/*bFramePlay*/,
+                                                            /*out*/bPlayImmediately
+                                                                   );
 
                   int tapModePatLen = getCurrentEditMetaPatternLength();
                   int tapModeRecLen = tap_mode_step_resolution;
