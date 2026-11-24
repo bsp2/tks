@@ -162,6 +162,8 @@ As root, edit `/usr/share/X11/xkb/symbols/<your country code>` (e.g. `de`) and r
 | q..p, a..l, y..m            | Play notes (or chords)
 | F1                          | Transpose octave down
 | F2                          | Transpose octave up
+| F3                          | Decrease velocity (-4)
+| F4                          | Increase velocity (+4)
 | HOME                        | Select next mode
 | END                         | Select previous mode
 | INSERT                      | Select next root key (transpose up)

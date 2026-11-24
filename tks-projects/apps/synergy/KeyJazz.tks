@@ -30,6 +30,7 @@ class KeyJazz_UndoEntry {
    tag int last_note_abs;
    tag int chord_mode;
    tag int chord_inversion;
+   tag int velocity;
 
    public method init() {
       last_mode       = 0;
@@ -41,6 +42,7 @@ class KeyJazz_UndoEntry {
       last_note_abs   = 5*12;
       chord_mode      = 0;
       chord_inversion = 0;
+      velocity        = KeyJazz.DEF_VELOCITY;
    }
 
    public method copyFrom(KeyJazz_UndoEntry _o) {
@@ -53,6 +55,7 @@ class KeyJazz_UndoEntry {
       last_note_abs   = _o.last_note_abs;
       chord_mode      = _o.chord_mode;
       chord_inversion = _o.chord_inversion;
+      velocity        = _o.velocity;
    }
 }
 
@@ -60,6 +63,8 @@ class KeyJazz_UndoEntry {
 class KeyJazz : Layer {
    define int VP_W = 600;
    define int VP_H = 600;
+
+   define int DEF_VELOCITY = 96;
 
    define int NUM_UNDO_IO_SLOTS = 9;  // KP1..9
    protected Buffer *[] undo_io_slots;
@@ -236,12 +241,13 @@ class KeyJazz : Layer {
       loop(NUM_UNDO_IO_SLOTS)
          undo_io_slots.add(#(new Buffer));
 
+      note_velocity = DEF_VELOCITY;
+
       loadDefaults();
       last_note_abs = base_note;
       updateSemiTbl();
       b_queue_cursor_note = false;
 
-      note_velocity = 96;
    }
 
    // <method_init.png>
@@ -253,6 +259,7 @@ class KeyJazz : Layer {
               );
    }
 
+   // <method.png>
    protected method loadDefaults() {
       root_key = 0;
       mode = 0; // Ionian
@@ -265,7 +272,10 @@ class KeyJazz : Layer {
       undo_entries.useAll();
       KeyJazz_UndoEntry *en;
       foreach en in undo_entries
+      {
          en.last_note_abs = base_note;
+         en.velocity = note_velocity;
+      }
       undo_idx = 0;
 
       loginfo "Load defaults";
@@ -278,6 +288,7 @@ class KeyJazz : Layer {
       updateSemiTbl();
    }
 
+   // <method_set.png>
    protected method setRootKey(int _rootKey) {
 
       int rootKeyOct = (root_key / 12);
@@ -319,6 +330,11 @@ class KeyJazz : Layer {
       }
       int rootKeyOct = (root_key/12);
       loginfo "Octave is "+((rootKeyOct > 0)?"+":"")+rootKeyOct;
+   }
+
+   protected method changeVelocity(int _inc) {
+      note_velocity = mathClampi(((note_velocity + _inc)/4)*4, 1, 127);
+      loginfo "Velocity is "+note_velocity;
    }
 
    protected method calcSemiTbl(IntArray _a, int _mode) {
@@ -734,6 +750,7 @@ class KeyJazz : Layer {
       en.last_note_abs   = last_note_abs;
       en.chord_mode      = chord_mode;
       en.chord_inversion = chord_inversion;
+      en.velocity        = note_velocity;
       log4 "undoReplace: save last_note_abs="+last_note_abs;
    }
 
@@ -748,6 +765,9 @@ class KeyJazz : Layer {
       last_note_abs   = en.last_note_abs;
       chord_mode      = en.chord_mode;
       chord_inversion = en.chord_inversion;
+      note_velocity   = en.velocity;
+      if(0 == note_velocity)
+         findDefaultVelocity();
       updateSemiTbl();
       log4 "undoRestore: reload last_note_abs="+last_note_abs;
    }
@@ -775,7 +795,7 @@ class KeyJazz : Layer {
          undo_entries.insert(undo_idx, #(deref enIns));
          undo_idx++;
          handleUndoIdxChanged();
-         loginfo "Duplicate undo (nr="+(undo_idx+1)+")";
+         loginfo "Duplicate undo (step="+(undo_idx+1)+")";
       }
    }
 
@@ -785,7 +805,7 @@ class KeyJazz : Layer {
          undo_entries.swap(undo_idx-1, undo_idx);
          undo_idx--;
          handleUndoIdxChanged();
-         loginfo "Undo move down (nr="+(undo_idx+1)+")";
+         loginfo "Undo move down (step="+(undo_idx+1)+")";
       }
    }
 
@@ -795,7 +815,7 @@ class KeyJazz : Layer {
          undo_entries.swap(undo_idx+1, undo_idx);
          undo_idx++;
          handleUndoIdxChanged();
-         loginfo "Undo move up (nr="+(undo_idx+1)+")";
+         loginfo "Undo move up (step="+(undo_idx+1)+")";
       }
    }
 
@@ -832,20 +852,24 @@ class KeyJazz : Layer {
       }
    }
 
+   protected method getUndoInfo() : String {
+      return "(step="+(undo_idx+1)+") "+note_names.get(mathWrapi(root_key, 0, 12))+"-"+(5+(root_key/12))+" vel="+note_velocity;
+   }
+
    protected method handleRedo() {
       undoReplace(undo_idx);
       redo();
-      loginfo "Redo (nr="+(undo_idx+1)+")";
+      loginfo "Redo "+getUndoInfo();
    }
 
    protected method handleReplace() {
       undoReplace(undo_idx);
-      loginfo "Undo-replace (nr="+(undo_idx+1)+")";
+      loginfo "Undo-replace "+getUndoInfo();
    }
 
    protected method handleUndo() {
       undoPop();
-      loginfo "Undo (nr="+(undo_idx+1)+")";
+      loginfo "Undo "+getUndoInfo();
    }
 
    protected method setRootKeyToCursor() {
@@ -1027,7 +1051,7 @@ class KeyJazz : Layer {
       {
          undo_entries << b;
          undo_idx = b.u8;
-         loginfo "Undo restored from slot "+(_idx+1);
+         loginfo "Undo restored from slot "+(_idx+1)+" "+getUndoInfo();
          undoRestore(undo_idx);
       }
    }
@@ -1043,7 +1067,7 @@ class KeyJazz : Layer {
       }
       else
       {
-         note_velocity = 96;
+         note_velocity = DEF_VELOCITY;
       }
       log3 "KeyJazz: note_velocity="+note_velocity;
    }
@@ -1268,7 +1292,7 @@ class KeyJazz : Layer {
 
    // <ui_kbd.png>
    public virtual wantKeyRepeat(Key _k) : boolean {
-      return false;
+      return [VKEY_F3, VKEY_F4].contains(_k.code);
    }
 
    // <ui_kbd.png>
@@ -1281,6 +1305,14 @@ class KeyJazz : Layer {
 
          case VKEY_F2:
             changeRootKeyOctave(1);
+            return true;
+
+         case VKEY_F3:
+            changeVelocity(-4);
+            return true;
+
+         case VKEY_F4:
+            changeVelocity(4);
             return true;
 
          case VKEY_F3:
