@@ -1,8 +1,8 @@
 % Synergy MIDI Tracker - Keyboard Shortcuts
 % bsp
-% 23-Nov-2026
+% 24-Nov-2026
 >>>
-17Nov2019, 15May2020, 30Oct2020, 19Apr2021, 13May2021, 14May2021, 02Jun2021, 13Feb2022, 24Feb2022, 07May2022, 08May2022, 24Jun2022, 19Nov2022, 04Feb2023, 18Mar2023, 24Mar2023, 23Jun2023, 24Jun2023, 17Aug2023, 31Oct2023, 03Nov2023, 10Nov2023, 14Nov2023, 16Nov2023, 17Nov2023, 19Nov2023, 02Dec2023, 16Dec2023, 02Feb2024, 03Feb2024, 01Oct2024, 05Oct2024, 06Oct2024, 02Nov2024, 07Jan2025, 16Jan2025, 25Jan2025, 26Jan2025, 28Feb2025, 07Mar2025, 09Mar2025, 28May2025, 01Jun2025, 12Jun2025, 13Jun2025, 20Jun2025, 18Dec2025, 02Jan2026, 14Apr2026, 09May2026, 10May2026, 16May2026, 31Jul2026, 24Oct2026, 28Oct2026, 13Nov2026, 14Nov2026, 22Nov2026, 23Nov2026
+17Nov2019, 15May2020, 30Oct2020, 19Apr2021, 13May2021, 14May2021, 02Jun2021, 13Feb2022, 24Feb2022, 07May2022, 08May2022, 24Jun2022, 19Nov2022, 04Feb2023, 18Mar2023, 24Mar2023, 23Jun2023, 24Jun2023, 17Aug2023, 31Oct2023, 03Nov2023, 10Nov2023, 14Nov2023, 16Nov2023, 17Nov2023, 19Nov2023, 02Dec2023, 16Dec2023, 02Feb2024, 03Feb2024, 01Oct2024, 05Oct2024, 06Oct2024, 02Nov2024, 07Jan2025, 16Jan2025, 25Jan2025, 26Jan2025, 28Feb2025, 07Mar2025, 09Mar2025, 28May2025, 01Jun2025, 12Jun2025, 13Jun2025, 20Jun2025, 18Dec2025, 02Jan2026, 14Apr2026, 09May2026, 10May2026, 16May2026, 31Jul2026, 24Oct2026, 28Oct2026, 13Nov2026, 14Nov2026, 22Nov2026, 23Nov2026, 24Nov2026
 <<<
 $(var:header)
 
@@ -160,21 +160,23 @@ As root, edit `/usr/share/X11/xkb/symbols/<your country code>` (e.g. `de`) and r
 | SPACE                       | Close dialog and stop replay
 | lctrl - SPACE               | Play last played note (saved per undo step)
 | q..p, a..l, y..m            | Play notes (or chords)
-| UP                          | Select relative key
-| DOWN                        | Select relative key
-| LEFT                        | Select previous note
-| RIGHT                       | Select next note
-| F11                         | Toggle cursor-note-on mode
-| F12                         | Toggle rotation anim
+| F1                          | Transpose octave down
+| F2                          | Transpose octave up
+| HOME                        | Select next mode
+| END                         | Select previous mode
 | INSERT                      | Select next root key (transpose up)
 | lshift - INSERT             | Insert / duplicate undo step
 | DELETE                      | Select previous root key (transpose down)
 | lshift - DELETE             | Delete undo step
-| HOME                        | Select next mode
-| END                         | Select previous mode
 | RETURN                      | Find next mode by cursor note and create new undo step
 | lctrl - RETURN              | Set root key to cursor note and create new undo step
 | lalt - RETURN               | Replace current undo step
+| UP                          | Select relative key cel
+| DOWN                        | Select relative key cel
+| LEFT                        | Select previous note cel
+| RIGHT                       | Select next note cel
+| F11                         | Toggle cursor-note-on mode
+| F12                         | Toggle rotation anim
 | BACKSPACE                   | 
 |+PAGEUP                      |+Select previous undo step
 | lctrl - PAGEUP              | Move undo step up
@@ -789,8 +791,8 @@ note: each slot stores up to 16 notes / chords
 | lctrl - c              | Copy block or pattern (when there is no selection)
 | lctrl - v              | Paste block (replace) or paste pattern (when there is no selection)
 | lctrl - lshift - v     | Paste block (insert) or paste pattern (when there is no selection)
-| lshift - F2            | Transpose block up
 | lshift - F1            | Transpose block down
+| lshift - F2            | Transpose block up
 | lshift - F3            | Free envelope(s) (depends on block mode)
 | lctrl - lshift - UP    | Move block up one step
 | lctrl - lshift - LEFT  | Move block up one tick
@@ -808,8 +810,8 @@ note: each slot stores up to 16 notes / chords
 | Key Sequence          :|:Description
 | lalt - i               | Open Instrument pulldown menu
 | lctrl - TAB            | Toggle pattern / instrument views
-| F1                     | KeyJazz octave up
-| F2                     | KeyJazz octave down
+| F1                     | KeyJazz octave down
+| F2                     | KeyJazz octave up
 | lshift - w             | Enter default velocity (focus widget)
 | lctrl - [              | Select previous instrument
 |                        |+(`lctrl - ü` on german kbd)
