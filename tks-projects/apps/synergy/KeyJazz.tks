@@ -8,7 +8,7 @@
 // ---- info   :
 // ----
 // ---- created: 19Nov2026
-// ---- changed: 20Nov2026, 21Nov2026, 22Nov2026, 23Nov2026, 24Nov2026
+// ---- changed: 20Nov2026, 21Nov2026, 22Nov2026, 23Nov2026, 24Nov2026, 25Nov2026
 // ----
 // ----
 // ----
@@ -65,6 +65,7 @@ class KeyJazz : Layer {
    define int VP_H = 600;
 
    define int DEF_VELOCITY = 96;
+   define int DEF_ROW_SHIFT = 4;
 
    define int NUM_UNDO_IO_SLOTS = 9;  // KP1..9
    protected Buffer *[] undo_io_slots;
@@ -90,6 +91,11 @@ class KeyJazz : Layer {
    int last_note_abs;
 
    byte note_velocity;  // see findDefaultVelocity()
+
+   int row_shift;
+   boolean b_row_shift_up;
+   IntArray slot_row_shift;  // indexed by save slot idx
+   IntArray slot_shift_up;   // indexed by save slot idx
 
    protected MIDIPipeFrame midi_frame;
    protected IntArray pending_noteoffs;
@@ -240,8 +246,12 @@ class KeyJazz : Layer {
       undo_io_slots.alloc(NUM_UNDO_IO_SLOTS);
       loop(NUM_UNDO_IO_SLOTS)
          undo_io_slots.add(#(new Buffer));
+      slot_row_shift.allocAndFill(NUM_UNDO_IO_SLOTS, DEF_ROW_SHIFT);
+      slot_shift_up.allocAndFill(NUM_UNDO_IO_SLOTS, false);
 
       note_velocity = DEF_VELOCITY;
+      row_shift = DEF_ROW_SHIFT;
+      b_row_shift_up = false;
 
       loadDefaults();
       last_note_abs = base_note;
@@ -337,6 +347,11 @@ class KeyJazz : Layer {
       loginfo "Velocity is "+note_velocity;
    }
 
+   protected method changeRowShift(int _inc) {
+      row_shift = mathClampi(row_shift + _inc, 0, 12);
+      loginfo "Row Shift is "+row_shift;
+   }
+
    protected method calcSemiTbl(IntArray _a, int _mode) {
       int i = 0;
       int semi = 0;
@@ -350,12 +365,12 @@ class KeyJazz : Layer {
 
    protected method updateSemiTbl() {
       calcSemiTbl(semi_tbl, mode);
-      log2 "updateSemiTbl: semi_tbl="+semi_tbl;
+      log4 "updateSemiTbl: semi_tbl="+semi_tbl;
       int note;
       int idx = 0;
       loop(7)
       {
-         log2 "["+idx+"] "+note_names.get(mathWrapi(root_key + semi_tbl.get(idx), 0, 12));
+         log4 "["+idx+"] "+note_names.get(mathWrapi(root_key + semi_tbl.get(idx), 0, 12));
          idx++;
       }
    }
@@ -486,7 +501,7 @@ class KeyJazz : Layer {
       last_note_abs = _noteAbs;
       beginMIDIFrame();
       addPendingNoteOffsToBuffer();
-      int minMajDim = chord_tbl.get((_noteIdx + mode)%7);
+      int minMajDim = chord_tbl.get(mathWrapi(_noteIdx + mode, 0, 7));
       boolean bMaj = (0 == minMajDim);
       log2 "noteOnChord: note="+note_names.get(mathWrapi(_noteAbs,0,12))+" bMaj="+bMaj;
       IntArray notes; notes.empty();
@@ -659,24 +674,42 @@ class KeyJazz : Layer {
       endMIDIFrame();
    }
 
-   protected method noteOnSingleOrChord(byte _noteIdx, int _oct/*+-12*/) {
-      int note = base_note + root_key + semi_tbl.get(_noteIdx) + _oct;
+   protected method noteOnSingleOrChord(byte _noteIdx, byte _rowOffset/*-1..1*/) {
+
+      if(b_row_shift_up)
+         _rowOffset++;
+      int noteIdx = _noteIdx + _rowOffset * row_shift;
+      log4 "1 _noteIdx="+_noteIdx+" rowOffset="+_rowOffset+" => noteIdx="+noteIdx;
+      int oct = (noteIdx >= 7) ? ((noteIdx/7)*12) : (noteIdx < 0) ? ((noteIdx-6)/7)*12 : 0;
+      noteIdx = mathWrapi(noteIdx, 0, 7);
+      log4 "noteIdx="+noteIdx+" rowOffset="+_rowOffset+" oct="+oct;
+      int note = base_note + root_key + semi_tbl.get(noteIdx) + oct;
+
       if(b_allow_chord && CHORD_OFF != chord_mode)
       {
-         noteOnChord(_noteIdx, note);
+         noteOnChord(noteIdx, note);
       }
       else
       {
          last_note = note % 12;
-         last_note_idx = _noteIdx;
+         last_note_idx = noteIdx;
          last_note_abs = note;
          noteOn(note);
          highlightNote(note);
       }
    }
 
-   protected method noteOffSingleOrChord(byte _noteIdx, int _oct/*+-12*/) {
-      int note = base_note + root_key + semi_tbl.get(_noteIdx) + _oct;
+   protected method noteOffSingleOrChord(byte _noteIdx, int _rowOffset/*-1..1*/) {
+
+      if(b_row_shift_up)
+         _rowOffset++;
+      int noteIdx = _noteIdx + _rowOffset * row_shift;
+      log4 "1 _noteIdx="+_noteIdx+" rowOffset="+_rowOffset+" => noteIdx="+noteIdx;
+      int oct = (noteIdx >= 7) ? ((noteIdx/7)*12) : (noteIdx < 0) ? ((noteIdx-6)/7)*12 : 0;
+      noteIdx = mathWrapi(noteIdx, 0, 7);
+      log4 "noteIdx="+noteIdx+" rowOffset="+_rowOffset+" oct="+oct;
+      int note = base_note + root_key + semi_tbl.get(noteIdx) + oct;
+
       log3 "noteOffSingleOrChord: note="+note;
       if(CHORD_OFF == chord_mode)
       {
@@ -822,7 +855,7 @@ class KeyJazz : Layer {
    protected method handleUndoIdxChanged() {
       if(null != parent_dialog)
          parent_dialog.setWindowTitle(String((undo_idx+1)));
-      log2 "undo_idx is "+undo_idx;
+      // log4 "undo_idx is "+undo_idx;
       model_frot_damp_countdown = 50;
    }
 
@@ -1002,7 +1035,7 @@ class KeyJazz : Layer {
       int idx = _aModes.indexOf(chord_mode, 0);
       log4 "cycleChordMode: idx="+idx;
       chord_mode = _aModes.get(mathWrapi(++idx, 0, _aModes.numElements));
-      log2 "cycleChordMode: new idx="+idx+" new chord_mode="+chord_mode;
+      log3 "cycleChordMode: new idx="+idx+" new chord_mode="+chord_mode;
       loginfo "Select chord "+getChordName();
       if(b_queue_cursor_note)
          noteOnLastAbs();
@@ -1040,6 +1073,9 @@ class KeyJazz : Layer {
       b.offset = 0;
       saveUndoInt(b);
 
+      slot_row_shift[_idx] = row_shift;
+      slot_shift_up [_idx] = b_row_shift_up;
+
       loginfo "Undo saved to slot "+(_idx+1);
    }
 
@@ -1051,7 +1087,11 @@ class KeyJazz : Layer {
       {
          undo_entries << b;
          undo_idx = b.u8;
-         loginfo "Undo restored from slot "+(_idx+1)+" "+getUndoInfo();
+
+         row_shift      = slot_row_shift[_idx];
+         b_row_shift_up = slot_shift_up [_idx];
+
+         loginfo "Undo restored from slot "+(_idx+1)+" "+getUndoInfo()+"  shift="+row_shift+" up="+b_row_shift_up;
          undoRestore(undo_idx);
       }
    }
@@ -1098,7 +1138,7 @@ class KeyJazz : Layer {
          // Undo + restart recording
          arr.tryQueueRecordRestart();
       }
-      else 
+      else
       {
          // Stop replay / Start recording
          if(replay.b_playing)
@@ -1297,6 +1337,8 @@ class KeyJazz : Layer {
 
    // <ui_kbd.png>
    public method onKey(Key _k) : boolean {
+      log4 "KeyJazz:.onKey: k.pressed="+_k.pressed+" k.name="+_k.name;
+
       switch(_k.pressed)
       {
          case VKEY_F1:
@@ -1315,18 +1357,18 @@ class KeyJazz : Layer {
             changeVelocity(4);
             return true;
 
-         case VKEY_F3:
-            if(root_form.isTrackerEditorVisible())
-            {
-               if(tryTrackerPatternClear())
-                  return true;
-            }
-            else if(root_form.isSeqEditorVisible())
-            {
-               if(trySeqPatternClear(false/*bWhenRecording*/))
-                  return true;
-            }
-            break;
+         case VKEY_F5:
+            changeRowShift(-1);
+            return true;
+
+         case VKEY_F6:
+            changeRowShift(1);
+            return true;
+
+         case VKEY_F7:
+            b_row_shift_up = !b_row_shift_up;
+            loginfo "Row-shift-up is "+Utils.GetEnableString(b_row_shift_up);
+            return true;
 
          case VKEY_RSHIFT:
             if(root_form.isTrackerEditorVisible())
@@ -1381,11 +1423,9 @@ class KeyJazz : Layer {
             return true;
 
          case '[':  // de:ue
-            // // cycleChordInversion(-1);
             return true;
 
          case ']':  // de:+
-            // // cycleChordInversion(1);
             return true;
 
          case '6':
@@ -1504,7 +1544,7 @@ class KeyJazz : Layer {
             }
             if(0 != _k.mod)
             {
-               noteOnLastAbs();  
+               noteOnLastAbs();
             }
             else
             {
@@ -1616,31 +1656,35 @@ class KeyJazz : Layer {
                      return true;
                }
             }
-            noteOnSingleOrChord(3, -12);
+            noteOnSingleOrChord(0, -1);
             return true;
 
          case 'x':
-            noteOnSingleOrChord(4, -12);
+            noteOnSingleOrChord(1, -1);
             return true;
 
          case 'c':
-            noteOnSingleOrChord(5, -12);
+            noteOnSingleOrChord(2, -1);
             return true;
 
          case 'v':
-            noteOnSingleOrChord(6, -12);
+            noteOnSingleOrChord(3, -1);
             return true;
 
          case 'b':
-            noteOnSingleOrChord(0, 0);
+            noteOnSingleOrChord(4, -1);
             return true;
 
          case 'n':
-            noteOnSingleOrChord(1, 0);
+            noteOnSingleOrChord(5, -1);
             return true;
 
          case 'm':
-            noteOnSingleOrChord(2, 0);
+            noteOnSingleOrChord(6, -1);
+            return true;
+
+         case ',':
+            noteOnSingleOrChord(7, -1);
             return true;
 
          case 'a':
@@ -1691,23 +1735,23 @@ class KeyJazz : Layer {
             return true;
 
          case 'q':
-            noteOnSingleOrChord(4, 0);
+            noteOnSingleOrChord(0, 1);
             return true;
 
          case 'w':
-            noteOnSingleOrChord(5, 0);
+            noteOnSingleOrChord(1, 1);
             return true;
 
          case 'e':
-            noteOnSingleOrChord(6, 0);
+            noteOnSingleOrChord(2, 1);
             return true;
 
          case 'r':
-            noteOnSingleOrChord(0, 12);
+            noteOnSingleOrChord(3, 1);
             return true;
 
          case 't':
-            noteOnSingleOrChord(1, 12);
+            noteOnSingleOrChord(4, 1);
             return true;
 
          case 'y':
@@ -1724,23 +1768,23 @@ class KeyJazz : Layer {
                      return true;
                }
             }
-            noteOnSingleOrChord(2, 12);
+            noteOnSingleOrChord(5, 1);
             return true;
 
          case 'u':
-            noteOnSingleOrChord(3, 12);
+            noteOnSingleOrChord(6, 1);
             return true;
 
          case 'i':
-            noteOnSingleOrChord(4, 12);
+            noteOnSingleOrChord(7, 1);
             return true;
 
          case 'o':
-            noteOnSingleOrChord(5, 12);
+            noteOnSingleOrChord(8, 1);
             return true;
 
          case 'p':
-            noteOnSingleOrChord(6, 12);
+            noteOnSingleOrChord(9, 1);
             return true;
 
          case VKEY_F11:
@@ -1755,6 +1799,7 @@ class KeyJazz : Layer {
             return true;
 
          case VKEY_SLASH:  // de:-
+         case VKEY_LESS:   // de:-
             cycleChordInversion(1);
             return true;
 
@@ -1807,32 +1852,36 @@ class KeyJazz : Layer {
          case 'z':  // de:y
             if(_k.modNone())
             {
-               noteOffSingleOrChord(3, -12);
+               noteOffSingleOrChord(0, -1);
             }
             return true;
 
          case 'x':
-            noteOffSingleOrChord(4, -12);
+            noteOffSingleOrChord(1, -1);
             return true;
 
          case 'c':
-            noteOffSingleOrChord(5, -12);
+            noteOffSingleOrChord(2, -1);
             return true;
 
          case 'v':
-            noteOffSingleOrChord(6, -12);
+            noteOffSingleOrChord(3, -1);
             return true;
 
          case 'b':
-            noteOffSingleOrChord(0, 0);
+            noteOffSingleOrChord(4, -1);
             return true;
 
          case 'n':
-            noteOffSingleOrChord(1, 0);
+            noteOffSingleOrChord(5, -1);
             return true;
 
          case 'm':
-            noteOffSingleOrChord(2, 0);
+            noteOffSingleOrChord(6, -1);
+            return true;
+
+         case ',':
+            noteOffSingleOrChord(7, -1);
             return true;
 
          case 'a':
@@ -1872,46 +1921,46 @@ class KeyJazz : Layer {
             return true;
 
          case 'q':
-            noteOffSingleOrChord(4, 0);
+            noteOffSingleOrChord(0, 1);
             return true;
 
          case 'w':
-            noteOffSingleOrChord(5, 0);
+            noteOffSingleOrChord(1, 1);
             return true;
 
          case 'e':
-            noteOffSingleOrChord(6, 0);
+            noteOffSingleOrChord(2, 1);
             return true;
 
          case 'r':
-            noteOffSingleOrChord(0, 12);
+            noteOffSingleOrChord(3, 1);
             return true;
 
          case 't':
-            noteOffSingleOrChord(1, 12);
+            noteOffSingleOrChord(4, 1);
             return true;
 
          case 'y':
             if(_k.modNone())
             {
-               noteOffSingleOrChord(2, 12);
+               noteOffSingleOrChord(5, 1);
             }
             return true;
 
          case 'u':
-            noteOffSingleOrChord(3, 12);
+            noteOffSingleOrChord(6, 1);
             return true;
 
          case 'i':
-            noteOffSingleOrChord(4, 12);
+            noteOffSingleOrChord(7, 1);
             return true;
 
          case 'o':
-            noteOffSingleOrChord(5, 12);
+            noteOffSingleOrChord(8, 1);
             return true;
 
          case 'p':
-            noteOffSingleOrChord(6, 12);
+            noteOffSingleOrChord(9, 1);
             return true;
       }
       return false;
@@ -2026,7 +2075,7 @@ class KeyJazz : Layer {
       float angBorderAmt = 0.0375;
       drawable.begin();
 
-      // log2 "cursor=("+cursor_x+","+cursor_y+")";
+      // log4 "cursor=("+cursor_x+","+cursor_y+")";
 
       lum = 1.1;
       minColorStroke(sdvg_ARGBf(1.0,r*lum,g*lum,b*lum));
@@ -2372,17 +2421,27 @@ class KeyJazz : Layer {
 
    // <save.png>
    public method saveState(Stream ofs) {
-      ofs.i8 = 1; // ver
+      ofs.i8 = 2; // ver
       ofs.i8 = undo_io_slots.numElements;
 
+      int slotIdx = 0;
       Buffer *b;
       foreach b in undo_io_slots
       {
+         // Row shift (v2+)
+         ofs.i8 = slot_row_shift.get(slotIdx);
+
+         // Row shift up (v2+)
+         ofs.i8 = slot_shift_up.get(slotIdx);
+
          ofs.i32 = b.size;
          if(b.size > 0)
          {
             ofs.writeBuffer(b, 0, b.size);
          }
+
+         // Next I/O slot
+         slotIdx++;
       }
    }
 
@@ -2398,6 +2457,15 @@ class KeyJazz : Layer {
          int slotIdx = 0;
          loop(numSlots)
          {
+            if(ver >= 2)
+            {
+               // Row shift (v2+)
+               slot_row_shift[slotIdx] = ifs.i8;
+
+               // Row shift up (v2+)
+               slot_shift_up[slotIdx] = ifs.b8;
+            }
+
             Buffer b <= undo_io_slots.get(slotIdx);
             int bSz = ifs.i32;
             if(bSz > 0)
