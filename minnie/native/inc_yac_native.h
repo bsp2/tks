@@ -46,6 +46,8 @@
 #include <yac.h>
 
 #ifdef MINNIE_LIB
+#ifndef MINNIE_ALLOC_DECLARED
+#define MINNIE_ALLOC_DECLARED defined
 #if defined(__cplusplus)
 extern "C" {
 typedef void *minnie_allocator_handle_t;
@@ -57,6 +59,7 @@ typedef void *minnie_allocator_handle_t;
 extern void *minnie_alloc (minnie_allocator_handle_t _allocator, sU32 _sz);
 extern void minnie_free (minnie_allocator_handle_t _allocator, void *_ptr);
 #endif // __cplusplus
+#endif // MINNIE_ALLOC_DECLARED
 #endif // MINNIE_LIB
 
 #if defined(__cplusplus)

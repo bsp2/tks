@@ -118,6 +118,10 @@ extern "C" {
 /* /\* #endif // MINNIE_EXPORT_TRIS_EDGEAA *\/ */
 #endif // MINNIE_EXPORT_TRIS_EDGEAA
 
+#ifndef MINNIE_EXPORT_TRIS_EDGEAA_SCALE_16BIT
+#define MINNIE_EXPORT_TRIS_EDGEAA_SCALE_16BIT 0
+#endif // MINNIE_EXPORT_TRIS_EDGEAA_SCALE_16BIT
+
 #ifndef MINNIE_MIN_DIV_ROUND_LINE_JOINT
 #define MINNIE_MIN_DIV_ROUND_LINE_JOINT 7
 #endif // MINNIE_MIN_DIV_ROUND_LINE_JOINT
@@ -954,13 +958,15 @@ extern void minnie_matrix4f_rotatef (Matrix4f *_this, sF32 _x, sF32 _y, sF32 _z)
 extern void minnie_matrix4f_invert (Matrix4f *_this, Matrix4f *_dest);
 #endif
 
-typedef void *minnie_allocator_handle_t;
-
 #ifdef __cplusplus
 extern "C" {
 #endif // __cplusplus
+#ifndef MINNIE_ALLOC_DECLARED
+#define MINNIE_ALLOC_DECLARED defined
+typedef void *minnie_allocator_handle_t;
 extern void *minnie_alloc (minnie_allocator_handle_t _allocator, sU32 _sz);
 extern void minnie_free (minnie_allocator_handle_t _allocator, void *_ptr);
+#endif // MINNIE_ALLOC_DECLARED
 #ifdef __cplusplus
 }
 #endif // __cplusplus

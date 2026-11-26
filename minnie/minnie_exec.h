@@ -49,7 +49,6 @@ static void loc_BindLinePatternTex(sUI _patternLen, sUI _patternBits,
                                    sF32 _patternScale, sF32 _patternOffset
                                    ) {
    // (todo) cache multiple patterns
-   // (todo) mutex
    if(0u != _patternLen)
    {
       const sBool bFilter = YAC_TRUE;
@@ -512,8 +511,8 @@ Dmin_fxn_impl(void, minExecDrawListEx,
             sdvg_PolygonFillFlatUniformVBO32_BeginPass2();
             for(sUI subPathIdx = 0u; subPathIdx < polySubIdx; subPathIdx++)
             {
-               sUI vbOff    = loc_minnie_subpaths[subPathIdx].vb_off;
-               sUI numVerts = loc_minnie_subpaths[subPathIdx].num_verts;
+               vbOff    = loc_minnie_subpaths[subPathIdx].vb_off;
+               numVerts = loc_minnie_subpaths[subPathIdx].num_verts;
                sdvg_PolygonFillFlatUniformVBO32_DrawPass2(vbOff,
                                                           numVerts
                                                           );
@@ -528,8 +527,8 @@ Dmin_fxn_impl(void, minExecDrawListEx,
             sdvg_PolygonFillFlatUniformVBO32_BeginPass2();
             for(sUI subPathIdx = 0u; subPathIdx < polySubIdx; subPathIdx++)
             {
-               sUI vbOff    = loc_minnie_subpaths[subPathIdx].vb_off;
-               sUI numVerts = loc_minnie_subpaths[subPathIdx].num_verts;
+               vbOff    = loc_minnie_subpaths[subPathIdx].vb_off;
+               numVerts = loc_minnie_subpaths[subPathIdx].num_verts;
                sdvg_PolygonFillFlatUniformVBO32_DrawPass2(vbOff,
                                                           numVerts - 1u
                                                           );
@@ -540,8 +539,8 @@ Dmin_fxn_impl(void, minExecDrawListEx,
             //  (todo) skip when GPU has AA n-polygon rasterizer
             for(sUI subPathIdx = 0u; subPathIdx < polySubIdx; subPathIdx++)
             {
-               sUI vbOff    = loc_minnie_subpaths[subPathIdx].vb_off;
-               sUI numVerts = loc_minnie_subpaths[subPathIdx].num_verts;  // includes one extra vertex for bevel line strips
+               vbOff    = loc_minnie_subpaths[subPathIdx].vb_off;
+               numVerts = loc_minnie_subpaths[subPathIdx].num_verts;  // includes one extra vertex for bevel line strips
                sdvg_PolygonFillFlatUniformVBO32_DrawPass3_AA(vbOff,
                                                              numVerts
                                                              );
@@ -556,8 +555,8 @@ Dmin_fxn_impl(void, minExecDrawListEx,
             sdvg_PolygonFillFlatUniformVBO14_2_BeginPass2();
             for(sUI subPathIdx = 0u; subPathIdx < polySubIdx; subPathIdx++)
             {
-               sUI vbOff    = loc_minnie_subpaths[subPathIdx].vb_off;
-               sUI numVerts = loc_minnie_subpaths[subPathIdx].num_verts;
+               vbOff    = loc_minnie_subpaths[subPathIdx].vb_off;
+               numVerts = loc_minnie_subpaths[subPathIdx].num_verts;
                sdvg_PolygonFillFlatUniformVBO14_2_DrawPass2(vbOff,
                                                             numVerts
                                                             );
@@ -572,8 +571,8 @@ Dmin_fxn_impl(void, minExecDrawListEx,
             sdvg_PolygonFillFlatUniformVBO14_2_BeginPass2();
             for(sUI subPathIdx = 0u; subPathIdx < polySubIdx; subPathIdx++)
             {
-               sUI vbOff    = loc_minnie_subpaths[subPathIdx].vb_off;
-               sUI numVerts = loc_minnie_subpaths[subPathIdx].num_verts;
+               vbOff    = loc_minnie_subpaths[subPathIdx].vb_off;
+               numVerts = loc_minnie_subpaths[subPathIdx].num_verts;
                sdvg_PolygonFillFlatUniformVBO14_2_DrawPass2(vbOff,
                                                             numVerts - 1u
                                                             );
@@ -584,8 +583,8 @@ Dmin_fxn_impl(void, minExecDrawListEx,
             //  (todo) skip when GPU has AA n-polygon rasterizer
             for(sUI subPathIdx = 0u; subPathIdx < polySubIdx; subPathIdx++)
             {
-               sUI vbOff    = loc_minnie_subpaths[subPathIdx].vb_off;
-               sUI numVerts = loc_minnie_subpaths[subPathIdx].num_verts;  // includes one extra vertex for bevel line strips
+               vbOff    = loc_minnie_subpaths[subPathIdx].vb_off;
+               numVerts = loc_minnie_subpaths[subPathIdx].num_verts;  // includes one extra vertex for bevel line strips
                sdvg_PolygonFillFlatUniformVBO14_2_DrawPass3_AA(vbOff,
                                                                numVerts
                                                                );

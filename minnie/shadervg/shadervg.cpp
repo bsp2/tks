@@ -7117,7 +7117,6 @@ void YAC_CALL sdvg_ReturnToGL(void) {
 
 void YAC_CALL sdvg_EndFrame(void) {
    Dsdvg_tracecall("[trc] sdvg_EndFrame\n");
-   // // sdvg_DisableBlending();
    if(0 != mapped_user_vbo_id)
       sdvg_UnmapVBO();
    sdvg_BindVBO(0);
