@@ -8,7 +8,7 @@
 // ---- info   :
 // ----
 // ---- created: 19Nov2026
-// ---- changed: 20Nov2026, 21Nov2026, 22Nov2026, 23Nov2026, 24Nov2026, 25Nov2026
+// ---- changed: 20Nov2026, 21Nov2026, 22Nov2026, 23Nov2026, 24Nov2026, 25Nov2026, 26Nov2026
 // ----
 // ----
 // ----
@@ -69,14 +69,15 @@ class KeyJazz : Layer {
 
    define int NUM_UNDO_IO_SLOTS = 9;  // KP1..9
    protected Buffer *[] undo_io_slots;
+   protected Buffer undo_io_slot_empty;
 
    float x;
    float y;
    float w;
    float h;
-   float r = 0.1;
-   float g = 0.15;
-   float b = 0.3;
+   float r;
+   float g;
+   float b;
 
    int cursor_x;  // 0..11
    int cursor_y;  // 0..1
@@ -85,7 +86,7 @@ class KeyJazz : Layer {
 
    int mode;
    int root_key;  // -36..24
-   int base_note = 5*12;
+   int base_note; // 0..127, def=C-5(60)
    int last_note;
    int last_note_idx;
    int last_note_abs;
@@ -211,6 +212,8 @@ class KeyJazz : Layer {
 
    KeyJazzDialog *parent_dialog;  // or null
 
+   protected PopupMenu *pm_context;
+
 
    // <method_init.png>
    protected method initInt(float _x, float _y,
@@ -237,11 +240,13 @@ class KeyJazz : Layer {
       b_rot = true;
 
       drawable.init();
-      drawable.alloc(64*1024/*maxGLBufSize*/,
-                     16*1024/*maxDrawBufSize*/
+      drawable.alloc(16*1024/*maxGLBufSize*/,
+                      4*1024/*maxDrawBufSize*/
                      );
 
       genChordNames();
+
+      base_note = 5*12;
 
       undo_io_slots.alloc(NUM_UNDO_IO_SLOTS);
       loop(NUM_UNDO_IO_SLOTS)
@@ -258,6 +263,7 @@ class KeyJazz : Layer {
       updateSemiTbl();
       b_queue_cursor_note = false;
 
+      saveUndoToBuffer(undo_io_slot_empty);
    }
 
    // <method_init.png>
@@ -327,6 +333,16 @@ class KeyJazz : Layer {
       root_key += rootKeyOct * 12;
    }
 
+   protected method rootKeyDown() {
+      if(root_key > -36)
+         root_key--;
+   }
+
+   protected method rootKeyUp() {
+      if(root_key < 24)
+         root_key++;
+   }
+
    protected method changeRootKeyOctave(int _dir) {
       if(_dir < 0)
       {
@@ -350,6 +366,11 @@ class KeyJazz : Layer {
    protected method changeRowShift(int _inc) {
       row_shift = mathClampi(row_shift + _inc, 0, 12);
       loginfo "Row Shift is "+row_shift;
+   }
+
+   protected method toggleRowShiftUp() {
+      b_row_shift_up = !b_row_shift_up;
+      loginfo "Row-shift-up is "+Utils.GetEnableString(b_row_shift_up);
    }
 
    protected method calcSemiTbl(IntArray _a, int _mode) {
@@ -679,11 +700,10 @@ class KeyJazz : Layer {
       if(b_row_shift_up)
          _rowOffset++;
       int noteIdx = _noteIdx + _rowOffset * row_shift;
-      log4 "1 _noteIdx="+_noteIdx+" rowOffset="+_rowOffset+" => noteIdx="+noteIdx;
       int oct = (noteIdx >= 7) ? ((noteIdx/7)*12) : (noteIdx < 0) ? ((noteIdx-6)/7)*12 : 0;
       noteIdx = mathWrapi(noteIdx, 0, 7);
-      log4 "noteIdx="+noteIdx+" rowOffset="+_rowOffset+" oct="+oct;
       int note = base_note + root_key + semi_tbl.get(noteIdx) + oct;
+      log4 "noteOnSingleOrChord: _noteIdx="+_noteIdx+" _rowOffset="+_rowOffset+" => noteIdx="+noteIdx+" note="+note+" oct="+oct;
 
       if(b_allow_chord && CHORD_OFF != chord_mode)
       {
@@ -704,13 +724,11 @@ class KeyJazz : Layer {
       if(b_row_shift_up)
          _rowOffset++;
       int noteIdx = _noteIdx + _rowOffset * row_shift;
-      log4 "1 _noteIdx="+_noteIdx+" rowOffset="+_rowOffset+" => noteIdx="+noteIdx;
       int oct = (noteIdx >= 7) ? ((noteIdx/7)*12) : (noteIdx < 0) ? ((noteIdx-6)/7)*12 : 0;
       noteIdx = mathWrapi(noteIdx, 0, 7);
-      log4 "noteIdx="+noteIdx+" rowOffset="+_rowOffset+" oct="+oct;
       int note = base_note + root_key + semi_tbl.get(noteIdx) + oct;
+      log4 "noteOffSingleOrChord: _noteIdx="+_noteIdx+" _rowOffset="+_rowOffset+" => noteIdx="+noteIdx+" note="+note+" oct="+oct;
 
-      log3 "noteOffSingleOrChord: note="+note;
       if(CHORD_OFF == chord_mode)
       {
          noteOff(note);
@@ -784,7 +802,6 @@ class KeyJazz : Layer {
       en.chord_mode      = chord_mode;
       en.chord_inversion = chord_inversion;
       en.velocity        = note_velocity;
-      log4 "undoReplace: save last_note_abs="+last_note_abs;
    }
 
    protected method undoRestore(int _idx) {
@@ -802,7 +819,7 @@ class KeyJazz : Layer {
       if(0 == note_velocity)
          findDefaultVelocity();
       updateSemiTbl();
-      log4 "undoRestore: reload last_note_abs="+last_note_abs;
+      redraw();
    }
 
    protected method undoDelete() {
@@ -812,8 +829,9 @@ class KeyJazz : Layer {
          en.init();
          undo_entries.delete(undo_idx);
          undo_entries.add(#(deref en));
-         log1 "undoDelete("+undo_idx+")";
          undoRestore(undo_idx);
+         loginfo "Delete undo (step="+(undo_idx+1)+")";
+         redraw();
       }
    }
 
@@ -832,7 +850,7 @@ class KeyJazz : Layer {
       }
    }
 
-   protected method undoMoveDown() {
+   protected method undoMoveToPrevious() {
       if(undo_idx > 0)
       {
          undo_entries.swap(undo_idx-1, undo_idx);
@@ -842,7 +860,7 @@ class KeyJazz : Layer {
       }
    }
 
-   protected method undoMoveUp() {
+   protected method undoMoveToNext() {
       if(undo_idx + 1 < undo_entries.maxElements)
       {
          undo_entries.swap(undo_idx+1, undo_idx);
@@ -857,6 +875,7 @@ class KeyJazz : Layer {
          parent_dialog.setWindowTitle(String((undo_idx+1)));
       // log4 "undo_idx is "+undo_idx;
       model_frot_damp_countdown = 50;
+      redraw();
    }
 
    protected method undoPush() {
@@ -893,6 +912,8 @@ class KeyJazz : Layer {
       undoReplace(undo_idx);
       redo();
       loginfo "Redo "+getUndoInfo();
+      if(b_queue_cursor_note)
+         noteOnLastAbs();
    }
 
    protected method handleReplace() {
@@ -903,6 +924,8 @@ class KeyJazz : Layer {
    protected method handleUndo() {
       undoPop();
       loginfo "Undo "+getUndoInfo();
+      if(b_queue_cursor_note)
+         noteOnLastAbs();
    }
 
    protected method setRootKeyToCursor() {
@@ -915,6 +938,8 @@ class KeyJazz : Layer {
       cursor_x = 0;
       cursor_y = 0;
       model_frot_damp_countdown = 50;
+
+      redraw();
    }
 
    protected method setModeToCursorNoteIdx(boolean _bMode) : int {
@@ -959,7 +984,6 @@ class KeyJazz : Layer {
                   cellX++;
                }
                log2 "setModeToCursorNoteIdx: bMode/cursor_x=0 mode="+mode+" tryNextMode="+mathWrapi(mode+i,0,7)+" semiTbl="+semiTbl+" rootKey="+rootKey+" idxRoot="+idxRoot;
-               // // cursor_x = mathWrapi(cursor_x - idxRoot, 0, 12);
                setRootKey(rootKey);
                int newNote = (base_note + root_key + semi_tbl.get(last_note_idx)) % 12;
                if(newNote != last_note)
@@ -968,10 +992,12 @@ class KeyJazz : Layer {
                   setRootKey(root_key + (last_note - newNote));
                   loginfo "Select mode \'"+mode_names.get(mode)+"\', root key="+note_names.get(mathWrapi(root_key, 0, 12));
                }
+               redraw();
                return;
             }
             i++;
          }
+         redraw();
          return;
       }
 
@@ -991,6 +1017,7 @@ class KeyJazz : Layer {
             updateSemiTbl();
             log2 "setModeToCursorNoteIdx: note="+retNote+" ====> mode="+mode+"  newRootKey="+root_key+" newSemiTbl="+semi_tbl;
             loginfo "Select mode \'"+mode_names.get(mode)+"\', root key="+note_names.get(mathWrapi(root_key, 0, 12));
+            redraw();
          }
          else
          {
@@ -1031,6 +1058,12 @@ class KeyJazz : Layer {
       return chord_names.get(chord_mode);
    }
 
+   protected method chordModeOff() {
+      chord_mode = CHORD_OFF;
+      loginfo "Select chord "+chord_names.get(chord_mode);
+      redraw();
+   }
+
    protected method cycleChordMode(IntArray _aModes) {
       int idx = _aModes.indexOf(chord_mode, 0);
       log4 "cycleChordMode: idx="+idx;
@@ -1039,6 +1072,19 @@ class KeyJazz : Layer {
       loginfo "Select chord "+getChordName();
       if(b_queue_cursor_note)
          noteOnLastAbs();
+      redraw();
+   }
+
+   protected method toggleNoteAutoPlay() {
+      b_queue_cursor_note = !b_queue_cursor_note;
+      loginfo "Note auto-play is "+Utils.GetEnableString(b_queue_cursor_note);
+      if(b_queue_cursor_note)
+         b_queued_noteon_cursor = true;
+   }
+
+   protected method toggleAllowChord() {
+      b_allow_chord = !b_allow_chord;
+      loginfo "Chords are "+Utils.GetEnableString(b_allow_chord);
    }
 
    protected method cycleChordInversion(int _dir) {
@@ -1046,12 +1092,14 @@ class KeyJazz : Layer {
       loginfo "Select chord inversion \""+chord_inversion_names.get(chord_inversion)+"\"("+chord_inversion+")";
       if(b_queue_cursor_note)
          noteOnLastAbs();
+      redraw();
    }
 
    protected method cycleMode(int _dir) {
       mode = mathWrapi(mode + _dir, 0, 7);
       updateSemiTbl();
       loginfo "Select mode \'"+mode_names.get(mode)+"\'";
+      redraw();
    }
 
    protected method saveUndoInt(Stream ofs) {
@@ -1060,23 +1108,32 @@ class KeyJazz : Layer {
       ofs.i8 = undo_idx;
    }
 
-   protected method saveUndoByIndex(int _idx) {
-      Buffer b <= undo_io_slots.get(_idx);
-
-      log1 "save "+undo_entries.numElements+" undo entries";
-
+   protected method saveUndoToBuffer(Buffer _b) {
       local DummyStream ds;
       ds.offset = 0;
       saveUndoInt(ds);
 
-      b.size = ds.offset;
-      b.offset = 0;
-      saveUndoInt(b);
+      _b.size = ds.offset;
+      _b.offset = 0;
+      saveUndoInt(_b);
+   }
+
+   protected method saveUndoByIndex(int _idx) {
+      Buffer b <= undo_io_slots.get(_idx);
+      log1 "save "+undo_entries.numElements+" undo entries";
+      saveUndoToBuffer(b);
 
       slot_row_shift[_idx] = row_shift;
       slot_shift_up [_idx] = b_row_shift_up;
 
       loginfo "Undo saved to slot "+(_idx+1);
+   }
+
+   protected method isUndoSlotEmpty(int _idx) {
+      Buffer b <= undo_io_slots.get(_idx);
+      b.seek(0, SEEK_END);
+      undo_io_slot_empty.seek(0, SEEK_END);
+      return (0 == b.size) || b.compareBuffer(undo_io_slot_empty);
    }
 
    protected method loadUndoByIndex(int _idx) {
@@ -1094,6 +1151,55 @@ class KeyJazz : Layer {
          loginfo "Undo restored from slot "+(_idx+1)+" "+getUndoInfo()+"  shift="+row_shift+" up="+b_row_shift_up;
          undoRestore(undo_idx);
       }
+   }
+
+   // <ui_handle.png>
+   protected method handleCursorUp() {
+      if(cursor_y > 0)
+      {
+         cursor_y = 0;
+      }
+      else
+      {
+         cursor_x = mathWrapi(cursor_x + 6, 0, 12);
+      }
+      if(b_queue_cursor_note)
+         b_queued_noteon_cursor = true;
+      model_frot_damp_countdown = 50;
+   }
+
+   // <ui_handle.png>
+   protected method handleCursorDown() {
+      if(0 == cursor_y)
+      {
+         cursor_y = 1;
+      }
+      else
+      {
+         cursor_y = 1;
+         cursor_x = mathWrapi(cursor_x + 6, 0, 12);
+      }
+      if(b_queue_cursor_note)
+         b_queued_noteon_cursor = true;
+      model_frot_damp_countdown = 50;
+   }
+
+   // <ui_handle.png>
+   protected method handleCursorLeft() {
+      cursor_x = mathWrapi(cursor_x - 1, 0, 12);
+      if(b_queue_cursor_note)
+         b_queued_noteon_cursor = true;
+      model_frot_damp_countdown = 50;
+      redraw();
+   }
+
+   // <ui_handle.png>
+   protected method handleCursorRight() {
+      cursor_x = mathWrapi(cursor_x + 1, 0, 12);
+      if(b_queue_cursor_note)
+         b_queued_noteon_cursor = true;
+      model_frot_damp_countdown = 50;
+      redraw();
    }
 
    // <method.png>
@@ -1149,6 +1255,21 @@ class KeyJazz : Layer {
    }
 
    // <method.png>
+   protected method tryHandleNodeRestartRecording() {
+      if(root_form.isTrackerEditorVisible())
+      {
+         Key k; k.pressed = VKEY_RSHIFT;
+         trackerRestartRecording(k);
+         return true;
+      }
+      else if(root_form.isSeqEditorVisible())
+      {
+         seqRestartRecording();
+         return true;
+      }
+   }
+
+   // <method.png>
    protected method trackerToggleEditMode() {
       PageNode pgNode <= root_form.pg_node;
       NodeTracker nt <= pgNode.script_node;
@@ -1167,6 +1288,22 @@ class KeyJazz : Layer {
       UI.SetKeyboardFocus(seqEditor);
       seqEditor.onKey(_k);
       UI.SetKeyboardFocus(this);
+   }
+
+   // <method.png>
+   protected method tryHandleNodeToggleEdit() : boolean {
+      if(root_form.isTrackerEditorVisible())
+      {
+         trackerToggleEditMode();
+         return true;
+      }
+      else if(root_form.isSeqEditorVisible())
+      {
+         Key k; k.pressed = VKEY_RCTRL;
+         seqToggleEditMode(k);
+         return true;
+      }
+      return false;
    }
 
    // <method.png>
@@ -1238,14 +1375,43 @@ class KeyJazz : Layer {
    }
 
    // <method.png>
-   protected method tryTrackerPatternClear() : boolean {
+   protected method isTrackerEditable() : boolean {
+      if(root_form.isTrackerEditorVisible())
+      {
+         PageNode pgNode <= root_form.pg_node;
+         NodeTracker nt <= pgNode.script_node;
+         return (NodeTracker.PV_EDIT_NONE != nt.pv_edit_mode);
+      }
+      return false;
+   }
+
+   // <method.png>
+   protected method isSeqEditable() {
+      if(root_form.isSeqEditorVisible())
+      {
+         PageNode pgNode <= root_form.pg_node;
+         NodeSeq seq <= pgNode.script_node;
+         NodeSeqEditor seqEditor <= pgNode.editor;
+         NSQ_Arranger arr <= seqEditor.arr;
+         return arr.isEditable() && seq.b_rec;
+      }
+      return false;
+   }
+
+   // <method.png>
+   protected method isNodeEditable() : boolean {
+      return isTrackerEditable() || isSeqEditable();
+   }
+
+   // <method.png>
+   protected method tryTrackerPatternClear(boolean _bWhenArmed) : boolean {
       boolean bHandled = false;
       PageNode pgNode <= root_form.pg_node;
       NodeTracker nt <= pgNode.script_node;
       NodeTrackerEditor ntEditor <= pgNode.editor;
       NT_PatternView pv <= ntEditor.pattern_view;
       UI.SetKeyboardFocus(pv);  // isEditable() required kbdfocus
-      if(pv.isEditable())
+      if( !_bWhenArmed || pv.isEditable() )
       {
          pv.patternClear();
          if(!replay.b_playing)
@@ -1257,20 +1423,34 @@ class KeyJazz : Layer {
    }
 
    // <method.png>
-   protected method trySeqPatternClear(boolean _bWhenRecording) {
+   protected method trySeqPatternClear(boolean _bWhenArmed) {
       boolean bHandled = false;
       PageNode pgNode <= root_form.pg_node;
       NodeSeq seq <= pgNode.script_node;
       NodeSeqEditor seqEditor <= pgNode.editor;
       NSQ_Arranger arr <= seqEditor.arr;
       UI.SetKeyboardFocus(arr);
-      if(arr.isEditable() && (!_bWhenRecording || seq.b_rec))
+      if(arr.isEditable() && (!_bWhenArmed || seq.b_rec))
       {
          arr.handleClearSelection(true/*bUndo*/);
          bHandled = true;
       }
       UI.SetKeyboardFocus(this);
       return bHandled;
+   }
+
+   protected method tryHandleNodeClear(boolean _bWhenArmed) : boolean {
+      if(root_form.isTrackerEditorVisible())
+      {
+         if(tryTrackerPatternClear(_bWhenArmed))
+            return true;
+      }
+      else if(root_form.isSeqEditorVisible())
+      {
+         if(trySeqPatternClear(_bWhenArmed))
+            return true;
+      }
+      return false;
    }
 
    // <method.png>
@@ -1314,6 +1494,21 @@ class KeyJazz : Layer {
    }
 
    // <method.png>
+   protected method tryHandleNodeUndoRedo(boolean _bRedo) : boolean {
+      if(root_form.isTrackerEditorVisible())
+      {
+         if(tryTrackerUndoRedo(_bRedo))
+            return true;
+      }
+      else if(root_form.isSeqEditorVisible())
+      {
+         if(trySeqUndoRedo(_bRedo))
+            return true;
+      }
+      return false;
+   }
+
+   // <method.png>
    protected method trySeqSelectBlock() {
       boolean bHandled = false;
       PageNode pgNode <= root_form.pg_node;
@@ -1328,6 +1523,279 @@ class KeyJazz : Layer {
       }
       UI.SetKeyboardFocus(this);
       return bHandled;
+   }
+
+   // <ui_handle.png>
+   protected method toggleRotation() {
+      b_rot = !b_rot;
+      loginfo "Rotation is "+Utils.GetEnableString(b_rot);
+      if(!b_rot)
+      {
+         frot = 0.0f;
+         frotspd = 0.0f;
+         model_frot_damp_countdown = 0;
+      }
+      redraw();
+   }
+
+   // <ui_show.png>
+   module method showContextMenu(boolean _bFocusFirst) {
+
+      pm_context <= PopupMenu.New(this);
+      PopupMenuButton *pmb;
+      PopupMenu *spm;
+      PopupMenu pm <= pm_context;
+      int slotIdx;
+
+      pmb <= pm.addDefaultButton("Show / Hide menu", "hide");
+      pmb.setAccelerators(null, "lshift-a");
+
+      // Undo
+      pm.addSeparator();
+      spm <= PopupMenu.New(pm);
+      pmb <= pm.addMenu("Undo", deref spm);
+
+      pmb <= spm.addDefaultButton("Undo", "undo");
+      pmb.setAccelerators(null, "BACKSPACE");
+
+      pmb <= spm.addDefaultButton("Redo", "redo");
+      pmb.setAccelerators(null, "lctrl-BACKSPACE");
+
+      pmb <= spm.addDefaultButton("Replace", "undo_replace");
+      pmb.setAccelerators(null, "lalt-BACKSPACE");
+
+      pmb <= spm.addDefaultButton("Clone", "undo_clone");
+      pmb.setAccelerators(null, "lshift-INSERT");
+
+      pmb <= spm.addDefaultButton("Delete", "undo_delete");
+      pmb.setAccelerators(null, "lshift-DELETE");
+
+      pmb <= spm.addDefaultButton("Move to previous step", "undo_movetoprev");
+      pmb.setAccelerators(null, "lctrl-PAGEUP");
+
+      pmb <= spm.addDefaultButton("Move to next step", "undo_movetonext");
+      pmb.setAccelerators(null, "lctrl-PAGEDOWN");
+
+      // Load undo slot
+      pm.addSeparator();
+      spm <= PopupMenu.New(pm);
+      pmb <= pm.addMenu("Load..", deref spm);
+      slotIdx = 0;
+      loop(NUM_UNDO_IO_SLOTS)
+      {
+         pmb <= spm.addDefaultButton("Slot "+(slotIdx+1)+(isUndoSlotEmpty(slotIdx)?" <empty>":""), "load_"+slotIdx);
+         pmb.setAccelerators(null, "KP"+(slotIdx+1));
+         slotIdx++;
+      }
+
+      // Save undo slot
+      pm.addSeparator();
+      spm <= PopupMenu.New(pm);
+      pmb <= pm.addMenu("Save..", deref spm);
+      slotIdx = 0;
+      loop(NUM_UNDO_IO_SLOTS)
+      {
+         pmb <= spm.addDefaultButton("Slot "+(slotIdx+1)+(isUndoSlotEmpty(slotIdx)?" <empty>":""), "save_"+slotIdx);
+         pmb.setAccelerators(null, "lctrl-KP"+(slotIdx+1));
+         slotIdx++;
+      }
+
+      // Cursor
+      pm.addSeparator();
+      spm <= PopupMenu.New(pm);
+      pmb <= pm.addMenu("Cursor", deref spm);
+
+      pmb <= spm.addDefaultButton("Up", "cursor_up");
+      pmb.setAccelerators(null, "UP");
+      pmb.setActive(!isTrackerEditable());
+
+      pmb <= spm.addDefaultButton("Down", "cursor_down");
+      pmb.setAccelerators(null, "DOWN");
+      pmb.setActive(!isTrackerEditable());
+
+      pmb <= spm.addDefaultButton("Left", "cursor_left");
+      pmb.setAccelerators(null, "LEFT");
+      pmb.setActive(!isSeqEditable());
+
+      pmb <= spm.addDefaultButton("Right", "cursor_right");
+      pmb.setAccelerators(null, "RIGHT");
+      pmb.setActive(!isSeqEditable());
+
+      pmb <= spm.addDefaultButton("Find next mode", "cursor_mode");
+      pmb.setToolTipCaption("Find next mode\n\n (note) depends on last played note");
+      pmb.setAccelerators(null, "RETURN");
+
+      pmb <= spm.addDefaultButton("Change root key", "cursor_root");
+      pmb.setAccelerators(null, "lctrl-RETURN");
+
+      // Transpose
+      spm <= PopupMenu.New(pm);
+      pmb <= pm.addMenu("Transpose", deref spm);
+
+      pmb <= spm.addDefaultButton("Octave down", "oct_down");
+      pmb.setAccelerators(null, "F1");
+
+      pmb <= spm.addDefaultButton("Octave up", "oct_up");
+      pmb.setAccelerators(null, "F2");
+
+      pmb <= spm.addDefaultButton("Semi down", "semi_down");
+      pmb.setAccelerators(null, "DELETE");
+      pmb.setActive(!isNodeEditable());
+
+      pmb <= spm.addDefaultButton("Semi up", "semi_up");
+      pmb.setAccelerators(null, "INSERT");
+
+      // Mode
+      spm <= PopupMenu.New(pm);
+      pmb <= pm.addMenu("Mode", deref spm);
+
+      pmb <= spm.addDefaultButton("Previous", "mode_prev");
+      pmb.setAccelerators(null, "END");
+
+      pmb <= spm.addDefaultButton("Next", "mode_next");
+      pmb.setAccelerators(null, "HOME");
+
+      // Velocity
+      spm <= PopupMenu.New(pm);
+      pmb <= pm.addMenu("Velocity", deref spm);
+
+      pmb <= spm.addDefaultButton("Dec Velocity", "vel_down");
+      pmb.setAccelerators(null, "F3");
+
+      pmb <= spm.addDefaultButton("Inc Velocity", "vel_up");
+      pmb.setAccelerators(null, "F4");
+
+      // Row shift
+      spm <= PopupMenu.New(pm);
+      pmb <= pm.addMenu("Row Shift", deref spm);
+
+      pmb <= spm.addDefaultButton("Dec Row Shift", "row_down");
+      pmb.setAccelerators(null, "F5");
+
+      pmb <= spm.addDefaultButton("Inc Row Shift", "row_up");
+      pmb.setAccelerators(null, "F6");
+
+      pmb <= spm.addCheckButton("Shift up", b_row_shift_up, "row_shift_up");
+      pmb.setAccelerators(null, "F7");
+
+      // Chord
+      spm <= PopupMenu.New(pm);
+      pmb <= pm.addMenu("Chord", deref spm);
+
+      pmb <= spm.addDefaultButton("-", "chord_off");
+      pmb.setAccelerators(null, "1");
+
+      pmb <= spm.addDefaultButton("Dyad", "chord_dyad");
+      pmb.setAccelerators(null, "2");
+
+      pmb <= spm.addDefaultButton("Triad", "chord_triad");
+      pmb.setAccelerators(null, "3");
+
+      pmb <= spm.addDefaultButton("Tetrad", "chord_tetrad");
+      pmb.setAccelerators(null, "4");
+
+      pmb <= spm.addDefaultButton("Ext5", "chord_ext5");
+      pmb.setAccelerators(null, "5");
+
+      pmb <= spm.addDefaultButton("Ext6", "chord_ext6");
+      pmb.setAccelerators(null, "6");
+
+      spm.addSeparator();
+      pmb <= spm.addDefaultButton("Previous inversion", "chord_inv_prev");
+      pmb.setAccelerators(null, ".");
+
+      pmb <= spm.addDefaultButton("Next inversion", "chord_inv_next");
+      pmb.setAccelerators("<", "/");
+
+      // Node
+      if(root_form.isTrackerEditorVisible() ||
+         root_form.isSeqEditorVisible()
+         )
+      {
+         pm.addSeparator();
+         spm <= PopupMenu.New(pm);
+         pmb <= pm.addMenu("Node", deref spm);
+
+         if(root_form.isSeqEditorVisible())
+         {
+            pmb <= spm.addDefaultButton("Previous Bar", "node_seq_prev_bar");
+            pmb.setAccelerators(null, "LEFT");
+            pmb.setActive(isSeqEditable());
+
+            pmb <= spm.addDefaultButton("Previous Bar (select)", "node_seq_prev_bar_select");
+            pmb.setAccelerators(null, "LEFT");
+            pmb.setActive(isSeqEditable());
+
+            pmb <= spm.addDefaultButton("Next Bar", "node_seq_next_bar");
+            pmb.setAccelerators(null, "RIGHT");
+            pmb.setActive(isSeqEditable());
+
+            pmb <= spm.addDefaultButton("Next Bar (select)", "node_seq_next_bar_select");
+            pmb.setAccelerators(null, "lshift-RIGHT");
+            pmb.setActive(isSeqEditable());
+         }
+         else if(root_form.isTrackerEditorVisible())
+         {
+            pmb <= spm.addDefaultButton("Previous Step", "node_tracker_prev_step");
+            pmb.setAccelerators(null, "UP");
+            pmb.setActive(isTrackerEditable());
+
+            pmb <= spm.addDefaultButton("Next Step", "node_tracker_next_step");
+            pmb.setAccelerators(null, "DOWN");
+            pmb.setActive(isTrackerEditable());
+         }
+
+         pmb <= spm.addDefaultButton("(Re-)start recording", "node_restartrec");
+         pmb.setAccelerators(null, "RSHIFT");
+
+         pmb <= spm.addDefaultButton("Toggle edit mode", "node_toggleedit");
+         pmb.setAccelerators(null, "RCTRL");
+
+         pmb <= spm.addDefaultButton("Clear pattern", "node_clear");
+         pmb.setAccelerators(null, "lshift-BACKSPACE");
+
+         pmb <= spm.addDefaultButton("Clear pattern (when node is armed)", "node_clear_armed");
+         pmb.setAccelerators(null, "DELETE");
+         pmb.setActive(isNodeEditable());
+
+         pmb <= spm.addDefaultButton("Undo", "node_undo");
+         pmb.setAccelerators(null, "lctrl-y");
+
+         pmb <= spm.addDefaultButton("Redo", "node_redo");
+         pmb.setAccelerators(null, "lctrl-lshift-y");
+      }
+
+      // Miscellaneous
+      pm.addSeparator();
+
+      pmb <= pm.addDefaultButton("Replay note", "note_replay");
+      pmb.setAccelerators(null, "lctrl-SPACE");
+
+      pmb <= pm.addCheckButton("Note Auto-Play", b_queue_cursor_note, "note_auto_play");
+      pmb.setAccelerators(null, "F11");
+
+      pmb <= pm.addCheckButton("Rotate", b_rot, "rotate");
+      pmb.setAccelerators(null, "F12");
+
+      pmb <= pm.addCheckButton("Chords", b_allow_chord, "allow_chord");
+      pmb.setToolTipCaption("Allow chords\n\n (note) must also select a chord mode (keys 1..6)");
+      pmb.setAccelerators(null, "TAB");
+
+      // Show
+      pm.showAtXY(UI.GetMouseX(), UI.GetMouseY());
+
+      if(_bFocusFirst)
+         pm.focusNextMenuItem();
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseClick(MouseEvent _ev) : boolean {
+      if(_ev.isRightButton())
+      {
+         showContextMenu(false/*bFocusFirst*/);
+         return true;
+      }
+      return false;
    }
 
    // <ui_kbd.png>
@@ -1366,44 +1834,23 @@ class KeyJazz : Layer {
             return true;
 
          case VKEY_F7:
-            b_row_shift_up = !b_row_shift_up;
-            loginfo "Row-shift-up is "+Utils.GetEnableString(b_row_shift_up);
+            toggleRowShiftUp();
             return true;
 
          case VKEY_RSHIFT:
-            if(root_form.isTrackerEditorVisible())
-            {
-               trackerRestartRecording(_k);
-               return true;
-            }
-            else if(root_form.isSeqEditorVisible())
-            {
-               seqRestartRecording();
-               return true;
-            }
+            tryHandleNodeRestartRecording();
             break;
 
          case VKEY_RCTRL:
-            if(root_form.isTrackerEditorVisible())
-            {
-               trackerToggleEditMode();
-               return true;
-            }
-            else if(root_form.isSeqEditorVisible())
-            {
-               seqToggleEditMode(_k);
-               return true;
-            }
+            tryHandleNodeToggleEdit();
             break;
 
          case VKEY_F12:
-            b_rot = !b_rot;
-            loginfo "Rotation is "+Utils.GetEnableString(b_rot);
+            toggleRotation();
             break;
 
          case '1':
-            chord_mode = CHORD_OFF;
-            loginfo "Select chord "+chord_names.get(chord_mode);
+            chordModeOff();
             return true;
 
          case '2':
@@ -1422,19 +1869,18 @@ class KeyJazz : Layer {
             cycleChordMode(chord_modes_ext5);
             return true;
 
+         case '6':
+            cycleChordMode(chord_modes_ext6);
+            return true;
+
          case '[':  // de:ue
             return true;
 
          case ']':  // de:+
             return true;
 
-         case '6':
-            cycleChordMode(chord_modes_ext6);
-            return true;
-
          case VKEY_TAB:
-            b_allow_chord = !b_allow_chord;
-            loginfo "Chords are "+Utils.GetEnableString(b_allow_chord);
+            toggleAllowChord();
             return true;
 
          case VKEY_RETURN:
@@ -1444,8 +1890,7 @@ class KeyJazz : Layer {
             }
             else
             {
-               boolean bSetMode = !(_k.modCtrl());
-               setModeToCursorNoteIdx(bSetMode);
+               setModeToCursorNoteIdx(!_k.modCtrl()/*bSetMode*/);
             }
             return true;
 
@@ -1460,16 +1905,8 @@ class KeyJazz : Layer {
             }
             else if(_k.modShift())
             {
-               if(root_form.isTrackerEditorVisible())
-               {
-                  if(tryTrackerPatternClear())
-                     return true;
-               }
-               else if(root_form.isSeqEditorVisible())
-               {
-                  if(trySeqPatternClear(false/*bWhenRecording*/))
-                     return true;
-               }
+               if(tryHandleNodeClear(false/*bWhenArmed*/))
+                  return true;
             }
             else
             {
@@ -1479,62 +1916,32 @@ class KeyJazz : Layer {
 
          case VKEY_INSERT:
             if(_k.modShift())
-            {
                undoInsert();
-            }
             else
-            {
-               if(root_key < 24)
-                  root_key++;
-            }
+               rootKeyUp();
             return true;
 
          case VKEY_DELETE:
-            if(root_form.isTrackerEditorVisible())
-            {
-               if(tryTrackerPatternClear())
-                  return true;
-            }
-            else if(root_form.isSeqEditorVisible())
-            {
-               if(trySeqPatternClear(true/*bWhenRecording*/))
-                  return true;
-            }
+            if(tryHandleNodeClear(true/*bWhenArmed*/))
+               return true;
             if(_k.modShift())
-            {
                undoDelete();
-            }
             else
-            {
-               if(root_key > -36)
-                  root_key--;
-            }
+               rootKeyDown();
             return true;
 
          case VKEY_PAGEUP:
             if(_k.modCtrl())
-            {
-               undoMoveDown();
-            }
+               undoMoveToPrevious();
             else
-            {
                handleUndo();
-               if(b_queue_cursor_note)
-                  noteOnLastAbs();
-            }
             return true;
 
          case VKEY_PAGEDOWN:
             if(_k.modCtrl())
-            {
-               undoMoveUp();
-            }
+               undoMoveToNext();
             else
-            {
                handleRedo();
-               if(b_queue_cursor_note)
-                  noteOnLastAbs();
-            }
             return true;
 
          case VKEY_SPACE:
@@ -1565,10 +1972,7 @@ class KeyJazz : Layer {
                if(trySeqHandleKeyLeft(_k.modShift()))
                   return true;
             }
-            cursor_x = mathWrapi(cursor_x - 1, 0, 12);
-            if(b_queue_cursor_note)
-               b_queued_noteon_cursor = true;
-            model_frot_damp_countdown = 50;
+            handleCursorLeft();
             return true;
 
          case VKEY_RIGHT:
@@ -1577,10 +1981,7 @@ class KeyJazz : Layer {
                if(trySeqHandleKeyRight(_k.modShift()))
                   return true;
             }
-            cursor_x = mathWrapi(cursor_x + 1, 0, 12);
-            if(b_queue_cursor_note)
-               b_queued_noteon_cursor = true;
-            model_frot_damp_countdown = 50;
+            handleCursorRight();
             return true;
 
          case VKEY_HOME:
@@ -1602,18 +2003,8 @@ class KeyJazz : Layer {
                   if(tryTrackerHandleKeyUp(_k))
                      return true;
                }
-               if(cursor_y > 0)
-               {
-                  cursor_y = 0;
-               }
-               else
-               {
-                  cursor_x = mathWrapi(cursor_x + 6, 0, 12);
-               }
+               handleCursorUp();
             }
-            if(b_queue_cursor_note)
-               b_queued_noteon_cursor = true;
-            model_frot_damp_countdown = 50;
             return true;
 
          case VKEY_DOWN:
@@ -1627,34 +2018,15 @@ class KeyJazz : Layer {
                   if(tryTrackerHandleKeyDown(_k))
                      return true;
                }
-               if(0 == cursor_y)
-               {
-                  cursor_y = 1;
-               }
-               else
-               {
-                  cursor_y = 1;
-                  cursor_x = mathWrapi(cursor_x + 6, 0, 12);
-               }
+               handleCursorDown();
             }
-            if(b_queue_cursor_note)
-               b_queued_noteon_cursor = true;
-            model_frot_damp_countdown = 50;
             return true;
 
          case 'z':  // de:y
             if(_k.modCtrl())
             {
-               if(root_form.isTrackerEditorVisible())
-               {
-                  if(tryTrackerUndoRedo(_k.modShift()/*bRedo*/))
-                     return true;
-               }
-               else if(root_form.isSeqEditorVisible())
-               {
-                  if(trySeqUndoRedo(_k.modShift()/*bRedo*/))
-                     return true;
-               }
+               if(tryHandleNodeUndoRedo(_k.modShift()/*bRedo*/))
+                  return true;
             }
             noteOnSingleOrChord(0, -1);
             return true;
@@ -1695,6 +2067,10 @@ class KeyJazz : Layer {
                   if(trySeqSelectBlock())
                      return true;
                }
+            }
+            else if(_k.modShift())
+            {
+               showContextMenu(true/*bFocusFirst*/);
             }
             else
             {
@@ -1788,10 +2164,7 @@ class KeyJazz : Layer {
             return true;
 
          case VKEY_F11:
-            b_queue_cursor_note = !b_queue_cursor_note;
-            loginfo "Note auto-play is "+Utils.GetEnableString(b_queue_cursor_note);
-            if(b_queue_cursor_note)
-               b_queued_noteon_cursor = true;
+            toggleNoteAutoPlay();
             return true;
 
          case VKEY_PERIOD:
@@ -2097,6 +2470,8 @@ class KeyJazz : Layer {
       }
 
       drawable.end();
+      // log4 "drawable.getGLOffset()="+drawable.getGLOffset()+" getDrawOffset()="+drawable.getDrawOffset();
+
       drawable.setSize2f(VP_W, VP_H);
    }
 
@@ -2276,7 +2651,7 @@ class KeyJazz : Layer {
       sdvg_ModelInitIdentity();
       sdvg_SetColorARGB(#FFe6e6e6);
 
-      log4 "KeyJazz::draw: getSizeX()="+getSizeX()+" getSizeY()="+getSizeY();
+      // log4 "KeyJazz::draw: getSizeX()="+getSizeX()+" getSizeY()="+getSizeY();
 
       UIRenderer.DrawFilledRectangle(0, 0, getSizeX(), getSizeY(),
                                      sdvg_ARGBf(1.0, r, g, b)
@@ -2359,7 +2734,8 @@ class KeyJazz : Layer {
       if(1)
       {
          draw(1.0);
-         redraw();
+         if(b_rot)
+            redraw();
       }
       else
       {
@@ -2485,6 +2861,272 @@ class KeyJazz : Layer {
          logerror "invalid KeyJazz ver="+ver;
       }
       return false;
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      ActionProvider ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+      Key k;
+
+      switch(@(ap))
+      {
+         case @(pm_context):
+            if(PopupMenu.IsFocusAction(_action))
+               return true;
+
+            if(acName <= "load_")
+            {
+               loadUndoByIndex(acName.replace("load_",""));
+               return true;
+            }
+
+            if(acName <= "save_")
+            {
+               saveUndoByIndex(acName.replace("save_",""));
+               return true;
+            }
+
+            switch(acName)
+            {
+               case PopupMenu.ACTION_CANCEL:
+               case "":
+                  UI.SetKeyboardFocus(this);
+                  return true;
+
+                  // Undo
+               case "undo":
+                  handleUndo();
+                  return true;
+
+               case "redo":
+                  handleRedo();
+                  return true;
+
+               case "undo_replace":
+                  handleReplace();
+                  return true;
+
+               case "undo_clone":
+                  undoInsert();
+                  return true;
+
+               case "undo_delete":
+                  undoDelete();
+                  return true;
+
+               case "undo_movetoprev":
+                  undoMoveToPrevious();
+                  return true;
+
+               case "undo_movetonext":
+                  undoMoveToNext();
+                  return true;
+
+                  // Cursor
+               case "cursor_up":
+                  handleCursorUp();
+                  return true;
+
+               case "cursor_down":
+                  handleCursorDown();
+                  return true;
+
+               case "cursor_left":
+                  handleCursorLeft();
+                  return true;
+
+               case "cursor_right":
+                  handleCursorRight();
+                  return true;
+
+               case "cursor_mode":
+                  setModeToCursorNoteIdx(true/*bSetMode*/);
+                  return true;
+
+               case "cursor_root":
+                  setModeToCursorNoteIdx(false/*bSetMode*/);
+                  return true;
+
+                  // Transpose
+               case "oct_down":
+                  changeRootKeyOctave(-1);
+                  return true;
+
+               case "oct_up":
+                  changeRootKeyOctave(1);
+                  return true;
+
+               case "semi_down":
+                  rootKeyDown();
+                  return true;
+
+               case "semi_up":
+                  rootKeyUp();
+                  return true;
+
+                  // Mode
+               case "mode_prev":
+                  cycleMode(-1);
+                  return true;
+
+               case "mode_next":
+                  cycleMode(1);
+                  return true;
+
+                  // Velocity
+               case "vel_down":
+                  changeVelocity(-4);
+                  return true;
+
+               case "vel_up":
+                  changeVelocity(4);
+                  return true;
+
+                  // Row shift
+               case "row_down":
+                  changeRowShift(-1);
+                  return true;
+
+               case "row_up":
+                  changeRowShift(1);
+                  return true;
+
+               case "row_shift_up":
+                  toggleRowShiftUp();
+                  return true;
+
+                  // Chord
+               case "chord_off":
+                  chordModeOff();
+                  return true;
+
+               case "chord_dyad":
+                  cycleChordMode(chord_modes_dyad);
+                  return true;
+
+               case "chord_triad":
+                  cycleChordMode(chord_modes_triad);
+                  return true;
+
+               case "chord_tetrad":
+                  cycleChordMode(chord_modes_tetrad);
+                  return true;
+
+               case "chord_ext5":
+                  cycleChordMode(chord_modes_ext5);
+                  return true;
+
+               case "chord_ext6":
+                  cycleChordMode(chord_modes_ext6);
+                  return true;
+
+               case "chord_inv_prev":
+                  cycleChordInversion(-1);
+                  return true;
+
+               case "chord_inv_next":
+                  cycleChordInversion(1);
+                  return true;
+
+                  // Node
+               case "node_restartrec":
+                  tryHandleNodeRestartRecording();
+                  return true;
+
+               case "node_toggleedit":
+                  tryHandleNodeToggleEdit();
+                  return true;
+
+               case "node_clear":
+                  tryHandleNodeClear(false/*bWhenArmed*/);
+                  return true;
+
+               case "node_clear_armed":
+                  tryHandleNodeClear(true/*bWhenArmed*/);
+                  return true;
+
+               case "node_seq_prev_bar":
+                  if(root_form.isSeqEditorVisible())
+                  {
+                     if(trySeqHandleKeyLeft(false/*bShift*/))
+                        return true;
+                  }
+                  return true;
+
+               case "node_seq_prev_bar_select":
+                  if(root_form.isSeqEditorVisible())
+                  {
+                     if(trySeqHandleKeyLeft(true/*bShift*/))
+                        return true;
+                  }
+                  return true;
+
+               case "node_seq_next_bar":
+                  if(root_form.isSeqEditorVisible())
+                  {
+                     if(trySeqHandleKeyRight(false/*bShift*/))
+                        return true;
+                  }
+                  return true;
+
+               case "node_seq_next_bar_select":
+                  if(root_form.isSeqEditorVisible())
+                  {
+                     if(trySeqHandleKeyRight(true/*bShift*/))
+                        return true;
+                  }
+                  return true;
+
+               case "node_tracker_prev_step":
+                  if(root_form.isTrackerEditorVisible())
+                  {
+                     k.pressed = VKEY_UP;
+                     if(tryTrackerHandleKeyUp(k))
+                        return true;
+                  }
+                  return true;
+
+               case "node_tracker_next_step":
+                  if(root_form.isTrackerEditorVisible())
+                  {
+                     k.pressed = VKEY_DOWN;
+                     if(tryTrackerHandleKeyDown(k))
+                        return true;
+                  }
+                  return true;
+
+               case "node_undo":
+                  tryHandleNodeUndoRedo(false/*bRedo*/);
+                  return true;
+
+               case "node_redo":
+                  tryHandleNodeUndoRedo(true/*bRedo*/);
+                  return true;
+
+                  // Root / Miscellaneous
+               case "note_replay":
+                  noteOnLastAbs();
+                  TKS.sleep(20);
+                  releasePendingNoteOffs();
+                  return true;
+
+               case "note_auto_play":
+                  toggleNoteAutoPlay();
+                  return true;
+
+               case "rotate":
+                  toggleRotation();
+                  return true;
+
+               case "allow_chord":
+                  toggleAllowChord();
+                  return true;
+            }
+            return true;
+      }
+
+      return Layer::consumeAction(_action);
    }
 
 }

@@ -1,8 +1,8 @@
 % Synergy MIDI Tracker - Keyboard Shortcuts
 % bsp
-% 25-Nov-2026
+% 26-Nov-2026
 >>>
-17Nov2019, 15May2020, 30Oct2020, 19Apr2021, 13May2021, 14May2021, 02Jun2021, 13Feb2022, 24Feb2022, 07May2022, 08May2022, 24Jun2022, 19Nov2022, 04Feb2023, 18Mar2023, 24Mar2023, 23Jun2023, 24Jun2023, 17Aug2023, 31Oct2023, 03Nov2023, 10Nov2023, 14Nov2023, 16Nov2023, 17Nov2023, 19Nov2023, 02Dec2023, 16Dec2023, 02Feb2024, 03Feb2024, 01Oct2024, 05Oct2024, 06Oct2024, 02Nov2024, 07Jan2025, 16Jan2025, 25Jan2025, 26Jan2025, 28Feb2025, 07Mar2025, 09Mar2025, 28May2025, 01Jun2025, 12Jun2025, 13Jun2025, 20Jun2025, 18Dec2025, 02Jan2026, 14Apr2026, 09May2026, 10May2026, 16May2026, 31Jul2026, 24Oct2026, 28Oct2026, 13Nov2026, 14Nov2026, 22Nov2026, 23Nov2026, 24Nov2026, 25Nov2026
+17Nov2019, 15May2020, 30Oct2020, 19Apr2021, 13May2021, 14May2021, 02Jun2021, 13Feb2022, 24Feb2022, 07May2022, 08May2022, 24Jun2022, 19Nov2022, 04Feb2023, 18Mar2023, 24Mar2023, 23Jun2023, 24Jun2023, 17Aug2023, 31Oct2023, 03Nov2023, 10Nov2023, 14Nov2023, 16Nov2023, 17Nov2023, 19Nov2023, 02Dec2023, 16Dec2023, 02Feb2024, 03Feb2024, 01Oct2024, 05Oct2024, 06Oct2024, 02Nov2024, 07Jan2025, 16Jan2025, 25Jan2025, 26Jan2025, 28Feb2025, 07Mar2025, 09Mar2025, 28May2025, 01Jun2025, 12Jun2025, 13Jun2025, 20Jun2025, 18Dec2025, 02Jan2026, 14Apr2026, 09May2026, 10May2026, 16May2026, 31Jul2026, 24Oct2026, 28Oct2026, 13Nov2026, 14Nov2026, 22Nov2026, 23Nov2026, 24Nov2026, 25Nov2026, 26Nov2026
 <<<
 $(var:header)
 
@@ -158,6 +158,7 @@ As root, edit `/usr/share/X11/xkb/symbols/<your country code>` (e.g. `de`) and r
 | Key Sequence               :|:Description
 | ESC                         | Close dialog
 | SPACE                       | Close dialog and stop replay
+| lshift - a                  | Show context menu
 | lctrl - SPACE               | Play last played note (saved per undo step)
 | q..p, a..l, y..m            | Play notes (or chords)
 | F1                          | Transpose octave down
@@ -216,13 +217,13 @@ As root, edit `/usr/share/X11/xkb/symbols/<your country code>` (e.g. `de`) and r
 | (NUMPAD) lctrl - 8          | Save undo slot 8
 | (NUMPAD) lctrl - 9          | Save undo slot 9
 | RSHIFT                      | (when tracker or seq editor is visible) (re-)start recording
-| RCTRL                       | (when tracker or seq editor is visible) toggle edit mode
-| lshift - BACKSPACE          | (when tracker or seq editor is visible and editable) clear pattern / seq.selection
-| UP                          | (when tracker editor is visible) go to previous step
-| LEFT                        | (when seq editor is visible and record-enabled) go to previous bar
-| DOWN                        | (when tracker editor is visible) go to next step
-| RIGHT                       | (when seq editor is visible and record-enabled) go to next bar
-| DELETE                      | (when tracker or seq editor is visible and record-enabled) clear pattern / selection
+| RCTRL                       | (when tracker or seq editor is visible) toggle edit mode (arm / disarm)
+| lshift - BACKSPACE          | (when tracker or seq editor is visible) clear pattern / seq.selection
+| UP                          | (when tracker editor is visible and node is armed) go to previous step
+| DOWN                        | (when tracker editor is visible and node is armed) go to next step
+| LEFT                        | (when seq editor is visible and node is armed) go to previous bar
+| RIGHT                       | (when seq editor is visible and node is armed) go to next bar
+| DELETE                      | (when tracker or seq editor is visible and node is armed) clear pattern / selection
 | lctrl - a                   | (when seq editor is visible) select block
 | lctrl - z/y                 | (when tracker or seq editor is visible) undo
 | lctrl - lshift - z/y        | (when tracker or seq editor is visible) redo
