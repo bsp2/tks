@@ -221,6 +221,10 @@ As root, edit `/usr/share/X11/xkb/symbols/<your country code>` (e.g. `de`) and r
 | lshift - BACKSPACE          | (when tracker or seq editor is visible) clear pattern / seq.selection
 | UP                          | (when tracker editor is visible and node is armed) go to previous step
 | DOWN                        | (when tracker editor is visible and node is armed) go to next step
+| LEFT                        | (when tracker editor is visible and node is armed) go to previous track
+| RIGHT                       | (when tracker editor is visible and node is armed) go to next track
+| UP                          | (when seq editor is visible and node is armed) go to previous track
+| DOWN                        | (when seq editor is visible and node is armed) go to next track
 | LEFT                        | (when seq editor is visible and node is armed) go to previous bar
 | RIGHT                       | (when seq editor is visible and node is armed) go to next bar
 | DELETE                      | (when tracker or seq editor is visible and node is armed) clear pattern / selection
