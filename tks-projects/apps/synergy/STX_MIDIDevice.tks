@@ -11,7 +11,7 @@
 // ----          18Feb2015, 21Feb2015, 23Feb2015, 14Apr2015, 29Apr2015, 17May2015, 25Jan2016
 // ----          29Mar2016, 10Apr2016, 16Feb2017, 10Mar2017, 11Mar2017, 12Jun2017, 29Jan2018
 // ----          09Dec2018, 17Jan2019, 18Jan2019, 27Jan2019, 08Jun2019, 03Sep2019, 03Oct2019
-// ----          22Oct2022, 14Oct2023, 09Oct2024, 30Oct2026, 12Nov2026
+// ----          22Oct2022, 14Oct2023, 09Oct2024, 30Oct2026, 12Nov2026, 27Nov2026
 // ----
 // ----
 // ----
@@ -34,9 +34,9 @@ class STX_MIDIDevice {
    protected String     *project_alias;
    protected StringArray project_profile_ids;
 
-   // one StringArray for each midi channel:
-   protected PointerArray cc_names_single;  // Single line name arrays, overlayed by CtlTags and MSP (if any)
-   protected PointerArray cc_names_multi;   // Multi line name array, overlayed by CtlTags and MSP (if any)
+   // per-channel StringArrays
+   protected StringArray *[] cc_names_single;  // Single line name arrays, overlayed by CtlTags and MSP (if any)
+   protected StringArray *[] cc_names_multi;   // Multi line name array, overlayed by CtlTags and MSP (if any)
 
    boolean b_closed_temporarily;  // e.g. during SDS upload via external tool
 
@@ -992,23 +992,13 @@ class STX_MIDIDevice {
    }
 
    // <method_build.png>
-   protected method buildCCNames() {
-
-      // log4 "buildCCNames this="+#(this);
-
-      // MIDISynthProfile mspDef <= MIDI.GetDefaultSynthProfile();
-
+   protected method buildCCNamesForDev() {
+      // (note) called when at least one CtlTag exists
       local String *t;
       local String  sMulti;
       local String *sInfo;
-
-      cc_names_single.free();
-      cc_names_multi.free();
-
-      // (note) speed up name lookup by skipping current_song.ctltag_entries if no tags have been defined for this device
-      boolean bHaveCtlTagForDev = MIDI.HaveCtlTagForDevChType(this, -1/*fltCh=any*/, MIDIMapDefs.TYPE_CC/*fltType*/);
-
       byte ch = 0;
+
       loop(16)
       {
          StringArray as <= new StringArray;
@@ -1016,44 +1006,96 @@ class STX_MIDIDevice {
          as.alloc(128);
          am.alloc(128);
 
-         int ccId = 0;
-
          MIDISynthProfile msp <= MIDI.GetMIDISynthProfileById(getProfileId(ch));
          if(null == msp)
             msp <= MIDI.GetDefaultSynthProfile();
 
          // (note) speed up name lookup by skipping current_song.ctltag_entries if no tags have been defined for this device+channel
-         boolean bHaveCtlTagForDevCh = bHaveCtlTagForDev && MIDI.HaveCtlTagForDevChType(this, ch, MIDIMapDefs.TYPE_CC/*fltType*/);
+         boolean bHaveCtlTagForDevCh = /*bHaveCtlTagForDev && */MIDI.HaveCtlTagForDevChType(this, ch, MIDIMapDefs.TYPE_CC/*fltType*/);
 
-         loop(128)
+         if(bHaveCtlTagForDevCh)
          {
-            t <= getCCLongNameByCtlAndMSP(ch, msp, ccId, bHaveCtlTagForDevCh);
+            int ccId = 0;
 
-            sInfo <= getCCInfoByCtlAndMSP(ch, msp, ccId);
-            if(null != sInfo && !sInfo.isBlank())
+            loop(128)
             {
-               sMulti = t;
-               sMulti.append("\n\n");
-               sMulti.append(sInfo);
+               t <= getCCLongNameByCtlAndMSP(ch, msp, ccId, bHaveCtlTagForDevCh);
 
-               as.add(t);
-               am.add(sMulti);
-            }
-            else
-            {
-               as.add(t);
-               am.add(t);
+               sInfo <= getCCInfoByCtlAndMSP(ch, msp, ccId);
+               if(null != sInfo && !sInfo.isBlank())
+               {
+                  sMulti = t;
+                  sMulti.append("\n\n");
+                  sMulti.append(sInfo);
+
+                  as.add(t);
+                  am.add(sMulti);
+               }
+               else
+               {
+                  as.add(t);
+                  am.add(t);
+               }
+
+               // Next controller
+               ccId++;
             }
 
-            // Next controller
-            ccId++;
+            cc_names_single.add(#(deref as));
+            cc_names_multi.add(#(deref am));
          }
-
-         cc_names_single.add(#(deref as));
-         cc_names_multi.add(#(deref am));
+         else
+         {
+            // Add references to prebuilt msp arrays
+            if(null == msp.cc_names_single)
+               msp.buildCCNamesForMSP();
+            cc_names_single.add(msp.cc_names_single);
+            cc_names_multi .add(msp.cc_names_multi);
+         }
 
          // Next midi channel
          ch++;
+      }
+   }
+
+   // <method_build.png>
+   protected method buildCCNamesNoCtlTags() {
+      byte ch = 0;
+      loop(16)
+      {
+         MIDISynthProfile msp <= MIDI.GetMIDISynthProfileById(getProfileId(ch));
+         if(null == msp)
+            msp <= MIDI.GetDefaultSynthProfile();
+
+         if(null == msp.cc_names_single)
+            msp.buildCCNamesForMSP();
+
+         cc_names_single.add(msp.cc_names_single);
+         cc_names_multi .add(msp.cc_names_multi);
+
+         // Next midi channel
+         ch++;
+      }
+   }
+
+   // <method_build.png>
+   protected method buildCCNames() {
+
+      // log4 "buildCCNames this="+#(this);
+
+      cc_names_single.free();
+      cc_names_multi.free();
+
+      // (note) speed up name lookup by skipping current_song.ctltag_entries if no tags have been defined for this device
+      boolean bHaveCtlTagForDev = MIDI.HaveCtlTagForDevChType(this, -1/*fltCh=any*/, MIDIMapDefs.TYPE_CC/*fltType*/);
+
+      if(bHaveCtlTagForDev)
+      {
+         buildCCNamesForDev();
+      }
+      else
+      {
+         buildCCNamesNoCtlTags();
       }
    }
 

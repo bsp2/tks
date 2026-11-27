@@ -17,7 +17,7 @@
 // ----          02Apr2022, 20Apr2022, 21Apr2022, 24Apr2022, 07May2022, 17Jun2022, 18Jun2022
 // ----          29Sep2022, 22Oct2022, 24Nov2022, 14Jun2023, 25Jun2023, 08Jul2023, 28Jul2023
 // ----          24Sep2023, 25Sep2023, 04Oct2023, 20Oct2023, 09Oct2024, 28Feb2025, 30Mar2025
-// ----          30Oct2026, 12Nov2026
+// ----          30Oct2026, 12Nov2026, 27Nov2026
 // ----
 // ----
 // ----
@@ -63,6 +63,8 @@ class MIDISynthProfile {
    MIDISynthProfileCtlAlias *[] widget_aliases; // custom <widget> pseudo-aliases
    MIDISynthProfileCtlAlias *[] all_aliases;    // MIDISynthProfileCtlAlias refs
 
+   protected boolean b_luts_done;
+
    MIDISynthProfileCtlAlias *[] cc_alias_lut;   // always 128 entries, some may be null. MIDISynthProfileCtlAlias refs.
    MIDISynthProfileCtlAlias *[] rpn_alias_lut;  // always 16384 entries, some may be null. MIDISynthProfileCtlAlias refs.
    MIDISynthProfileCtlAlias *[] nrpn_alias_lut; // always 16384 entries, some may be null. MIDISynthProfileCtlAlias refs.
@@ -77,6 +79,9 @@ class MIDISynthProfile {
    public StringArray cc_infos;
    public StringArray rpn_infos;
    public StringArray nrpn_infos;
+
+   public StringArray *cc_names_single;  // cached single line name arrays. used by STX_MIDIDevice::buildCCNames()
+   public StringArray *cc_names_multi;   // cached multi line name array
 
    IntArray rpn_to_caption_idx;
    IntArray nrpn_to_caption_idx;
@@ -663,6 +668,8 @@ class MIDISynthProfile {
 
    // <method_build.png>
    protected method buildLUTs() {
+      b_luts_done = true;
+
       cc_alias_lut.alloc(128);
       cc_alias_lut.useAll();
 
@@ -824,6 +831,12 @@ class MIDISynthProfile {
       {
          patch_byte_to_alias_lut <= null;
       }
+   }
+
+   // <method_build.png>
+   public method lazyBuildLUTs() {
+      if(!b_luts_done)
+         buildLUTs();
    }
 
    // <midi.png>
@@ -1597,7 +1610,8 @@ class MIDISynthProfile {
          lazyAddDefaultCCs();
       }
 
-      buildLUTs();
+      // (note) buildLUTs() is postponed until MIDI.GetMIDISynthProfileById() is called
+      //         (=> do not build LUTs for unreferenced synth profiles. saves ~57MB (59 profiles))
 
       // Succeeded
       return true;
@@ -1694,6 +1708,45 @@ class MIDISynthProfile {
          return deref data;
       }
       return null;
+   }
+
+   // <method_build.png>
+   public method buildCCNamesForMSP() {
+      // (note) called by STX_MIDIDevice::buildCCNames()
+      local String sMulti;
+
+      cc_names_single <= new StringArray;
+      cc_names_multi <= new StringArray;
+      cc_names_single.alloc(128);
+      cc_names_multi .alloc(128);
+
+      int ccId = 0;
+
+      loop(128)
+      {
+         String t <= cc_captions.get(ccId);
+
+         MIDISynthProfileCtlAlias alias <= cc_alias_lut.get(ccId);
+         String sInfo <= (null != alias) ? alias.info : sInfo;
+
+         if(null != sInfo && !sInfo.isBlank())
+         {
+            sMulti = t;
+            sMulti.append("\n\n");
+            sMulti.append(sInfo);
+
+            cc_names_single.add(t);
+            cc_names_multi.add(sMulti);
+         }
+         else
+         {
+            cc_names_single.add(t);
+            cc_names_multi.add(t);
+         }
+
+         // Next controller
+         ccId++;
+      }
    }
 
 }

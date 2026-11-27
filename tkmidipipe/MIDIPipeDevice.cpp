@@ -1,7 +1,7 @@
 // ----
 // ---- file   : MIDIPipeDevice.cpp
 // ---- author : Bastian Spiegel <bs@tkscript.de>
-// ---- legal  : (c) 2014-2024 by Bastian Spiegel.
+// ---- legal  : (c) 2014-2026 by Bastian Spiegel.
 // ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
 // ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
 // ----
@@ -10,6 +10,7 @@
 // ---- created: 01Sep2014
 // ---- changed: 11Sep2015, 14Sep2015, 17Jul2016, 09Sep2016, 03Dec2016, 03Mar2017, 27May2017
 // ----          18Aug2017, 22Jan2019, 25Jul2021, 24Apr2022, 14Jun2023, 26Jun2023, 08Jul2023
+// ----          27Nov2026
 // ----
 // ----
 // ----
@@ -18,7 +19,7 @@
 
 
 MIDIPipeDevice::MIDIPipeDevice(void) {
-   dev_idx = 0;
+   dev_idx = 0u;
    cmd_buffer = NULL;
    note_buffer = NULL;
    b_use_overflow_buffers = YAC_FALSE;
@@ -35,28 +36,20 @@ MIDIPipeDevice::MIDIPipeDevice(void) {
    num_bytes_written         = 0u;
    b_overflow                = YAC_FALSE;
 
-   memset(channels, 0xFF, sizeof(midipipe_device_ch_t) * 16);
-   memset(shadow_channels, 0xFF, sizeof(midipipe_device_ch_t) * 16);
+   channels = shadow_channels = NULL;
 
    for(sUI chIdx = 0u; chIdx < 16u; chIdx++)
    {
-      channels[chIdx].num_notes = 0;
-      shadow_channels[chIdx].num_notes = 0;
       param_mode[chIdx] = 0; // MSBLSB
       b_cc_perf_lsb[chIdx] = YAC_FALSE;
       running_status[chIdx] = YAC_FALSE;
    }
 
-   // memset(channel_resets, 0xFF, sizeof(midipipe_device_ch_t) * 16);
    b_midicache = YAC_TRUE;
-
    b_note_off = YAC_TRUE;
-   // b_note_off = YAC_FALSE;
-
+   // // b_note_off = YAC_FALSE;
    b_global = YAC_FALSE;
-
    b_virtual = YAC_FALSE;
-
    b_channel_pressure_and_note_off = YAC_TRUE;
 }
 
@@ -68,6 +61,28 @@ MIDIPipeDevice::~MIDIPipeDevice(void) {
       YAC_DELETE_SAFE(overflow_note_buffers[i]);
    }
 #endif // MIDIPIPEDEVICE_MAX_OVERFLOW_BUFFERS > 0u
+
+   if(NULL != channels)
+   {
+      delete [] channels;
+      channels = NULL;
+      shadow_channels = NULL;
+   }
+}
+
+void MIDIPipeDevice::lazyAllocChannels(void) {
+   if(NULL == channels)
+   {
+      channels = new(std::nothrow)midipipe_device_ch_t[16u * 2u];
+      shadow_channels = channels + 16;
+
+      ::memset(channels, 255u, sizeof(midipipe_device_ch_t) * 16u * 2u);
+
+      for(sUI chIdx = 0u; chIdx < (16u * 2u); chIdx++)
+      {
+         channels[chIdx].num_notes = 0;
+      }
+   }
 }
 
 void MIDIPipeDevice::setDevIdx(sUI _devIdx) {
@@ -130,7 +145,7 @@ void MIDIPipeDevice::clearMIDICache(void) {
    // // memset(channels, 0xFF, sizeof(midipipe_device_ch_t) * 16);
    // yac_host->printf("xxx MIDIPipeDevice::clearMIDICache: dev_idx=%u\n", dev_idx);
 
-   for(sUI chIdx = 0; chIdx < 16u; chIdx++)
+   for(sUI chIdx = 0u; chIdx < 16u; chIdx++)
       clearMIDICacheForCh(chIdx);
 }
 
@@ -140,19 +155,22 @@ void MIDIPipeDevice::clearMIDICacheForCh(sUI _ch) {
 
    // (note) do not reset note data to prevent hanging notes
 
-   midipipe_device_ch_t *ch = &channels[_ch];
-
-   for(sUI i = 0u; i < 2u; i++)
+   if(NULL != channels)
    {
-      ch->prg         = -1;
-      ch->ch_pressure = -1;
-      ch->pitchbend   = -1;
+      midipipe_device_ch_t *ch = &channels[_ch];
 
-      memset(ch->cc_states, 0xFF, sizeof(midipipe_ctl_state_t) * 128);
-      memset(ch->rpn_states, 0xFF, sizeof(midipipe_ctl_state_t) * 16384);
-      memset(ch->nrpn_states, 0xFF, sizeof(midipipe_ctl_state_t) * 16384);
+      for(sUI i = 0u; i < 2u; i++)
+      {
+         ch->prg         = -1;
+         ch->ch_pressure = -1;
+         ch->pitchbend   = -1;
 
-      ch = &shadow_channels[_ch];
+         memset(ch->cc_states, 255, sizeof(midipipe_ctl_state_t) * 128);
+         memset(ch->rpn_states, 255, sizeof(midipipe_ctl_state_t) * 16384);
+         memset(ch->nrpn_states, 255, sizeof(midipipe_ctl_state_t) * 16384);
+
+         ch = &shadow_channels[_ch];
+      }
    }
 }
 
@@ -189,104 +207,88 @@ sBool MIDIPipeDevice::getEnableVirtual(void) {
 }
 
 sSI MIDIPipeDevice::getPrg(sUI _ch) {
-   if(_ch < 16u)
+   if(NULL != shadow_channels && _ch < 16u)
       return shadow_channels[_ch].prg;
-   else
-      return -1;
+   return -1;
 }
 
 void MIDIPipeDevice::setPrg(sUI _ch, sUI _val) {
-   if(_ch < 16u)
+   // (note) called by MIDIMapEvent::copyToOutputState()
+   lazyAllocChannels();
+   if(NULL != shadow_channels && _ch < 16u)
       shadow_channels[_ch].prg = sSI(_val);
 }
 
 sSI MIDIPipeDevice::getChPressure(sUI _ch) {
-   if(_ch < 16u)
+   if(NULL != shadow_channels && _ch < 16u)
       return shadow_channels[_ch].ch_pressure;
-   else
-      return -1;
+   return -1;
 }
 
 void MIDIPipeDevice::setChPressure(sUI _ch, sUI _val) {
-   if(_ch < 16u)
-   {
+   lazyAllocChannels();
+   if(NULL != shadow_channels && _ch < 16u)
       shadow_channels[_ch].ch_pressure = sSI(_val);
-   }
 }
 
 sSI MIDIPipeDevice::getPitchbend(sUI _ch) {
-   if(_ch < 16u)
-   {
+   if(NULL != shadow_channels && _ch < 16u)
       return shadow_channels[_ch].pitchbend;
-   }
    return -1;
 }
 
 void MIDIPipeDevice::setPitchbend(sUI _ch, sUI _val) {
-   if(_ch < 16u)
-   {
+   lazyAllocChannels();
+   if(NULL != shadow_channels && _ch < 16u)
       shadow_channels[_ch].pitchbend = sSI(_val);
-   }
 }
 
 sSI MIDIPipeDevice::getCCState(sUI _ch, sUI _cc) {
-   if( (_ch < 16u) && (_cc < 128u) )
-   {
+   if(NULL != shadow_channels && _ch < 16u && _cc < 128u)
       return shadow_channels[_ch].cc_states[_cc].value;
-   }
    return -1;
 }
 
 void MIDIPipeDevice::setCCState(sUI _ch, sUI _cc, sUI _val) {
-   if( (_ch < 16u) && (_cc < 128u) )
-   {
+   lazyAllocChannels();
+   if(NULL != shadow_channels && _ch < 16u && _cc < 128u)
       shadow_channels[_ch].cc_states[_cc].value = sSI(_val);
-   }
 }
 
 sSI MIDIPipeDevice::getRPNState(sUI _ch, sUI _rpn) {
-   if( (_ch < 16u) && (_rpn < 16384u) )
-   {
+   if(NULL != shadow_channels && _ch < 16u && _rpn < 16384u)
       return shadow_channels[_ch].rpn_states[_rpn].value;
-   }
    return -1;
 }
 
 void MIDIPipeDevice::setRPNState(sUI _ch, sUI _rpn, sUI _val) {
-   if( (_ch < 16u) && (_rpn < 16384u) )
-   {
+   lazyAllocChannels();
+   if(NULL != shadow_channels && _ch < 16u && _rpn < 16384u)
       shadow_channels[_ch].rpn_states[_rpn].value = sSI(_val);
-   }
 }
 
 sSI MIDIPipeDevice::getNRPNState(sUI _ch, sUI _nrpn) {
-   if( (_ch < 16u) && (_nrpn < 16384u) )
-   {
+   if(NULL != shadow_channels && _ch < 16u && _nrpn < 16384u)
       return shadow_channels[_ch].nrpn_states[_nrpn].value;
-   }
    return -1;
 }
 
 void MIDIPipeDevice::setNRPNState(sUI _ch, sUI _nrpn, sUI _val) {
-   if( (_ch < 16u) && (_nrpn < 16384u) )
-   {
+   lazyAllocChannels();
+   if(NULL != shadow_channels && _ch < 16u && _nrpn < 16384u)
       shadow_channels[_ch].nrpn_states[_nrpn].value = _val;
-   }
 }
 
 sSI MIDIPipeDevice::getPolyPressure(sUI _ch, sUI _note) {
-   if( (_ch < 16u) && (_note < 128u) )
-   {
+   if(NULL != shadow_channels && _ch < 16u && _note < 128u)
       return shadow_channels[_ch].note_states[_note].poly_pressure;
-   }
    return -1;
 }
 
 void MIDIPipeDevice::setPolyPressure(sUI _ch, sUI _note, sUI _val) {
-   if( (_ch < 16u) && (_note < 128u) )
-   {
+   lazyAllocChannels();
+   if(NULL != shadow_channels && _ch < 16u && _note < 128u)
       shadow_channels[_ch].note_states[_note].poly_pressure = _val;
-   }
 }
 
 void MIDIPipeDevice::setParamMode(sUI _ch, sSI _mode) {

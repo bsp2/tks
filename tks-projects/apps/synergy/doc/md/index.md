@@ -122,11 +122,12 @@ note: tested on arm64 macOS 27
   |cols=140,40
   |:File
   | [synergy-miditracker-29Oct2026-win64-preview.7z](files/synergy-miditracker-29Oct2026-win64-preview.7z) (latest)
-  | [synergy-miditracker-18Oct2026-win64-preview.7z](files/synergy-miditracker-18Oct2026-win64-preview.7z)
   | [synergy-miditracker-26May2026c-win64.7z](files/synergy-miditracker-26May2026c-win64.7z)
   ].table_noborder
 
-important: when upgrading to a new release, backup your `synergy_config_local.tks` and then replace the default local config
+important: when upgrading to a new release, backup your `synergy_config_local.tks` or copy it to the `%userprofile%` directory (`C:\\Users\\your_user_name\\`) (has priority over the config in the current working directory).
+
+note: download the precompiled [tks.zip](http://tkscript.org/files/current/tks.zip) binaries to run the latest [GitHub](https://github.com/bsp2/tks.git) version (`$ cd <TKS_GIT_REPO>/tks-projects/apps/synergy ; <UNZIPPED\_TKS\_PATH/tks.exe> synergy`)
 
 note: tested on x86\_64 Windows 11
 

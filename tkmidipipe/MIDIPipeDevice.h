@@ -1,7 +1,7 @@
 // ----
 // ---- file   : MIDIPipeDevice.h
 // ---- author : Bastian Spiegel <bs@tkscript.de>
-// ---- legal  : (c) 2014-2025 by Bastian Spiegel.
+// ---- legal  : (c) 2014-2026 by Bastian Spiegel.
 // ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
 // ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
 // ----
@@ -10,13 +10,13 @@
 // ---- created: 01Sep2014
 // ---- changed: 11Jan2015, 16Feb2015, 11Sep2015, 14Sep2015, 09Sep2016, 03Dec2016, 03Mar2017
 // ----          22Nov2017, 22Jan2019, 15Apr2020, 25Jul2021, 24Apr2022, 14Jun2023, 26Jun2023
-// ----          08Jul2023, 06Oct2024, 27May2025
+// ----          08Jul2023, 06Oct2024, 27May2025, 27Nov2026
 // ----
 // ----
 // ----
 
-#ifndef TK_MIDIPIPEDEVICE_H__
-#define TK_MIDIPIPEDEVICE_H__
+#ifndef MIDIPIPEDEVICE_H__
+#define MIDIPIPEDEVICE_H__
 
 YG("midipipe")
 
@@ -72,11 +72,12 @@ YC class MIDIPipeDevice : public YAC_Object {
    sUI         num_bytes_written;
    sBool       b_overflow;  // 1=Dgetbufs() returns current overflow buffer
 
-   midipipe_device_ch_t channels[16];        // current state
+   // Current state
+   midipipe_device_ch_t *channels;  // 16 MIDI channels (NULL for virtual devs)
 
    // Shadow copy of channels, never reset (for getCCState(), ..)
    //  (todo) only used for notenr (which resets in channels[] at note off) => optimize
-   midipipe_device_ch_t shadow_channels[16];
+   midipipe_device_ch_t *shadow_channels;  // 16 MIDI channels (NULL for virtual devs)
 
    sBool b_midicache;
    sBool b_note_off;  // 1=use 0x8x for note off, 0=use 0x9x vel=0 for note off
@@ -98,8 +99,8 @@ YC class MIDIPipeDevice : public YAC_Object {
 
   public:
    void setDevIdx(sUI _devIdx);
-
    void selectNextOverflowBuffer (void);
+   void lazyAllocChannels (void);
 
   public:
    YM void setBuffers(YAC_Buffer *_cmdBuffer, YAC_Buffer *_noteBuffer);
@@ -158,4 +159,4 @@ YC class MIDIPipeDevice : public YAC_Object {
 };
 
 
-#endif // TK_MIDIPIPEDEVICE_H__
+#endif // MIDIPIPEDEVICE_H__

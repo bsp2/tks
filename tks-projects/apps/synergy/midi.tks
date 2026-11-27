@@ -44,7 +44,7 @@
 // ----          27Dec2021, 07Jan2022, 18Mar2022, 24Nov2022, 22Jan2023, 18Feb2023, 03Apr2023
 // ----          14Jun2023, 19Jul2023, 22Jul2023, 27Jul2023, 04Oct2023, 14Oct2023, 15Oct2023
 // ----          20Oct2023, 07Jul2024, 02Oct2024, 05Oct2024, 16Jan2025, 15Mar2025, 17Mar2025
-// ----          14Dec2025, 30Oct2026, 31Oct2026, 01Nov2026, 12Nov2026
+// ----          14Dec2025, 30Oct2026, 31Oct2026, 01Nov2026, 12Nov2026, 27Nov2026
 // ----
 // ----
 // ----
@@ -492,6 +492,9 @@ class MIDI {
    // <method_enum.png>
    static EnumerateMIDIDevices() {
 
+      if(Configuration.debugLevel >= 2)
+         log2 "MIDI::EnumerateMIDIDevices: BEGIN";
+
       if(STConfig.b_enable_midi)
       {
          if(Configuration.logLevel >= 1)
@@ -512,7 +515,6 @@ class MIDI {
                i++;
             }
 
-
             // Out
             logverbose "EnumerateMIDIInDevices: found "+MIDIOut.GetNumDevices()+" MIDI devices.";
 
@@ -528,6 +530,9 @@ class MIDI {
             }
          }
       }
+
+      if(Configuration.debugLevel >= 2)
+         log2 "MIDI::EnumerateMIDIDevices: END";
    }
 
    // <method_get.png>
@@ -1446,11 +1451,11 @@ class MIDI {
    // <method_init.png>
    static InitMIDIOutDevice(String deviceName, int deviceIdx, Boolean bInitOK) : STX_MIDIOutDevice {
       // Return true if device was openend or false if it is unavailable
-      String origDeviceName = deviceName;
+      local String origDeviceName = deviceName;
 
       STX_MIDIOutDevice *outDev;
 
-      MIDIOut midiout <= new MIDIOut;
+      local MIDIOut midiout <= new MIDIOut;
       boolean bOpen = midiout.openByName(deviceName);
 
       if(!bOpen)
@@ -1485,7 +1490,7 @@ class MIDI {
          outDev <= new STX_MIDIOutDevice;
          outDev.init(deref midiout);
 
-         MIDISynthProfile msp <= outDev.getMIDISynthProfile(0);
+         MIDISynthProfile msp <= outDev.getMIDISynthProfile(0/*midiCh*/);
          if(null != msp)
             if(msp.num_out_buffers > 0)
                outDev.resizeOutBuffers(msp.num_out_buffers);
@@ -1532,7 +1537,6 @@ class MIDI {
          out_devices.alloc(deviceNames.numElements);
          out_devices.useAll();
       }
-
 
       STX_MIDIOutDevice *outDev;
 
@@ -2279,7 +2283,7 @@ class MIDI {
 
    // <method_parse.png>
    static protected ParseMIDISynthProfile(String _fileName) : boolean {
-      String s;
+      local String s;
 
       if(Configuration.debugLevel >= 2)
       {
@@ -2296,7 +2300,7 @@ class MIDI {
             if(attr.exists("id"))
             {
                MIDISynthProfile *msp;
-               msp <= GetMIDISynthProfileById(attr.get("id"));
+               msp <= GetMIDISynthProfileByIdNoLUT(attr.get("id"));
 
                if(null == msp)
                {
@@ -2355,7 +2359,7 @@ class MIDI {
       midi_synth_profiles.add(#(deref msp));
 
       // Scan all profiles in "midi_synth_profiles/" directory
-      StringArray mspFilenames <= Utils.ReadDirectory(STConfig.midi_profiles_path);
+      local StringArray mspFilenames <= Utils.ReadDirectory(STConfig.midi_profiles_path);
 
       local StringArray mspNames;  // for sorting
       if(null != mspFilenames)
@@ -2363,8 +2367,8 @@ class MIDI {
          String *mspFilename;
          foreach mspFilename in mspFilenames
          {
-            StringArray attr <= mspFilename.splitSpace(true);
-            String fileName <= attr.get(1);
+            local StringArray attr <= mspFilename.splitSpace(true);
+            local String fileName <= attr.get(1);
             if(fileName.endsWith(".msp"))
             {
                if(ParseMIDISynthProfile(STConfig.midi_profiles_path+"/"+fileName))
@@ -2393,7 +2397,7 @@ class MIDI {
       MIDISynthProfileData data <= MIDI.GetMIDISynthProfileData(_profileId);
       if(null != data)
       {
-         MIDISynthProfile msp <= MIDI.GetMIDISynthProfileById(_profileId);
+         MIDISynthProfile msp <= MIDI.GetMIDISynthProfileByIdNoLUT(_profileId);
          if(null != msp.edit_form)
          {
             if(!msp.b_edit_form_init_done && data.projectMIDIProfileDataRequiresSynthEditorInit())  // e.g. Prophet12
@@ -2463,7 +2467,7 @@ class MIDI {
    }
 
    // <method_get.png>
-   static GetMIDISynthProfileById(local String _id) : MIDISynthProfile {
+   static GetMIDISynthProfileByIdNoLUT(local String _id) : MIDISynthProfile {
       local MIDISynthProfile *msp;
 
       if(null != _id)
@@ -2483,6 +2487,15 @@ class MIDI {
       }
 
       return null;
+   }
+
+   // <method_get.png>
+   static GetMIDISynthProfileById(local String _id) : MIDISynthProfile {
+      // (note) called by UI thread
+      MIDISynthProfile msp <= GetMIDISynthProfileByIdNoLUT(_id);
+      if(null != msp)
+         msp.lazyBuildLUTs();
+      return msp;
    }
 
    // <method_get.png>
@@ -2682,6 +2695,8 @@ class MIDI {
 
    // <method_update.png>
    static UpdateMIDIPipeRoot(MIDIPipeRoot _pipeRoot) {
+      // Create pipe devs and assign/link output buffers
+
       _pipeRoot.freeDevices();
       _pipeRoot.allocDeviceSlots(out_devices.numElements);
 
@@ -2707,7 +2722,6 @@ class MIDI {
 
    // <method_update.png>
    static UpdateMIDIPipeDevFlags(MIDIPipeRoot _pipeRoot) {
-      // Create pipe devs and assign/link output buffers
       STX_MIDIOutDevice *outDev;
       int devIdx = 0;
       foreach outDev in out_devices

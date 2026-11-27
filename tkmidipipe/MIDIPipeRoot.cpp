@@ -1,7 +1,7 @@
 // ----
 // ---- file   : MIDIPipeRoot.cpp
 // ---- author : Bastian Spiegel <bs@tkscript.de>
-// ---- legal  : (c) 2014-2024 by Bastian Spiegel.
+// ---- legal  : (c) 2014-2026 by Bastian Spiegel.
 // ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
 // ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
 // ----
@@ -12,6 +12,7 @@
 // ----          27Sep2014, 08Feb2015, 23Feb2015, 08Mar2015, 28Apr2015, 14Sep2015, 09Sep2016
 // ----          17Feb2017, 03Mar2017, 29Mar2019, 25Jun2019, 26Aug2020, 20Jun2021, 24Apr2022
 // ----          18Nov2022, 26Jun2023, 16Nov2023, 17Nov2023, 03Dec2023, 02Feb2024, 06Oct2024
+// ----          27Nov2026
 // ----
 // ----
 // ----
@@ -43,7 +44,7 @@ MIDIPipeRoot::~MIDIPipeRoot() {
 }
 
 void MIDIPipeRoot::allocDeviceSlots(sUI _maxDevices) {
-   devices = new MIDIPipeDevice*[_maxDevices];
+   devices = new(std::nothrow)MIDIPipeDevice*[_maxDevices];
    max_devices = _maxDevices;
    memset(devices, 0, sizeof(MIDIPipeDevice*) * max_devices);
 }
@@ -103,7 +104,7 @@ MIDIPipeDevice *MIDIPipeRoot::getDeviceByIdx(sUI _devIdx) const {
 }
 
 void MIDIPipeRoot::allocPipeSlots(sUI _maxPipes) {
-   pipes = new MIDIPipe*[_maxPipes];
+   pipes = new(std::nothrow)MIDIPipe*[_maxPipes];
    max_pipes = _maxPipes;
    memset(pipes, 0, sizeof(MIDIPipe*) * max_pipes);
 }
@@ -335,6 +336,8 @@ sBool MIDIPipeRoot::getDeviceBuffersByEvent(const midipipe_frame_base_t *_ev,
                *_retBufCtl       = dev->cmd_buffer;
                *_retBufNote      = dev->note_buffer;
             }
+            if(NULL == dev->channels)
+               dev->lazyAllocChannels();
             *_retDevCh        = &dev->channels[_ev->midi_ch & 15u];
             *_retDevChShadow  = &dev->shadow_channels[_ev->midi_ch & 15u];
             *_retPipeDev      = dev;
@@ -351,7 +354,7 @@ void MIDIPipeRoot::emitAutoNoteOffs(void) {
    {
       MIDIPipeDevice *dev = devices[devIdx];
 
-      if(NULL != dev)
+      if(NULL != dev && NULL != dev->channels)
       {
          sUI midiCh;
          midipipe_device_ch_t *devCh = dev->channels;

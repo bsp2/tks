@@ -1,7 +1,7 @@
 // ----
 // ---- file   : MIDIPipeFrame.cpp
 // ---- author : Bastian Spiegel <bs@tkscript.de>
-// ---- legal  : (c) 2014-2025 by Bastian Spiegel.
+// ---- legal  : (c) 2014-2026 by Bastian Spiegel.
 // ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
 // ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
 // ----
@@ -18,7 +18,7 @@
 // ----          20Oct2019, 24Oct2019, 16Apr2020, 24Apr2020, 25Apr2020, 27Oct2020, 29Oct2020
 // ----          15Nov2020, 15May2021, 30May2021, 02Jun2021, 07Jan2022, 24Apr2022, 02Nov2022
 // ----          14Jun2023, 08Jul2023, 18Jul2023, 03Dec2023, 06Oct2024, 15Jan2025, 28Mar2025
-// ----          05Apr2025, 13Jun2025
+// ----          05Apr2025, 13Jun2025, 27Nov2026
 // ----
 // ----
 // ----
@@ -2862,7 +2862,7 @@ void MIDIPipeFrame::emit(void) {
       for(sUI i = 0u; i < root->max_devices; i++)
       {
          pipeDev = root->devices[i];
-         if(NULL != pipeDev)
+         if(NULL != pipeDev && NULL != pipeDev->channels)
          {
 #if MIDIPIPEDEVICE_MAX_OVERFLOW_BUFFERS > 0u
             if(pipeDev->b_use_overflow_buffers && pipeDev->num_used_overflow_buffers > 0u)
