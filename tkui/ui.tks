@@ -41,7 +41,7 @@
 // ----          09Sep2025, 10Sep2025, 11Sep2025, 14Sep2025, 16Sep2025, 17Sep2025, 20Sep2025
 // ----          10Oct2025, 02Jun2026, 31Jul2026, 11Aug2026, 17Sep2026, 19Sep2026, 11Oct2026
 // ----          20Oct2026, 22Oct2026, 24Oct2026, 28Oct2026, 31Oct2026, 05Nov2026, 07Nov2026
-// ----          15Nov2026, 16Nov2026, 21Nov2026
+// ----          15Nov2026, 16Nov2026, 21Nov2026, 28Nov2026
 // ----
 // ----
 // ----
@@ -541,11 +541,6 @@ class UI : ActionProvider, UIConstants {
    namespace static boolean b_ignore_next_mouse_release;  // after drag-cancel
 
 
-   // // define int SCISSORS_STACK_SIZE = 32;
-   // // private static IntArray scissors_stack;
-   // // private static int scissors_x, scissors_y, scissors_w, scissors_h;
-   // // private static int scissors_stacki;
-
    define int QUEUE_MODE_NONE              = 0;
    define int QUEUE_MODE_FULLSCREEN_TOGGLE = 1;
    define int QUEUE_MODE_REOPEN            = 2;
@@ -643,6 +638,58 @@ class UI : ActionProvider, UIConstants {
    protected static Function *post_fbo_color_grading_cycle_cbk;
    protected static int       post_fbo_color_grading_texture_cycle_list_idx_queued_cbk = -1;
    public static    float     post_fbo_color_grading_amount = 1.0f;
+
+   // ---- Rendering
+   define int PAINT_NONE     = 0b0000;
+   define int PAINT_DIRTY    = 0b0001;
+   define int PAINT_ALL      = 0b1111;
+
+   define int MAX_DIRTY_AND_DEFERRED_REGIONS = 256;
+   explain "Maximum number of dirty regions for optimized drawing. If this number is exceeded, all layers will be redrawn.
+   also: Maximum number of regions that may request redraw() during redraw().";
+
+   protected static int     global_paint_flag = PAINT_DIRTY; // default is to only paint "dirty" layers
+   public    static int     current_paint_flag; // reset to PAINT_NONE after each render pass
+   public    static int     next_paint_flag; // reset to global_paint_flag before each render pass
+   public    static boolean b_sweep_dirty;  // (todo) [16Oct2018] looks like this can be remove_window (always false)
+   protected static int     redraw_all_count;
+   protected static boolean b_repainting;
+   protected static boolean b_draw_overlays; // true=currently repainting overlays => use windowcoords for scissor rect
+   protected static boolean b_draw_overlays_post;  // true=currently repainting overlays to post_fbo (don't zoom)
+   protected static boolean b_hide_all_overlays;
+
+   define int REDRAW_DIRTY     = 0;  // default (redraw/composite when necessary)
+   // workarounds for Intel Macs??:
+   define int REDRAW_COMPOSITE = 1;  // expensive, composite screen at 60 or even 120 fps
+   define int REDRAW_ALL       = 2;  // very expensive, redraw entire screen at 60 or even 120 fps
+   protected static int     global_redraw_mode;
+   protected static int     global_redraw_num_frames;   // "timeout" (#frames) after mouse/key event. 0=unlimited, -1=off
+   protected static int     global_redraw_frames_left;  //
+
+
+   // List of rectangluar screen areas that need to be redrawn
+   //  (note) we cannot keep references to Layers since they might have been deleted
+   //         between redraw() and OnDraw()..
+   public static Rectangle2f dirty_regions[];
+
+   // List of regions that were requested to be repainted during onDraw()
+   public static Rectangle2f deferred_regions[];
+
+   // true=don't queue any layers for redraw or redrawAll() or compositeAll()
+   public static boolean b_lock_redraw;
+
+   public static Function *ondraw_post_process_hook;
+
+   private static boolean     b_mark_region = false;
+   private static Rectangle2f marked_region;
+   private static boolean     b_last_marked_region_valid;
+   private static Rectangle2f last_marked_region;
+   private static float       marked_region_border_size;
+
+   // ---- Cursor
+   static private Cursor *cursor_none;
+   static private Cursor *current_cursor;
+   static private String current_cursor_name;
 
 
    static Debug(String msg) {
@@ -1631,7 +1678,6 @@ class UI : ActionProvider, UIConstants {
 
       for(;;)
       {
-         // // InitScissors();
          RedrawAll();
          SDL.eventLoop();
          int te = milliSeconds();
@@ -1877,7 +1923,7 @@ class UI : ActionProvider, UIConstants {
              ( (_ev.current_state&MOUSE_MBUTTON) && (_ev.changed_state&MOUSE_MBUTTON) )
              )
          {
-            // // log4 "UI::HandleMouseEvent: press MB, last_button="+last_mouseclick_button+" last_ticks="+last_mouseclick_ticks+" t="+t+" last_layer="+#(last_mouseclick_layer);
+            // log4 "UI::HandleMouseEvent: press MB, last_button="+last_mouseclick_button+" last_ticks="+last_mouseclick_ticks+" t="+t+" last_layer="+#(last_mouseclick_layer);
 
             // ---- left/right/middle mouse button was pressed
             if(@(last_mouseclick_layer) == @(_layer))
@@ -1889,7 +1935,7 @@ class UI : ActionProvider, UIConstants {
                {
                   mousehold_layer <= null;
 
-                  // // log4 "UI::HandleMouseEvent: dblclick: time ok, last_mouseclick_button="+last_mouseclick_button+" changedstate="+_ev.changed_state;
+                  // log4 "UI::HandleMouseEvent: dblclick: time ok, last_mouseclick_button="+last_mouseclick_button+" changedstate="+_ev.changed_state;
                   if( !(last_mouseclick_button ^_ev.changed_state) )
                   {
                      // log4 "UI::HandleMouseEvent: dblclick: last_mouseclick_button="+last_mouseclick_button+" _ev.changed_state="+_ev.changed_state;
@@ -2947,10 +2993,6 @@ class UI : ActionProvider, UIConstants {
       mouse_grab_relx = 0;
       mouse_grab_rely = 0;
       Mouse.grab();  // warps mouse to center of screen
-      // // float warpDx = Mouse.x - _dragStart.mouse_abs_x;
-      // // float warpDy = Mouse.y - _dragStart.mouse_abs_y;
-      // // _dragStart.mouse_abs_x = Mouse.x;
-      // // _dragStart.mouse_abs_y = Mouse.y;
    }
 
    public static UngrabMouse() {
@@ -2987,34 +3029,15 @@ class UI : ActionProvider, UIConstants {
                                                         VKEY_HOME, VKEY_END,
                                                         VKEY_DELETE, VKEY_INSERT, VKEY_BACKSPACE,
                                                         VKEY_PAGEUP, VKEY_PAGEDOWN,
-                                                        VKEY_F1,
-                                                        VKEY_F2,
-                                                        VKEY_F3,
-                                                        VKEY_F4,
-                                                        VKEY_F5,
-                                                        VKEY_F6,
-                                                        VKEY_F7,
-                                                        VKEY_F8,
-                                                        VKEY_F9,
-                                                        VKEY_F10,
-                                                        VKEY_F11,
-                                                        VKEY_F12,
-                                                        VKEY_KP0,
-                                                        VKEY_KP1,
-                                                        VKEY_KP2,
-                                                        VKEY_KP3,
-                                                        VKEY_KP4,
-                                                        VKEY_KP5,
-                                                        VKEY_KP6,
-                                                        VKEY_KP7,
-                                                        VKEY_KP8,
-                                                        VKEY_KP9,
+                                                        VKEY_F1, VKEY_F2, VKEY_F3, VKEY_F4, VKEY_F5, VKEY_F6,
+                                                        VKEY_F7, VKEY_F8, VKEY_F9, VKEY_F10, VKEY_F11, VKEY_F12,
+                                                        VKEY_KP0, VKEY_KP1, VKEY_KP2, VKEY_KP3, VKEY_KP4,
+                                                        VKEY_KP5, VKEY_KP6, VKEY_KP7, VKEY_KP8, VKEY_KP9,
                                                         VKEY_KP_DIVIDE,
                                                         VKEY_KP_MULTIPLY,
                                                         VKEY_KP_PLUS,
                                                         VKEY_KP_MINUS
-
-   ];
+                                                        ];
 
    protected static PointerArray accelerator_lists; // AcceleratorList references
 
@@ -3973,7 +3996,7 @@ class UI : ActionProvider, UIConstants {
          {
             if(keyboard_layer.wantTriadKeyMode())
             {
-               // // log4 "UI::OnKeyboard: triadkeydbg: b_triad_key_mode="+b_triad_key_mode+" _k.name="+_k.name+" b_triad_key_try_repeat="+b_triad_key_try_repeat;
+               // log4 "UI::OnKeyboard: triadkeydbg: b_triad_key_mode="+b_triad_key_mode+" _k.name="+_k.name+" b_triad_key_try_repeat="+b_triad_key_try_repeat;
                boolean bTriadKeyForceCancel = false;  // for lctrl-x x special case handling
 
                if(b_triad_key_mode)
@@ -3994,21 +4017,15 @@ class UI : ActionProvider, UIConstants {
                         c <= c.parent;
                      }
                      while(null != c)
-
-                     // // if(!keyboard_layer.wantTriadKeyRepeat(_k))
-                     // // {
-                     // //    bLeaveTriadMode = true;
-                     // // }
                   }
 
                   if(!bLeaveTriadMode)
                   {
                      if(_k.pressed > 1) // pressed so that unicode field is filled out and LCTRL release is filtered..
                      {
-                        // // if(!([VKEY_LCTRL, VKEY_RCTRL, VKEY_LSHIFT, VKEY_RSHIFT, VKEY_LALT, VKEY_RALT, VKEY_LSUPER, VKEY_RSUPER].contains(_k.code)))
                         if(!([VKEY_LCTRL, VKEY_LSHIFT, VKEY_LALT, VKEY_LSUPER, VKEY_RSUPER].contains(_k.code)))
                         {
-                           // // log4 "UI::OnKeyboard: triadkeydbg: key="+_k.name;
+                           // log4 "UI::OnKeyboard: triadkeydbg: key="+_k.name;
                            CancelTriadKeyTimer();
                            b_triad_key_waitrelease = true;
                            triad_key_pressed = _k.pressed;
@@ -4131,7 +4148,6 @@ class UI : ActionProvider, UIConstants {
          }
       } // if !handled
 
-
       if(!bHandled)
       {
          // Handle regular keypress/release
@@ -4199,7 +4215,7 @@ class UI : ActionProvider, UIConstants {
          }
       }
 
-      // // log4 "UI::OnKeyboard: key="+_k.name+" pressed"+_k.pressed+" klayer="+#(keyboard_layer)+" bHandled="+bHandled;
+      // log4 "UI::OnKeyboard: key="+_k.name+" pressed"+_k.pressed+" klayer="+#(keyboard_layer)+" bHandled="+bHandled;
    }
 
    public static SetEnableLockKeyboardFocus(boolean _bLocked) : boolean {
@@ -4421,14 +4437,13 @@ class UI : ActionProvider, UIConstants {
 
    // ---- Let a layer grab the mouse focus
    public static SetMouseFocus(Layer _l) {
-      // // // if(!IsMouseFocusLocked() && !b_mouse_grab)
       if(!IsMouseFocusLocked())
       {
          if(null != _l)
          {
             if(IsMouseFocusAllowed(_l))
             {
-               // // log4 "UI::SetMouseFocus: mouse_layer="+#(mouse_layer)+" _l="+#(_l);
+               // log4 "UI::SetMouseFocus: mouse_layer="+#(mouse_layer)+" _l="+#(_l);
                Point2f abspos;
                mouse_event.init(Mouse.x / UI.zoom_x,
                                 Mouse.y / UI.zoom_y,
@@ -4473,7 +4488,6 @@ class UI : ActionProvider, UIConstants {
    public static LoseMouseFocusIfWithin(local Layer _l) {
       explain "Set mouse focus to null if it is currently set to _l or one of its child layers. Do not generate events.";
 
-      // // if(!IsMouseFocusLocked() && !b_mouse_grab)
       if(!IsMouseFocusLocked())
       {
          // log4 "UI::LoseMouseFocusIfWithin="+#(_l)+" mouse_layer="+#(mouse_layer);
@@ -4517,7 +4531,6 @@ class UI : ActionProvider, UIConstants {
    public static UnsetMouseFocus(MouseEvent _ev) {
       explain "Make the current mouse layer lose the focus. Generates onMouseLeave event.";
 
-      // // if(!IsMouseFocusLocked() && !b_mouse_grab)
       if(!IsMouseFocusLocked())
       {
          if(mouse_layer instanceof Layer)
@@ -4540,7 +4553,6 @@ class UI : ActionProvider, UIConstants {
       {
          // do not repeat modifier keys (shift/ctrl/alt..)
          bAllowRepeat =
-            // //(27 != _k.code) &&
             ( (1 < _k.code < 256) || repeating_special_keys.contains(_k.code) );
       }
 
@@ -4569,7 +4581,7 @@ class UI : ActionProvider, UIConstants {
                {
                   if(bKeyRepeat)
                   {
-                     // // log4 "UI::RecursiveHandleKey: keyboard_layer.wantKeyRepeat(_k="+_k.name+")="+keyboard_layer.wantKeyRepeat(_k);
+                     // log4 "UI::RecursiveHandleKey: keyboard_layer.wantKeyRepeat(_k="+_k.name+")="+keyboard_layer.wantKeyRepeat(_k);
                      // log4 "UI::RecursiveHandleKey: keyboard_layer="+#(keyboard_layer);
                      StartOrContinueKeyRepeat(_k);
                   }
@@ -4580,7 +4592,7 @@ class UI : ActionProvider, UIConstants {
                }
 
                bHandled = true;
-               // // log4 "UI::RecursiveHandleKey: bHandled=true k="+_k.name;
+               // log4 "UI::RecursiveHandleKey: bHandled=true k="+_k.name;
                c <= null;
             }
             else
@@ -4608,55 +4620,10 @@ class UI : ActionProvider, UIConstants {
    // ----
    // ---- Rendering
    // ----
-   define int PAINT_NONE     = 0b0000;
-   define int PAINT_DIRTY    = 0b0001;
-   define int PAINT_ALL      = 0b1111;
-
-   define int MAX_DIRTY_AND_DEFERRED_REGIONS = 256;
-   explain "Maximum number of dirty regions for optimized drawing. If this number is exceeded, all layers will be redrawn.
-   also: Maximum number of regions that may request redraw() during redraw().";
-
-   protected static int     global_paint_flag = PAINT_DIRTY; // default is to only paint "dirty" layers
-   public    static int     current_paint_flag; // reset to PAINT_NONE after each render pass
-   public    static int     next_paint_flag; // reset to global_paint_flag before each render pass
-   public    static boolean b_sweep_dirty;  // (todo) [16Oct2018] looks like this can be remove_window (always false)
-   protected static int     redraw_all_count;
-   protected static boolean b_repainting;
-   protected static boolean b_draw_overlays; // true=currently repainting overlays => use windowcoords for scissor rect
-   protected static boolean b_draw_overlays_post;  // true=currently repainting overlays to post_fbo (don't zoom)
-   protected static boolean b_hide_all_overlays;
-
-   define int REDRAW_DIRTY     = 0;  // default (redraw/composite when necessary)
-   // workarounds for Intel Macs??:
-   define int REDRAW_COMPOSITE = 1;  // expensive, composite screen at 60 or even 120 fps
-   define int REDRAW_ALL       = 2;  // very expensive, redraw entire screen at 60 or even 120 fps
-   protected static int     global_redraw_mode;
-   protected static int     global_redraw_num_frames;   // "timeout" (#frames) after mouse/key event. 0=unlimited, -1=off
-   protected static int     global_redraw_frames_left;  //
-
-
-   // List of rectangluar screen areas that need to be redrawn
-   //  (note) we cannot keep references to Layers since they might have been deleted
-   //         between redraw() and OnDraw()..
-   public static Rectangle2f dirty_regions[];
-
-   // List of regions that were requested to be repainted during onDraw()
-   public static Rectangle2f deferred_regions[];
-
-   // true=don't queue any layers for redraw or redrawAll() or compositeAll()
-   public static boolean b_lock_redraw;
-
-   public static Function *ondraw_post_process_hook;
 
    public static SetOnDrawPostProcessHook(Function _fun) {
       ondraw_post_process_hook <= _fun;
    }
-
-   private static boolean     b_mark_region = false;
-   private static Rectangle2f marked_region;
-   private static boolean     b_last_marked_region_valid;
-   private static Rectangle2f last_marked_region;
-   private static float       marked_region_border_size;
 
    public static BeginMarkRegion(Rectangle2f _region, float _bs) {
       b_mark_region              = true;
@@ -4674,36 +4641,6 @@ class UI : ActionProvider, UIConstants {
       CompositeAll();
    }
 
-   // // public static AddDirtyRegion(Rectangle2f _r) {
-   // //    log4 "UI::AddDirtyRegion: add dirty region r="+_r.getString();
-   // //    if(_r.qx > _r.px) // filter empty regions at startup (redraw() before layout)
-   // //    {
-   // //       if(!b_transparent_layers)
-   // //       {
-   // //          dirty_regions.add(_r);
-   // //          next_paint_flag |= UI.PAINT_DIRTY;
-   // //          Viewport.needRedraw();
-   // //       }
-   // //       else
-   // //       {
-   // //          RedrawAll();
-   // //       }
-   // //    }
-   // // }
-
-   // public static AddDeferredRegion(Rectangle2f _r) {
-   //    if(!b_transparent_layers)
-   //    {
-   //       deferred_regions.add(_r);
-   //       next_paint_flag |= UI.PAINT_DIRTY;
-   //       Viewport.needRedraw();
-   //    }
-   //    else
-   //    {
-   //       CompositeAll();
-   //    }
-   // }
-
    public static SetGlobalPaintFlag(int _mode) {
       global_paint_flag = _mode;
    }
@@ -4719,7 +4656,7 @@ class UI : ActionProvider, UIConstants {
 
       if(!b_lock_redraw)
       {
-         // // log4 "UI::RedrawDirty l="+#(_l);
+         // log4 "UI::RedrawDirty l="+#(_l);
 
          if(_l.size_x > 0) // filter layers that have not been layouted, yet
          {
@@ -4755,11 +4692,11 @@ class UI : ActionProvider, UIConstants {
 
                if(bAddDirty)
                {
-                  // // log4 "UI::RedrawDirty: next_paint_flag="+next_paint_flag;
+                  // log4 "UI::RedrawDirty: next_paint_flag="+next_paint_flag;
                   if(dirty_regions.numElements < MAX_DIRTY_AND_DEFERRED_REGIONS)
                   {
                      Rectangle2f r <= _l.getScreenRegion();
-                     // // log4 "UI::RedrawDirty: redraw dirty region r="+r.getString();
+                     // log4 "UI::RedrawDirty: redraw dirty region r="+r.getString();
                      if(b_repainting)
                      {
                         deferred_regions.add(r); // Add a copy of the layer region
@@ -4768,7 +4705,7 @@ class UI : ActionProvider, UIConstants {
                      {
                         dirty_regions.add(r); // Add a copy of the layer region
                      }
-                     // // log4 "UI::RedrawDirty: dirty_regions.numElements"+dirty_regions.numElements;
+                     // log4 "UI::RedrawDirty: dirty_regions.numElements"+dirty_regions.numElements;
                      next_paint_flag |= PAINT_DIRTY;
                   }
                   else
@@ -4849,18 +4786,13 @@ class UI : ActionProvider, UIConstants {
 
       UIRenderer.OnOpen();
 
-      // // // (note) not updating the buffer_width/height immediately
-      // // //         causes wrong clipping in viewpanes (in first draw call after resize)
-      // // viewport_width  = Viewport.width / zoom_x;
-      // // viewport_height = Viewport.height / zoom_y;
-      // // buffer_width = viewport_width;
-      // // buffer_height = viewport_height;
-
       DestroyAllShaders();
 
       if(null != root_layer)
          root_layer.recursiveOnOpen();
+
       RootLayerResized();
+
       font_cache.onOpen();
       icon_cache.onOpen();
 
@@ -5051,13 +4983,7 @@ class UI : ActionProvider, UIConstants {
          post_fbo_color_grading_texture_cycle_list_idx_queued_cbk = -1;
       }
 
-      // // glHint(GL_POINT_SMOOTH_HINT, GL_NICEST);
-      // // glHint(GL_LINE_SMOOTH_HINT, GL_NICEST);
-      // // glHint(GL_POLYGON_SMOOTH_HINT, GL_NICEST);
-      // // glHint(GL_PERSPECTIVE_CORRECTION_HINT, GL_NICEST);
-
       glDisable(GL_STENCIL_TEST);
-      // // UIRenderer.DisableTexture2D();
       if(!UIRenderer.b_glcore)
          glDisable(GL_ALPHA_TEST);  // b_glcore
       glDisable(GL_DEPTH_TEST);
@@ -5074,8 +5000,6 @@ class UI : ActionProvider, UIConstants {
       sdvg_SetFramebufferSize(buffer_width * zoom_x, buffer_height * zoom_y);
       // log4 "UI::OnDraw: SetFramebufferSize(sx="+(buffer_width * zoom_x)+" sy="+(buffer_height * zoom_y)+")";
 
-      // // ResetScissors();
-
       sdvg_BeginFrame();
 
       sdvg_SetViewport(0, 0, viewport_width, viewport_height);
@@ -5084,7 +5008,6 @@ class UI : ActionProvider, UIConstants {
       if(!b_fbo)
       {
          sdvg_ProjInit2D(viewport_width, viewport_height);
-         // // glLoadIdentity();
       }
 
       sdvg_DisableBlending();
@@ -5115,7 +5038,7 @@ class UI : ActionProvider, UIConstants {
          trace "UI::OnDraw: benchmark: tGL="+tGL+" tSDVG="+tSDVG;
       }
 
-      // // log4 "UI::onDraw b_mark_region="+b_mark_region;
+      // log4 "UI::onDraw b_mark_region="+b_mark_region;
 
       if(!b_fbo && b_mark_region)
       {
@@ -5128,14 +5051,14 @@ class UI : ActionProvider, UIConstants {
                                         marked_region_border_size
                                         );
          }
-         // // log4 "UI::OnDraw: draw marked region qx="+marked_region.qx+" qy="+marked_region.qy;
+         // log4 "UI::OnDraw: draw marked region qx="+marked_region.qx+" qy="+marked_region.qy;
          DrawMarkedRegion();
          last_marked_region = marked_region;
          b_last_marked_region_valid = true;
       }
       else
       {
-         // // log4 "UI::OnDraw: dirty="+dirty_regions.numElements+" def'rd="+deferred_regions.numElements;
+         // log4 "UI::OnDraw: dirty="+dirty_regions.numElements+" def'rd="+deferred_regions.numElements;
 
          current_paint_flag = next_paint_flag;
          next_paint_flag = global_paint_flag;
@@ -5165,12 +5088,6 @@ class UI : ActionProvider, UIConstants {
          {
             // Draw root layer background
             int windowBg32 = lnf_colors.get(LookAndFeel.COLOR_WINDOW_BG);
-            // // glClearColor(((windowBg32>>16)&255)/255.0,
-            // //              ((windowBg32>> 8)&255)/255.0,
-            // //              ((windowBg32    )&255)/255.0,
-            // //              ((windowBg32>>24)&255)/255.0
-            // //              );
-            // // glClear(GL_COLOR_BUFFER_BIT/*|GL_DEPTH_BUFFER_BIT*/);
             sdvg_ClearARGB(windowBg32);
          }
 
@@ -5186,8 +5103,8 @@ class UI : ActionProvider, UIConstants {
                root_fbo.endPaint();
 
             // Draw floating layers
-            // // log4 "UI::OnDraw: -------------- Draw floating layers";
-            // // log4 "UI::OnDraw: bforceredraw="+bForceRedraw;
+            // log4 "UI::OnDraw: -------------- Draw floating layers";
+            // log4 "UI::OnDraw: bforceredraw="+bForceRedraw;
             foreach fl in floating_layers
             {
                if(fl instanceof FloatingLayer) // xxx 25Mar2017: temporary workaround to prevent deleted object crash (NodeMonitor)
@@ -5197,7 +5114,7 @@ class UI : ActionProvider, UIConstants {
                   if(b_fbo)
                      fl.beginPaint();
 
-                  // // log4 "UI::OnDraw: drawFloatingLayer fl="+#(fl);
+                  // log4 "UI::OnDraw: drawFloatingLayer fl="+#(fl);
 
                   if(!b_fbo)
                   {
@@ -5208,23 +5125,10 @@ class UI : ActionProvider, UIConstants {
                      }
                   }
 
-                  // (note) remove this, blending is enabled when background is drawn
-                  // // if(b_transparent_layers)
-                  // // {
-                  // //    glEnable(GL_BLEND);
-                  // //    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-                  // // }
-
                   fl.drawHierarchy(bForceRedraw, true/*bCheckIntersect*/,
                                    -fl.getPositionX()/*viewShiftX*/, -fl.getPositionY()/*viewShiftY*/,
                                    fl.getSizeX(), fl.getSizeY()
                                    );
-
-                  // (note) remove this, blending might already be disabled, anyway
-                  // // if(b_transparent_layers)
-                  // // {
-                  // //    glDisable(GL_BLEND);
-                  // // }
 
                   if(b_fbo)
                      fl.endPaint();
@@ -5265,7 +5169,6 @@ class UI : ActionProvider, UIConstants {
             {
                post_fbo.setColorGradingTexture(tex_post_fbo_color_grading);
                post_fbo.beginPaint();
-               // // ResetScissors();
                sdvg_SetScissor(0, 0,
                                buffer_width  * UI.supersample_factor,
                                buffer_height * UI.supersample_factor
@@ -5273,10 +5176,6 @@ class UI : ActionProvider, UIConstants {
             }
             else
             {
-               // // glViewport(0, 0, viewport_width * zoom_x, viewport_height * zoom_y);
-               // // zglInit2D(viewport_width, viewport_height);
-               // // glLoadIdentity();
-               // // ResetScissorsZoom();
                sdvg_SetViewport(0, 0,
                                 viewport_width  * zoom_x,  // * UI.supersample_factor???
                                 viewport_height * zoom_y
@@ -5309,12 +5208,8 @@ class UI : ActionProvider, UIConstants {
                b_draw_overlays = true;
                b_draw_overlays_post = b_draw_post_fbo;
 
-               // // UIRenderer.DisableTexture2D();
-
                if(null != root_layer)
                   root_layer.handleDrawOverlays();
-
-               // // UIRenderer.EnableTexture2D();
             }
 
             if(b_transparent_layers)
@@ -5324,12 +5219,8 @@ class UI : ActionProvider, UIConstants {
             foreach fl in floating_layers
             {
                fl.composite();
-               // // UIRenderer.DisableTexture2D();
                fl.handleDrawOverlays();
-               // // UIRenderer.EnableTexture2D();
             }
-
-            // // UIRenderer.DisableTexture2D();
 
             if(b_transparent_layers)
                sdvg_DisableBlending();
@@ -5342,11 +5233,6 @@ class UI : ActionProvider, UIConstants {
             {
                post_fbo.endPaint();
 
-               // // UIRenderer.EnableTexture2D();
-
-               // // // glViewport(0, 0, viewport_width * zoom_x, viewport_height * zoom_y);
-               // // // zglInit2D(viewport_width, viewport_height);
-               // // // glLoadIdentity();
                sdvg_SetViewport(0, 0, viewport_width * zoom_x, viewport_height * zoom_y);
                sdvg_ProjInit2D(viewport_width, viewport_height);
                sdvg_ModelInitIdentity();
@@ -5360,8 +5246,6 @@ class UI : ActionProvider, UIConstants {
                                   0, 0,
                                   viewport_width, viewport_height
                                   );
-
-               // // UIRenderer.DisableTexture2D();
             }
 
             // log4 "UI::OnDraw: repaint";
@@ -5385,7 +5269,7 @@ class UI : ActionProvider, UIConstants {
          }
 
          // Empty current dirty_regions array and exchange for deferred regions
-         //trace "[...] finished redrawing "+dirty_regions.numElements+" dirty regions. (time="+milliSeconds()+")";
+         // log2 "finished redrawing "+dirty_regions.numElements+" dirty regions. (time="+milliSeconds()+")";
          dirty_regions.empty();
          Rectangle2f t <= deref dirty_regions;
          dirty_regions <= deref deferred_regions;
@@ -5691,10 +5575,6 @@ class UI : ActionProvider, UIConstants {
 
       UIRenderer.Exit();
    }
-
-   static private Cursor *cursor_none;
-   static private Cursor *current_cursor;
-   static private String current_cursor_name;
 
    public static AddCursor(String _name, Cursor _cursor) {
       explain "Add a cursor resource";
@@ -6074,7 +5954,6 @@ class UI : ActionProvider, UIConstants {
       }
    }
 
-
    protected static CancelSchedule2(List _timerList, TimerAction _ta) {
       if(null != _ta)
       {
@@ -6271,133 +6150,6 @@ class UI : ActionProvider, UIConstants {
       table_min_col_width_scaling = _s;
    }
 
-   // public static InitScissors() {
-   //    scissors_stacki = SCISSORS_STACK_SIZE;
-   //    scissors_stack.alloc(4 * SCISSORS_STACK_SIZE);
-   //    scissors_stack.numElements = scissors_stack.maxElements;
-   // }
-
-   // public static ResetScissors() {
-   //    // Called at the beginning of a frame in case a crash occured (in the last frame) before PopScissors() could be called
-   //    scissors_stacki = SCISSORS_STACK_SIZE;
-   //    scissors_x = 0;
-   //    scissors_y = 0;
-   //    scissors_w = buffer_width;
-   //    scissors_h = buffer_height;
-   //    glScissor(0, 0, scissors_w*UI.supersample_factor, scissors_h*UI.supersample_factor);
-   // }
-
-   // public static ResetScissorsZoom() {
-   //    // Called before drawing the overlays
-   //    scissors_stacki = SCISSORS_STACK_SIZE;
-   //    scissors_x = 0;
-   //    scissors_y = 0;
-   //    scissors_w = buffer_width * zoom_x*UI.supersample_factor;
-   //    scissors_h = buffer_height * zoom_y*UI.supersample_factor;
-   //    glScissor(0, 0, scissors_w, scissors_h);
-   // }
-
-   // public static PushScissors(int _x, _y, _w, _h) {
-
-   //    // log4 "UI::PushScissors: cur=("+scissors_x+";"+scissors_y+";"+scissors_w+";"+scissors_h+") new=("+_x+";"+_y+";"+_w+";"+_h+") buffer_height="+buffer_height;
-
-   //    if((!b_fbo || b_draw_overlays) && !b_draw_overlays_post)
-   //    {
-   //       // log4 "UI::PushScissors: apply zoom=("+zoom_x+";"+zoom_y+")";
-   //       _x *= zoom_x;
-   //       _y *= zoom_y;
-   //       _w *= zoom_x;
-   //       _h *= zoom_y;
-
-   //       _y = (buffer_height * zoom_y - _y) - _h;
-   //    }
-   //    else
-   //    {
-   //       _y = (buffer_height - _y) - _h;
-   //    }
-
-   //    scissors_stack[--scissors_stacki] = scissors_h;
-   //    scissors_stack[--scissors_stacki] = scissors_w;
-   //    scissors_stack[--scissors_stacki] = scissors_y;
-   //    scissors_stack[--scissors_stacki] = scissors_x;
-
-   //    if(_x < 0)
-   //    {
-   //       _w += _x;
-   //       _x = 0;
-   //    }
-   //    if(_y < 0)
-   //    {
-   //       _h += _y;
-   //       _y = 0;
-   //    }
-
-   //    // (note) FBO might be larger than viewport
-   //    // // if(_w > Viewport.width)
-   //    // //    _w = Viewport.width;
-   //    // // if(_h > Viewport.height)
-   //    // //    _h = Viewport.height;
-
-   //    if(scissors_w > 0)
-   //    {
-   //       if(_x < scissors_x)
-   //          _w -= (scissors_x - _x);
-   //       if(_y < scissors_y)
-   //          _h -= (scissors_y - _y);
-   //       // ---- intersect with last scissors region
-   //       if(_x > scissors_x)
-   //       {
-   //          scissors_w -= (_x - scissors_x);
-   //          scissors_x = _x;
-   //       }
-   //       if(_y > scissors_y)
-   //       {
-   //          scissors_h -= (_y - scissors_y);
-   //          scissors_y = _y;
-   //       }
-   //       if(_w < scissors_w)
-   //          scissors_w = _w;
-   //       else if(scissors_w < 0)
-   //          scissors_w = 0;
-   //       if(_h < scissors_h)
-   //          scissors_h = _h;
-   //       else if(scissors_h < 0)
-   //          scissors_h = 0;
-   //    }
-   //    else
-   //    {
-   //       scissors_x = _x;
-   //       scissors_y = _y;
-   //       scissors_w = _w;
-   //       scissors_h = _h;
-   //    }
-   //    if(scissors_w < 0) scissors_w = 0;
-   //    if(scissors_h < 0) scissors_h = 0;
-   //    // log4 "UI::PushScissors: set scissors_x="+scissors_x+" y="+scissors_y+" w="+scissors_w+" h="+scissors_h;
-   //    glScissor(scissors_x*UI.supersample_factor,
-   //              scissors_y*UI.supersample_factor,
-   //              scissors_w*UI.supersample_factor,
-   //              scissors_h*UI.supersample_factor
-   //              );
-   // }
-
-   // public static PopScissors() {
-   //    // log4 "UI::PopScissors: cur=("+scissors_x+";"+scissors_y+";"+scissors_w+";"+scissors_h+")";
-
-   //    scissors_x = scissors_stack[scissors_stacki++];
-   //    scissors_y = scissors_stack[scissors_stacki++];
-   //    scissors_w = scissors_stack[scissors_stacki++];
-   //    scissors_h = scissors_stack[scissors_stacki++];
-
-   //    // log4 "UI::PopScissors:   restore=("+scissors_x+";"+scissors_y+";"+scissors_w+";"+scissors_h+")";
-
-   //    glScissor(scissors_x*UI.supersample_factor,
-   //              scissors_y*UI.supersample_factor,
-   //              scissors_w*UI.supersample_factor,
-   //              scissors_h*UI.supersample_factor
-   //              );
-   // }
-
    public static SetEnableTransparentLayers(boolean _b) {
       explain "Enable transparent layers";
       b_transparent_layers = _b;
@@ -6495,36 +6247,18 @@ class UI : ActionProvider, UIConstants {
    }
 
    static MixColor32(int x, int y, float t) : int {
-      // int ax = (x>>24)&255;
-      // int rx = (x>>16)&255;
-      // int gx = (x>> 8)&255;
-      // int bx = (x    )&255;
-
-      // int ay = (y>>24)&255;
-      // int ry = (y>>16)&255;
-      // int gy = (y>> 8)&255;
-      // int by = (y    )&255;
-
-      // return argb(ax + (ay - ax) * t,
-      //             rx + (ry - rx) * t,
-      //             gx + (gy - gx) * t,
-      //             bx + (by - bx) * t
-      //             );
       return sdvg_MixARGBf(x, y, t);
    }
 
    static TintColor32(int a, int b) : int {
-      // return MixColor32(a, 0xFF000000 | (b&0x00FFFFFF), ((b>>24)&255)/255.0);
       return sdvg_TintARGB(a, b);
    }
 
    static TintColor32Alpha(int a, int b, byte _a) : int {
-      // return (MixColor32(a, 0xFF000000 | (b&0x00FFFFFF), ((b>>24)&255)/255.0) & 0x00ffffff) | (_a << 24);
       return sdvg_TintRGBAlpha(a, b, _a);
    }
 
    static Color32Alpha(int _c32, byte _a) : int {
-      // return (_c32 & 0xFFffFF) | (_a << 24);
       return sdvg_RGBAlpha(_c32, _a);
    }
 
@@ -6537,74 +6271,8 @@ class UI : ActionProvider, UIConstants {
    //   - GetColor(), GetColorAlpha(), GetTintedColor(), GetTintedColorAlpha(;
 
    static HSVTOARGB32(float h, s, v, byte _a) : int {
-      // converts alpha '_a' (0..255) + hue (0..360) + saturation/value (0..1) to ARGB32 int
-
-      // if(h >= 360)
-      //    h -= 360;
-      // h /= 60;
-      // int i = h;
-      // float f = h - i;
-
-      // int p = 255 * v * ( 1 - s );
-      // int q = 255 * v * ( 1 - s * f );
-      // int t = 255 * v * ( 1 - s * ( 1 - f ) );
-
-      // v *= 255;
-
-      // switch(i)
-      // {
-      //    case 0:
-      //       return argb(_a, v, t, p);
-      //    case 1:
-      //       return argb(_a, q, v, p);
-      //    case 2:
-      //       return argb(_a, p, v, t);
-      //    case 3:
-      //       return argb(_a, p, q, v);
-      //    case 4:
-      //       return argb(_a, t, p, v);
-      //    default:
-      //       return argb(_a, v, p, q);
-      // }
-
       return sdvg_HSVAToARGB(h, s, v, _a);
    }
-
-   // static RGB32TOHSV_old(int _c32, Float h, s, v) {
-   //    // (todo) REMOVE
-   //    float r = ( (_c32 >> 16) & 255 ) * (1.0f / 255);
-   //    float g = ( (_c32 >>  8) & 255 ) * (1.0f / 255);
-   //    float b = ( (_c32      ) & 255 ) * (1.0f / 255);
-
-   //    v = mathMaxf(r, g);
-   //    v = mathMaxf(v, b);
-
-   //    float t = mathMinf(r, g);
-   //    t = mathMinf(t, b);
-
-   //    if(0 == v)
-   //       s = 0;
-   //    else
-   //       s = (v - t) / v;
-
-   //    float cr = (v - r) / (v - t);
-   //    float cg = (v - g) / (v - t);
-   //    float cb = (v - b) / (v - t);
-
-   //    if(r == v)
-   //       h = cb - cg;
-   //    else if(g == v)
-   //       h = 2 + cr - cb;
-   //    else if(b == v)
-   //       h = 4 + cg - cr;
-
-   //    h *= 60;
-
-   //    if(h < 0)
-   //       h += 360;
-
-   //    return (_c32 >> 24) & 255;
-   // }
 
    static RGB32TOHSV(int _c32, Float h, s, v) {
       return sdvg_ARGBToHSVA(_c32, h, s, v);
