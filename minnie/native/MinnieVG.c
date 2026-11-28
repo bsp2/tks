@@ -80,6 +80,7 @@ void MinnieVG_InitMinnie(void) {
    minSetStrokeWLineJoinThreshold(0.2f);   //      (disable bevel+round line joins below this stroke-width threshold)
    minSetEnableUniformColors(1);           // 'u'  (1=less VRAM/more draw calls  0=faster)
    minSetEnablePolygonAA(1);               // 'l'  (requires GPU polygon tesselation)
+   minSetEnableForceMiterToBevel(0);
 
    if(0)
    {

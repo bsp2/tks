@@ -19,7 +19,7 @@
 // ----          WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 // ----          SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 // ----
-// ---- info   : "minnie" binary loader + renderer / display list and OpenGL attrib buffer exporter
+// ---- info   : "minnie" binary loader + renderer / display list and vertex attribute buffer exporter
 // ----
 // ----
 // ----
@@ -833,7 +833,7 @@ typedef struct Matrix4f_s {
             /* TM4F(y,2) * 0.0f + */
             TM4F(y,3) * 1.0f ;
       }
-      /* Dprintf("xxx project2f: p=(%f;%f) => t=(%f;%f)  (vp=(%u,%u,%u,%u))\n", _x, _y, t[0], t[1], _vpX, _vpY, _vpW, _vpH); */
+      // Dprintf("[trc] minnie::Matrix4f::project2f: p=(%f;%f) => t=(%f;%f)  (vp=(%u,%u,%u,%u))\n", _x, _y, t[0], t[1], _vpX, _vpY, _vpW, _vpH);
       // to WDC
       const sF32 vpWh = _vpW * 0.5f;
       const sF32 vpHh = _vpH * 0.5f;
@@ -1140,7 +1140,7 @@ void *minnie_alloc(minnie_allocator_handle_t _allocator, sU32 _sz) {
 void minnie_free(minnie_allocator_handle_t _allocator, void *_ptr) {
    (void)_allocator;
 #if MINNIE_ALLOC_DEBUG
-   /* Dallocprintf("[trc] minnie_free: ptr=%p\n", _ptr); */
+   // Dallocprintf("[trc] minnie_free: ptr=%p\n", _ptr);
    if(NULL != _ptr)
    {
       sU32 *hdr = ((sU32*)_ptr) - 4;
@@ -1190,7 +1190,6 @@ extern "C" {
 #endif // __cplusplus
 void *vgtesselator_alloc(unsigned int _sz) {
    void *ret = NULL;
-   /* (void)_allocator; */
 
 #if MINNIE_ALLOC_DEBUG
    // (note) / (todo) VG tesselator crashes when memory is not aligned to 16 bytes
@@ -1220,9 +1219,8 @@ void *vgtesselator_alloc(unsigned int _sz) {
 }
 
 void vgtesselator_free(void *_ptr) {
-   /* (void)_allocator; */
 #if MINNIE_ALLOC_DEBUG
-   /* Dallocprintf("[trc] vgtesselator_free: ptr=%p\n", _ptr); */
+   // Dallocprintf("[trc] vgtesselator_free: ptr=%p\n", _ptr);
    if(NULL != _ptr)
    {
       sU32 *hdr = ((sU32*)_ptr) - 4;
@@ -1328,7 +1326,7 @@ static sF32 f32_from_f16(sSI _v) {
 
 #if MINNIE_EXPORT_TRIS_EDGEAA
 // #define MINNIE_EDGEAA_MAX_VERTICES_PER_PATH  4096
-/* #define MINNIE_EDGEAA_MAX_VERTICES_PER_PATH  65536 */
+// #define MINNIE_EDGEAA_MAX_VERTICES_PER_PATH  65536
 #define MINNIE_EDGEAA_MAX_VERTICES_PER_PATH  131072
 
 struct VertexAA {
@@ -1338,7 +1336,6 @@ struct VertexAA {
    sBool b_edge_bc;  // opposite from A  ('s')   0=AA  1=noAA(shared)
    sBool b_edge_ca;  // opposite from B  ('u')   ..
    sBool b_edge_ab;  // opposite from C  ('t')   ..
-   /* sBool b_all_shared;  // valid for first vertex in a triangle. 1=(b_edge_bc && b_edge_ca && b_edge_ab) */
    sF32  scale_s;
    sF32  scale_t;
    sF32  scale_u;
@@ -1397,7 +1394,7 @@ struct StreamReader {
    }
 
    sF32 getF32(void) {
-      /* Dprintf("xxx getF32: data.u8=%p\n", data.u8); */
+      // Dprintf("[trc] minnie::StreamReader::getF32: data.u8=%p\n", data.u8);
 #if 1
       union {
          sF32 f32;
@@ -1621,7 +1618,7 @@ class IntArray {
 #if MINNIE_ARRAY_BOUNDARY_CHECK
       if(num_elements >= max_elements)
       {
-         Derrorprintf("[---] Minnie::IntArray::add: out of bounds (max=%u)\n", max_elements);
+         Derrorprintf("[---] minnie::IntArray::add: out of bounds (max=%u)\n", max_elements);
          return;
       }
 #endif // MINNIE_ARRAY_BOUNDARY_CHECK
@@ -1632,7 +1629,7 @@ class IntArray {
 #if MINNIE_ARRAY_BOUNDARY_CHECK
       if(num_elements >= max_elements)
       {
-         Derrorprintf("[---] Minnie::IntArray::addU32: out of bounds (max=%u)\n", max_elements);
+         Derrorprintf("[---] minnie::IntArray::addU32: out of bounds (max=%u)\n", max_elements);
          return;
       }
 #endif // MINNIE_ARRAY_BOUNDARY_CHECK
@@ -1643,7 +1640,7 @@ class IntArray {
 #if MINNIE_ARRAY_BOUNDARY_CHECK
       if(num_elements + 3u > max_elements)
       {
-         Derrorprintf("[---] Minnie::IntArray::add3: out of bounds (max=%u)\n", max_elements);
+         Derrorprintf("[---] minnie::IntArray::add3: out of bounds (max=%u)\n", max_elements);
          return;
       }
 #endif // MINNIE_ARRAY_BOUNDARY_CHECK
@@ -1656,7 +1653,7 @@ class IntArray {
 #if MINNIE_ARRAY_BOUNDARY_CHECK
       if(_idx >= num_elements)
       {
-         Derrorprintf("[---] Minnie::IntArray::get: idx %u out of bounds (num=%u)\n", _idx, num_elements);
+         Derrorprintf("[---] minnie::IntArray::get: idx %u out of bounds (num=%u)\n", _idx, num_elements);
          return 0;
       }
 #endif // MINNIE_ARRAY_BOUNDARY_CHECK
@@ -1667,7 +1664,7 @@ class IntArray {
 #if MINNIE_ARRAY_BOUNDARY_CHECK
       if(_idx >= num_elements)
       {
-         Derrorprintf("[---] Minnie::IntArray::getU32: idx %u out of bounds (num=%u)\n", _idx, num_elements);
+         Derrorprintf("[---] minnie::IntArray::getU32: idx %u out of bounds (num=%u)\n", _idx, num_elements);
          return 0;
       }
 #endif // MINNIE_ARRAY_BOUNDARY_CHECK
@@ -1678,7 +1675,7 @@ class IntArray {
 #if MINNIE_ARRAY_BOUNDARY_CHECK
       if(_o->num_elements > max_elements)
       {
-         Derrorprintf("[---] Minnie::IntArray::copyFrom: out of bounds (need=%u max=%u)\n", _o->num_elements, max_elements);
+         Derrorprintf("[---] minnie::IntArray::copyFrom: out of bounds (need=%u max=%u)\n", _o->num_elements, max_elements);
          return;
       }
 #endif // MINNIE_ARRAY_BOUNDARY_CHECK
@@ -1756,7 +1753,7 @@ class FloatArray {
       if(NULL == _elementsOrNull)
       {
          elements.any = minnie_alloc(allocator, sizeof(sF32) * _maxElements);
-         Dinitprintf("xxx FloatArray::init: this=%p max=%u => alloc elements=%p\n", this, _maxElements, elements.any);
+         Dinitprintf("[trc] minnie::FloatArray::init: this=%p max=%u => alloc elements=%p\n", this, _maxElements, elements.any);
          if(NULL != elements.any)
          {
             b_own_elements = YAC_TRUE;
@@ -1767,7 +1764,7 @@ class FloatArray {
       {
          elements.any = _elementsOrNull;
          max_elements = _maxElements;
-         Dinitprintf("xxx FloatArray::init: this=%p max=%u => ref elements=%p\n", this, _maxElements, elements.any);
+         Dinitprintf("[trc] minnie::FloatArray::init: this=%p max=%u => ref elements=%p\n", this, _maxElements, elements.any);
       }
       return (NULL != elements.any);
    }
@@ -1803,7 +1800,7 @@ class FloatArray {
       {
          if(!resize(Dgrowarray(num_elements + 2u)))
          {
-            Derrorprintf("[---] Minnie::FloatArray::add2: out of bounds (max=%u)\n", max_elements);
+            Derrorprintf("[---] minnie::FloatArray::add2: out of bounds (max=%u)\n", max_elements);
             return;
          }
       }
@@ -1822,7 +1819,7 @@ class FloatArray {
       {
          if(!resize(Dgrowarray(num_elements + 3u)))
          {
-            Derrorprintf("[---] Minnie::FloatArray::add3: out of bounds (max=%u)\n", max_elements);
+            Derrorprintf("[---] minnie::FloatArray::add3: out of bounds (max=%u)\n", max_elements);
             return;
          }
       }
@@ -1836,7 +1833,7 @@ class FloatArray {
 #if MINNIE_ARRAY_BOUNDARY_CHECK
       if(_idx >= num_elements)
       {
-         Derrorprintf("[---] Minnie::FloatArray::get: out of bounds (num=%u)\n", num_elements);
+         Derrorprintf("[---] minnie::FloatArray::get: out of bounds (num=%u)\n", num_elements);
          return 0.0f;
       }
 #endif // MINNIE_ARRAY_BOUNDARY_CHECK
@@ -1847,7 +1844,7 @@ class FloatArray {
 #if MINNIE_ARRAY_BOUNDARY_CHECK
       if(_idx >= num_elements)
       {
-         Derrorprintf("[---] Minnie::FloatArray::getRev: revIdx=%u out of bounds (num=%u)\n", _idx, num_elements);
+         Derrorprintf("[---] minnie::FloatArray::getRev: revIdx=%u out of bounds (num=%u)\n", _idx, num_elements);
          return 0.0f;
       }
 #endif // MINNIE_ARRAY_BOUNDARY_CHECK
@@ -1858,7 +1855,7 @@ class FloatArray {
 #if MINNIE_ARRAY_BOUNDARY_CHECK
       if(_o->num_elements > max_elements)
       {
-         Derrorprintf("[---] Minnie::FloatArray::copyFrom: out of bounds (need=%u max=%u)\n", _o->num_elements, max_elements);
+         Derrorprintf("[---] minnie::FloatArray::copyFrom: out of bounds (need=%u max=%u)\n", _o->num_elements, max_elements);
          return;
       }
 #endif // MINNIE_ARRAY_BOUNDARY_CHECK
@@ -1910,11 +1907,11 @@ template <class T> class PointerArray {
       {
          if(NULL != elements[i])
          {
-            /* Dprintf("xxx PointerArray: begin destruct element %u\n", i); */
+            // Dprintf("[>>>] minnie::PointerArray: begin destruct element %u\n", i);
             elements[i]->~T();
-            /* Dprintf("xxx PointerArray: end destruct element %u\n", i); */
+            // Dprintf("[>>>] minnie::PointerArray: end destruct element %u\n", i);
             minnie_free(allocator, (void*)elements[i]);
-            /* Dprintf("xxx PointerArray: element %u freed\n", i); */
+            // Dprintf("[>>>] minnie::PointerArray: element %u freed\n", i);
             elements[i] = NULL;
          }
       }
@@ -1952,7 +1949,7 @@ template <class T> class PointerArray {
          elements = (T**)_elementsOrNull;
          max_elements = _maxElements;
       }
-      Dinitprintf("xxx Minnie::PointerArray::init: LEAVE this=%p num=%u max=%u\n", this, num_elements, max_elements);
+      Dinitprintf("[>>>] minnie::PointerArray::init: LEAVE this=%p num=%u max=%u\n", this, num_elements, max_elements);
       return (NULL != elements);
    }
 
@@ -1962,15 +1959,15 @@ template <class T> class PointerArray {
 
    T *addNew(void) {
 #if MINNIE_ARRAY_BOUNDARY_CHECK
-      // Dprintf("xxx Minnie::PointerArray::addNew: this=%p num=%u max=%u\n", this, num_elements, max_elements);
+      // Dprintf("[>>>] minnie::PointerArray::addNew: this=%p num=%u max=%u\n", this, num_elements, max_elements);
       if(num_elements >= max_elements)
       {
-         Derrorprintf("[---] Minnie::PointerArray::addNew: out of bounds (max=%u)\n", max_elements);
+         Derrorprintf("[---] minnie::PointerArray::addNew: out of bounds (max=%u)\n", max_elements);
          return NULL;
       }
 #endif // MINNIE_ARRAY_BOUNDARY_CHECK
       T *o = (T*)minnie_alloc(allocator, sizeof(T));
-      // Dprintf("xxx Minnie::PointerArray::addNew: this=%p => o=%p (num is now %u)\n", this, o, (num_elements+1u));
+      // Dprintf("[>>>] minnie::PointerArray::addNew: this=%p => o=%p (num is now %u)\n", this, o, (num_elements+1u));
       new(o)T();
       elements[num_elements++] = o;
       return o;
@@ -1980,7 +1977,7 @@ template <class T> class PointerArray {
 #if MINNIE_ARRAY_BOUNDARY_CHECK
       if(_idx >= num_elements)
       {
-         Derrorprintf("[---] Minnie::PointerArray::get: idx=%u out of bounds (num=%u)\n", _idx, num_elements);
+         Derrorprintf("[---] minnie::PointerArray::get: idx=%u out of bounds (num=%u)\n", _idx, num_elements);
          return NULL;
       }
 #endif // MINNIE_ARRAY_BOUNDARY_CHECK
@@ -1991,7 +1988,7 @@ template <class T> class PointerArray {
 #if MINNIE_ARRAY_BOUNDARY_CHECK
       if(_idx >= num_elements)
       {
-         Derrorprintf("[---] Minnie::PointerArray::getRev: revIdx=%u out of bounds (num=%u)\n", _idx, num_elements);
+         Derrorprintf("[---] minnie::PointerArray::getRev: revIdx=%u out of bounds (num=%u)\n", _idx, num_elements);
          return NULL;
       }
 #endif // MINNIE_ARRAY_BOUNDARY_CHECK
@@ -2159,7 +2156,7 @@ class ShapePolyline {
 
    void setLineWidth(sF32 _w) {
       // (note) the total effective line width is (w * 2)
-      // Dprintf("xxx setLineWidth w=%f\n", _w);
+      // Dprintf("[trc] minnie::ShapePolyline::setLineWidth w=%f\n", _w);
       const_line_width = _w;
    }
 
@@ -2168,7 +2165,7 @@ class ShapePolyline {
    }
 
    void setLineJointType(sUI _type) {
-      /* Dprintf("xxx setLineJointType(%u)\n", _type); */
+      // Dprintf("[trc] minnie::ShapePolyline::setLineJointType(%u)\n", _type);
       line_joint_type = _type;
    }
 
@@ -2330,8 +2327,8 @@ class ShapePolyline {
                           const sBool       _bClosed,
                           const sU16        _pattern
                           ) {
-      /* allocTriVertices(_vertices.numElements * (12/2)); */
-      /* queueVBOUpdate(); */
+      // // // allocTriVertices(_vertices.numElements * (12/2));
+      // // // queueVBOUpdate();
 
       const sUI numVertices = _vertices->num_elements / 2u;
 
@@ -2916,18 +2913,16 @@ class ShapePolyline {
             } // if !bLastVertex
 
             // Draw (previous) line segment
-            /* Dprintf("xxx vertexIdx=%u skipQuad=%d\n", vertexIdx, skipQuad); */
+            // Dprintf("[>>>] minnie::ShapePolyline::tesselatePolyline: vertexIdx=%u skipQuad=%d\n", vertexIdx, skipQuad);
             if(!skipQuad)
             {
-               // trace "xxx drawSeg: vertexIterIdx="+vertexIterIdx;
-               // // boolean bDrawSeg = (vertexIterIdx >= (0 + _bClosed));
                if(bDrawSeg)
                {
                   if(!b_line_closed)
                   {
                      if(MINNIE_LINECAP_ROUND == line_cap_type)
                      {
-                        /* Dprintf("xxx bFirstQuad=%d vertexIdx=%u numVertices=%u\n", bFirstQuad, vertexIdx, numVertices); */
+                        // Dprintf("[>>>] minnie::ShapePolyline::tesselatePolyline: bFirstQuad=%d vertexIdx=%u numVertices=%u\n", bFirstQuad, vertexIdx, numVertices);
                         if(bFirstQuad)
                         {
                            bFirstQuad = YAC_FALSE;
@@ -2997,7 +2992,6 @@ class ShapePolyline {
                      }
                   } // if !b_line_closed
 
-                  // trace "xxx drawSeg: vertexIdx="+vertexIdx;
                   addQuad(&vStartLastL, &vEndLastL, &vEndLastR, &vStartLastR);
                } // if bDrawSeg
             }
@@ -3097,7 +3091,7 @@ class Path {
              void *_pointsDataOrNull, const sU32 _pointsMaxElements,
              void *_vaExtrudeData, const sU32 _maxExtrudedElements
              ) {
-      Dinitprintf("xxx Path::init: this=%p pathId=%u pointsMax=%u\n", this, _pathId, _pointsMaxElements);
+      Dinitprintf("[trc] minnie::Path::init: this=%p pathId=%u pointsMax=%u\n", this, _pathId, _pointsMaxElements);
       allocator = _allocator;
       points.init(_allocator, _pointsMaxElements, _pointsDataOrNull);
       va_extrude.init(_allocator, _maxExtrudedElements, _vaExtrudeData);
@@ -3226,9 +3220,8 @@ class Path {
                 const sUI _numSeg,
                 const sF32 _minDistSqr
                 ) {
-      /* if(b_debug_cubic) trace "[trc] Path::cubicTo: p=("+_px+";"+_py+") c1=("+_c1x+";"+_c1y+") c2=("+_c2x+";"+_c2y+") q=("+_qx+";"+_qy+") #seg="+_numSeg; */
+      // if(b_debug_cubic) trace "[trc] minnie::Path::cubicTo: p=("+_px+";"+_py+") c1=("+_c1x+";"+_c1y+") c2=("+_c2x+";"+_c2y+") q=("+_qx+";"+_qy+") #seg="+_numSeg;
       const sF32 dsqr = (_qx-_px)*(_qx-_px) + (_qy-_py)*(_qy-_py);
-      /* sF32 dist = ::sqrtf( dsqr ); */
       if(dsqr >= _minDistSqr)  // workaround / fix for test066_cat
       {
          const sF32 step = 1.0f / _numSeg;
@@ -3260,7 +3253,7 @@ class Path {
       }
       else
       {
-         // Dprintf("xxx cubicTo: skip dist=%f < minDist=%f  q=(%f;%f) p=(%f;%f)\n", dist, _minDist, _qx, _qy, _px, _py);
+         // Dprintf("[trc] minnie::Path::cubicTo: skip dist=%f < minDist=%f  q=(%f;%f) p=(%f;%f)\n", dist, _minDist, _qx, _qy, _px, _py);
       }
       points.add2(_qx, _qy);
    }
@@ -3273,7 +3266,7 @@ class Path {
               sF32 _qx, sF32 _qy,
               sUI _numSeg
               ) {
-      if(b_debug_arc) { Dprintf("[trc] arcTo p=(%f;%f) r=(%f;%f) rot=%f bLargeArc=%d bArcSweep=%d q=(%f;%f) #seg=%u\n", _px, _py, _rx, _ry, _rot, _bLargeArc, _bArcSweep, _qx, _qy, _numSeg); }
+      if(b_debug_arc) { Dprintf("[trc] minnie::Path::arcTo p=(%f;%f) r=(%f;%f) rot=%f bLargeArc=%d bArcSweep=%d q=(%f;%f) #seg=%u\n", _px, _py, _rx, _ry, _rot, _bLargeArc, _bArcSweep, _qx, _qy, _numSeg); }
 
       if(_rx > 0.0f && _ry > 0.0f)
       {
@@ -3304,7 +3297,7 @@ class Path {
             lambda = ::sqrtf(lambda);
             _rx *= lambda;
             _ry *= lambda;
-            if(b_debug_arc >= 2) { Dprintf("[trc] arcTo: => fixed lambda=%f new r=(%f; %f)\n", lambda, _rx, _ry); }
+            if(b_debug_arc >= 2) { Dprintf("[trc] minnie::Path::arcTo: => fixed lambda=%f new r=(%f; %f)\n", lambda, _rx, _ry); }
          }
 
          // x' = x*cos(a) - y*sin(a)
@@ -3353,7 +3346,7 @@ class Path {
             if(b_debug_arc >= 2) { Dprintf("[trc] arcTo: p=(%f;%f) c=(%f;%f) r=(%f; %f) cfac=%f  dist p-c=%f\n", _px, _py, cx, cy, _rx, _ry, cfac, ::sqrtf( (_px-cx)*(_px-cx) + (_py-cy)*(_py-cy) )); }
          }
 
-         // calc start / end angles
+         // Calc start / end angles
          prx = (_px - cx) / _rx;  // relative to center + normalize
          pry = (_py - cy) / _ry;
          angP = (prx > 1.0f) ? 0.0f : (prx < -1.0f) ? (sF32)sM_PI : acosf(prx);  // >1 workaround for micro-overflows (which would result in NaN)
@@ -3373,7 +3366,7 @@ class Path {
 
          if(angP > angQ)
          {
-            if(b_debug_arc >= 2) { Dprintf("[trc] arcTo: angP > angQ\n"); }
+            if(b_debug_arc >= 2) { Dprintf("[trc] minnie::Path::arcTo: angP > angQ\n"); }
             if(lambda < 1.0f)
             {
                if( (angP - angQ) >= (sF32)sM_PI )
@@ -3406,7 +3399,7 @@ class Path {
          }
          else
          {
-            if(b_debug_arc >= 2) { Dprintf("[trc] arcTo: angP <= angQ\n"); }
+            if(b_debug_arc >= 2) { Dprintf("[trc] minnie::Path::arcTo: angP <= angQ\n"); }
             if(lambda < 1.0f)
             {
                if( (angQ - angP) >= (sF32)sM_PI)
@@ -3440,7 +3433,7 @@ class Path {
 
          w = aDelta / _numSeg;
 
-         if(b_debug_arc >= 2) { Dprintf("[trc] arcTo: interp  angP=%f  angQ=%f  aDelta=%f  w=%f\n", (angP*(360.0f/sM_2PI)), (angQ*(360.0f/sM_2PI)), (aDelta*(360.0f/sM_2PI)), (w*(360.0f/sM_2PI))); }
+         if(b_debug_arc >= 2) { Dprintf("[trc] minnie::Path::arcTo: interp  angP=%f  angQ=%f  aDelta=%f  w=%f\n", (angP*(360.0f/sM_2PI)), (angQ*(360.0f/sM_2PI)), (aDelta*(360.0f/sM_2PI)), (w*(360.0f/sM_2PI))); }
 
          sF32 a = angP + w;
          for(sUI segIdx = 0u; segIdx < _numSeg - 1u; segIdx++)
@@ -3464,7 +3457,7 @@ class Path {
 
    sUI end(const sBool _bClosed) {
       /* if(b_debug_paths && path_id > 0) trace "[dbg] path_id="+path_id+" has "+(points.numElements/2)+" points"; */
-      /* Dprintf("xxx end(bClosed=%d)\n", _bClosed); */
+      // Dprintf("[>>>] minnie::Path::end: bClosed=%d\n", _bClosed);
       b_closed = _bClosed;
 
       if(_bClosed && points.num_elements >= 4u)
@@ -3483,8 +3476,8 @@ class Path {
    }
 
    void extrudeShape(FloatArray *_points, const sF32 _strokeW, const sU8 _joinCapMode, const sUI _roundNumSeg, const sF32 _miterLimit) {
-      /* shape_extrude.initShapePolyline(); */
-      /* Dprintf("xxx extrudeShape: va_extrude.max_elements=%u joinCapMode=$%02x\n", va_extrude.max_elements, _joinCapMode); */
+      // // // shape_extrude.initShapePolyline();
+      // Dprintf("[>>>] minnie::Path::extrudeShape: va_extrude.max_elements=%u joinCapMode=$%02x\n", va_extrude.max_elements, _joinCapMode);
 
       if(_points->get(0) == _points->getRev(1) &&  // first equals last point ?
          _points->get(1) == _points->getRev(0))
@@ -3497,7 +3490,6 @@ class Path {
       shape_extrude.setMiterLimit(_miterLimit);
       shape_extrude.setLineJointType(_joinCapMode & 15u);
       shape_extrude.setLineCapType((_joinCapMode>>4) & 15u);
-      /* if(b_debug_extrude >= 2) trace "[trc] shape_extrude: b_closed="+b_closed; */
       shape_extrude.setNumDivRoundLineJoint(_roundNumSeg);
       shape_extrude.setLinePattern(0xFFFFu);
 
@@ -3632,7 +3624,7 @@ class Path {
       indices->identity(numVerts);
 
       ia_fill.alloc( (numVerts-2u) * 3u );
-      /* Dprintf("xxx tesselateConcave: numVerts=%u indices->num=%u/max=%u ia_fill.num=%u/max=%u\n", numVerts, indices->num_elements, indices->max_elements, ia_fill.num_elements, ia_fill.max_elements); */
+      // Dprintf("[trc] minnie::Path::tesselateConcave: numVerts=%u indices->num=%u/max=%u ia_fill.num=%u/max=%u\n", numVerts, indices->num_elements, indices->max_elements, ia_fill.num_elements, ia_fill.max_elements);
 
       sSI firstIndex = 0;
       sSI lastIndex = indices->num_elements - 1;
@@ -3918,7 +3910,7 @@ class Path {
    sBool tesselateComplex(const FloatArray *_vaIn, FloatArray *_vaOut, sBool _bNonZero) {
       if(b_debug_tess >= 2)
       {
-         Dprintf("xxx tesselateComplex: ENTER\n");
+         Dprintf("[>>>] minnie::Path::tesselateComplex: ENTER\n");
       }
 #ifdef HAVE_VGTESSELATE
 
@@ -3928,7 +3920,7 @@ class Path {
       sUI numElem = _vaIn->num_elements;
       if(numElem > 0u)
       {
-         /* Dprintf("xxx tesselateComplex: 1\n"); */
+         // Dprintf("[>>>] minnie::Path:: tesselateComplex: 1\n");
          if(1)
          {
             if(_vaIn->get(0) == _vaIn->getRev(1) &&  // first equals last point ?
@@ -3945,9 +3937,9 @@ class Path {
             }
          }
 
-         /* Dprintf("xxx tesselateComplex: 2\n"); */
+         // Dprintf("[>>>] minnie::Path::tesselateComplex: 2\n");
 
-#if 1 // xxxxxxxxxxxx
+#if 1
          if(_vaIn == &points)  // (todo) support 2d/3d transformed sub-paths
          {
             for(sUI spIdx = 0u; spIdx < sub_paths.num_elements; spIdx++)
@@ -3977,7 +3969,7 @@ class Path {
          }
 #endif
 
-         /* Dprintf("xxx tesselateComplex: 3\n"); */
+         // Dprintf("[>>>] minnie::Path::tesselateComplex: 3\n");
 
 #if 0
          {
@@ -3991,13 +3983,13 @@ class Path {
          }
 #endif
 
-         /* Dprintf("xxx tesselateComplex: 4\n"); */
+         Dprintf("[>>>] minnie::Path::tesselateComplex: 4\n");
 
          sBool bOk = YAC_FALSE;
 
          if(b_debug_tess >= 1)
          {
-            Dprintf("xxx VGES_NewTesselator: start  vgtesselate.input=%p elem1.#vertices=%u\n", vgtesselate.input, (NULL != vgtesselate.input) ? vgtesselate.input->m_NumVertices : 0u);
+            Dprintf("[>>>] minnie::Path::tesselateComplex: VGES_NewTesselator: start  vgtesselate.input=%p elem1.#vertices=%u\n", vgtesselate.input, (NULL != vgtesselate.input) ? vgtesselate.input->m_NumVertices : 0u);
          }
 
          if(NULL != vgtesselate.input)
@@ -4005,7 +3997,7 @@ class Path {
             VGTesselator tesselator = VGES_NewTesselator();
             if(b_debug_tess >= 2)
             {
-               Dprintf("xxx VGES_NewTesselator: tesselator=%p\n", tesselator);
+               Dprintf("[>>>] minnie::Path::tesselateComplex: VGES_NewTesselator: tesselator=%p\n", tesselator);
             }
             vgtesselate.output = VGES_TesselateElements(tesselator,
                                                         vgtesselate.input,
@@ -4014,18 +4006,17 @@ class Path {
                                                         );
             if(b_debug_tess >= 2)
             {
-               Dprintf("xxx VGES_NewTesselator: end\n");
+               Dprintf("[>>>] minnie::Path::tesselateComplex: VGES_NewTesselator: end\n");
             }
             VGES_DeleteTesselator(tesselator);
-            /* printf("xxx VGES_NewTesselator: end 2\n"); */
 
-            /* Dprintf("xxx tesselateComplex: 5\n"); */
+            // Dprintf("[>>>] minnie::Path::tesselateComplex: 5\n");
 
             // Store (indexed) result in 'points' / 'ia_fill'
             //
             //  (todo) return ref to vgtesselate.output and free after rendering
             //
-#if 1  // xxxxxxxxxxxxxxxxxxx
+#if 1
             ia_fill.empty();
             {
                sUI numVertices = (NULL != vgtesselate.output) ? vgtesselate.output->m_NumVertices     : 0u;
@@ -4054,7 +4045,7 @@ class Path {
                         if(b_debug_tess) { Dprintf("[trc] Path::tesselateComplex: #vertices=%u #indices=%u\n", (_vaOut->num_elements/2u), ia_fill.num_elements); }
                         // Succeeded
                         bOk = YAC_TRUE;
-                        /* bOk = YAC_FALSE; */
+                        // // // bOk = YAC_FALSE;
                      }
                      else
                      {
@@ -4087,7 +4078,7 @@ class Path {
 
          if(b_debug_tess >= 2)
          {
-            Dprintf("xxx tesselateComplex: LEAVE bOk=%d\n", bOk);
+            Dprintf("[>>>] minnie::Path::tesselateComplex: LEAVE bOk=%d\n", bOk);
          }
 
          return bOk;
@@ -4096,7 +4087,7 @@ class Path {
 
       if(b_debug_tess >= 2)
       {
-         Dprintf("xxx tesselateComplex: LEAVE YAC_FALSE\n");
+         Dprintf("[>>>] minnie::Path::tesselateComplex: LEAVE YAC_FALSE\n");
       }
       return YAC_FALSE;
    }
@@ -4313,8 +4304,10 @@ struct MinnieSetup {
    sBool b_render_join_cap;
    sBool b_render_fill_concave;
    sBool b_render_fill_complex;
-   sBool b_uniform_colors;       // 1=set path colors via uniforms    0=store colors in vertex attribs [default]
+   sBool b_uniform_colors;         // 1=set path colors via uniforms    0=store colors in vertex attribs [default]
    sBool b_polygon_aa;
+   sBool b_force_miter_to_bevel;   // 1=replace miter by bevel line joints
+                                   //  (default=1 when MINNIE_FORCE_MITER_TO_BEVEL_LINE_JOIN build option is defined)
    sF32  stroke_w_line_strip_threshold;  // use line strips if stroke_w <= threshold  (0.0f == off)
    sF32  stroke_w_line_join_threshold;   // disable BEVEL/ROUND line joins if stroke_w <= threshold  (0.0f == off)
 
@@ -4383,6 +4376,11 @@ struct MinnieSetup {
       b_render_fill_concave         = YAC_TRUE;
       b_render_fill_complex         = YAC_TRUE;
       b_uniform_colors              = YAC_TRUE;
+#ifdef MINNIE_FORCE_MITER_TO_BEVEL_LINE_JOIN
+      b_force_miter_to_bevel        = YAC_TRUE;
+#else
+      b_force_miter_to_bevel        = YAC_FALSE;
+#endif // MINNIE_FORCE_MITER_TO_BEVEL_LINE_JOIN
       stroke_w_line_strip_threshold = 0.0f;
       stroke_w_line_join_threshold  = 0.0f;
       stroke_scale                  = fb_scale/*1.0f*/;
@@ -4678,6 +4676,16 @@ struct MinnieSetup {
       return b_force_complex_concave;
    }
 
+   // <method_set.png>
+   void setEnableForceMiterToBevel(sBool _bEnable) {
+      b_force_miter_to_bevel = _bEnable;
+   }
+
+   // <method_get.png>
+   sBool getEnableForceMiterToBevel(void) {
+      return b_force_miter_to_bevel;
+   }
+
    // <method.png>
    void translateAndScalePoints(FloatArray *_vaPoints, FloatArray *_vaOut) {
       _vaOut->empty();
@@ -4698,13 +4706,13 @@ struct MinnieSetup {
    // <method.png>
    void Clip2D(const FloatArray *_vaIn, const FloatArray *_clipPath, const sBool _bClipPathClosed, FloatArray *_vaOut) {
       // <https://en.wikipedia.org/wiki/Sutherland%E2%80%93Hodgman_algorithm>
-      if(b_debug_clip2d) { Dprintf("[dbg] Clip2D ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n"); }
+      if(b_debug_clip2d) { Dprintf("[dbg] minnie::MinnieSetup::Clip2D ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n"); }
 
       // if(b_debug_clip2d) _vaIn->debugPrint2("[trc] Clip2D: vaIn=");
 
       _vaOut->empty();
 
-      Ddebugprintf("xxx minnie::Clip2D: _clipPath->num_elements=%u bClosed=%d\n", _clipPath->num_elements, _bClipPathClosed);
+      Ddebugprintf("[>>>] minnie::MinnieSetup::Clip2D: _clipPath->num_elements=%u bClosed=%d\n", _clipPath->num_elements, _bClipPathClosed);
 
       if(_clipPath->num_elements >= 2u)
       {
@@ -4778,13 +4786,13 @@ struct MinnieSetup {
          }
       }
 
-      if(b_debug_clip2d) { Dprintf("[dbg] Clip2D: #vaOut=%u\n", _vaOut->num_elements/2u); }
+      if(b_debug_clip2d) { Dprintf("[dbg] minnie::MinnieSetup::Clip2D: #vaOut=%u\n", _vaOut->num_elements/2u); }
    }
 
    // <method.png>
    void Clip3DZNear(const FloatArray *_vaIn3, const sF32 _zNear, FloatArray *_vaOut3) {
       // <https://en.wikipedia.org/wiki/Sutherland%E2%80%93Hodgman_algorithm>
-      if(b_debug_clip3d) { Dprintf("[dbg] Clip3DZNear ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n"); };
+      if(b_debug_clip3d) { Dprintf("[dbg] minnie::MinnieSetup::Clip3DZNear ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n"); };
 
       _vaOut3->empty();
       Vector3f vQ; vQ.init(0.0f, 0.0f, _zNear);
@@ -4837,7 +4845,7 @@ struct MinnieSetup {
 
    void ClipIndexedTris2D(FloatArray *_va, const IntArray *_iaIn, const FloatArray *_clipPath, const sBool _bClipPathClosed, IntArray *_iaOut) {
       // <https://en.wikipedia.org/wiki/Sutherland%E2%80%93Hodgman_algorithm>
-      if(b_debug_clip2d) { Dprintf("xxx ClipIndexedTris2D ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n"); }
+      if(b_debug_clip2d) { Dprintf("[>>>] minnie::MinnieSetup::ClipIndexedTris2D ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n"); }
       /* if(b_debug_clip2d) trace "[dbg]   #vert="+(_va.numElements/2)+" #ind="+_iaIn.numElements+" #tris="+(_iaIn.numElements/3); */
 
       _iaOut->empty();
@@ -4850,7 +4858,7 @@ struct MinnieSetup {
          IntArray *iaTriOut = &tmpia_clip_ia_tri_out;
          for(sUI loopIaInIdx = 0u; loopIaInIdx < numTris; loopIaInIdx++)
          {
-            // Dprintf("xxx loopIaInIdx=%u iaIn->num_elements=%u va->num_elements=%u\n", loopIaInIdx, _iaIn->num_elements, _va->num_elements);
+            // Dprintf("[>>>] minnie::MinnieSetup::ClipIndexedTris2D: loopIaInIdx=%u iaIn->num_elements=%u va->num_elements=%u\n", loopIaInIdx, _iaIn->num_elements, _va->num_elements);
             iaTriIn->empty();
             iaTriIn->add(_iaIn->get(triOff + 0u));
             iaTriIn->add(_iaIn->get(triOff + 1u));
@@ -4864,7 +4872,7 @@ struct MinnieSetup {
             const sUI clipPathNumPoints = (_clipPath->num_elements / 2u) - sUI(_bClipPathClosed);
             for(sUI loopClipPathIdx = 0u; loopClipPathIdx < clipPathNumPoints; loopClipPathIdx++)
             {
-               // Dprintf("xxx 1 iaTriIn->num_elements=%u iaTriOut->num=%u/max=%u\n", iaTriIn->num_elements, iaTriOut->num_elements, iaTriOut->max_elements);
+               // Dprintf("[>>>] minnie::MinnieSetup::ClipIndexedTris2D: 1 iaTriIn->num_elements=%u iaTriOut->num=%u/max=%u\n", iaTriIn->num_elements, iaTriOut->num_elements, iaTriOut->max_elements);
                iaTriOut->empty();
 
                Vector2f e2; e2.init(_clipPath->get(clipOff+0u) * geo_scale_x, _clipPath->get(clipOff+1u) * geo_scale_y);
@@ -4872,7 +4880,7 @@ struct MinnieSetup {
                                      -(e2.x - e1.x)
                                      );
                /* if(b_debug_clip2d >= 2) trace "[trc] ClipIndexedTris2D: loop "+(iaTriIn.numElements)+" tri indices   ------- e1="+e1+" e2="+e2+" vN="+vN; */
-               // Dprintf("xxx 2 iaTriIn->num_elements=%u\n", iaTriIn->num_elements);
+               // Dprintf("[>>>] minnie::MinnieSetup::ClipIndexedTris2D: 2 iaTriIn->num_elements=%u\n", iaTriIn->num_elements);
 
                Vector2f vPrev; vPrev.init(_va->get(iaTriIn->get(0)*2u+0u), _va->get(iaTriIn->get(0)*2u+1u));
 
@@ -4885,7 +4893,7 @@ struct MinnieSetup {
                   const sF32 dCur  = vCur.distanceToPlane(&e1, &vN);
                   if(b_debug_clip2d >= 2)
                   {
-                     Dprintf("[trc] ClipIndexedTris2D: iaOff=%u v1=(%f;%f) v2=(%f;%f) e1=(%f;%f) e2=(%f;%f) vN=(%f;%f) dPrev=%f dCur=%f\n", iaOff, vPrev.x, vPrev.y, vCur.x, vCur.y, e1.x, e1.y, e2.x, e2.y, vN.x, vN.y, dPrev, dCur);
+                     Dprintf("[>>>] minnie::MinnieSetup::ClipIndexedTris2D: iaOff=%u v1=(%f;%f) v2=(%f;%f) e1=(%f;%f) e2=(%f;%f) vN=(%f;%f) dPrev=%f dCur=%f\n", iaOff, vPrev.x, vPrev.y, vCur.x, vCur.y, e1.x, e1.y, e2.x, e2.y, vN.x, vN.y, dPrev, dCur);
                   }
 
                   if(dCur < 0.0f)
@@ -6426,7 +6434,7 @@ struct MinnieSetup {
 
          case MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_EDGEAA_32:
          case MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_EDGEAA_14_2:
-            Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%02x<tri_flat_edgeaa> start_offset=%u num_tris=%u c32Fill=#%08x\n", active_dl_op, active_dl_start_offset, active_dl_num_tris, active_dl_c32_fill);
+            Dexportprintf("[trc] minnie::MinnieSetup::finishActiveDrawListOp: op=0x%02x<tri_flat_edgeaa> start_offset=%u num_tris=%u c32Fill=#%08x\n", active_dl_op, active_dl_start_offset, active_dl_num_tris, active_dl_c32_fill);
             if(active_dl_num_tris >= 1u)
             {
                Dexport_dl_i16(active_dl_op);
@@ -6440,7 +6448,7 @@ struct MinnieSetup {
 
          case MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_UNIFORM_32:
          case MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_UNIFORM_14_2:
-            Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%02x<tri_flat_uniform> start_offset=%u num_tris=%u c32Fill=#%08x c32Stroke=#%08x\n", active_dl_op, active_dl_start_offset, active_dl_num_tris, active_dl_c32_fill, active_dl_c32_stroke);
+            Dexportprintf("[trc] minnie::MinnieSetup::finishActiveDrawListOp: op=0x%02x<tri_flat_uniform> start_offset=%u num_tris=%u c32Fill=#%08x c32Stroke=#%08x\n", active_dl_op, active_dl_start_offset, active_dl_num_tris, active_dl_c32_fill, active_dl_c32_stroke);
             if(active_dl_num_tris >= 1u)
             {
                Dexport_dl_i16(active_dl_op);
@@ -6455,7 +6463,7 @@ struct MinnieSetup {
 
          case MINNIE_DRAWOP_TRIANGLES_STROKE_FLAT_UNIFORM_32:
          case MINNIE_DRAWOP_TRIANGLES_STROKE_FLAT_UNIFORM_14_2:
-            Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%02x<tri_stroke_flat_uniform> start_offset=%u num_tris=%u c32Fill=#%08x c32Stroke=#%08x\n", active_dl_op, active_dl_start_offset, active_dl_num_tris, active_dl_c32_fill, active_dl_c32_stroke);
+            Dexportprintf("[trc] minnie::MinnieSetup::finishActiveDrawListOp: op=0x%02x<tri_stroke_flat_uniform> start_offset=%u num_tris=%u c32Fill=#%08x c32Stroke=#%08x\n", active_dl_op, active_dl_start_offset, active_dl_num_tris, active_dl_c32_fill, active_dl_c32_stroke);
             if(active_dl_num_tris >= 1u)
             {
                Dexport_dl_i16(active_dl_op);
@@ -6474,7 +6482,7 @@ struct MinnieSetup {
          case MINNIE_DRAWOP_TRIANGLES_FILL_GOURAUD_14_2:
          case MINNIE_DRAWOP_TRIANGLES_FILL_GOURAUD_EDGEAA_32:
          case MINNIE_DRAWOP_TRIANGLES_FILL_GOURAUD_EDGEAA_14_2:
-            Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%02x<tri> start_offset=%u num_tris=%u\n", active_dl_op, active_dl_start_offset, active_dl_num_tris);
+            Dexportprintf("[trc] minnie::MinnieSetup::finishActiveDrawListOp: op=0x%02x<tri> start_offset=%u num_tris=%u\n", active_dl_op, active_dl_start_offset, active_dl_num_tris);
             if(active_dl_num_tris >= 1u)
             {
                Dexport_dl_i16(active_dl_op);
@@ -6487,7 +6495,7 @@ struct MinnieSetup {
          case MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2:
          case MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32_AA:
          case MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_AA:
-            Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%03x<poly%s> start_offset=%u num_verts=%u c32Fill=#%08x\n", active_dl_op,
+            Dexportprintf("[trc] minnie::MinnieSetup::finishActiveDrawListOp: op=0x%03x<poly%s> start_offset=%u num_verts=%u c32Fill=#%08x\n", active_dl_op,
                           (MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32_AA == active_dl_op)
                           ? "_aa32"
                           : (MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_AA == active_dl_op)
@@ -6510,7 +6518,7 @@ struct MinnieSetup {
 
          case MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32_BEGIN:
          case MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_BEGIN:
-            Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%03x<poly_fill_begin_%s> c32Fill=#%08x c32Stroke=#%08x\n",
+            Dexportprintf("[trc] minnie::MinnieSetup::finishActiveDrawListOp: op=0x%03x<poly_fill_begin_%s> c32Fill=#%08x c32Stroke=#%08x\n",
                           active_dl_op,
                           ((MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32_BEGIN == active_dl_op)
                            ?"32":"14_2"
@@ -6527,7 +6535,7 @@ struct MinnieSetup {
 
          case MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32_SUB:
          case MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_SUB:
-            Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%03x<poly_fill_sub_%s> start_offset=%u num_verts=%u\n",
+            Dexportprintf("[trc] minnie::MinnieSetup::finishActiveDrawListOp: op=0x%03x<poly_fill_sub_%s> start_offset=%u num_verts=%u\n",
                           active_dl_op,
                           (((MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32_SUB == active_dl_op)
                             )
@@ -6545,7 +6553,7 @@ struct MinnieSetup {
          case MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32_END_AA:
          case MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_END:
          case MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_END_AA:
-            Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%03x<poly_fill_end%s_%s>\n",
+            Dexportprintf("[trc] minnie::MinnieSetup::finishActiveDrawListOp: op=0x%03x<poly_fill_end%s_%s>\n",
                           active_dl_op,
                           (((MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32_END_AA   == active_dl_op) ||
                             (MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_END_AA == active_dl_op)
@@ -6562,7 +6570,7 @@ struct MinnieSetup {
             break;
 
          case MINNIE_DRAWOP_RECT_FILL:
-            Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%03x<rect_fill> start_offset=%u c=(%f;%f) s=(%f;%f) c32Fill=#%08x\n", active_dl_op, active_dl_start_offset, active_dl_cx, active_dl_cy, active_dl_sx, active_dl_sy, active_dl_c32_fill);
+            Dexportprintf("[trc] minnie::MinnieSetup::finishActiveDrawListOp: op=0x%03x<rect_fill> start_offset=%u c=(%f;%f) s=(%f;%f) c32Fill=#%08x\n", active_dl_op, active_dl_start_offset, active_dl_cx, active_dl_cy, active_dl_sx, active_dl_sy, active_dl_c32_fill);
             {
                Dexport_dl_i16(active_dl_op);
                // (note) ShaderVG renderer treats cx/cy as center and sx/sy as radii
@@ -6588,7 +6596,7 @@ struct MinnieSetup {
             break;
 
          case MINNIE_DRAWOP_RECT_STROKE:
-            Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%03x<rect_stroke> start_offset=%u c=(%f;%f) s=(%f;%f) c32Stroke=#%08x strokeW=%f\n", active_dl_op, active_dl_start_offset, active_dl_cx, active_dl_cy, active_dl_sx, active_dl_sy, active_dl_c32_stroke, active_dl_stroke_w);
+            Dexportprintf("[trc] minnie::MinnieSetup::finishActiveDrawListOp: op=0x%03x<rect_stroke> start_offset=%u c=(%f;%f) s=(%f;%f) c32Stroke=#%08x strokeW=%f\n", active_dl_op, active_dl_start_offset, active_dl_cx, active_dl_cy, active_dl_sx, active_dl_sy, active_dl_c32_stroke, active_dl_stroke_w);
             {
                Dexport_dl_i16(active_dl_op);
                // (note) ShaderVG renderer treats cx/cy as center and sx/sy as radii
@@ -6617,7 +6625,7 @@ struct MinnieSetup {
             break;
 
          case MINNIE_DRAWOP_RECT_FILL_STROKE:
-            Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%03x<rect_fill_stroke> start_offset=%u c=(%f;%f) s=(%f;%f) c32Fill=#%08x c32Stroke=#%08x strokeW=%f\n", active_dl_op, active_dl_start_offset, active_dl_cx, active_dl_cy, active_dl_sx, active_dl_sy, active_dl_c32_fill, active_dl_c32_stroke, active_dl_stroke_w);
+            Dexportprintf("[trc] minnie::MinnieSetup::finishActiveDrawListOp: op=0x%03x<rect_fill_stroke> start_offset=%u c=(%f;%f) s=(%f;%f) c32Fill=#%08x c32Stroke=#%08x strokeW=%f\n", active_dl_op, active_dl_start_offset, active_dl_cx, active_dl_cy, active_dl_sx, active_dl_sy, active_dl_c32_fill, active_dl_c32_stroke, active_dl_stroke_w);
             {
                Dexport_dl_i16(active_dl_op);
                // (note) ShaderVG renderer treats cx/cy as center and sx/sy as radii
@@ -6646,7 +6654,7 @@ struct MinnieSetup {
             break;
 
          case MINNIE_DRAWOP_ELLIPSE_FILL:
-            Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%03x<ellipse_fill> start_offset=%u c=(%f;%f) r=(%f;%f) c32Fill=#%08x\n", active_dl_op, active_dl_start_offset, active_dl_cx, active_dl_cy, active_dl_rx, active_dl_ry, active_dl_c32_fill);
+            Dexportprintf("[trc] minnie::MinnieSetup::finishActiveDrawListOp: op=0x%03x<ellipse_fill> start_offset=%u c=(%f;%f) r=(%f;%f) c32Fill=#%08x\n", active_dl_op, active_dl_start_offset, active_dl_cx, active_dl_cy, active_dl_rx, active_dl_ry, active_dl_c32_fill);
             {
                Dexport_dl_i16(active_dl_op);
                Dexport_dl_f32(active_dl_cx * geo_scale_x);
@@ -6668,7 +6676,7 @@ struct MinnieSetup {
             break;
 
          case MINNIE_DRAWOP_ELLIPSE_STROKE:
-            Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%03x<ellipse_stroke> start_offset=%u c=(%f;%f) r=(%f;%f) strokeW=%f c32Stroke=#%08x\n", active_dl_op, active_dl_start_offset, active_dl_cx, active_dl_cy, active_dl_rx, active_dl_ry, active_dl_stroke_w, active_dl_c32_stroke);
+            Dexportprintf("[trc] minnie::MinnieSetup::finishActiveDrawListOp: op=0x%03x<ellipse_stroke> start_offset=%u c=(%f;%f) r=(%f;%f) strokeW=%f c32Stroke=#%08x\n", active_dl_op, active_dl_start_offset, active_dl_cx, active_dl_cy, active_dl_rx, active_dl_ry, active_dl_stroke_w, active_dl_c32_stroke);
             {
                Dexport_dl_i16(active_dl_op);
                Dexport_dl_f32(active_dl_cx * geo_scale_x);
@@ -6693,7 +6701,7 @@ struct MinnieSetup {
             break;
 
          case MINNIE_DRAWOP_ELLIPSE_FILL_STROKE:
-            Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%03x<ellipse_fill_stroke> start_offset=%u c=(%f;%f) r=(%f;%f) c32Fill=#%08x strokeW=%f c32Stroke=#%08x\n", active_dl_op, active_dl_start_offset, active_dl_cx, active_dl_cy, active_dl_rx, active_dl_ry, active_dl_c32_fill, active_dl_stroke_w, active_dl_c32_stroke);
+            Dexportprintf("[trc] minnie::MinnieSetup::finishActiveDrawListOp: op=0x%03x<ellipse_fill_stroke> start_offset=%u c=(%f;%f) r=(%f;%f) c32Fill=#%08x strokeW=%f c32Stroke=#%08x\n", active_dl_op, active_dl_start_offset, active_dl_cx, active_dl_cy, active_dl_rx, active_dl_ry, active_dl_c32_fill, active_dl_stroke_w, active_dl_c32_stroke);
             {
                Dexport_dl_i16(active_dl_op);
                Dexport_dl_f32(active_dl_cx * geo_scale_x);
@@ -6718,7 +6726,7 @@ struct MinnieSetup {
             break;
 
          case MINNIE_DRAWOP_ROUNDRECT_FILL:
-            Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%03x<roundrect_fill> start_offset=%u c=(%f;%f) s=(%f;%f) r=(%f;%f) c32Fill=#%08x\n", active_dl_op, active_dl_start_offset, active_dl_cx, active_dl_cy, active_dl_sx, active_dl_sy, active_dl_rx, active_dl_ry, active_dl_c32_fill);
+            Dexportprintf("[trc] minnie::MinnieSetup::finishActiveDrawListOp: op=0x%03x<roundrect_fill> start_offset=%u c=(%f;%f) s=(%f;%f) r=(%f;%f) c32Fill=#%08x\n", active_dl_op, active_dl_start_offset, active_dl_cx, active_dl_cy, active_dl_sx, active_dl_sy, active_dl_rx, active_dl_ry, active_dl_c32_fill);
             {
                Dexport_dl_i16(active_dl_op);
                // (note) ShaderVG renderer treats cx/cy as center and sx/sy as radii
@@ -6748,7 +6756,7 @@ struct MinnieSetup {
             break;
 
          case MINNIE_DRAWOP_ROUNDRECT_STROKE:
-            Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%03x<roundrect_stroke> start_offset=%u c=(%f;%f) s=(%f;%f) r=(%f;%f) c32Stroke=#%08x strokeW=%f\n", active_dl_op, active_dl_start_offset, active_dl_cx, active_dl_cy, active_dl_sx, active_dl_sy, active_dl_rx, active_dl_ry, active_dl_c32_stroke, active_dl_stroke_w);
+            Dexportprintf("[trc] minnie::MinnieSetup::finishActiveDrawListOp: op=0x%03x<roundrect_stroke> start_offset=%u c=(%f;%f) s=(%f;%f) r=(%f;%f) c32Stroke=#%08x strokeW=%f\n", active_dl_op, active_dl_start_offset, active_dl_cx, active_dl_cy, active_dl_sx, active_dl_sy, active_dl_rx, active_dl_ry, active_dl_c32_stroke, active_dl_stroke_w);
             {
                Dexport_dl_i16(active_dl_op);
                // (note) ShaderVG renderer treats cx/cy as center and sx/sy as radii
@@ -6782,7 +6790,7 @@ struct MinnieSetup {
             break;
 
          case MINNIE_DRAWOP_ROUNDRECT_FILL_STROKE:
-            Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%03x<roundrect_fill_stroke> start_offset=%u c=(%f;%f) s=(%f;%f) r=(%f;%f) c32Fill=#%08x c32Stroke=#%08x strokeW=%f\n", active_dl_op, active_dl_start_offset, active_dl_cx, active_dl_cy, active_dl_sx, active_dl_sy, active_dl_rx, active_dl_ry, active_dl_c32_fill, active_dl_c32_stroke, active_dl_stroke_w);
+            Dexportprintf("[trc] minnie::MinnieSetup::finishActiveDrawListOp: op=0x%03x<roundrect_fill_stroke> start_offset=%u c=(%f;%f) s=(%f;%f) r=(%f;%f) c32Fill=#%08x c32Stroke=#%08x strokeW=%f\n", active_dl_op, active_dl_start_offset, active_dl_cx, active_dl_cy, active_dl_sx, active_dl_sy, active_dl_rx, active_dl_ry, active_dl_c32_fill, active_dl_c32_stroke, active_dl_stroke_w);
             {
                Dexport_dl_i16(active_dl_op);
                // (note) ShaderVG renderer treats cx/cy as center and sx/sy as radii
@@ -6816,13 +6824,13 @@ struct MinnieSetup {
             break;
 
          case MINNIE_DRAWOP_DECAL_ALPHA:
-            Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%03x<decal_alpha> decal_alpha=%f\n", active_dl_op, active_dl_decal_alpha);
+            Dexportprintf("[trc] minnie::MinnieSetup::finishActiveDrawListOp: op=0x%03x<decal_alpha> decal_alpha=%f\n", active_dl_op, active_dl_decal_alpha);
             Dexport_dl_i16(active_dl_op);
             Dexport_dl_f32(active_dl_decal_alpha);
             break;
 
          case MINNIE_DRAWOP_TRIANGLES_TEX_UV_FLAT_32:
-            Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%03x<tri_tex_uv_flat> start_offset=%u num_tris=%u c32=#%08x texId=%d texRep=%d texFlt=%d\n", active_dl_op, active_dl_start_offset, active_dl_num_tris, active_dl_c32_fill, dl_tex_id, dl_tex_repeat, dl_tex_filter);
+            Dexportprintf("[trc] minnie::MinnieSetup::finishActiveDrawListOp: op=0x%03x<tri_tex_uv_flat> start_offset=%u num_tris=%u c32=#%08x texId=%d texRep=%d texFlt=%d\n", active_dl_op, active_dl_start_offset, active_dl_num_tris, active_dl_c32_fill, dl_tex_id, dl_tex_repeat, dl_tex_filter);
             if(active_dl_num_tris >= 1u)
             {
                Dexport_dl_i16(active_dl_op);
@@ -6836,7 +6844,7 @@ struct MinnieSetup {
             break;
 
          case MINNIE_DRAWOP_TRIANGLES_TEX_UV_FLAT_DECAL_32:
-            Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%03x<tri_tex_uv_flat_decal> start_offset=%u num_tris=%u c32Fill=#%08x texId=%d texRep=%d texFlt=%d decalAlpha=%f\n", active_dl_op, active_dl_start_offset, active_dl_num_tris, active_dl_c32_fill, dl_tex_id, dl_tex_repeat, dl_tex_filter, active_dl_decal_alpha);
+            Dexportprintf("[trc] minnie::MinnieSetup::finishActiveDrawListOp: op=0x%03x<tri_tex_uv_flat_decal> start_offset=%u num_tris=%u c32Fill=#%08x texId=%d texRep=%d texFlt=%d decalAlpha=%f\n", active_dl_op, active_dl_start_offset, active_dl_num_tris, active_dl_c32_fill, dl_tex_id, dl_tex_repeat, dl_tex_filter, active_dl_decal_alpha);
             if(active_dl_num_tris >= 1u)
             {
                Dexport_dl_i16(active_dl_op);
@@ -6851,7 +6859,7 @@ struct MinnieSetup {
             break;
 
          case MINNIE_DRAWOP_TRIANGLES_TEX_UV_GOURAUD_32:
-            Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%03x<tri_tex_uv_gouraud> start_offset=%u num_tris=%u c32Fill=#%08x texId=%d texRep=%d texFlt=%d\n", active_dl_op, active_dl_start_offset, active_dl_num_tris, active_dl_c32_fill, dl_tex_id, dl_tex_repeat, dl_tex_filter);
+            Dexportprintf("[trc] minnie::MinnieSetup::finishActiveDrawListOp: op=0x%03x<tri_tex_uv_gouraud> start_offset=%u num_tris=%u c32Fill=#%08x texId=%d texRep=%d texFlt=%d\n", active_dl_op, active_dl_start_offset, active_dl_num_tris, active_dl_c32_fill, dl_tex_id, dl_tex_repeat, dl_tex_filter);
             if(active_dl_num_tris >= 1u)
             {
                Dexport_dl_i16(active_dl_op);
@@ -6865,7 +6873,7 @@ struct MinnieSetup {
             break;
 
          case MINNIE_DRAWOP_TRIANGLES_TEX_UV_GOURAUD_DECAL_32:
-            Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%03x<tri_tex_uv_gouraud_decal> start_offset=%u num_tris=%u c32Fill=#%08x texId=%d texRep=%d texFlt=%d decalAlpha=%f\n", active_dl_op, active_dl_start_offset, active_dl_num_tris, active_dl_c32_fill, dl_tex_id, dl_tex_repeat, dl_tex_filter, active_dl_decal_alpha);
+            Dexportprintf("[trc] minnie::MinnieSetup::finishActiveDrawListOp: op=0x%03x<tri_tex_uv_gouraud_decal> start_offset=%u num_tris=%u c32Fill=#%08x texId=%d texRep=%d texFlt=%d decalAlpha=%f\n", active_dl_op, active_dl_start_offset, active_dl_num_tris, active_dl_c32_fill, dl_tex_id, dl_tex_repeat, dl_tex_filter, active_dl_decal_alpha);
             if(active_dl_num_tris >= 1u)
             {
                Dexport_dl_i16(active_dl_op);
@@ -6883,7 +6891,7 @@ struct MinnieSetup {
          case MINNIE_DRAWOP_LINE_STRIP_FLAT_14_2:
          case MINNIE_DRAWOP_LINE_STRIP_PATTERN_32:
          case MINNIE_DRAWOP_LINE_STRIP_PATTERN_14_2:
-            Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%03x<line_strip_%s_%s> start_offset=%u num_verts=%u c32Fill=#%08x c32Stroke=#%08x\n",
+            Dexportprintf("[trc] minnie::MinnieSetup::finishActiveDrawListOp: op=0x%03x<line_strip_%s_%s> start_offset=%u num_verts=%u c32Fill=#%08x c32Stroke=#%08x\n",
                           active_dl_op,
                           (((MINNIE_DRAWOP_LINE_STRIP_PATTERN_32   == active_dl_op) ||
                             (MINNIE_DRAWOP_LINE_STRIP_PATTERN_14_2 == active_dl_op)
@@ -6921,7 +6929,7 @@ struct MinnieSetup {
          case MINNIE_DRAWOP_LINE_STRIP_FLAT_BEVEL_14_2:
          case MINNIE_DRAWOP_LINE_STRIP_PATTERN_BEVEL_32:
          case MINNIE_DRAWOP_LINE_STRIP_PATTERN_BEVEL_14_2:
-            Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%03x<line_strip_%s_bevel_%s_paint> start_offset=%u num_verts=%u c32Fill=#%08x c32Stroke=#%08x flags=0x%02x\n",
+            Dexportprintf("[trc] minnie::MinnieSetup::finishActiveDrawListOp: op=0x%03x<line_strip_%s_bevel_%s_paint> start_offset=%u num_verts=%u c32Fill=#%08x c32Stroke=#%08x flags=0x%02x\n",
                           active_dl_op,
                           (((MINNIE_DRAWOP_LINE_STRIP_PATTERN_BEVEL_32   == active_dl_op) ||
                             (MINNIE_DRAWOP_LINE_STRIP_PATTERN_BEVEL_14_2 == active_dl_op)
@@ -6958,7 +6966,7 @@ struct MinnieSetup {
 
          case MINNIE_DRAWOP_LINE_STRIP_FLAT_MITER_32:
          case MINNIE_DRAWOP_LINE_STRIP_FLAT_MITER_14_2:
-            Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%03x<line_strip_flat_miter_%s> start_offset=%u num_verts=%u c32Stroke=#%08x flags=0x%02x\n",
+            Dexportprintf("[trc] minnie::MinnieSetup::finishActiveDrawListOp: op=0x%03x<line_strip_flat_miter_%s> start_offset=%u num_verts=%u c32Stroke=#%08x flags=0x%02x\n",
                           active_dl_op,
                           (((MINNIE_DRAWOP_LINE_STRIP_FLAT_MITER_32  == active_dl_op)
                             )
@@ -6986,23 +6994,23 @@ struct MinnieSetup {
             break;
 
          case MINNIE_DRAWOP_AA_RANGE:
-            Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%03x<aa_range> aa_range=%f\n", active_dl_op, active_dl_aa_range);
+            Dexportprintf("[trc] minnie::MinnieSetup::finishActiveDrawListOp: op=0x%03x<aa_range> aa_range=%f\n", active_dl_op, active_dl_aa_range);
             Dexport_dl_i16(active_dl_op);
             Dexport_dl_f32(active_dl_aa_range);
             break;
 
          case MINNIE_DRAWOP_FILLRULE_EVENODD:
-            Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%03x<evenodd>\n", active_dl_op);
+            Dexportprintf("[trc] minnie::MinnieSetup::finishActiveDrawListOp: op=0x%03x<evenodd>\n", active_dl_op);
             Dexport_dl_i16(active_dl_op);
             break;
 
          case MINNIE_DRAWOP_FILLRULE_NONZERO:
-            Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%03x<nonzero>\n", active_dl_op);
+            Dexportprintf("[trc] minnie::MinnieSetup::finishActiveDrawListOp: op=0x%03x<nonzero>\n", active_dl_op);
             Dexport_dl_i16(active_dl_op);
             break;
 
          case MINNIE_DRAWOP_LINE_PATTERN:
-            Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%03x<line_pattern_tex>: len=%u bits=%u scl=%f off=%f bDecal=%d\n", active_dl_op, active_dl_linepattern_len, active_dl_linepattern_bits, active_dl_linepattern_scale, active_dl_linepattern_offset, active_dl_linepattern_decal);
+            Dexportprintf("[trc] minnie::MinnieSetup::finishActiveDrawListOp: op=0x%03x<line_pattern_tex>: len=%u bits=%u scl=%f off=%f bDecal=%d\n", active_dl_op, active_dl_linepattern_len, active_dl_linepattern_bits, active_dl_linepattern_scale, active_dl_linepattern_offset, active_dl_linepattern_decal);
             Dexport_dl_i16(active_dl_op);
             Dexport_dl_i8((sU8)active_dl_linepattern_len);
             Dexport_dl_i32(active_dl_linepattern_bits);
@@ -7062,7 +7070,7 @@ struct MinnieSetup {
    void lazyUnbindLinePattern(void) {
       if(0u != active_dl_linepattern_len)
       {
-         Ddebugprintfv("[trc] lazyUnbindLinePattern: active_dl_linepattern_len=%u\n", active_dl_linepattern_len);
+         Ddebugprintfv("[trc] minnie::MinnieSetup::lazyUnbindLinePattern: active_dl_linepattern_len=%u\n", active_dl_linepattern_len);
          if(NULL != dl_export_ofs && NULL != vb_export_ofs)
          {
             finishActiveDrawListOp();
@@ -7195,7 +7203,7 @@ struct MinnieSetup {
          {
             last_polygon_aa_path_id   = p->path_id;
             last_polygon_aa_dl_offset = Dexport_dl_get_offset();
-            Dfixpolyaaprintf("[trc] minnie::beginDrawListOpPolygon: last_polygon_aa_path_id=%u last_polygon_aa_dl_offset=%u\n", last_polygon_aa_path_id, last_polygon_aa_dl_offset);
+            Dfixpolyaaprintf("[trc] minnie::MinnieSetup::beginDrawListOpPolygon: last_polygon_aa_path_id=%u last_polygon_aa_dl_offset=%u\n", last_polygon_aa_path_id, last_polygon_aa_dl_offset);
          }
       }
       return r;
@@ -7237,7 +7245,7 @@ struct MinnieSetup {
          {
             last_polygon_aa_path_id   = p->path_id;
             last_polygon_aa_dl_offset = Dexport_dl_get_offset();
-            Dfixpolyaaprintf("[trc] minnie::beginDrawListOpPolygonEnd: last_polygon_aa_path_id=%u last_polygon_aa_dl_offset=%u\n", last_polygon_aa_path_id, last_polygon_aa_dl_offset);
+            Dfixpolyaaprintf("[trc] minnie::MinnieSetup::beginDrawListOpPolygonEnd: last_polygon_aa_path_id=%u last_polygon_aa_dl_offset=%u\n", last_polygon_aa_path_id, last_polygon_aa_dl_offset);
          }
       }
       return r;
@@ -7245,7 +7253,7 @@ struct MinnieSetup {
 
    // <method.png>
    sUI calcCurJoinCap(void) {
-      /* Dprintf("xxx calcCurJoinCap: cur_stroke_w=%f stroke_w_line_join_threshold=%f\n", cur_stroke_w, stroke_w_line_join_threshold); */
+      // Dprintf("[trc] minnie::MinnieSetup::calcCurJoinCap: cur_stroke_w=%f stroke_w_line_join_threshold=%f\n", cur_stroke_w, stroke_w_line_join_threshold);
       if(cur_stroke_w <= stroke_w_line_join_threshold)
       {
          return (cur_join_cap & 0xF0u);
@@ -7270,7 +7278,7 @@ struct MinnieSetup {
 
    // <method.png>
    sBool beginDrawListOpLineStrip(sBool _bClosed) {
-      Ddebugprintfv("[trc] beginDrawListOpLineStrip: bClosed=%d\n", _bClosed);
+      Ddebugprintfv("[trc] minnie::MinnieSetup::beginDrawListOpLineStrip: bClosed=%d\n", _bClosed);
 
       if(active_dl_linepattern_len != cur_linepattern_len)
       {
@@ -7280,7 +7288,7 @@ struct MinnieSetup {
       lazyBeginDrawListOpDecalAlpha();
 
       const sUI curJoinCap = calcCurJoinCap();
-      /* Dprintf("xxx beginDrawListOpLineStrip: cur_stroke_w=%f\n", cur_stroke_w); */
+      // Dprintf("[trc] minnie::MinnieSetup::beginDrawListOpLineStrip: cur_stroke_w=%f\n", cur_stroke_w);
       active_dl_line_strip_flags = _bClosed ? MINNIE_DRAWOP_LINE_STRIP_FLAG_CLOSED : 0u;
 
       sUI op;
@@ -7496,7 +7504,6 @@ struct MinnieSetup {
          active_dl_sy           = _sy;
          active_dl_rx           = (_rx > _sx) ? _sx : _rx;
          active_dl_ry           = (_ry > _sy) ? _sy : _ry;
-         /* Dprintf("xxx active_dl_r=(%f;%f) active_dl_s=(%f;%f)\n", active_dl_rx, active_dl_ry, active_dl_sx, active_dl_sy); */
          active_dl_paint_id     = cur_paint_id;
          active_dl_aa_range     = cur_aa_range;
 
@@ -7507,20 +7514,20 @@ struct MinnieSetup {
 
    // <method.png>
    void cancelFixPolygonAAStroke(void) {
-      Dfixpolyaaprintf("[trc] minnie::cancelFixPolygonAAStroke: last_polygon_aa_path_id=%u last_polygon_aa_dl_offset=%u\n", last_polygon_aa_path_id, last_polygon_aa_dl_offset);
+      Dfixpolyaaprintf("[trc] minnie::MinnieSetup::cancelFixPolygonAAStroke: last_polygon_aa_path_id=%u last_polygon_aa_dl_offset=%u\n", last_polygon_aa_path_id, last_polygon_aa_dl_offset);
       last_polygon_aa_path_id = 0u;
       last_polygon_aa_dl_offset = 0u;
    }
 
    // <method.png>
    void fixPolygonAAStroke(Path *p) {
-      Dfixpolyaaprintf("[trc] minnie::fixPolygonAAStroke: last_polygon_aa_path_id=%u p->path_id=%u\n", last_polygon_aa_path_id, p->path_id);
+      Dfixpolyaaprintf("[trc] minnie::MinnieSetup::fixPolygonAAStroke: last_polygon_aa_path_id=%u p->path_id=%u\n", last_polygon_aa_path_id, p->path_id);
       if( last_polygon_aa_path_id == p->path_id &&
           0u == cur_linepattern_len &&
           NULL != dl_export_ofs
           )
       {
-         Dfixpolyaaprintf("[trc] minnie::fixPolygonAAStroke:   last_polygon_aa_dl_offset=%u\n", last_polygon_aa_dl_offset);
+         Dfixpolyaaprintf("[trc] minnie::MinnieSetup::fixPolygonAAStroke:   last_polygon_aa_dl_offset=%u\n", last_polygon_aa_dl_offset);
          Dexport_dl_dec_i16(last_polygon_aa_dl_offset);  // AA => no-AA (polygon or polygon_sub)
       }
       last_polygon_aa_path_id = 0u;
@@ -7547,7 +7554,6 @@ struct MinnieSetup {
          v->b_edge_bc = YAC_FALSE;
          v->b_edge_ca = YAC_FALSE;
          v->b_edge_ab = YAC_FALSE;
-         /* v->b_all_shared = YAC_FALSE; */
 #if 0
          v->scale_s = 1.0f;
          v->scale_t = 1.0f;
@@ -7560,7 +7566,7 @@ struct MinnieSetup {
          v->scale_t = (1.0f / DMIN);
          v->scale_u = (1.0f / DMIN);
 #endif
-         /* Dprintf("xxx edgeAAAddVertex: p=(%f; %f) c32=#%08x\n", _x, _y, _c32); */
+         // Dprintf("[>>>] minnie::MinnieSetup::edgeAAAddVertex: p=(%f; %f) c32=#%08x\n", _x, _y, _c32);
       }
       else
       {
@@ -7591,29 +7597,15 @@ struct MinnieSetup {
                /* vC->b_edge_bc = 0; */
                /* vC->b_edge_ca = 0; */
                /* vC->b_edge_ab = 0; */
-               /* vC->b_all_shared = 0; */
 
                VertexAA *vO = edgeaa_vertices;
                for(sUI triIdxO = 0u; triIdxO < numTris; triIdxO++)
                {
-                  /* if(vO->b_all_shared) */
-                  /* { */
-                  /*    Dprintf("xxx vO->b_all_shared=%d\n", vO->b_all_shared); */
-                  /* } */
                   if(triIdxO != triIdxC)
-                  /* if(triIdxO != triIdxC && !vO->b_all_shared) */
                   {
                      // opposite from vtx A ('s')
                      if(!vC->b_edge_bc)
                      {
-                        /* vC->b_edge_bc = */
-                        /*    edgeAAIsSharedEdge(vC+1, vC+2, vO+0, vO+1) || */
-                        /*    edgeAAIsSharedEdge(vC+1, vC+2, vO+1, vO+0) || */
-                        /*    edgeAAIsSharedEdge(vC+1, vC+2, vO+1, vO+2) || */
-                        /*    edgeAAIsSharedEdge(vC+1, vC+2, vO+2, vO+1) || */
-                        /*    edgeAAIsSharedEdge(vC+1, vC+2, vO+2, vO+0) || */
-                        /*    edgeAAIsSharedEdge(vC+1, vC+2, vO+0, vO+2) ; */
-
                         if(edgeAAIsSharedEdge(vC+1, vC+2, vO+0, vO+1))
                         {
                            vC->b_edge_bc = 1;
@@ -7649,13 +7641,6 @@ struct MinnieSetup {
                      // opposite from vtx B ('u')
                      if(!vC->b_edge_ca)
                      {
-                        /* vC->b_edge_ca = */
-                        /*    edgeAAIsSharedEdge(vC+2, vC+0, vO+0, vO+1) || */
-                        /*    edgeAAIsSharedEdge(vC+2, vC+0, vO+1, vO+0) || */
-                        /*    edgeAAIsSharedEdge(vC+2, vC+0, vO+1, vO+2) || */
-                        /*    edgeAAIsSharedEdge(vC+2, vC+0, vO+2, vO+1) || */
-                        /*    edgeAAIsSharedEdge(vC+2, vC+0, vO+2, vO+0) || */
-                        /*    edgeAAIsSharedEdge(vC+2, vC+0, vO+0, vO+2) ; */
                         if(edgeAAIsSharedEdge(vC+2, vC+0, vO+0, vO+1))
                         {
                            vC->b_edge_ca = 1;
@@ -7691,13 +7676,6 @@ struct MinnieSetup {
                      // opposite from vtx C ('t')
                      if(!vC->b_edge_ab)
                      {
-                        /* vC->b_edge_ab = */
-                        /*    edgeAAIsSharedEdge(vC+0, vC+1, vO+0, vO+1) || */
-                        /*    edgeAAIsSharedEdge(vC+0, vC+1, vO+1, vO+0) || */
-                        /*    edgeAAIsSharedEdge(vC+0, vC+1, vO+1, vO+2) || */
-                        /*    edgeAAIsSharedEdge(vC+0, vC+1, vO+2, vO+1) || */
-                        /*    edgeAAIsSharedEdge(vC+0, vC+1, vO+2, vO+0) || */
-                        /*    edgeAAIsSharedEdge(vC+0, vC+1, vO+0, vO+2) ; */
                         if(edgeAAIsSharedEdge(vC+0, vC+1, vO+0, vO+1))
                         {
                            vC->b_edge_ab = 1;
@@ -7743,8 +7721,6 @@ struct MinnieSetup {
                vC[1].b_edge_ab = vC[0].b_edge_ab;
                vC[2].b_edge_ab = vC[0].b_edge_ab;
 
-               /* vC->b_all_shared = vC->b_edge_bc && vC->b_edge_ca && vC->b_edge_ab; */
-
                // Next triangle
                vC += 3;
             }
@@ -7769,7 +7745,8 @@ struct MinnieSetup {
                   Vector2f vC; vC.init(vAA[2].x*(1.0f/1024.0f), vAA[2].y*scaleY);
 
 #if 0
-                  vA.init(-80+200, -10+200); // xxxxxxxxxxx
+                  // (todo) REMOVE
+                  vA.init(-80+200, -10+200);
                   vB.init( 60+200, -90+200);
                   vC.init( 90+200,  70+200);
 #endif
@@ -7795,15 +7772,15 @@ struct MinnieSetup {
                      Vector2f vISCA;
 
                      is = vISAB.intersect(&vA1, &vA2, &vB1, &vB2, true/*bExtrapolate*/);
-                     // Dprintf("xxx is vISAB = %f\n", is);
+                     // Dprintf("[>>>] minnie::MinnieSetup::edgeAAEndPath: is vISAB = %f\n", is);
                      is = vISBC.intersect(&vB1, &vB2, &vC1, &vC2, true/*bExtrapolate*/);
-                     // Dprintf("xxx is vISBC = %f\n", is);
+                     // Dprintf("[>>>] minnie::MinnieSetup::edgeAAEndPath: is vISBC = %f\n", is);
                      is = vISCA.intersect(&vC1, &vC2, &vA1, &vA2, true/*bExtrapolate*/);
-                     // Dprintf("xxx is vISCA = %f\n", is);
+                     // Dprintf("[>>>] minnie::MinnieSetup::edgeAAEndPath: is vISCA = %f\n", is);
                      (void)is;
 
-                     // Dprintf("xxx vA=(%f;%f) vB=(%f;%f) vC=(%f;%f)\n", vA.x, vA.y, vB.x, vB.y, vC.x, vC.y);
-                     // Dprintf("xxx   => vA'=(%f;%f) vB'=(%f;%f) vC'=(%f;%f)\n", vISCA.x, vISCA.y, vISAB.x, vISAB.y, vISBC.x, vISBC.y);
+                     // Dprintf("[>>>] minnie::MinnieSetup::edgeAAEndPath: vA=(%f;%f) vB=(%f;%f) vC=(%f;%f)\n", vA.x, vA.y, vB.x, vB.y, vC.x, vC.y);
+                     // Dprintf("[>>>] minnie::MinnieSetup::edgeAAEndPath:   => vA'=(%f;%f) vB'=(%f;%f) vC'=(%f;%f)\n", vISCA.x, vISCA.y, vISAB.x, vISAB.y, vISBC.x, vISBC.y);
 
                      vA = vISCA;
                      vB = vISAB;
@@ -7850,7 +7827,7 @@ struct MinnieSetup {
                   sF32 dAB = vC.distanceToPlane(&vB, &vN);
                   dAB = sABS(dAB);
 
-                  Dedgeaaprintfv("xxx vA=(%f;%f) vB=(%f;%f) vC=(%f;%f) => dBC=%f dCA=%f dAB=%f\n", vA.x, vA.y, vB.x, vB.y, vC.x, vC.y, dBC, dCA, dAB);
+                  Dedgeaaprintfv("[>>>] minnie::MinnieSetup::edgeAAEndPath: vA=(%f;%f) vB=(%f;%f) vC=(%f;%f) => dBC=%f dCA=%f dAB=%f\n", vA.x, vA.y, vB.x, vB.y, vC.x, vC.y, dBC, dCA, dAB);
 
                   vAA[0].scale_s = dBC * aaBorderInv;
                   vAA[0].scale_t = dAB * aaBorderInv;
@@ -7906,7 +7883,7 @@ struct MinnieSetup {
                   Dexport_vb_i8(v->b_edge_ab/*t*/ ? 255u/*noAA*/ : 0u/*AA*/);
                   Dexport_vb_i8(0u);  // __pad1
 #if MINNIE_EXPORT_VERTEX_16BIT && MINNIE_EXPORT_TRIS_EDGEAA_SCALE_16BIT
-                  /* Dprintf("xxx v_scale s=%f t=%f u=%f\n", v->scale_s, v->scale_t, v->scale_u); */
+                  // Dprintf("[>>>] minnie::MinnieSetup::edgeAAEndPath: v_scale s=%f t=%f u=%f\n", v->scale_s, v->scale_t, v->scale_u);
                   Dexport_vb_i16( sS16(v->scale_s*1024.0f) );
                   Dexport_vb_i16( sS16(v->scale_t*1024.0f) );
                   Dexport_vb_i16( sS16(v->scale_u*1024.0f) );
@@ -7952,10 +7929,10 @@ struct MinnieSetup {
       {
          if(b_debug_fill >= 2)
          {
-            Dprintf("[trc] drawTri: v1=(%f;%f) v2=(%f; %f) v3=(%f; %f) c32=#%08x c32Mask=#%08x b_aa=%d\n", _v1->x, _v1->y, _v2->x, _v2->y, _v3->x, _v3->y, _c32, _c32Mask, b_aa);
+            Dprintf("[trc] minnie::MinnieSetup::drawTri: v1=(%f;%f) v2=(%f; %f) v3=(%f; %f) c32=#%08x c32Mask=#%08x b_aa=%d\n", _v1->x, _v1->y, _v2->x, _v2->y, _v3->x, _v3->y, _c32, _c32Mask, b_aa);
          }
 
-         /* Dprintf("xxx drawTri: b_edge_aa=%d\n", b_edge_aa); */
+         // Dprintf("[>>>] minnie::MinnieSetup::drawTri: b_edge_aa=%d\n", b_edge_aa);
          if(!b_edge_aa)
          {
 #if MINNIE_EXPORT_TRIS_SIMPLE
@@ -8021,7 +7998,6 @@ struct MinnieSetup {
             Vector2f vBC; vBC.init(_v3->x - _v1->x, _v3->y - _v1->y);
             sF32 z = vAB.crossZ(&vBC);
             if(z >= 0.0f)
-            /* if(z < 0.0f) */
             {
                edgeAAAddVertex(_v1->x, _v1->y, _c32);
                edgeAAAddVertex(_v2->x, _v2->y, _c32);
@@ -8029,7 +8005,7 @@ struct MinnieSetup {
             }
             else
             {
-               /* Dprintf("[trc] flipCCW vA=(%f;%f) vB=(%f;%f) vC=(%f;%f) => dot=%f\n", vA.x, vA.y, vB.x, vB.y, vC.x, vC.y, z); */
+               // Dprintf("[trc] minnie::MinnieSetup::drawTri: flipCCW vA=(%f;%f) vB=(%f;%f) vC=(%f;%f) => dot=%f\n", vA.x, vA.y, vB.x, vB.y, vC.x, vC.y, z);
                edgeAAAddVertex(_v1->x, _v1->y, _c32);
                edgeAAAddVertex(_v3->x, _v3->y, _c32);
                edgeAAAddVertex(_v2->x, _v2->y, _c32);
@@ -8081,7 +8057,7 @@ struct MinnieSetup {
 
    // <method.png>
    void drawPathFillConvex(Path *p) {
-      if(b_debug_fill) { Dprintf("[dbg] drawPathFillConvex: path_id=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
+      if(b_debug_fill) { Dprintf("[dbg] minnie::MinnieSetup::drawPathFillConvex: path_id=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
 
       const sU32 c32Mask = (cur_mask_idx >= 0) ? palette.getU32(cur_mask_idx) : 0u;
 
@@ -8115,7 +8091,7 @@ struct MinnieSetup {
 
    // <method.png>
    void drawPathFillConvexClip(Path *p, const Path *pClip) {
-      if(b_debug_fill) { Dprintf("[dbg] drawPathFillConvexClip: path_id=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
+      if(b_debug_fill) { Dprintf("[dbg] minnie::MinnieSetup::drawPathFillConvexClip: path_id=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
 
       // if(b_debug_fill >= 2) p->points.debugPrint2("[trc] drawPathFillConvexClip: points=");
 
@@ -8127,7 +8103,7 @@ struct MinnieSetup {
       FloatArray *vaClip = &tmpfa_clip2;
       Clip2D(vaPoints, &pClip->points, pClip->b_closed, vaClip/*out*/);
 
-      // Dprintf("xxx vaClip->num_elements=%u\n", vaClip->num_elements);
+      // Dprintf("[>>>] minnie::MinnieSetup::drawPathFillConvexClip: vaClip->num_elements=%u\n", vaClip->num_elements);
 
       /* if(b_debug_fill) trace "[trc] drawPathFillConvexClip: vertices:"; */
       Vector2f v1;
@@ -8158,7 +8134,7 @@ struct MinnieSetup {
 
    // <method.png>
    void drawPathFillConvexTransform2d(Path *p) {
-      if(b_debug_fill) { Dprintf("[dbg] drawPathFillConvexTransform2d: path_id=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
+      if(b_debug_fill) { Dprintf("[dbg] minnie::MinnieSetup::drawPathFillConvexTransform2d: path_id=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
 
       cancelFixPolygonAAStroke();
 
@@ -8203,7 +8179,7 @@ struct MinnieSetup {
 
    // <method.png>
    void drawPathFillConvexTransform2dClip(Path *p, const Path *pClip) {
-      if(b_debug_fill) { Dprintf("[dbg] drawPathFillConvexTransform2dClip: path_id=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
+      if(b_debug_fill) { Dprintf("[dbg] minnie::MinnieSetup::drawPathFillConvexTransform2dClip: path_id=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
 
       cancelFixPolygonAAStroke();
 
@@ -8239,7 +8215,7 @@ struct MinnieSetup {
 
    // <method.png>
    void drawPathFillConvexTransform3d(Path *p) {
-      if(b_debug_fill) { Dprintf("[dbg] drawPathFillConvexTransform3d: path_id=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
+      if(b_debug_fill) { Dprintf("[dbg] minnie::MinnieSetup::drawPathFillConvexTransform3d: path_id=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
 
       cancelFixPolygonAAStroke();
 
@@ -8289,7 +8265,7 @@ struct MinnieSetup {
 
    // <method.png>
    void drawPathFillConvexTransform3dClip(Path *p) {
-      if(b_debug_fill) { Dprintf("[dbg] drawPathFillConvexTransform3dClip: path_id=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
+      if(b_debug_fill) { Dprintf("[dbg] minnie::MinnieSetup::drawPathFillConvexTransform3dClip: path_id=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
 
       cancelFixPolygonAAStroke();
 
@@ -8409,18 +8385,18 @@ struct MinnieSetup {
 
    // <method.png>
    void drawPathFillConcave(Path *p) {
-      if(b_debug_fill) { Dprintf("[dbg] drawPathFillConcave: path_id=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d b_tesselate_concave=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx, b_tesselate_concave); }
+      if(b_debug_fill) { Dprintf("[dbg] minnie::MinnieSetup::drawPathFillConcave: path_id=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d b_tesselate_concave=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx, b_tesselate_concave); }
 
-      /* Dprintf("xxx drawPathFillConcave: b_tesselate_concave=%d b_edge_aa=%d\n", b_tesselate_concave, b_edge_aa); */
+      // Dprintf("[>>>] minnie::MinnieSetup::drawPathFillConcave: b_tesselate_concave=%d b_edge_aa=%d\n", b_tesselate_concave, b_edge_aa);
       if( !(b_tesselate_concave || b_edge_aa) && (NULL != vb_export_ofs) )
       {
          if(!isDrawOpPolygon())
          {
-            Dprintf("[!!!] Minnie::drawPathFillConcave: INTERNAL ERROR: active_dl_op(0x%02x) != MINNIE_DRAWOP_POLYGON_FILL_*\n", active_dl_op);
+            Dprintf("[!!!] minnie::MinnieSetup::drawPathFillConcave: INTERNAL ERROR: active_dl_op(0x%02x) != MINNIE_DRAWOP_POLYGON_FILL_*\n", active_dl_op);
          }
          // (note) last point equals first point (add one extra when AA is enabled)
          const sUI numWrap = (b_polygon_aa ? 2u : 1u);
-         Dexportprintfvv("xxx drawPathFillConcave: first vtx=(%f;%f) skip last vtx=(%f;%f)\n",
+         Dexportprintfvv("[>>>] minnie::MinnieSetup::drawPathFillConcave: first vtx=(%f;%f) skip last vtx=(%f;%f)\n",
                          (p->points.elements.f32[0] + cur_x) * geo_scale_x,
                          (p->points.elements.f32[1] + cur_y) * geo_scale_y,
                          (p->points.elements.f32[(p->points.num_elements - 2u)+0] + cur_x) * geo_scale_x,
@@ -8443,7 +8419,7 @@ struct MinnieSetup {
       // (note) vertices remain unchanged, generates p.ia_fill
       if(!p->tesselateConcave(&p->points, &tmpia_tesselate_concave))
       {
-         Derrorprintf("[---] drawPathFillConcave: tesselateConcave() failed\n");
+         Derrorprintf("[---] minnie::MinnieSetup::drawPathFillConcave: tesselateConcave() failed\n");
          return;
       }
 
@@ -8483,13 +8459,13 @@ struct MinnieSetup {
 
    // <method.png>
    void drawPathFillComplex(Path *p, sBool _bMultiPathHWPolygon) {
-      if(b_debug_fill) { Dprintf("[dbg] drawPathFillComplex: path_id=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
+      if(b_debug_fill) { Dprintf("[dbg] minnie::MinnieSetup::drawPathFillComplex: path_id=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
 
       if(_bMultiPathHWPolygon)
       {
          if(!isDrawOpPolygon())
          {
-            Dprintf("[!!!] Minnie::drawPathFillComplex: INTERNAL ERROR: active_dl_op(0x%02x) != MINNIE_DRAWOP_POLYGON_FILL_*\n", active_dl_op);
+            Dprintf("[!!!] minnie::MinnieSetup::drawPathFillComplex: INTERNAL ERROR: active_dl_op(0x%02x) != MINNIE_DRAWOP_POLYGON_FILL_*\n", active_dl_op);
          }
          beginDrawListOpPolygonSub();
          // (note) last point equals first point (add one extra when AA is enabled)
@@ -8507,7 +8483,7 @@ struct MinnieSetup {
          active_dl_num_verts += (p->points.num_elements >> 1u) - 1u + numWrap;
          if(b_debug_multipath)
          {
-            Dprintf("[trc] Minnie::drawPathFillComplex: add sub #verts=%u\n", active_dl_num_verts);
+            Dprintf("[trc] minnie::MinnieSetup::drawPathFillComplex: add sub #verts=%u\n", active_dl_num_verts);
          }
          return;
       }
@@ -8517,7 +8493,7 @@ struct MinnieSetup {
       debug_num_swtess_paths++;
       if(!p->tesselateComplex(&p->points/*in*/, vaPoints/*out*/, cur_fillrule_nonzero))
       {
-         if(b_debug_tess) { Derrorprintf("[---] drawPathFillComplex: tesselateComplex() failed\n"); }
+         if(b_debug_tess) { Derrorprintf("[---] minnie::MinnieSetup::drawPathFillComplex: tesselateComplex() failed\n"); }
          return;
       }
 
@@ -8560,7 +8536,7 @@ struct MinnieSetup {
 
    // <method.png>
    void drawPathFillConcaveClipPre(Path *p, const Path *pClip) {
-      if(b_debug_fill) { Dprintf("[dbg] drawPathFillConcaveClipPre: path_id=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
+      if(b_debug_fill) { Dprintf("[dbg] minnie::MinnieSetup::drawPathFillConcaveClipPre: path_id=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
 
       FloatArray *vaPoints = &tmpfa_points2;
       translateAndScalePoints(&p->points, vaPoints/*out*/);
@@ -8576,7 +8552,7 @@ struct MinnieSetup {
          {
             if(!isDrawOpPolygon())
             {
-               Dprintf("[!!!] Minnie::drawPathFillConcaveClipPre: INTERNAL ERROR: active_dl_op(0x%02x) != MINNIE_DRAWOP_POLYGON_FILL_*\n", active_dl_op);
+               Dprintf("[!!!] minnie::MinnieSetup::drawPathFillConcaveClipPre: INTERNAL ERROR: active_dl_op(0x%02x) != MINNIE_DRAWOP_POLYGON_FILL_*\n", active_dl_op);
             }
             // (note) translation + scaling already applied in translateAndScalePoints()
             // (note) last point does NOT equal first point
@@ -8598,7 +8574,7 @@ struct MinnieSetup {
          // (note) vertices remain unchanged, generates p.ia_fill
          if(!p->tesselateConcave(va, &tmpia_tesselate_concave))
          {
-            Derrorprintf("[---] drawPathFillConcaveClipPre: tesselateConcave() failed\n");
+            Derrorprintf("[---] minnie::MinnieSetup::drawPathFillConcaveClipPre: tesselateConcave() failed\n");
             return;
          }
 
@@ -8635,7 +8611,7 @@ struct MinnieSetup {
 
    // <method.png>
    void drawPathFillComplexClipPre(Path *p, const Path *pClip, sBool _bMultiPathHWPolygon) {
-      if(b_debug_fill) { Dprintf("[dbg] drawPathFillComplexClipPre: path_id=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
+      if(b_debug_fill) { Dprintf("[dbg] minnie::MinnieSetup::drawPathFillComplexClipPre: path_id=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
 
       FloatArray *vaPoints = &tmpfa_points2;
       translateAndScalePoints(&p->points, vaPoints/*out*/);
@@ -8649,7 +8625,7 @@ struct MinnieSetup {
          {
             if(!isDrawOpPolygon())
             {
-               Dprintf("[!!!] Minnie::drawPathFillComplexClipPre: INTERNAL ERROR: active_dl_op(0x%02x) != MINNIE_DRAWOP_POLYGON_FILL_*\n", active_dl_op);
+               Dprintf("[!!!] minnie::MinnieSetup::drawPathFillComplexClipPre: INTERNAL ERROR: active_dl_op(0x%02x) != MINNIE_DRAWOP_POLYGON_FILL_*\n", active_dl_op);
             }
             beginDrawListOpPolygonSub();
             // (note) last point does NOT equal first point (add one extra when AA is enabled)
@@ -8667,7 +8643,7 @@ struct MinnieSetup {
             active_dl_num_verts += (va->num_elements >> 1u) - 0u + numWrap;
             if(b_debug_multipath)
             {
-               Dprintf("[trc] Minnie::drawPathFillComplexClipPre: add sub #verts=%u\n", active_dl_num_verts);
+               Dprintf("[trc] minnie::MinnieSetup::drawPathFillComplexClipPre: add sub #verts=%u\n", active_dl_num_verts);
             }
             return;
          }
@@ -8713,7 +8689,7 @@ struct MinnieSetup {
 
    // <method.png>
    void drawPathIndexedTris2D(const FloatArray *va, const IntArray *ia, sU32 _c32) {
-      /* if(b_debug_fill) { Dprintf("[dbg] drawPathIndexedTris2D: path_id=%u pal_idx=%u cur_mask_idx=%d\n", p->path_id, cur_pal_idx, cur_mask_idx); } */
+      /* if(b_debug_fill) { Dprintf("[dbg] minnie::MinnieSetup::drawPathIndexedTris2D: path_id=%u pal_idx=%u cur_mask_idx=%d\n", p->path_id, cur_pal_idx, cur_mask_idx); } */
 
       const sU32 c32Mask = (cur_mask_idx >= 0) ? palette.getU32(cur_mask_idx) : 0u;
 
@@ -8742,7 +8718,7 @@ struct MinnieSetup {
 
    // <method.png>
    void drawPathFillConcaveClip(Path *p, const Path *pClip) {
-      if(b_debug_fill) { Dprintf("[dbg] drawPathFillConcaveClip: path_id=%u #points=%u pal_idx=%u cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_mask_idx); }
+      if(b_debug_fill) { Dprintf("[dbg] minnie::MinnieSetup::drawPathFillConcaveClip: path_id=%u #points=%u pal_idx=%u cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_mask_idx); }
 
       FloatArray *vaPoints = &tmpfa_points2;
       translateAndScalePoints(&p->points, vaPoints/*out*/);
@@ -8750,7 +8726,7 @@ struct MinnieSetup {
       // (note) vertices remain unchanged, generates p.ia_fill
       if(!p->tesselateConcave(vaPoints, &tmpia_tesselate_concave))
       {
-         Derrorprintf("[---] drawPathFillConcaveClip: tesselateConcave() failed\n");
+         Derrorprintf("[---] minnie::MinnieSetup::drawPathFillConcaveClip: tesselateConcave() failed\n");
          return;
       }
 
@@ -8763,7 +8739,7 @@ struct MinnieSetup {
 
    // <method.png>
    void drawPathFillComplexClip(Path *p, const Path *pClip) {
-      if(b_debug_fill) { Dprintf("[dbg] drawPathFillComplexClip: path_id=%u #points=%u pal_idx=%u cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_mask_idx); }
+      if(b_debug_fill) { Dprintf("[dbg] minnie::MinnieSetup::drawPathFillComplexClip: path_id=%u #points=%u pal_idx=%u cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_mask_idx); }
 
       cancelFixPolygonAAStroke();
 
@@ -8774,7 +8750,7 @@ struct MinnieSetup {
       debug_num_swtess_paths++;
       if(!p->tesselateComplex(vaPoints/*in*/, vaPoints/*out*/, cur_fillrule_nonzero))
       {
-         if(b_debug_tess) { Derrorprintf("[---] drawPathFillComplexClip: tesselateComplex() failed\n"); }
+         if(b_debug_tess) { Derrorprintf("[---] minnie::MinnieSetup::drawPathFillComplexClip: tesselateComplex() failed\n"); }
          return;
       }
 
@@ -8787,7 +8763,7 @@ struct MinnieSetup {
 
    // <method.png>
    void drawPathFillConcaveTransform2d(Path *p) {
-      if(b_debug_fill) { Dprintf("[dbg] drawPathFillConcaveTransform2d: path_id=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
+      if(b_debug_fill) { Dprintf("[dbg] minnie::MinnieSetup::drawPathFillConcaveTransform2d: path_id=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
 
       if(p->points.num_elements >= 2u)  // (todo) already checked by caller
       {
@@ -8795,7 +8771,7 @@ struct MinnieSetup {
          {
             if(!isDrawOpPolygon())
             {
-               Dprintf("[!!!] Minnie::drawPathFillConcaveTransform2d: INTERNAL ERROR: active_dl_op(0x%02x) != MINNIE_DRAWOP_POLYGON_FILL_*\n", active_dl_op);
+               Dprintf("[!!!] minnie::MinnieSetup::drawPathFillConcaveTransform2d: INTERNAL ERROR: active_dl_op(0x%02x) != MINNIE_DRAWOP_POLYGON_FILL_*\n", active_dl_op);
             }
             // (note) last point equals first point (add one extra when AA is enabled)
             const sUI numWrap = (b_polygon_aa ? 2u : 1u);
@@ -8817,7 +8793,7 @@ struct MinnieSetup {
          // (note) vertices remain unchanged, generates p.ia_fill
          if(!p->tesselateConcave(&p->points, &tmpia_tesselate_concave))
          {
-            Derrorprintf("[---] drawPathFillConcaveTransform2d: tesselateConcave() failed\n");
+            Derrorprintf("[---] minnie::MinnieSetup::drawPathFillConcaveTransform2d: tesselateConcave() failed\n");
             return;
          }
 
@@ -8864,13 +8840,13 @@ struct MinnieSetup {
 
    // <method.png>
    void drawPathFillComplexTransform2d(Path *p, sBool _bMultiPathHWPolygon) {
-      if(b_debug_fill) { Dprintf("[dbg] drawPathFillComplexTransform2d: path_id=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
+      if(b_debug_fill) { Dprintf("[dbg] minnie::MinnieSetup::drawPathFillComplexTransform2d: path_id=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
 
       if(_bMultiPathHWPolygon)
       {
          if(!isDrawOpPolygon())
          {
-            Dprintf("[!!!] Minnie::drawPathFillComplexTransform2d: INTERNAL ERROR: active_dl_op(0x%02x) != MINNIE_DRAWOP_POLYGON_FILL_*\n", active_dl_op);
+            Dprintf("[!!!] minnie::MinnieSetup::drawPathFillComplexTransform2d: INTERNAL ERROR: active_dl_op(0x%02x) != MINNIE_DRAWOP_POLYGON_FILL_*\n", active_dl_op);
          }
          beginDrawListOpPolygonSub();
          // (note) last point equals first point (add one extra when AA is enabled)
@@ -8889,7 +8865,7 @@ struct MinnieSetup {
          active_dl_num_verts += (p->points.num_elements >> 1u) - 1u + numWrap;
          if(b_debug_multipath)
          {
-            Dprintf("[trc] Minnie::drawPathFillComplexTransform2d: add sub #verts=%u\n", active_dl_num_verts);
+            Dprintf("[trc] minnie::MinnieSetup::drawPathFillComplexTransform2d: add sub #verts=%u\n", active_dl_num_verts);
          }
          return;
       }
@@ -8899,7 +8875,7 @@ struct MinnieSetup {
       debug_num_swtess_paths++;
       if(!p->tesselateComplex(&p->points/*in*/, vaPoints/*out*/, cur_fillrule_nonzero))
       {
-         if(b_debug_tess) { Derrorprintf("[---] drawPathFillComplexTransform2d: tesselateComplex() failed\n"); }
+         if(b_debug_tess) { Derrorprintf("[---] minnie::MinnieSetup::drawPathFillComplexTransform2d: tesselateComplex() failed\n"); }
          return;
       }
 
@@ -8945,7 +8921,7 @@ struct MinnieSetup {
 
    // <method.png>
    void drawPathFillConcaveTransform2dClipPre(Path *p, const Path *pClip) {
-      if(b_debug_fill) { Dprintf("[dbg] drawPathFillConcaveTransform2dClipPre: path_id=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
+      if(b_debug_fill) { Dprintf("[dbg] minnie::MinnieSetup::drawPathFillConcaveTransform2dClipPre: path_id=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
 
       FloatArray *vaPoints = &tmpfa_points2;
       transform2DAndTranslateAndScale(&p->points, vaPoints);
@@ -8959,7 +8935,7 @@ struct MinnieSetup {
          {
             if(!isDrawOpPolygon())
             {
-               Dprintf("[!!!] Minnie::drawPathFillConcaveTransform2dClipPre: INTERNAL ERROR: active_dl_op(0x%02x) != MINNIE_DRAWOP_POLYGON_FILL_*\n", active_dl_op);
+               Dprintf("[!!!] minnie::MinnieSetup::drawPathFillConcaveTransform2dClipPre: INTERNAL ERROR: active_dl_op(0x%02x) != MINNIE_DRAWOP_POLYGON_FILL_*\n", active_dl_op);
             }
             // (note) translation and scaling already applied in transform2DAndTranslateAndScale()
             // (note) last point does NOT equal first point (add one extra when AA is enabled)
@@ -8981,7 +8957,7 @@ struct MinnieSetup {
          // (note) vertices remain unchanged, generates p.ia_fill
          if(!p->tesselateConcave(vaClip, &tmpia_tesselate_concave))
          {
-            Derrorprintf("[---] drawPathFillConcaveTransform2dClipPre: tesselateConcave() failed\n");
+            Derrorprintf("[---] minnie::MinnieSetup::drawPathFillConcaveTransform2dClipPre: tesselateConcave() failed\n");
             return;
          }
 
@@ -9016,7 +8992,7 @@ struct MinnieSetup {
 
    // <method.png>
    void drawPathFillComplexTransform2dClipPre(Path *p, const Path *pClip, sBool _bMultiPathHWPolygon) {
-      if(b_debug_fill) { Dprintf("[dbg] drawPathFillComplexTransform2dClipPre: path_id=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
+      if(b_debug_fill) { Dprintf("[dbg] minnie::MinnieSetup::drawPathFillComplexTransform2dClipPre: path_id=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
 
       FloatArray *vaPoints = &tmpfa_points2;
       transform2DAndTranslateAndScale(&p->points, vaPoints);
@@ -9030,7 +9006,7 @@ struct MinnieSetup {
          {
             if(!isDrawOpPolygon())
             {
-               Dprintf("[!!!] Minnie::drawPathFillComplexTransform2dClipPre: INTERNAL ERROR: active_dl_op(0x%02x) != MINNIE_DRAWOP_POLYGON_FILL_*\n", active_dl_op);
+               Dprintf("[!!!] minnie::MinnieSetup::drawPathFillComplexTransform2dClipPre: INTERNAL ERROR: active_dl_op(0x%02x) != MINNIE_DRAWOP_POLYGON_FILL_*\n", active_dl_op);
             }
             beginDrawListOpPolygonSub();
             // (note) last point does NOT equal first point (add one extra when AA is enabled)
@@ -9048,7 +9024,7 @@ struct MinnieSetup {
             active_dl_num_verts += (vaClip->num_elements >> 1u) - 0u + numWrap;
             if(b_debug_multipath)
             {
-               Dprintf("[trc] Minnie::drawPathFillComplexTransform2dClipPre: add sub #verts=%u\n", active_dl_num_verts);
+               Dprintf("[trc] minnie::MinnieSetup::drawPathFillComplexTransform2dClipPre: add sub #verts=%u\n", active_dl_num_verts);
             }
             return;
          }
@@ -9057,7 +9033,7 @@ struct MinnieSetup {
          debug_num_swtess_paths++;
          if(!p->tesselateComplex(vaClip/*in*/, vaClip/*out*/, cur_fillrule_nonzero))
          {
-            if(b_debug_tess) { Derrorprintf("[---] drawPathFillComplexTransform2dClipPre: tesselateComplex() failed\n"); }
+            if(b_debug_tess) { Derrorprintf("[---] minnie::MinnieSetup::drawPathFillComplexTransform2dClipPre: tesselateComplex() failed\n"); }
             return;
          }
 
@@ -9092,7 +9068,7 @@ struct MinnieSetup {
 
    // <method.png>
    void drawPathFillConcaveTransform2dClip(Path *p, const Path *pClip) {
-      if(b_debug_fill) { Dprintf("[dbg] drawPathFillConcaveTransform2dClip: path_id=%u #points=%u pal_idx=%u cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_mask_idx); }
+      if(b_debug_fill) { Dprintf("[dbg] minnie::MinnieSetup::drawPathFillConcaveTransform2dClip: path_id=%u #points=%u pal_idx=%u cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_mask_idx); }
 
       cancelFixPolygonAAStroke();
 
@@ -9102,7 +9078,7 @@ struct MinnieSetup {
       // (note) vertices remain unchanged, generates p.ia_fill
       if(!p->tesselateConcave(vaPoints, &tmpia_tesselate_concave))
       {
-         Derrorprintf("[---] drawPathFillConcaveTransform2dClip: tesselateConcave() failed\n");
+         Derrorprintf("[---] minnie::MinnieSetup::drawPathFillConcaveTransform2dClip: tesselateConcave() failed\n");
          return;
       }
 
@@ -9115,7 +9091,7 @@ struct MinnieSetup {
 
    // <method.png>
    void drawPathFillComplexTransform2dClip(Path *p, const Path *pClip) {
-      if(b_debug_fill) { Dprintf("[dbg] drawPathFillComplexTransform2dClip: path_id=%u #points=%u pal_idx=%u cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_mask_idx); }
+      if(b_debug_fill) { Dprintf("[dbg] minnie::MinnieSetup::drawPathFillComplexTransform2dClip: path_id=%u #points=%u pal_idx=%u cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_mask_idx); }
 
       cancelFixPolygonAAStroke();
 
@@ -9126,7 +9102,7 @@ struct MinnieSetup {
       debug_num_swtess_paths++;
       if(!p->tesselateComplex(vaPoints/*in*/, vaPoints/*out*/, cur_fillrule_nonzero))
       {
-         if(b_debug_tess) { Derrorprintf("[---] drawPathFillComplexTransform2dClip: tesselateComplex() failed\n"); }
+         if(b_debug_tess) { Derrorprintf("[---] minnie::MinnieSetup::drawPathFillComplexTransform2dClip: tesselateComplex() failed\n"); }
          return;
       }
 
@@ -9139,14 +9115,14 @@ struct MinnieSetup {
 
    // <method.png>
    void drawPathFillConcaveTransform3d(Path *p) {
-      if(b_debug_fill) { Dprintf("[dbg] drawPathFillConcaveTransform3d: path_id=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
+      if(b_debug_fill) { Dprintf("[dbg] minnie::MinnieSetup::drawPathFillConcaveTransform3d: path_id=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
 
       cancelFixPolygonAAStroke();
 
       // (note) vertices remain unchanged, generates p.ia_fill
       if(!p->tesselateConcave(&p->points, &tmpia_tesselate_concave))
       {
-         Derrorprintf("[---] drawPathFillConcaveTransform3d: tesselateConcave() failed\n");
+         Derrorprintf("[---] minnie::MinnieSetup::drawPathFillConcaveTransform3d: tesselateConcave() failed\n");
          return;
       }
 
@@ -9201,7 +9177,7 @@ struct MinnieSetup {
 
    // <method.png>
    void drawPathFillComplexTransform3d(Path *p) {
-      if(b_debug_fill) { Dprintf("[dbg] drawPathFillComplexTransform3d: path_id=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
+      if(b_debug_fill) { Dprintf("[dbg] minnie::MinnieSetup::drawPathFillComplexTransform3d: path_id=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
 
       cancelFixPolygonAAStroke();
 
@@ -9210,7 +9186,7 @@ struct MinnieSetup {
       debug_num_swtess_paths++;
       if(!p->tesselateComplex(&p->points/*in*/, vaPoints/*out*/, cur_fillrule_nonzero))
       {
-         if(b_debug_tess) { Derrorprintf("[---] drawPathFillComplexTransform3d: tesselateComplex() failed\n"); }
+         if(b_debug_tess) { Derrorprintf("[---] minnie::MinnieSetup::drawPathFillComplexTransform3d: tesselateComplex() failed\n"); }
          return;
       }
 
@@ -9265,7 +9241,7 @@ struct MinnieSetup {
 
    // <method.png>
    void drawPathFillConcaveTransform3dClip(Path *p) {
-      if(b_debug_fill) { Dprintf("[dbg] drawPathFillConcaveTransform3dClip: path_id=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
+      if(b_debug_fill) { Dprintf("[dbg] minnie::MinnieSetup::drawPathFillConcaveTransform3dClip: path_id=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
 
       cancelFixPolygonAAStroke();
 
@@ -9334,7 +9310,7 @@ struct MinnieSetup {
             vaOff += 3u;
          }
 
-         /* if(b_debug_clip3d >= 3) trace "xxx drawPathFillConcaveTransform3dClip: cur=("+cur_x+";"+cur_y+") geo_scale="+geo_scale+" vaProj="+vaProj.string2; */
+         // if(b_debug_clip3d >= 3) trace "[>>] minnie::MinnieSetup::drawPathFillConcaveTransform3dClip: cur=("+cur_x+";"+cur_y+") geo_scale="+geo_scale+" vaProj="+vaProj.string2;
 
          // Clip 2D
          Path *pFB = updateAndGetPathFb();
@@ -9348,7 +9324,7 @@ struct MinnieSetup {
          // (note) vertices remain unchanged, generates p.ia_fill
          if(!p->tesselateConcave(va, &tmpia_tesselate_concave))
          {
-            Derrorprintf("[---] drawPathFillConcaveTransform3dClip: tesselateConcave() failed\n");
+            Derrorprintf("[---] minnie::MinnieSetup::drawPathFillConcaveTransform3dClip: tesselateConcave() failed\n");
             return;
          }
 
@@ -9394,7 +9370,7 @@ struct MinnieSetup {
 
    // <method.png>
    void drawPathFillComplexTransform3dClip(Path *p) {
-      if(b_debug_fill) { Dprintf("[dbg] drawPathFillComplexTransform3dClip: path_id=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
+      if(b_debug_fill) { Dprintf("[dbg] minnie::MinnieSetup::drawPathFillComplexTransform3dClip: path_id=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
 
       cancelFixPolygonAAStroke();
 
@@ -9478,7 +9454,7 @@ struct MinnieSetup {
          debug_num_swtess_paths++;
          if(!p->tesselateComplex(va/*in*/, va/*out*/, cur_fillrule_nonzero))
          {
-            if(b_debug_tess) { Derrorprintf("[---] drawPathFillComplexTransform3dClip: tesselateComplex() failed\n"); }
+            if(b_debug_tess) { Derrorprintf("[---] minnie::MinnieSetup::drawPathFillComplexTransform3dClip: tesselateComplex() failed\n"); }
             return;
          }
 
@@ -9524,7 +9500,7 @@ struct MinnieSetup {
 
    // <method.png>
    void drawPathLine(Path *p) {
-      if(b_debug_fill) { Dprintf("[dbg] drawPathLine: path_id=%u #points=%u pal_idx=%u (c32=#%08x) cur_mask_idx=%d\n", p->path_id, p->points.num_elements, cur_pal_idx, cur_c32_stroke, cur_mask_idx); }
+      if(b_debug_fill) { Dprintf("[dbg] minnie::MinnieSetup::drawPathLine: path_id=%u #points=%u pal_idx=%u (c32=#%08x) cur_mask_idx=%d\n", p->path_id, p->points.num_elements, cur_pal_idx, cur_c32_stroke, cur_mask_idx); }
 
       cancelFixPolygonAAStroke();
 
@@ -9560,7 +9536,7 @@ struct MinnieSetup {
 
    // <method.png>
    void drawPathLineClip(Path *p, const Path *pClip) {
-      if(b_debug_fill) { Dprintf("[dbg] drawPathLineClip: path_id=%u pal_idx=%u cur_mask_idx=%d\n", p->path_id, cur_pal_idx, cur_mask_idx); }
+      if(b_debug_fill) { Dprintf("[dbg] minnie::MinnieSetup::drawPathLineClip: path_id=%u pal_idx=%u cur_mask_idx=%d\n", p->path_id, cur_pal_idx, cur_mask_idx); }
 
       cancelFixPolygonAAStroke();
 
@@ -9597,7 +9573,7 @@ struct MinnieSetup {
 
    // <method.png>
    void drawPathLineTransform2d(Path *p) {
-      if(b_debug_fill) { Dprintf("[dbg] drawPathLineTransform2d: path_id=%u pal_idx=%u cur_mask_idx=%d\n", p->path_id, cur_pal_idx, cur_mask_idx); }
+      if(b_debug_fill) { Dprintf("[dbg] minnie::MinnieSetup::drawPathLineTransform2d: path_id=%u pal_idx=%u cur_mask_idx=%d\n", p->path_id, cur_pal_idx, cur_mask_idx); }
 
       cancelFixPolygonAAStroke();
 
@@ -9638,7 +9614,7 @@ struct MinnieSetup {
 
    // <method.png>
    void drawPathLineTransform2dClip(Path *p, const Path *pClip) {
-      if(b_debug_fill) { Dprintf("[dbg] drawPathLineTransform2dClip: path_id=%u pal_idx=%u cur_mask_idx=%d\n", p->path_id, cur_pal_idx, cur_mask_idx); }
+      if(b_debug_fill) { Dprintf("[dbg] minnie::MinnieSetup::drawPathLineTransform2dClip: path_id=%u pal_idx=%u cur_mask_idx=%d\n", p->path_id, cur_pal_idx, cur_mask_idx); }
 
       cancelFixPolygonAAStroke();
 
@@ -9678,7 +9654,7 @@ struct MinnieSetup {
 
    // <method.png>
    void drawPathLineTransform3d(Path *p) {
-      if(b_debug_fill) { Dprintf("[dbg] drawPathLineTransform3d: path_id=%u pal_idx=%u cur_mask_idx=%d\n", p->path_id, cur_pal_idx, cur_mask_idx); }
+      if(b_debug_fill) { Dprintf("[dbg] minnie::MinnieSetup::drawPathLineTransform3d: path_id=%u pal_idx=%u cur_mask_idx=%d\n", p->path_id, cur_pal_idx, cur_mask_idx); }
 
       cancelFixPolygonAAStroke();
 
@@ -9757,7 +9733,7 @@ struct MinnieSetup {
          const sUI idxOff = (idxOffM >= vaWrap) ? (idxOffM - vaWrap) : idxOffM;
          const sF32 x = _va->elements.f32[idxOff + 0u];
          const sF32 y = _va->elements.f32[idxOff + 1u];
-         Dexportprintfvv("[>>>] minnie::exportLineStripPoints: va[%u]=(%f;%f)\n", vtxIdx++, x, y);
+         Dexportprintfvv("[>>>] minnie::MinnieSetup::exportLineStripPoints: va[%u]=(%f;%f)\n", vtxIdx++, x, y);
 #ifdef SHADERVG_GL_VERTEX_ID
 #if MINNIE_EXPORT_VERTEX_16BIT
          Dexport_vb_i16(sSI(x * 4.0f));
@@ -9802,7 +9778,7 @@ struct MinnieSetup {
       const sUI vaWrap = (vaNum << 1);
       const sBool bBevelOrMiter = isLineJoinBevelOrMiter();
       sUI num = vaNum + sUI(bBevelOrMiter) + sUI(_bClosed);
-      /* Dprintf("xxx exportLineStripPointsTranslateScale: bClosed=%d bBevelOrMiter=%d vaNum=%u => num=%u\n", _bClosed, bBevelOrMiter, vaNum, num); */
+      // Dprintf("[>>>] minnie::MinnieSetup::exportLineStripPointsTranslateScale: bClosed=%d bBevelOrMiter=%d vaNum=%u => num=%u\n", _bClosed, bBevelOrMiter, vaNum, num);
       active_dl_num_verts += num;
       num = (num << 1);
       sUI vtxIdx = 0u;
@@ -9811,7 +9787,7 @@ struct MinnieSetup {
          const sUI idxOff = (idxOffM >= vaWrap) ? (idxOffM - vaWrap) : idxOffM;
          const sF32 x = (_va->elements.f32[idxOff + 0u] + cur_x) * geo_scale_x;
          const sF32 y = (_va->elements.f32[idxOff + 1u] + cur_y) * geo_scale_y;
-         Dexportprintfvv("[>>>] minnie::exportLineStripPointsTranslateScale: va[%u]=(%f;%f)\n", vtxIdx++, x, y);
+         Dexportprintfvv("[>>>] minnie::MinnieSetup::exportLineStripPointsTranslateScale: va[%u]=(%f;%f)\n", vtxIdx++, x, y);
 
 #ifdef SHADERVG_GL_VERTEX_ID
 #if MINNIE_EXPORT_VERTEX_16BIT
@@ -9859,7 +9835,7 @@ struct MinnieSetup {
       const sUI numClosed = vaNum + sUI(_bClosed);
       sUI num = numClosed + sUI(bBevelOrMiter);
       active_dl_num_verts += num + 2u/*pattern line-cap*/;
-      Dexportprintfvv("[>>>] minnie::exportLineStripPointsPattern: vaNum=%u num=%u #verts=%u\n", vaNum, num, active_dl_num_verts);
+      Dexportprintfvv("[>>>] minnie::MinnieSetup::exportLineStripPointsPattern: vaNum=%u num=%u #verts=%u\n", vaNum, num, active_dl_num_verts);
       num = (num << 1);
       sUI vtxIdx = 0u;
       sF32 lastX = 0.0f;
@@ -9882,7 +9858,7 @@ struct MinnieSetup {
             sF32 d = sqrtf(dx*dx + dy*dy);
             patOff += d;
          }
-         Dexportprintfvv("[>>>] minnie::exportLineStripPointsPattern: va[%u]=(%f;%f) patOff=%f\n", vtxIdx, x, y, patOff);
+         Dexportprintfvv("[>>>] minnie::MinnieSetup::exportLineStripPointsPattern: va[%u]=(%f;%f) patOff=%f\n", vtxIdx, x, y, patOff);
 
 #ifdef SHADERVG_GL_VERTEX_ID
 #if MINNIE_EXPORT_VERTEX_16BIT
@@ -9933,7 +9909,7 @@ struct MinnieSetup {
          Dexport_vb_f32(pointLastY);
          Dexport_vb_f32(pointPatOff);
 #endif // MINNIE_EXPORT_VERTEX_16BIT
-         Dexportprintfvv("[>>>] minnie::exportLineStripPointsPattern<cap>: va[%u]=(%f;%f) patOff=%f\n", vtxIdx++, pointLastX, pointLastY, pointPatOff);
+         Dexportprintfvv("[>>>] minnie::MinnieSetup::exportLineStripPointsPattern<cap>: va[%u]=(%f;%f) patOff=%f\n", vtxIdx++, pointLastX, pointLastY, pointPatOff);
          const sF32 dx = (pointLastX - pointLastXPrev);
          const sF32 dy = (pointLastY - pointLastYPrev);
          const sF32 x = pointLastX + dx;
@@ -9988,9 +9964,9 @@ struct MinnieSetup {
       const sBool bBevelOrMiter = isLineJoinBevelOrMiter();
       const sUI numClosed = vaNum + sUI(_bClosed);
       sUI num = numClosed + sUI(bBevelOrMiter);
-      /* Dprintf("xxx exportLineStripPointsTranslateScalePattern: bClosed=%d bBevelOrMiter=%d vaNum=%u => num=%u\n", _bClosed, bBevelOrMiter, vaNum, num); */
+      // Dprintf("[>>>] minnie::MinnieSetup::exportLineStripPointsTranslateScalePattern: bClosed=%d bBevelOrMiter=%d vaNum=%u => num=%u\n", _bClosed, bBevelOrMiter, vaNum, num);
       active_dl_num_verts += num + 2u/*pattern line-cap*/;
-      Dexportprintfvv("[>>>] minnie::exportLineStripPointsTranslateScalePattern: vaNum=%u numClosed=%u num=%u #verts=%u\n", vaNum, numClosed, num, active_dl_num_verts);
+      Dexportprintfvv("[>>>] minnie::MinnieSetup::exportLineStripPointsTranslateScalePattern: vaNum=%u numClosed=%u num=%u #verts=%u\n", vaNum, numClosed, num, active_dl_num_verts);
       num = (num << 1);
       sUI vtxIdx = 0u;
       sF32 lastX = 0.0f;
@@ -10013,7 +9989,7 @@ struct MinnieSetup {
             sF32 d = sqrtf(dx*dx + dy*dy);
             patOff += d;
          }
-         Dexportprintfvv("[>>>] minnie::exportLineStripPointsTranslateScalePattern: va[%u]=(%f;%f) patOff=%f\n", vtxIdx, x, y, patOff);
+         Dexportprintfvv("[>>>] minnie::MinnieSetup::exportLineStripPointsTranslateScalePattern: va[%u]=(%f;%f) patOff=%f\n", vtxIdx, x, y, patOff);
 
 #ifdef SHADERVG_GL_VERTEX_ID
 #if MINNIE_EXPORT_VERTEX_16BIT
@@ -10080,7 +10056,7 @@ struct MinnieSetup {
 #endif // MINNIE_EXPORT_VERTEX_16BIT
          }
 #endif // SHADERVG_GL_VERTEX_ID
-         Dexportprintfvv("[>>>] minnie::exportLineStripPointsTranslateScalePattern<cap>: va[%u]=(%f;%f) patOff=%f\n", vtxIdx++, pointLastX, pointLastY, pointPatOff);
+         Dexportprintfvv("[>>>] minnie::MinnieSetup::exportLineStripPointsTranslateScalePattern<cap>: va[%u]=(%f;%f) patOff=%f\n", vtxIdx++, pointLastX, pointLastY, pointPatOff);
          const sF32 dx = (pointLastX - pointLastXPrev);
          const sF32 dy = (pointLastY - pointLastYPrev);
          const sF32 x = pointLastX + dx;
@@ -10110,13 +10086,13 @@ struct MinnieSetup {
 #endif // MINNIE_EXPORT_VERTEX_16BIT
          }
 #endif // SHADERVG_GL_VERTEX_ID
-         Dexportprintfvv("[>>>] minnie::exportLineStripPointsTranslateScalePattern<cap>: va[%u]=(%f;%f) patOff=%f\n", vtxIdx, x, y, pointPatOff);
+         Dexportprintfvv("[>>>] minnie::MinnieSetup::exportLineStripPointsTranslateScalePattern<cap>: va[%u]=(%f;%f) patOff=%f\n", vtxIdx, x, y, pointPatOff);
       }
    }
 
    // <method.png>
    void drawPathLineStrip(Path *p) {
-      if(b_debug_line_strip) { Dprintf("[dbg] drawPathLineStrip: path_id=%u #points=%u pal_idx=%u (c32Stroke=#%08x) cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_c32_stroke, cur_mask_idx); }
+      if(b_debug_line_strip) { Dprintf("[dbg] minnie::MinnieSetup::drawPathLineStrip: path_id=%u #points=%u pal_idx=%u (c32Stroke=#%08x) cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_c32_stroke, cur_mask_idx); }
 
       fixPolygonAAStroke(p);
 
@@ -10128,7 +10104,7 @@ struct MinnieSetup {
 
    // <method.png>
    void drawPathExtrudeShape(Path *p) {
-      if(b_debug_extrude) { Dprintf("[dbg] drawPathExtrudeShape: path_id=%u #points=%u pal_idx=%u (c32Stroke=#%08x) cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_c32_stroke, cur_mask_idx); }
+      if(b_debug_extrude) { Dprintf("[dbg] minnie::MinnieSetup::drawPathExtrudeShape: path_id=%u #points=%u pal_idx=%u (c32Stroke=#%08x) cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_c32_stroke, cur_mask_idx); }
 
       // Dprintf("xxx drawPathExtrudeShape: cur_stroke_w=%f stroke_w_line_join_threshold=%f\n", cur_stroke_w, stroke_w_line_join_threshold);
 
@@ -10144,7 +10120,7 @@ struct MinnieSetup {
       Vector2f v3;
       FloatArray *va = &p->va_extrude;
       IntArray *ia = &p->ia_extrude;
-      if(b_debug_extrude) { Dprintf("[dbg] drawPathExtrudeShape: va_extrude.num_elements=%u ia_extrude.num_elements=%u\n", va->num_elements, ia->num_elements); }
+      if(b_debug_extrude) { Dprintf("[dbg] minnie::MinnieSetup::drawPathExtrudeShape: va_extrude.num_elements=%u ia_extrude.num_elements=%u\n", va->num_elements, ia->num_elements); }
       sUI idxOff = 0u;
       /* sUI triIdx = 0u;  // debug color */
       while(idxOff < ia->num_elements)
@@ -10170,7 +10146,7 @@ struct MinnieSetup {
 
    // <method.png>
    void drawPathLineStripClipPre(Path *p, const Path *pClip) {
-      if(b_debug_line_strip) { Dprintf("[dbg] drawPathLineStripClipPre: path_id=%u #points=%u pal_idx=%u (c32Stroke=#%08x) cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_c32_stroke, cur_mask_idx); }
+      if(b_debug_line_strip) { Dprintf("[dbg] minnie::MinnieSetup::drawPathLineStripClipPre: path_id=%u #points=%u pal_idx=%u (c32Stroke=#%08x) cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_c32_stroke, cur_mask_idx); }
 
       if(NULL != vb_export_ofs)
       {
@@ -10191,7 +10167,7 @@ struct MinnieSetup {
 
    // <method.png>
    void drawPathExtrudeShapeClipPre(Path *p, const Path *pClip) {
-      if(b_debug_extrude) { Dprintf("[dbg] drawPathExtrudeShapeClipPre: path_id=%u #points=%u pal_idx=%u (c32Stroke=#%08x) cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_c32_stroke, cur_mask_idx); }
+      if(b_debug_extrude) { Dprintf("[dbg] minnie::MinnieSetup::drawPathExtrudeShapeClipPre: path_id=%u #points=%u pal_idx=%u (c32Stroke=#%08x) cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_c32_stroke, cur_mask_idx); }
 
       fixPolygonAAStroke(p);  // (note) assumes that fill area was clipped against same path
 
@@ -10211,7 +10187,7 @@ struct MinnieSetup {
       Vector2f v3;
       FloatArray *va = &p->va_extrude;
       IntArray *ia = &p->ia_extrude;
-      // Dprintf("xxx drawPathExtrudeShapeClipPre: va->num_elements=%u ia->num_elements=%u\n", va->num_elements, ia->num_elements);
+      // Dprintf("[>>>] minnie::MinnieSetup::drawPathExtrudeShapeClipPre: va->num_elements=%u ia->num_elements=%u\n", va->num_elements, ia->num_elements);
       sUI idxOff = 0u;
       /* sUI triIdx = 0u;  // debug color */
       while(idxOff < ia->num_elements)
@@ -10234,7 +10210,7 @@ struct MinnieSetup {
 
    // <method.png>
    void drawPathExtrudeShapeClip(Path *p, const Path *pClip) {
-      if(b_debug_extrude) { Dprintf("[dbg] drawPathExtrudeShapeClip: path_id=%u #points=%u pal_idx=%u (c32Stroke=#%08x) cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_c32_stroke, cur_mask_idx); }
+      if(b_debug_extrude) { Dprintf("[dbg] minnie::MinnieSetup::drawPathExtrudeShapeClip: path_id=%u #points=%u pal_idx=%u (c32Stroke=#%08x) cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_c32_stroke, cur_mask_idx); }
 
       cancelFixPolygonAAStroke();
 
@@ -10244,25 +10220,25 @@ struct MinnieSetup {
       FloatArray *vaPoints = &tmpfa_points2;
       translateAndScalePoints(&p->points, vaPoints/*out*/);
 
-      // Dprintf("xxx vaPoints->num_elements=%u\n", vaPoints->num_elements);
+      // Dprintf("[>>>] minnie::MinnieSetup::drawPathExtrudeShapeClip: vaPoints->num_elements=%u\n", vaPoints->num_elements);
 
       const sUI curJoinCap = calcCurJoinCap();
       p->extrudeShape(vaPoints, cur_stroke_w, curJoinCap, cur_num_seg/*roundNumSeg*/, cur_miter_limit);
 
-      // Dprintf("xxx ia_extrude.num_elements=%u\n", p->ia_extrude.num_elements);
-      // Dprintf("xxx _vaClip->num_elements=%u\n", _vaClip->num_elements);
+      // Dprintf("[>>>] minnie::MinnieSetup::drawPathExtrudeShapeClip: ia_extrude.num_elements=%u\n", p->ia_extrude.num_elements);
+      // Dprintf("[>>>] minnie::MinnieSetup::drawPathExtrudeShapeClip: _vaClip->num_elements=%u\n", _vaClip->num_elements);
 
       // (note) appends helper indices/vertices to p.va_extrude
       ClipIndexedTris2D(&p->va_extrude, &p->ia_extrude, &pClip->points, pClip->b_closed, ia/*out*/);
 
-      // Dprintf("xxx ia->num_elements=%u\n", ia->num_elements);
+      // Dprintf("[>>>] minnie::MinnieSetup::drawPathExtrudeShapeClip: ia->num_elements=%u\n", ia->num_elements);
 
       drawPathIndexedTris2D(&p->va_extrude, ia, cur_c32_stroke);
    }
 
    // <method.png>
    void drawPathLineStripTransform2d(Path *p) {
-      if(b_debug_line_strip) { Dprintf("[dbg] drawPathLineStripTransform2d: path_id=%u #points=%u pal_idx=%u (c32Stroke=#%08x) cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_c32_stroke, cur_mask_idx); }
+      if(b_debug_line_strip) { Dprintf("[dbg] minnie::MinnieSetup::drawPathLineStripTransform2d: path_id=%u #points=%u pal_idx=%u (c32Stroke=#%08x) cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_c32_stroke, cur_mask_idx); }
 
       if(NULL != vb_export_ofs)
       {
@@ -10280,7 +10256,7 @@ struct MinnieSetup {
 
    // <method.png>
    void drawPathExtrudeShapeTransform2d(Path *p) {
-      if(b_debug_extrude) { Dprintf("[dbg] drawPathExtrudeShapeTransform2d: path_id=%u pal_idx=%u (c32Stroke=#%08x) cur_mask_idx=%d\n", p->path_id, cur_pal_idx, cur_c32_stroke, cur_mask_idx); }
+      if(b_debug_extrude) { Dprintf("[dbg] minnie::MinnieSetup::drawPathExtrudeShapeTransform2d: path_id=%u pal_idx=%u (c32Stroke=#%08x) cur_mask_idx=%d\n", p->path_id, cur_pal_idx, cur_c32_stroke, cur_mask_idx); }
 
       fixPolygonAAStroke(p);
 
@@ -10329,7 +10305,7 @@ struct MinnieSetup {
 
    // <method.png>
    void drawPathLineStripTransform2dClipPre(Path *p, const Path *pClip) {
-      if(b_debug_line_strip) { Dprintf("[dbg] drawPathLineStripTransform2dClipPre: path_id=%u #points=%u pal_idx=%u (c32Stroke=#%08x) cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_c32_stroke, cur_mask_idx); }
+      if(b_debug_line_strip) { Dprintf("[dbg] minnie::MinnieSetup::drawPathLineStripTransform2dClipPre: path_id=%u #points=%u pal_idx=%u (c32Stroke=#%08x) cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_c32_stroke, cur_mask_idx); }
 
       if(NULL != vb_export_ofs)
       {
@@ -10350,7 +10326,7 @@ struct MinnieSetup {
 
    // <method.png>
    void drawPathExtrudeShapeTransform2dClipPre(Path *p, const Path *pClip) {
-      if(b_debug_extrude) { Dprintf("[dbg] drawPathExtrudeShapeTransform2dClipPre: path_id=%u pal_idx=%u (c32Stroke=#%08x) cur_mask_idx=%d\n", p->path_id, cur_pal_idx, cur_c32_stroke, cur_mask_idx); }
+      if(b_debug_extrude) { Dprintf("[dbg] minnie::MinnieSetup::drawPathExtrudeShapeTransform2dClipPre: path_id=%u pal_idx=%u (c32Stroke=#%08x) cur_mask_idx=%d\n", p->path_id, cur_pal_idx, cur_c32_stroke, cur_mask_idx); }
 
       fixPolygonAAStroke(p);  // (note) assumes that fill area was clipped against same path
 
@@ -10393,7 +10369,7 @@ struct MinnieSetup {
 
    // <method.png>
    void drawPathExtrudeShapeTransform2dClip(Path *p, const Path *pClip) {
-      if(b_debug_extrude) { Dprintf("[dbg] drawPathExtrudeShapeTransform2dClip: path_id=%u pal_idx=%u (c32Stroke=#%08x) cur_mask_idx=%d\n", p->path_id, cur_pal_idx, cur_c32_stroke, cur_mask_idx); }
+      if(b_debug_extrude) { Dprintf("[dbg] minnie::MinnieSetup::drawPathExtrudeShapeTransform2dClip: path_id=%u pal_idx=%u (c32Stroke=#%08x) cur_mask_idx=%d\n", p->path_id, cur_pal_idx, cur_c32_stroke, cur_mask_idx); }
 
       cancelFixPolygonAAStroke();
 
@@ -10437,7 +10413,7 @@ struct MinnieSetup {
 
    // <method.png>
    void drawPathExtrudeShapeTransform3d(Path *p) {
-      if(b_debug_extrude) { Dprintf("[dbg] drawPathExtrudeShapeTransform3d: path_id=%u pal_idx=%u (c32Stroke=#%08x) cur_mask_idx=%d\n", p->path_id, cur_pal_idx, cur_c32_stroke, cur_mask_idx); }
+      if(b_debug_extrude) { Dprintf("[dbg] minnie::MinnieSetup::drawPathExtrudeShapeTransform3d: path_id=%u pal_idx=%u (c32Stroke=#%08x) cur_mask_idx=%d\n", p->path_id, cur_pal_idx, cur_c32_stroke, cur_mask_idx); }
 
       cancelFixPolygonAAStroke();
 
@@ -10496,7 +10472,7 @@ struct MinnieSetup {
 
    // <method.png>
    void drawPathExtrudeShapeTransform3dClip(Path *p) {
-      if(b_debug_extrude) { Dprintf("[dbg] drawPathExtrudeShapeTransform3dClip: path_id=%u pal_idx=%u (c32Stroke=#%08x) cur_mask_idx=%d\n", p->path_id, cur_pal_idx, cur_c32_stroke, cur_mask_idx); }
+      if(b_debug_extrude) { Dprintf("[dbg] minnie::MinnieSetup::drawPathExtrudeShapeTransform3dClip: path_id=%u pal_idx=%u (c32Stroke=#%08x) cur_mask_idx=%d\n", p->path_id, cur_pal_idx, cur_c32_stroke, cur_mask_idx); }
 
       cancelFixPolygonAAStroke();
 
@@ -10525,8 +10501,8 @@ struct MinnieSetup {
             cur_mat_3d.mulv(&v);
             va3->add3(v.x, v.y, v.z);
 
-            /* if(b_debug_fill >= 3) trace "xxx drawPathExtrudeShapeTransform3dClip: v="+v+" cur_mat_3d="+cur_mat_3d; */
-            /* if(b_debug_fill >= 3) trace "xxx drawPathExtrudeShapeTransform3dClip: v_3d="+v; */
+            /* if(b_debug_fill >= 3) trace "[>>>] minnie::MinnieSetup::drawPathExtrudeShapeTransform3dClip: v="+v+" cur_mat_3d="+cur_mat_3d; */
+            /* if(b_debug_fill >= 3) trace "[>>>] minnie::MinnieSetup::drawPathExtrudeShapeTransform3dClip: v_3d="+v; */
 
             // Next 2D point
             vaOff += 2u;
@@ -10598,7 +10574,7 @@ struct MinnieSetup {
 
    // <method.png>
    void drawPath(Path *p, sSI mode, const sUI _forcedPathTypeOr0, sBool _bMultiPathHWPolygon) {
-      Dpathprintf("[dbg] drawPath: mode=%d p->path_id=%u p->type=%u #points=%u cur_stroke_w=%f bMultiPathHWPolygon=%d\n", mode, p->path_id, p->type, p->points.num_elements/2u, cur_stroke_w, _bMultiPathHWPolygon);
+      Dpathprintf("[dbg] minnie::MinnieSetup::drawPath: mode=%d p->path_id=%u p->type=%u #points=%u cur_stroke_w=%f bMultiPathHWPolygon=%d\n", mode, p->path_id, p->type, p->points.num_elements/2u, cur_stroke_w, _bMultiPathHWPolygon);
 
       if(p->points.num_elements >= (2u*2u))
       {
@@ -10606,7 +10582,7 @@ struct MinnieSetup {
          {
             // Start or continue draw-triangles op
 #if MINNIE_EXPORT_TRIS_EDGEAA
-         /* Dprintf("xxx b_edge_aa=%d\n", b_edge_aa); */
+            // Dprintf("[>>>] minnie::MinnieSetup::drawPath: b_edge_aa=%d\n", b_edge_aa);
             if(b_edge_aa)
             {
                // edgeAA
@@ -10624,7 +10600,7 @@ struct MinnieSetup {
 
          const sUI pathType = (0u != _forcedPathTypeOr0) ? _forcedPathTypeOr0 : p->type;
 
-         /* Dprintf("xxx pathType=%u (forced=%u) mode=%u cur_stroke_w=%f\n", pathType, _forcedPathTypeOr0, mode, cur_stroke_w); */
+         // Dprintf("[>>>] minnie::MinnieSetup::drawPath: pathType=%u (forced=%u) mode=%u cur_stroke_w=%f\n", pathType, _forcedPathTypeOr0, mode, cur_stroke_w);
 
          switch(mode)
          {
@@ -10652,7 +10628,7 @@ struct MinnieSetup {
                               else
                               {
                                  // (todo) implement me
-                                 Derrorprintf("[---] drawPath: drawPathFillComplexClip() not supported for HW polygons\n");
+                                 Derrorprintf("[---] minnie::MinnieSetup::drawPath: drawPathFillComplexClip() not supported for HW polygons\n");
                               }
                            }
                         }
@@ -10685,7 +10661,7 @@ struct MinnieSetup {
                         }
                         else
                         {
-                           /* Dprintf("xxx b_tesselate_concave=%d b_edge_aa=%d\n", b_tesselate_concave, b_edge_aa); */
+                           // Dprintf("[>>>] minnie::MinnieSetup::drawPath: b_tesselate_concave=%d b_edge_aa=%d\n", b_tesselate_concave, b_edge_aa);
                            if( !(b_tesselate_concave || b_edge_aa) )
                            {
                               // Start draw-concave op
@@ -10754,7 +10730,7 @@ struct MinnieSetup {
                         {
                            (void)beginDrawListOpLineStrip(p->b_closed);
                            drawPathLineStrip(p);
-                           /* finishActiveDrawListOp(); */
+                           // // // finishActiveDrawListOp();
                         }
                         else
                         {
@@ -10787,7 +10763,7 @@ struct MinnieSetup {
                            else
                            {
                               // (todo) implement me
-                              Derrorprintf("[---] drawPath: drawPathFillComplexTransform2dClip() not supported for HW polygons\n");
+                              Derrorprintf("[---] minnie::MinnieSetup::drawPath: drawPathFillComplexTransform2dClip() not supported for HW polygons\n");
                            }
                         }
                         else
@@ -10886,7 +10862,7 @@ struct MinnieSetup {
                         {
                            (void)beginDrawListOpLineStrip(p->b_closed);
                            drawPathLineStripTransform2d(p);
-                           /* finishActiveDrawListOp(); */
+                           // // // finishActiveDrawListOp();
                         }
                         else
                         {
@@ -10902,7 +10878,7 @@ struct MinnieSetup {
                if(_bMultiPathHWPolygon)
                {
                   // (todo) implement me
-                  Derrorprintf("[---] drawPath: TRANSFORM_3D not supported for HW polygons\n");
+                  Derrorprintf("[---] minnie::MinnieSetup::drawPath: TRANSFORM_3D not supported for HW polygons\n");
                   return;
                }
                if(0.0f == cur_stroke_w)
@@ -11003,7 +10979,7 @@ struct MinnieSetup {
       //      1: transform2d
       //      2: transform3d
 
-      Dpathprintf("[trc] drawMultiPath: p->type=%d #points=%u #sub=%u mode=%d b_tesselate_concave=%d sw_tesselate_size_threshold=%u\n", p->type, p->points.num_elements, p->sub_paths.num_elements, mode, b_tesselate_concave, sw_tesselate_size_threshold);
+      Dpathprintf("[trc] minnie::MinnieSetup::drawMultiPath: p->type=%d #points=%u #sub=%u mode=%d b_tesselate_concave=%d sw_tesselate_size_threshold=%u\n", p->type, p->points.num_elements, p->sub_paths.num_elements, mode, b_tesselate_concave, sw_tesselate_size_threshold);
 
       debug_num_paths++;
 
@@ -11011,7 +10987,7 @@ struct MinnieSetup {
       {
          if(b_debug_multipath)
          {
-            Dprintf("[trc] drawMultiPath: HW polygon #sub=%u mode=%d\n", p->sub_paths.num_elements, mode);
+            Dprintf("[trc] minnie::MinnieSetup::drawMultiPath: HW polygon #sub=%u mode=%d\n", p->sub_paths.num_elements, mode);
          }
 
          beginDrawListOpPolygonBegin();
@@ -11036,7 +11012,7 @@ struct MinnieSetup {
          {
             if(0u == p->sub_paths.num_elements)
             {
-               /* Dprintf("xxx p->type=%d\n", p->type); */
+               // Dprintf("[>>>] minnie::MinnieSetup::drawMultiPath: p->type=%d\n", p->type);
                if(MINNIE_PATH_TYPE_COMPLEX == p->type || MINNIE_PATH_TYPE_CONCAVE == p->type)
                {
                   sBool bConcave = b_force_complex_concave;
@@ -11044,7 +11020,7 @@ struct MinnieSetup {
                   {
                      const sUI bbNumPixels = Path::CalcBBoxNumPixels(&p->points);
                      bConcave =  (bbNumPixels <= sw_tesselate_size_threshold);
-                     // Dprintf("xxx bbNumPixels=%u bConcave=%d sw_tesselate_size_threshold=%u\n", bbNumPixels, bConcave, sw_tesselate_size_threshold);
+                     // Dprintf("[>>>] minnie::MinnieSetup::drawMultiPath: bbNumPixels=%u bConcave=%d sw_tesselate_size_threshold=%u\n", bbNumPixels, bConcave, sw_tesselate_size_threshold);
                   }
                   if(bConcave)
                   {
@@ -11075,7 +11051,7 @@ struct MinnieSetup {
             else
             {
 #if 0
-               Dprintf("xxx drawMultiPath: p->sub_paths.num_elements=%u\n", p->sub_paths.num_elements);
+               Dprintf("[>>>] minnie::MinnieSetup::drawMultiPath: p->sub_paths.num_elements=%u\n", p->sub_paths.num_elements);
 #endif
             }
          }
@@ -11088,7 +11064,7 @@ struct MinnieSetup {
          // stroked sub paths
          if(b_debug_fill && (p->sub_paths.num_elements > 0u))
          {
-            Dprintf("[trc] drawMultiPath: #sub=%u mode=%d\n", p->sub_paths.num_elements, mode);
+            Dprintf("[trc] minnie::MinnieSetup::drawMultiPath: #sub=%u mode=%d\n", p->sub_paths.num_elements, mode);
          }
 
          for(sUI spIdx = 0u; spIdx < p->sub_paths.num_elements; spIdx++)
@@ -11104,7 +11080,7 @@ struct MinnieSetup {
       const sUI numColors = ifs->getU8() + 1u;
       if(b_debug_pal)
       {
-         Dprintf("[dbg] MinnieBin::readPalette12: numColors=%u\n", numColors);
+         Dprintf("[dbg] minnie::MinnieSetup::readPalette12: numColors=%u\n", numColors);
       }
       StreamReader4 ifs4; ifs4.begin(ifs);
       palette.empty();
@@ -11115,7 +11091,7 @@ struct MinnieSetup {
          sU8 b = ifs4.read4();
          if(b_debug_pal)
          {
-            Dprintf("[dbg] readPalette12: [%3u]=(#%02x, #%02x, #%02x)\n", palette.num_elements, r, g, b);
+            Dprintf("[dbg] minnie::MinnieSetup::readPalette12: [%3u]=(#%02x, #%02x, #%02x)\n", palette.num_elements, r, g, b);
          }
          r |= (r << 4);
          g |= (g << 4);
@@ -11132,7 +11108,7 @@ struct MinnieSetup {
       const sUI numColors = ifs->getU8() + 1u;
       if(b_debug_pal)
       {
-         Dprintf("[dbg] MinnieBin::readPalette24: numColors=%u\n", numColors);
+         Dprintf("[dbg] minnie::MinnieSetup::readPalette24: numColors=%u\n", numColors);
       }
       palette.empty();
       for(sUI colorIdx = 0u; colorIdx < numColors; colorIdx++)
@@ -11142,7 +11118,7 @@ struct MinnieSetup {
          const sU8 b = ifs->getU8();
          if(b_debug_pal)
          {
-            Dprintf("[dbg] readPalette24: [%u] = (#%02x,#%02x,#%02x)\n", palette.num_elements, r, g, b);
+            Dprintf("[dbg] minnie::MinnieSetup::readPalette24: [%u] = (#%02x,#%02x,#%02x)\n", palette.num_elements, r, g, b);
          }
          palette.add( 0xff000000u | ((r << 16) | (g << 8) | b) );
       }
@@ -11166,7 +11142,7 @@ struct MinnieSetup {
             {
                if(b_debug_fb)
                {
-                  Dprintf("[dbg] add framebuffer override sz=%ux%u pitch=%u ptr=%p\n", fbOver->w, fbOver->h, fbOver->pitch, fbOver->pixels.any);
+                  Dprintf("[dbg] minnie::MinnieSetup::readFramebuffers: add framebuffer override sz=%ux%u pitch=%u ptr=%p\n", fbOver->w, fbOver->h, fbOver->pitch, fbOver->pixels.any);
                }
                fb->init(allocator, framebuffers.num_elements - 1u, fbOver->w, fbOver->h, fbOver->pitch, fbOver->pixels.any);
             }
@@ -11174,14 +11150,14 @@ struct MinnieSetup {
             {
                if(b_debug_fb)
                {
-                  Dprintf("[dbg] add framebuffer %ux%u (fb_scale=%f)\n", w, h, fb_scale);
+                  Dprintf("[dbg] minnie::MinnieSetup::readFramebuffers: add framebuffer %ux%u (fb_scale=%f)\n", w, h, fb_scale);
                }
                fb->init(allocator, framebuffers.num_elements - 1u, w, h, 0u/*pitch=auto*/, NULL/*pixelsOrNull*/);
             }
          }
          else
          {
-            Derrorprintf("[---] Minnie::readFramebuffers: fbIdx=%u out of bounds (max=%u), skipping..\n", fbIdx, MINNIE_MAX_FRAMEBUFFERS);
+            Derrorprintf("[---] minnie::MinnieSetup::readFramebuffers: fbIdx=%u out of bounds (max=%u), skipping..\n", fbIdx, MINNIE_MAX_FRAMEBUFFERS);
          }
       }
    }
@@ -11197,7 +11173,7 @@ struct MinnieSetup {
 
          if(b_debug_fb)
          {
-            Dprintf("[dbg] add mat_2d idx=%u mat=([%f %f %f] [%f %f %f])\n", matIdx, mat->floats[0], mat->floats[1], mat->floats[2], mat->floats[3], mat->floats[4], mat->floats[5]);
+            Dprintf("[dbg] minnie::MinnieSetup::readMatrices2D: add mat_2d idx=%u mat=([%f %f %f] [%f %f %f])\n", matIdx, mat->floats[0], mat->floats[1], mat->floats[2], mat->floats[3], mat->floats[4], mat->floats[5]);
          }
       }
    }
@@ -11213,21 +11189,21 @@ struct MinnieSetup {
 
          if(b_debug_fb)
          {
-            Dprintf("[dbg] add mat_3d idx=%u mat=([%f %f %f %f] [%f %f %f %f] [%f %f %f %f] [%f %f %f %f])\n", matIdx, mat->floats[0], mat->floats[1], mat->floats[2], mat->floats[3], mat->floats[4], mat->floats[5], mat->floats[6], mat->floats[7], mat->floats[8], mat->floats[9], mat->floats[10], mat->floats[11], mat->floats[12], mat->floats[13], mat->floats[14], mat->floats[15]);
+            Dprintf("[dbg] minnie::MinnieSetup::readMatrices3D: add mat_3d idx=%u mat=([%f %f %f %f] [%f %f %f %f] [%f %f %f %f] [%f %f %f %f])\n", matIdx, mat->floats[0], mat->floats[1], mat->floats[2], mat->floats[3], mat->floats[4], mat->floats[5], mat->floats[6], mat->floats[7], mat->floats[8], mat->floats[9], mat->floats[10], mat->floats[11], mat->floats[12], mat->floats[13], mat->floats[14], mat->floats[15]);
          }
       }
    }
 
    // <method.png>
    void begin(void) {
-      /* Dprintf("xxx parseBuffer call path_fb.init\n"); */
+      // Dprintf("[>>>] minnie::MinnieSetup::begin: parseBuffer call path_fb.init\n");
 
       path_fb.init(NULL/*_allocator*/, 0u/*pathIdx*/, MINNIE_PATH_TYPE_CONVEX/*type*/,
                    (void*)path_fb_data/*pointsData*/, 5u*2u/*pointsMaxElements*/,
                    NULL/*_vaExtrudeData*/, 0u/*maxExtrudedElements*/
                    );
 
-      /* Dprintf("xxx parseBuffer path_fb.init done\n"); */
+      // Dprintf("[>>>] minnie::MinnieSetup::begin: parseBuffer path_fb.init done\n");
 
       palette     .init(allocator, MINNIE_MAX_COLORS,       NULL/*elementsOrNull*/);
       framebuffers.init(allocator, MINNIE_MAX_FRAMEBUFFERS, NULL/*elementsOrNull*/);
@@ -11236,12 +11212,12 @@ struct MinnieSetup {
       matrices_3d .init(allocator, MINNIE_MAX_MAT_3D,       NULL/*elementsOrNull*/);
       paints      .init(allocator, MINNIE_MAX_PAINTS,       NULL/*elementsOrNull*/);
 
-      /* Dprintf("xxx parseBuffer: after pal/fb/paths/mat init\n"); */
+      // Dprintf("[>>>] minnie::MinnieSetup::begin: parseBuffer: after pal/fb/paths/mat init\n");
 
       // Create main path (no points but sets renderstates and draws other paths)
       cur_path = paths.addNew();
 
-      // Dprintf("xxx call path->init cur_path=%p\n", cur_path);
+      // Dprintf("[>>>] minnie::MinnieSetup::begin: call path->init cur_path=%p\n", cur_path);
       cur_path->init(allocator, 0u/*pathIdx*/, MINNIE_PATH_TYPE_DRAW/*type*/,
                      NULL/*pointsData*/, 0u/*pointsMaxElements*/,
                      NULL/*vaExtrudeData*/, 0u/*maxExtrudedElements*/
@@ -11269,7 +11245,7 @@ struct MinnieSetup {
          {
             if(b_debug_fb)
             {
-               Dprintf("[dbg] main framebuffer override sz=%ux%u pitch=%u ptr=%p\n", fbOver->w, fbOver->h, fbOver->pitch, fbOver->pixels.any);
+               Dprintf("[dbg] minnie::MinnieSetup::beginGeo: main framebuffer override sz=%ux%u pitch=%u ptr=%p\n", fbOver->w, fbOver->h, fbOver->pitch, fbOver->pixels.any);
                geo_w = fbOver->w;
                geo_h = fbOver->h;
             }
@@ -11288,12 +11264,12 @@ struct MinnieSetup {
       if(whMax > 0.0f)
       {
          cubic_min_dist_sqr = 4.0f * (640.0f / whMax);
-         /* Dprintf("xxx cubic_min_dist_sqr=%f\n", cubic_min_dist_sqr); */
+         // Dprintf("[>>>] minnie::MinnieSetup::beginGeo: cubic_min_dist_sqr=%f\n", cubic_min_dist_sqr);
       }
 
       cur_src_fb = cur_fb;
       aa_bias = -0.01f * (160.0f / cur_fb->w);
-      /* zglInit2D(geo_w, geo_h); */
+      // // // zglInit2D(geo_w, geo_h);
    }
 
    // <method.png>
@@ -11311,7 +11287,7 @@ struct MinnieSetup {
             {
                cur_path = p;
                pathId = i;
-               Dpathprintf("[dbg] minnie::newPath: reallocate pathId=%u (num=%u) type=%u debugName=\"%s\"\n", pathId, paths.num_elements, _type, _debugName);
+               Dpathprintf("[dbg] minnie::MinnieSetup::newPath: reallocate pathId=%u (num=%u) type=%u debugName=\"%s\"\n", pathId, paths.num_elements, _type, _debugName);
                break;
             }
          }
@@ -11323,12 +11299,12 @@ struct MinnieSetup {
          if(NULL != cur_path)
          {
             pathId = paths.num_elements - 1u;
-            Dpathprintf("[dbg] minnie::newPath: add pathId=%u type=%u debugName=\"%s\"\n", pathId, _type, _debugName);
+            Dpathprintf("[dbg] minnie::MinnieSetup::newPath: add pathId=%u type=%u debugName=\"%s\"\n", pathId, _type, _debugName);
          }
       }
       if(NULL != cur_path)
       {
-         /* Dprintf("xxx 0x84: def_points_per_path=%u\n", def_points_per_path); */
+         // Dprintf("[>>>] minnie::MinnieSetup::newPath: 0x84: def_points_per_path=%u\n", def_points_per_path);
          cur_path->init(allocator, pathId, _type/*type*/,
                         NULL/*pointsData*/, def_points_per_path*2u/*pointsMaxElements*/,
                         tmpfa_extrude.elements.any, max_extruded_vertices_per_path*2u/*maxExtrudedElements*/
@@ -11338,12 +11314,12 @@ struct MinnieSetup {
          cur_y = 0.0f;
          cur_mirror_x = 0.0f;
          cur_mirror_y = 0.0f;
-         if(b_debug_op) { Dprintf("[dbg] Minnie::newPath: %s %u  (%s)\n", _debugCmd, cur_path->path_id, _debugName); }
+         if(b_debug_op) { Dprintf("[dbg] minnie::MinnieSetup::newPath: %s %u  (%s)\n", _debugCmd, cur_path->path_id, _debugName); }
          return YAC_TRUE;
       }
       else
       {
-         Derrorprintf("[---] Minnie::newPath: max paths(%u) exceeded (%s)\n", paths.max_elements, _debugCmd);
+         Derrorprintf("[---] minnie::MinnieSetup::newPath: max paths(%u) exceeded (%s)\n", paths.max_elements, _debugCmd);
          return YAC_FALSE;
       }
    }
@@ -11352,7 +11328,7 @@ struct MinnieSetup {
    void endPath(sBool _bClosed) {
       if(NULL != cur_path)
       {
-         Dpathprintf("[dbg] minnie::endPath: pathId=%u bClosed=%u\n", cur_path->path_id, _bClosed);
+         Dpathprintf("[dbg] minnie::MinnieSetup::endPath: pathId=%u bClosed=%u\n", cur_path->path_id, _bClosed);
          total_num_points += cur_path->end(_bClosed);
          cur_path = paths.getRev(0);
          cur_x = 0.0f;
@@ -11362,13 +11338,13 @@ struct MinnieSetup {
 
    // <method.png>
    sBool parseBuffer(minnie_allocator_handle_t _allocator, void *_data, sU32 _dataSz) {
-      /* Dprintf("xxx parseBuffer dataSz=%u\n", _dataSz); */
+      // Dprintf("[>>>] minnie::MinnieSetup::parseBuffer: dataSz=%u\n", _dataSz);
       allocator = _allocator;
 
       reset();
       begin();
 
-      /* Dprintf("xxx parseBuffer: after reset\n"); */
+      // Dprintf("[>>>] minnie::MinnieSetup::parseBuffer: after reset\n");
 
       StreamReader ifs;
       ifs.init(_data, _dataSz);
@@ -11411,7 +11387,7 @@ struct MinnieSetup {
       sU8 ver   = (flags & 0x3Fu);
       if(1u != ver)
       {
-         Derrorprintf("[---] Minnie::parseBuffer: invalid ver=%u\n", ver);
+         Derrorprintf("[---] minnie::MinnieSetup::parseBuffer: invalid ver=%u\n", ver);
          return YAC_FALSE;
       }
       sBool bBE = (flags & 0x80u) ? YAC_TRUE : YAC_FALSE;
@@ -11420,10 +11396,10 @@ struct MinnieSetup {
       // (todo) check that data byte order equals host byte order
       if(bBE && !MINNIE_BIG_ENDIAN)
       {
-         Derrorprintf("[---] Minnie::parseBuffer: byte order mismatch (data is big endian, host is little endian)\n");
+         Derrorprintf("[---] minnie::MinnieSetup::parseBuffer: byte order mismatch (data is big endian, host is little endian)\n");
          return YAC_FALSE;
       }
-      /* ifs.byteOrder = bBE ? YAC_BIG_ENDIAN : YAC_LITTLE_ENDIAN; */
+      // // ifs.byteOrder = bBE ? YAC_BIG_ENDIAN : YAC_LITTLE_ENDIAN;
 
       for(;;)
       {
@@ -11432,14 +11408,14 @@ struct MinnieSetup {
 #if 0
          if(b_debug_op)
          {
-            Dprintf("[trc] op=0x%02x\n", op);
+            Dprintf("[trc] minnie::MinnieSetup::parseBuffer: op=0x%02x\n", op);
          }
 #endif
 
          switch(op)
          {
             default:
-               Derrorprintf("[---] Minnie::parseBuffer: unhandled op 0x%02x\n", op);
+               Derrorprintf("[---] minnie::MinnieSetup::parseBuffer: unhandled op 0x%02x\n", op);
                return YAC_FALSE;
 
             case 0xE0u:  // end
@@ -11460,7 +11436,7 @@ struct MinnieSetup {
                }
                else
                {
-                  Dprintf("[~~~] Minnie::parseBuffer: multiple GEO attributes (0xE1), ignoring..\n");
+                  Dprintf("[~~~] minnie::MinnieSetup::parseBuffer: multiple GEO attributes (0xE1), ignoring..\n");
                }
                break;
 
@@ -11474,7 +11450,7 @@ struct MinnieSetup {
                }
                else
                {
-                  Dprintf("[~~~] Minnie::parseBuffer: multiple GEO attributes (0xE2), ignoring..\n");
+                  Dprintf("[~~~] minnie::MinnieSetup::parseBuffer: multiple GEO attributes (0xE2), ignoring..\n");
                }
                break;
 
@@ -11529,34 +11505,32 @@ struct MinnieSetup {
             case 0x02u:  // n <mat2x3>
                matIdx = ifs.getU8();
                cur_mat_2d.copyFrom(matrices_2d.get(matIdx));
-               if(b_debug_op) { Dprintf("[dbg] n %u m=([%f %f %f] [%f %f %f])  (u8)\n", matIdx, cur_mat_2d.floats[0], cur_mat_2d.floats[1], cur_mat_2d.floats[2], cur_mat_2d.floats[3], cur_mat_2d.floats[4], cur_mat_2d.floats[5]); }
+               if(b_debug_op) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: n %u m=([%f %f %f] [%f %f %f])  (u8)\n", matIdx, cur_mat_2d.floats[0], cur_mat_2d.floats[1], cur_mat_2d.floats[2], cur_mat_2d.floats[3], cur_mat_2d.floats[4], cur_mat_2d.floats[5]); }
                break;
 
             case 0x03u:  // q <mat4x4>
                matIdx = ifs.getU8();
                cur_mat_3d.copyFrom(matrices_3d.get(matIdx));
-               if(b_debug_op) { Dprintf("[dbg] q %u m=[(%f %f %f %f) (%f %f %f %f) (%f %f %f %f) (%f %f %f %f)]  (u8)\n", matIdx, cur_mat_3d.floats[0], cur_mat_3d.floats[1], cur_mat_3d.floats[2], cur_mat_3d.floats[3], cur_mat_3d.floats[4], cur_mat_3d.floats[5], cur_mat_3d.floats[6], cur_mat_3d.floats[7], cur_mat_3d.floats[8], cur_mat_3d.floats[9], cur_mat_3d.floats[10], cur_mat_3d.floats[11], cur_mat_3d.floats[12], cur_mat_3d.floats[13], cur_mat_3d.floats[14], cur_mat_3d.floats[15]); }
+               if(b_debug_op) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: q %u m=[(%f %f %f %f) (%f %f %f %f) (%f %f %f %f) (%f %f %f %f)]  (u8)\n", matIdx, cur_mat_3d.floats[0], cur_mat_3d.floats[1], cur_mat_3d.floats[2], cur_mat_3d.floats[3], cur_mat_3d.floats[4], cur_mat_3d.floats[5], cur_mat_3d.floats[6], cur_mat_3d.floats[7], cur_mat_3d.floats[8], cur_mat_3d.floats[9], cur_mat_3d.floats[10], cur_mat_3d.floats[11], cur_mat_3d.floats[12], cur_mat_3d.floats[13], cur_mat_3d.floats[14], cur_mat_3d.floats[15]); }
                break;
 
             case 0x04u:  // n <mat2x3>
                matIdx = ifs.getU16();
                cur_mat_2d.copyFrom(matrices_2d.get(matIdx));
-               if(b_debug_op) { Dprintf("[dbg] n %u m=([%f %f %f] [%f %f %f])  (u16)\n", matIdx, cur_mat_2d.floats[0], cur_mat_2d.floats[1], cur_mat_2d.floats[2], cur_mat_2d.floats[3], cur_mat_2d.floats[4], cur_mat_2d.floats[5]); }
+               if(b_debug_op) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: n %u m=([%f %f %f] [%f %f %f])  (u16)\n", matIdx, cur_mat_2d.floats[0], cur_mat_2d.floats[1], cur_mat_2d.floats[2], cur_mat_2d.floats[3], cur_mat_2d.floats[4], cur_mat_2d.floats[5]); }
                break;
 
             case 0x05u:  // q <mat4x4>
                matIdx = ifs.getU16();
                cur_mat_3d.copyFrom(matrices_3d.get(matIdx));
-               if(b_debug_op) { Dprintf("[dbg] q %u m=[(%f %f %f %f) (%f %f %f %f) (%f %f %f %f) (%f %f %f %f)]  (u16)\n", matIdx, cur_mat_3d.floats[0], cur_mat_3d.floats[1], cur_mat_3d.floats[2], cur_mat_3d.floats[3], cur_mat_3d.floats[4], cur_mat_3d.floats[5], cur_mat_3d.floats[6], cur_mat_3d.floats[7], cur_mat_3d.floats[8], cur_mat_3d.floats[9], cur_mat_3d.floats[10], cur_mat_3d.floats[11], cur_mat_3d.floats[12], cur_mat_3d.floats[13], cur_mat_3d.floats[14], cur_mat_3d.floats[15]); }
+               if(b_debug_op) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: q %u m=[(%f %f %f %f) (%f %f %f %f) (%f %f %f %f) (%f %f %f %f)]  (u16)\n", matIdx, cur_mat_3d.floats[0], cur_mat_3d.floats[1], cur_mat_3d.floats[2], cur_mat_3d.floats[3], cur_mat_3d.floats[4], cur_mat_3d.floats[5], cur_mat_3d.floats[6], cur_mat_3d.floats[7], cur_mat_3d.floats[8], cur_mat_3d.floats[9], cur_mat_3d.floats[10], cur_mat_3d.floats[11], cur_mat_3d.floats[12], cur_mat_3d.floats[13], cur_mat_3d.floats[14], cur_mat_3d.floats[15]); }
                break;
 
             case 0x0Eu:  // h <join> <cap>
                cur_join_cap = ifs.getU8();
-#ifdef MINNIE_FORCE_MITER_TO_BEVEL_LINE_JOIN
-               if((cur_join_cap & 15u) == MINNIE_LINEJOIN_MITER)
+               if(b_force_miter_to_bevel && (cur_join_cap & 15u) == MINNIE_LINEJOIN_MITER)
                   cur_join_cap = (cur_join_cap & 0xF0u) | MINNIE_LINEJOIN_BEVEL;
-#endif // MINNIE_FORCE_MITER_TO_BEVEL_LINE_JOIN
-               /* Dprintf("xxx h joincap=0x%02x\n", cur_join_cap); */
+               // Dprintf("[>>>] minnie::MinnieSetup::parseBuffer: h joincap=0x%02x\n", cur_join_cap);
                if(!b_render_join_cap)
                   cur_join_cap = 0u;
                {
@@ -11578,7 +11552,7 @@ struct MinnieSetup {
                      case MINNIE_LINECAP_SQUARE: sCap = "square"; break;
                      default:                    sCap = "?";      break;
                   }
-                  if(b_debug_op) { Dprintf("[dbg] h %s %s\n", sJoin, sCap); }
+                  if(b_debug_op) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: h %s %s\n", sJoin, sCap); }
                }
                break;
 
@@ -11587,12 +11561,12 @@ struct MinnieSetup {
                if(cur_fillrule_nonzero)
                {
                   beginDrawListOp(MINNIE_DRAWOP_FILLRULE_NONZERO);
-                  if(b_debug_op) { Dprintf("[dbg] nz\n"); }
+                  if(b_debug_op) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: nz\n"); }
                }
                else
                {
                   beginDrawListOp(MINNIE_DRAWOP_FILLRULE_EVENODD);
-                  if(b_debug_op) { Dprintf("[dbg] eo\n"); }
+                  if(b_debug_op) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: eo\n"); }
                }
                break;
 
@@ -11615,26 +11589,26 @@ struct MinnieSetup {
                cur_pal_idx = (op & 15u);
                cur_c32_fill = palette.getU32(cur_pal_idx);
                cur_c32_stroke = cur_c32_fill;
-               if(b_debug_op) { Dprintf("[dbg] c %u  (IMM)  (c32=#%08x)\n", cur_pal_idx, cur_c32_fill); }
+               if(b_debug_op) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: c %u  (IMM)  (c32=#%08x)\n", cur_pal_idx, cur_c32_fill); }
                break;
 
             case 0x20u:
                cur_pal_idx = ifs.getU8();
                cur_c32_fill = palette.getU32(cur_pal_idx);
                cur_c32_stroke = cur_c32_fill;
-               if(b_debug_op) { Dprintf("[dbg] c %u  (U8)  (c32=#%08x)\n", cur_pal_idx, cur_c32_fill); }
+               if(b_debug_op) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: c %u  (U8)  (c32=#%08x)\n", cur_pal_idx, cur_c32_fill); }
                break;
 
             case 0x21u:  // m f32
                cur_x += ifs.getF32();
                cur_y += ifs.getF32();
-               if(b_debug_op) { Dprintf("[dbg] m %f;%f  (f32)\n", cur_x, cur_y); }
+               if(b_debug_op) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: m %f;%f  (f32)\n", cur_x, cur_y); }
                break;
 
             case 0x22u:  // M f32
                cur_x = ifs.getF32();
                cur_y = ifs.getF32();
-               if(b_debug_op) { Dprintf("[dbg] M %f;%f  (f32)\n", cur_x, cur_y); }
+               if(b_debug_op) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: M %f;%f  (f32)\n", cur_x, cur_y); }
                break;
 
             case 0x23u:  // cubic spline (f32)
@@ -11646,7 +11620,7 @@ struct MinnieSetup {
                dstY    = cur_y + ifs.getF32();
                c2x     = dstX - cur_mirror_x;
                c2y     = dstY - cur_mirror_y;
-               if(b_debug_op >= 2) { Dprintf("[dbg] c %f %f %f %f %f %f  (f32)\n", c1x, c1y, c2x, c2y, dstX, dstY); }
+               if(b_debug_op >= 2) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: c %f %f %f %f %f %f  (f32)\n", c1x, c1y, c2x, c2y, dstX, dstY); }
                cur_path->lazyBegin(cur_x, cur_y);
                cur_path->cubicTo(cur_x, cur_y,
                                  c1x,   c1y,
@@ -11662,7 +11636,7 @@ struct MinnieSetup {
             case 0x24u: {
                  // (todo) remove ?
                  sU8 logicOp = ifs.getU8();
-                 if(b_debug_op) { Dprintf("[dbg] g %u\n", logicOp); }
+                 if(b_debug_op) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: g %u\n", logicOp); }
                }
                break;
 
@@ -11675,7 +11649,7 @@ struct MinnieSetup {
                dstY    = cur_y + ifs.getF32();
                c2x     = dstX - cur_mirror_x;
                c2y     = dstY - cur_mirror_y;
-               if(b_debug_op >= 2) { Dprintf("[dbg] s %f %f %f %f %f %f  (f32)\n", c1x, c1y, c2x, c2y, dstX, dstY); }
+               if(b_debug_op >= 2) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: s %f %f %f %f %f %f  (f32)\n", c1x, c1y, c2x, c2y, dstX, dstY); }
                cur_path->lazyBegin(cur_x, cur_y);
                cur_path->cubicTo(cur_x, cur_y,
                                  c1x,   c1y,
@@ -11693,7 +11667,7 @@ struct MinnieSetup {
                last_y = cur_y;
                cur_x += ifs.getF32();
                cur_y += ifs.getF32();
-               if(b_debug_op >= 2) { Dprintf("[dbg] l %f %f  (f32)\n", cur_x, cur_y); }
+               if(b_debug_op >= 2) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: l %f %f  (f32)\n", cur_x, cur_y); }
                cur_path->lazyBegin(last_x, last_y);
                cur_path->lineTo(cur_x, cur_y);
                cur_mirror_x = 0.0f;
@@ -11702,55 +11676,55 @@ struct MinnieSetup {
 
             case 0x27u:  // miter limit (u8)
                cur_miter_limit = (sF32)ifs.getU8();
-               if(b_debug_op) { Dprintf("[dbg] ml %f\n", cur_miter_limit); }
+               if(b_debug_op) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: ml %f\n", cur_miter_limit); }
                break;
 
             case 0x28u:  // m signed 6.2
                cur_x += ifs.getS8() * (1.0f / 4.0f);
                cur_y += ifs.getS8() * (1.0f / 4.0f);
-               if(b_debug_op) { Dprintf("[dbg] m %f;%f  (s6.2)\n", cur_x, cur_y); }
+               if(b_debug_op) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: m %f;%f  (s6.2)\n", cur_x, cur_y); }
                break;
 
             case 0x29u:  // m signed 14.2
                cur_x += ifs.getS16() * (1.0f / 4.0f);
                cur_y += ifs.getS16() * (1.0f / 4.0f);
-               if(b_debug_op) { Dprintf("[dbg] m %f;%f  (s14.2)\n", cur_x, cur_y); }
+               if(b_debug_op) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: m %f;%f  (s14.2)\n", cur_x, cur_y); }
                break;
 
             case 0x2Au:  // m signed 8.0
                cur_x += ifs.getS8();
                cur_y += ifs.getS8();
-               if(b_debug_op) { Dprintf("[dbg] m %f;%f  (s8.0)\n", cur_x, cur_y); }
+               if(b_debug_op) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: m %f;%f  (s8.0)\n", cur_x, cur_y); }
                break;
 
             case 0x2Bu:  // m unsigned 8.0
                cur_x += ifs.getU8();
                cur_y += ifs.getU8();
-               if(b_debug_op) { Dprintf("[dbg] m %f;%f  (u8.0)\n", cur_x, cur_y); }
+               if(b_debug_op) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: m %f;%f  (u8.0)\n", cur_x, cur_y); }
                break;
 
             case 0x2Cu:  // M unsigned 8.0
                cur_x = ifs.getU8();
                cur_y = ifs.getU8();
-               if(b_debug_op) { Dprintf("[dbg] M %f;%f  (u8.0)\n", cur_x, cur_y); }
+               if(b_debug_op) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: M %f;%f  (u8.0)\n", cur_x, cur_y); }
                break;
 
             case 0x2Du:  // M unsigned 8.0 even
                cur_x = (sF32)( (ifs.getU8() << 1) );
                cur_y = (sF32)( (ifs.getU8() << 1) );
-               if(b_debug_op) { Dprintf("[dbg] M %f;%f  (u8.0*2)\n", cur_x, cur_y); }
+               if(b_debug_op) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: M %f;%f  (u8.0*2)\n", cur_x, cur_y); }
                break;
 
             case 0x2Eu:  // M unsigned 8.0 mul4
                cur_x = (sF32)( (ifs.getU8() << 2) );
                cur_y = (sF32)( (ifs.getU8() << 2) );
-               if(b_debug_op) { Dprintf("[dbg] M %f;%f  (u8.0*4)\n", cur_x, cur_y); }
+               if(b_debug_op) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: M %f;%f  (u8.0*4)\n", cur_x, cur_y); }
                break;
 
             case 0x2Fu:  // M signed 14.2
                cur_x = ifs.getS16() * (1.0f / 4.0f);
                cur_y = ifs.getS16() * (1.0f / 4.0f);
-               if(b_debug_op) { Dprintf("[dbg] M %f;%f  (s14.2)\n", cur_x, cur_y); }
+               if(b_debug_op) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: M %f;%f  (s14.2)\n", cur_x, cur_y); }
                break;
 
             case 0x30u:  // t 0
@@ -11762,13 +11736,13 @@ struct MinnieSetup {
             case 0x36u:  // t 6
                cur_fb = framebuffers.get(op - 0x30u);
                aa_bias = -0.01f * (160.0f / cur_fb->w);
-               if(b_debug_op) { Dprintf("[dbg] t %u  (=> %ux%u)  (IMM)\n", cur_fb->fb_idx, cur_fb->w, cur_fb->h); }
+               if(b_debug_op) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: t %u  (=> %ux%u)  (IMM)\n", cur_fb->fb_idx, cur_fb->w, cur_fb->h); }
                break;
 
             case 0x37u:  // t ubyte
                cur_fb = framebuffers.get(ifs.getU8());
                aa_bias = -0.01f * (160.0f / cur_fb->w);
-               if(b_debug_op) { Dprintf("[dbg] t %u  (=> %ux%u)  (u8)\n", cur_fb->fb_idx, cur_fb->w, cur_fb->h); }
+               if(b_debug_op) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: t %u  (=> %ux%u)  (u8)\n", cur_fb->fb_idx, cur_fb->w, cur_fb->h); }
                break;
 
             case 0x38u:  // u 0
@@ -11779,12 +11753,12 @@ struct MinnieSetup {
             case 0x3Du:  // u 5
             case 0x3Eu:  // u 6
                cur_src_fb = framebuffers.get(op - 0x38u);
-               if(b_debug_op) { Dprintf("[dbg] u %u  (=> %ux%u)  (IMM)\n", cur_src_fb->fb_idx, cur_src_fb->w, cur_src_fb->h); }
+               if(b_debug_op) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: u %u  (=> %ux%u)  (IMM)\n", cur_src_fb->fb_idx, cur_src_fb->w, cur_src_fb->h); }
                break;
 
             case 0x3Fu:  // u ubyte
                cur_src_fb = framebuffers.get(ifs.getU8());
-               if(b_debug_op) { Dprintf("[dbg] u %u  (=> %ux%u)  (u8)\n", cur_src_fb->fb_idx, cur_src_fb->w, cur_src_fb->h); }
+               if(b_debug_op) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: u %u  (=> %ux%u)  (u8)\n", cur_src_fb->fb_idx, cur_src_fb->w, cur_src_fb->h); }
                break;
 
             case 0x40u:  // f 0
@@ -11802,7 +11776,7 @@ struct MinnieSetup {
             case 0x4Cu:  // f 12
             case 0x4Du:  // f 13
                palIdx = (op - 0x40u);
-               if(b_debug_op) { Dprintf("[dbg] f %u  (IMM)\n", palIdx); }
+               if(b_debug_op) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: f %u  (IMM)\n", palIdx); }
 #if MINNIE_SW_RENDER
                if(b_draw_sw_fill)
                   opFill(palIdx);
@@ -11811,7 +11785,7 @@ struct MinnieSetup {
 
             case 0x4Eu:  // f ubyte
                palIdx = ifs.getU8();
-               if(b_debug_op) { Dprintf("[dbg] f %u  (u8)\n", palIdx); }
+               if(b_debug_op) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: f %u  (u8)\n", palIdx); }
 #if MINNIE_SW_RENDER
                if(b_draw_sw_fill)
                   opFill(palIdx);
@@ -11819,7 +11793,7 @@ struct MinnieSetup {
                break;
 
             case 0x4Fu:  // clear coverage alpha (AA)
-               if(b_debug_op) { Dprintf("[dbg] f aa\n"); }
+               if(b_debug_op) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: f aa\n"); }
 #if MINNIE_SW_RENDER
                if(b_draw_sw_fill)
                   opFillCoverageAA();
@@ -11830,53 +11804,53 @@ struct MinnieSetup {
                cur_clip2d_path  = NULL;
                b_cur_clip2d_pre = YAC_FALSE;
                b_cur_clip_3d    = YAC_FALSE;
-               if(b_debug_op) { Dprintf("[dbg] w2off\n"); }
+               if(b_debug_op) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: w2off\n"); }
                break;
 
             case 0x51u:  // w2fb
                cur_clip2d_path  = updateAndGetPathFb();
                b_cur_clip2d_pre = YAC_FALSE;
                b_cur_clip_3d    = YAC_FALSE;
-               if(b_debug_op) { Dprintf("[dbg] w2fb\n"); }
+               if(b_debug_op) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: w2fb\n"); }
                break;
 
             case 0x52u:  // w2p <pathIdx.u8>
                cur_clip2d_path = paths.getRev(ifs.getU8() + 1);
                b_cur_clip2d_pre = YAC_TRUE;
                b_cur_clip_3d    = YAC_FALSE;
-               if(b_debug_op) { Dprintf("[dbg] w2p %u  (u8)\n", cur_clip2d_path->path_id); }
+               if(b_debug_op) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: w2p %u  (u8)\n", cur_clip2d_path->path_id); }
                break;
 
             case 0x53u:  // w2p <pathIdx.u16>
                cur_clip2d_path  = paths.getRev(ifs.getU16() + 1u);
                b_cur_clip2d_pre = YAC_TRUE;
                b_cur_clip_3d    = YAC_FALSE;
-               if(b_debug_op) { Dprintf("[dbg] w2p %u  (u16)\n", cur_clip2d_path->path_id); }
+               if(b_debug_op) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: w2p %u  (u16)\n", cur_clip2d_path->path_id); }
                break;
 
             case 0x54u:  // w2 <pathIdx.u8>
                cur_clip2d_path  = paths.getRev(ifs.getU8() + 1u);
                b_cur_clip2d_pre = YAC_FALSE;
                b_cur_clip_3d    = YAC_FALSE;
-               if(b_debug_op) { Dprintf("[dbg] w2 %u  (u8)\n", cur_clip2d_path->path_id); }
+               if(b_debug_op) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: w2 %u  (u8)\n", cur_clip2d_path->path_id); }
                break;
 
             case 0x55u:  // w2 <pathIdx.u16>
                cur_clip2d_path  = paths.getRev(ifs.getU16() + 1u);
                b_cur_clip2d_pre = YAC_FALSE;
                b_cur_clip_3d    = YAC_FALSE;
-               if(b_debug_op) { Dprintf("[dbg] w2 %u  (u16)\n", cur_clip2d_path->path_id); }
+               if(b_debug_op) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: w2 %u  (u16)\n", cur_clip2d_path->path_id); }
                break;
 
             case 0x56u:  // w3fb
                cur_clip2d_path  = NULL;
                b_cur_clip2d_pre = YAC_FALSE;
                b_cur_clip_3d    = YAC_TRUE;
-               if(b_debug_op) { Dprintf("[dbg] w3fb\n"); }
+               if(b_debug_op) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: w3fb\n"); }
                break;
 
             case 0x5Fu:  // fp
-               if(b_debug_op >= 2) { Dprintf("[dbg] fp\n"); }
+               if(b_debug_op >= 2) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: fp\n"); }
                if(NULL != last_drawn_path)
                {
                   last_drawn_path->free();
@@ -11886,7 +11860,7 @@ struct MinnieSetup {
             case 0x60u:  // b dstX dstY
                blitDstX = sS16((ifs.getS16() * (1.0f / 4.0f)) * geo_scale_x);
                blitDstY = sS16((ifs.getS16() * (1.0f / 4.0f)) * geo_scale_y);
-               if(b_debug_op >= 2) { Dprintf("[dbg] b %d %d [%u %u 0 0]\n", blitDstX, blitDstY, cur_src_fb->w, cur_src_fb->h); }
+               if(b_debug_op >= 2) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: b %d %d [%u %u 0 0]\n", blitDstX, blitDstY, cur_src_fb->w, cur_src_fb->h); }
                break;
 
             case 0x61u:  // b dstX dstY w h srcX srcY (u8)
@@ -11896,7 +11870,7 @@ struct MinnieSetup {
                blitH = sU16(ifs.getU8() * geo_scale_y);
                blitSrcX = sU16(ifs.getU8() * geo_scale_x);
                blitSrcY = sU16(ifs.getU8() * geo_scale_y);
-               if(b_debug_op >= 2) { Dprintf("[dbg] b %d %d %u %u %u %u  (u8)\n", blitDstX, blitDstY, blitW, blitH, blitSrcX, blitSrcY); }
+               if(b_debug_op >= 2) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: b %d %d %u %u %u %u  (u8)\n", blitDstX, blitDstY, blitW, blitH, blitSrcX, blitSrcY); }
                break;
 
             case 0x62u:  // b dstX dstY w h srcX srcY (u16)
@@ -11906,7 +11880,7 @@ struct MinnieSetup {
                blitH = sU16(ifs.getU16() * geo_scale_y);
                blitSrcX = sU16(ifs.getU16() * geo_scale_x);
                blitSrcY = sU16(ifs.getU16() * geo_scale_y);
-               if(b_debug_op >= 2) { Dprintf("[dbg] b %d %d %u %u %u %u  (u16)\n", blitDstX, blitDstY, blitW, blitH, blitSrcX, blitSrcY); }
+               if(b_debug_op >= 2) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: b %d %d %u %u %u %u  (u16)\n", blitDstX, blitDstY, blitW, blitH, blitSrcX, blitSrcY); }
                break;
 
             // 0x63..0x6F: RESVD
@@ -11928,42 +11902,42 @@ struct MinnieSetup {
             case 0x7Eu:  // mask 14
             case 0x7Fu:  // mask 15
                cur_mask_idx = (op - 0x70u);
-               if(b_debug_op) { Dprintf("[dbg] a %d  (IMM)\n", cur_mask_idx); }
+               if(b_debug_op) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: a %d  (IMM)\n", cur_mask_idx); }
                break;
 
             case 0x80u:  // mask <u8>
                cur_mask_idx = ifs.getU8();
-               if(b_debug_op) { Dprintf("[dbg] a %d  (u8)\n", cur_mask_idx); }
+               if(b_debug_op) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: a %d  (u8)\n", cur_mask_idx); }
                break;
 
             case 0x81u:  // mask off
                cur_mask_idx = -1;
-               if(b_debug_op) { Dprintf("[dbg] a off\n"); }
+               if(b_debug_op) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: a off\n"); }
                break;
 
             case 0x82u:  // k / stroke_w
                cur_stroke_w = (ifs.getU8() * (1.0f / 4.0f)) * stroke_scale + stroke_offset;
-               // Dprintf("xxx minnie: set cur_stroke_w=%f  stroke_scale=%f stroke_offset=%f\n", cur_stroke_w, stroke_scale, stroke_offset);
+               // Dprintf("[>>>] minnie::MinnieSetup::parseBuffer: set cur_stroke_w=%f  stroke_scale=%f stroke_offset=%f\n", cur_stroke_w, stroke_scale, stroke_offset);
                if(b_debug_op)
                {
                   if(cur_stroke_w <= 0.001f)
                   {
-                     Dprintf("[dbg] k fill  (u8)\n");
+                     Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: k fill  (u8)\n");
                   }
                   else if(cur_stroke_w <= 0.25f)
                   {
-                     Dprintf("[dbg] k line  (u8)\n");
+                     Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: k line  (u8)\n");
                   }
                   else
                   {
-                     Dprintf("[dbg] k %f\n", cur_stroke_w);
+                     Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: k %f\n", cur_stroke_w);
                   }
                }
                break;
 
             case 0x83u:  // k 0    /    k fill
                cur_stroke_w = 0.0f;
-               if(b_debug_op) { Dprintf("[dbg] k fill\n"); }
+               if(b_debug_op) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: k fill\n"); }
                break;
 
             case 0x84u:  // p <idx>  (convex)
@@ -12010,17 +11984,17 @@ struct MinnieSetup {
                      cur_y = 0.0f;
                      cur_mirror_x = 0.0f;
                      cur_mirror_y = 0.0f;
-                     if(b_debug_op) { Dprintf("[dbg] psub   (parent_path_id=%u)\n", last_parent_path->path_id); }
+                     if(b_debug_op) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: psub   (parent_path_id=%u)\n", last_parent_path->path_id); }
                   }
                   else
                   {
-                     Derrorprintf("[---] Minnie::parseBuffer: max sub paths(%u) exceeded\n", last_parent_path->sub_paths.max_elements);
+                     Derrorprintf("[---] minnie::MinnieSetup::parseBuffer: max sub paths(%u) exceeded\n", last_parent_path->sub_paths.max_elements);
                      return YAC_FALSE;
                   }
                }
                else
                {
-                  Derrorprintf("[---] Minnie::parseBuffer: 'psub' op w/o parent path\n");
+                  Derrorprintf("[---] minnie::MinnieSetup::parseBuffer: 'psub' op w/o parent path\n");
                   return YAC_FALSE;
                }
                break;
@@ -12035,7 +12009,7 @@ struct MinnieSetup {
                last_y = cur_y;
                cur_x += ifs.getU8() * (1.0f / 4.0f);
                cur_y += ifs.getU8() * (1.0f / 4.0f);
-               if(b_debug_op >= 2) { Dprintf("[dbg] l %f %f  (u6.2)\n", cur_x, cur_y); }
+               if(b_debug_op >= 2) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: l %f %f  (u6.2)\n", cur_x, cur_y); }
                cur_path->lazyBegin(last_x, last_y);
                cur_path->lineTo(cur_x, cur_y);
                cur_mirror_x = 0.0f;
@@ -12047,7 +12021,7 @@ struct MinnieSetup {
                last_y = cur_y;
                cur_x += ifs.getS16() * (1.0f / 4.0f);
                cur_y += ifs.getS16() * (1.0f / 4.0f);
-               if(b_debug_op >= 2) { Dprintf("[dbg] l %f %f  (s14.2)\n", cur_x, cur_y); }
+               if(b_debug_op >= 2) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: l %f %f  (s14.2)\n", cur_x, cur_y); }
                cur_path->lazyBegin(last_x, last_y);
                cur_path->lineTo(cur_x, cur_y);
                cur_mirror_x = 0.0f;
@@ -12057,10 +12031,10 @@ struct MinnieSetup {
             case 0x8Au:  // l x y (u8)
                last_x = cur_x;
                last_y = cur_y;
-               // Dprintf("xxx 0x8A: l  last=(%f; %f)\n", last_x, last_y);
+               // Dprintf("[>>>] minnie::MinnieSetup::parseBuffer: 0x8A l  last=(%f; %f)\n", last_x, last_y);
                cur_x += ifs.getU8();
                cur_y += ifs.getU8();
-               if(b_debug_op >= 2) { Dprintf("[dbg] l %f %f  (u8)\n", cur_x, cur_y); }
+               if(b_debug_op >= 2) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: %f %f  (u8)\n", cur_x, cur_y); }
                cur_path->lazyBegin(last_x, last_y);
                cur_path->lineTo(cur_x, cur_y);
                cur_mirror_x = 0.0f;
@@ -12072,7 +12046,7 @@ struct MinnieSetup {
                last_y = cur_y;
                cur_x += ifs.getS8() * (1.0f / 4.0f);
                cur_y += ifs.getS8() * (1.0f / 4.0f);
-               if(b_debug_op >= 2) { Dprintf("[dbg] l %f %f  (s6.2)\n", cur_x, cur_y); }
+               if(b_debug_op >= 2) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: l %f %f  (s6.2)\n", cur_x, cur_y); }
                cur_path->lazyBegin(last_x, last_y);
                cur_path->lineTo(cur_x, cur_y);
                cur_mirror_x = 0.0f;
@@ -12086,7 +12060,7 @@ struct MinnieSetup {
                cur_x += ifs4.read12s() * (1.0f / 4.0f);
                cur_y += ifs4.read12s() * (1.0f / 4.0f);
                ifs4.end();
-               if(b_debug_op >= 2) { Dprintf("[dbg] l %f %f  (s10.2)\n", cur_x, cur_y); }
+               if(b_debug_op >= 2) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: l %f %f  (s10.2)\n", cur_x, cur_y); }
                cur_path->lazyBegin(last_x, last_y);
                cur_path->lineTo(cur_x, cur_y);
                break;
@@ -12098,12 +12072,12 @@ struct MinnieSetup {
 
             case 0x8Eu:  // num_seg (u8)
                cur_num_seg = ifs.getU8();
-               if(b_debug_op) { Dprintf("[dbg] j %u\n", cur_num_seg); }
+               if(b_debug_op) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: j %u\n", cur_num_seg); }
                break;
 
             case 0x8Fu:  // num_seg (u16)
                cur_num_seg = ifs.getU16();
-               if(b_debug_op) { Dprintf("[dbg] j %u\n", cur_num_seg); }
+               if(b_debug_op) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: j %u\n", cur_num_seg); }
                break;
 
             case 0x90u:  // cubic spline (s6.2)
@@ -12115,7 +12089,7 @@ struct MinnieSetup {
                dstY    = cur_y + (ifs.getS8() * (1.0f / 4.0f));
                c2x     = dstX - cur_mirror_x;
                c2y     = dstY - cur_mirror_y;
-               if(b_debug_op >= 2) { Dprintf("[dbg] c %f %f %f %f %f %f  (s6.2)\n", c1x, c1y, c2x, c2y, dstX, dstY); }
+               if(b_debug_op >= 2) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: c %f %f %f %f %f %f  (s6.2)\n", c1x, c1y, c2x, c2y, dstX, dstY); }
                cur_path->lazyBegin(cur_x, cur_y);
                cur_path->cubicTo(cur_x, cur_y,
                                  c1x,   c1y,
@@ -12137,7 +12111,7 @@ struct MinnieSetup {
                dstY    = cur_y + ifs.getS8();
                c2x     = dstX - cur_mirror_x;
                c2y     = dstY - cur_mirror_y;
-               if(b_debug_op >= 2) { Dprintf("[dbg] c %f %f %f %f %f %f  (s8.0)\n", c1x, c1y, c2x, c2y, dstX, dstY); }
+               if(b_debug_op >= 2) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: c %f %f %f %f %f %f  (s8.0)\n", c1x, c1y, c2x, c2y, dstX, dstY); }
                cur_path->lazyBegin(cur_x, cur_y);
                cur_path->cubicTo(cur_x, cur_y,
                                  c1x,   c1y,
@@ -12159,7 +12133,7 @@ struct MinnieSetup {
                dstY    = cur_y + ifs.getU8();
                c2x     = dstX - cur_mirror_x;
                c2y     = dstY - cur_mirror_y;
-               if(b_debug_op >= 2) { Dprintf("[dbg] c %f %f %f %f %f %f  (u8.0)\n", c1x, c1y, c2x, c2y, dstX, dstY); }
+               if(b_debug_op >= 2) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: c %f %f %f %f %f %f  (u8.0)\n", c1x, c1y, c2x, c2y, dstX, dstY); }
                cur_path->lazyBegin(cur_x, cur_y);
                cur_path->cubicTo(cur_x, cur_y,
                                  c1x,   c1y,
@@ -12177,12 +12151,12 @@ struct MinnieSetup {
                c1y     = cur_y + (ifs.getS16() * (1.0f / 4.0f));
                cur_mirror_x = (ifs.getS16() * (1.0f / 4.0f));
                cur_mirror_y = (ifs.getS16() * (1.0f / 4.0f));
-               if(b_debug_cubic) { Dprintf("[trc] cur=(%f;%f) mirror=(%f;%f)", cur_x, cur_y, cur_mirror_x, cur_mirror_y); }
+               if(b_debug_cubic) { Dprintf("[trc] minnie::MinnieSetup::parseBuffer: cur=(%f;%f) mirror=(%f;%f)", cur_x, cur_y, cur_mirror_x, cur_mirror_y); }
                dstX    = cur_x + (ifs.getS16() * (1.0f / 4.0f));
                dstY    = cur_y + (ifs.getS16() * (1.0f / 4.0f));
                c2x     = dstX - cur_mirror_x;
                c2y     = dstY - cur_mirror_y;
-               if(b_debug_op >= 2) { Dprintf("[dbg] c %f %f %f %f %f %f  (s14.2)\n", c1x, c1y, c2x, c2y, dstX, dstY); }
+               if(b_debug_op >= 2) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: c %f %f %f %f %f %f  (s14.2)\n", c1x, c1y, c2x, c2y, dstX, dstY); }
                cur_path->lazyBegin(cur_x, cur_y);
                cur_path->cubicTo(cur_x, cur_y,
                                  c1x,   c1y,
@@ -12201,13 +12175,13 @@ struct MinnieSetup {
                c1y     = cur_y + (ifs4.read12s() * (1.0f / 4.0f));
                cur_mirror_x = (ifs4.read12s() * (1.0f / 4.0f));
                cur_mirror_y = (ifs4.read12s() * (1.0f / 4.0f));
-               if(b_debug_cubic) { Dprintf("[trc] cur=(%f;%f) mirror=(%f;%f)", cur_x, cur_y, cur_mirror_x, cur_mirror_y); }
+               if(b_debug_cubic) { Dprintf("[trc] minnie::MinnieSetup::parseBuffer: cur=(%f;%f) mirror=(%f;%f)", cur_x, cur_y, cur_mirror_x, cur_mirror_y); }
                dstX    = cur_x + (ifs4.read12s() * (1.0f / 4.0f));
                dstY    = cur_y + (ifs4.read12s() * (1.0f / 4.0f));
                ifs4.end();
                c2x     = dstX - cur_mirror_x;
                c2y     = dstY - cur_mirror_y;
-               if(b_debug_op >= 2) { Dprintf("[dbg] c %f %f %f %f %f %f  (s10.2)\n", c1x, c1y, c2x, c2y, dstX, dstY); }
+               if(b_debug_op >= 2) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: c %f %f %f %f %f %f  (s10.2)\n", c1x, c1y, c2x, c2y, dstX, dstY); }
                cur_path->lazyBegin(cur_x, cur_y);
                cur_path->cubicTo(cur_x, cur_y,
                                  c1x,   c1y,
@@ -12223,13 +12197,13 @@ struct MinnieSetup {
             case 0x95u:  // m -(unsigned 8.0)
                cur_x -= ifs.getU8();
                cur_y -= ifs.getU8();
-               if(b_debug_op) { Dprintf("[dbg] m %f;%f  (-u8.0)\n", cur_x, cur_y); }
+               if(b_debug_op) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: m %f;%f  (-u8.0)\n", cur_x, cur_y); }
                break;
 
             case 0x96u:  // m (unsigned 8.0 * 2)
                cur_x += (ifs.getU8() + 1u) * 2.0f;
                cur_y += (ifs.getU8() + 1u) * 2.0f;
-               if(b_debug_op) { Dprintf("[dbg] m %f;%f  (u8.0*2)\n", cur_x, cur_y); }
+               if(b_debug_op) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: m %f;%f  (u8.0*2)\n", cur_x, cur_y); }
                break;
 
             // 0x95..0x97: RESVD
@@ -12243,7 +12217,7 @@ struct MinnieSetup {
                dstY    = cur_y + (ifs.getS8() * (1.0f / 4.0f));
                c2x     = dstX - cur_mirror_x;
                c2y     = dstY - cur_mirror_y;
-               if(b_debug_op >= 2) { Dprintf("[dbg] s %f %f %f %f %f %f  (s6.2)\n", c1x, c1y, c2x, c2y, dstX, dstY); }
+               if(b_debug_op >= 2) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: s %f %f %f %f %f %f  (s6.2)\n", c1x, c1y, c2x, c2y, dstX, dstY); }
                cur_path->lazyBegin(cur_x, cur_y);
                cur_path->cubicTo(cur_x, cur_y,
                                  c1x,   c1y,
@@ -12265,7 +12239,7 @@ struct MinnieSetup {
                dstY    = cur_y + ifs.getS8();
                c2x     = dstX - cur_mirror_x;
                c2y     = dstY - cur_mirror_y;
-               if(b_debug_op >= 2) { Dprintf("[dbg] s %f %f %f %f %f %f  (s8.0)\n", c1x, c1y, c2x, c2y, dstX, dstY); }
+               if(b_debug_op >= 2) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: s %f %f %f %f %f %f  (s8.0)\n", c1x, c1y, c2x, c2y, dstX, dstY); }
                cur_path->lazyBegin(cur_x, cur_y);
                cur_path->cubicTo(cur_x, cur_y,
                                  c1x,   c1y,
@@ -12287,7 +12261,7 @@ struct MinnieSetup {
                dstY    = cur_y + ifs.getU8();
                c2x     = dstX - cur_mirror_x;
                c2y     = dstY - cur_mirror_y;
-               if(b_debug_op >= 2) { Dprintf("[dbg] s %f %f %f %f %f %f  (u8.0)\n", c1x, c1y, c2x, c2y, dstX, dstY); }
+               if(b_debug_op >= 2) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: s %f %f %f %f %f %f  (u8.0)\n", c1x, c1y, c2x, c2y, dstX, dstY); }
                cur_path->lazyBegin(cur_x, cur_y);
                cur_path->cubicTo(cur_x, cur_y,
                                  c1x,   c1y,
@@ -12309,7 +12283,7 @@ struct MinnieSetup {
                dstY    = cur_y + (ifs.getS16() * (1.0f / 4.0f));
                c2x     = dstX - cur_mirror_x;
                c2y     = dstY - cur_mirror_y;
-               if(b_debug_op >= 2) { Dprintf("[dbg] s %f %f %f %f %f %f  (s14.2)\n", c1x, c1y, c2x, c2y, dstX, dstY); }
+               if(b_debug_op >= 2) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: s %f %f %f %f %f %f  (s14.2)\n", c1x, c1y, c2x, c2y, dstX, dstY); }
                cur_path->lazyBegin(cur_x, cur_y);
                cur_path->cubicTo(cur_x, cur_y,
                                  c1x,   c1y,
@@ -12329,12 +12303,12 @@ struct MinnieSetup {
                ry        = ifs.getS16() * (1.0f / 4.0f);
                rotAndFlags = ifs.getU16();
                xrot      = ((rotAndFlags >> 2)&16383u) * ((sF32)sM_2PI / (512.0f*32));
-               if(b_debug_arc >= 2 && (xrot != 0.0f)) { Dprintf("[trc] arc rotAndFlags=%u xrot=%f\n", rotAndFlags, (xrot*(360.0f/sM_2PI))); }
+               if(b_debug_arc >= 2 && (xrot != 0.0f)) { Dprintf("[trc] minnie::MinnieSetup::parseBuffer: arc rotAndFlags=%u xrot=%f\n", rotAndFlags, (xrot*(360.0f/sM_2PI))); }
                bLargeArc = rotAndFlags & (1u << 0);
                bArcSweep = (rotAndFlags & (1u << 1)) >> 1;
                dstX      = cur_x + (ifs.getS16() * (1.0f / 4.0f));
                dstY      = cur_y + (ifs.getS16() * (1.0f / 4.0f));
-               if(b_debug_op) { Dprintf("[dbg] arc %f %f %f %d %d %f %f (#seg=%u) (s14.2)\n", rx, ry, xrot, bLargeArc, bArcSweep, dstX, dstY, cur_num_seg); }
+               if(b_debug_op) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: arc %f %f %f %d %d %f %f (#seg=%u) (s14.2)\n", rx, ry, xrot, bLargeArc, bArcSweep, dstX, dstY, cur_num_seg); }
                cur_path->lazyBegin(cur_x, cur_y);
                cur_path->arcTo(cur_x, cur_y,
                                rx, ry,
@@ -12353,12 +12327,12 @@ struct MinnieSetup {
                ry        = ifs.getF32();
                rotAndFlags = ifs.getU16();
                xrot      = ((rotAndFlags >> 2)&16383u) * ((sF32)sM_2PI / (512.0f*32));
-               if(b_debug_arc >= 2 && (xrot != 0.0f)) { Dprintf("[trc] arc rotAndFlags=%u xrot=%f\n", rotAndFlags, (xrot*(360.0f/sM_2PI))); }
+               if(b_debug_arc >= 2 && (xrot != 0.0f)) { Dprintf("[trc] minnie::MinnieSetup::parseBuffer: arc rotAndFlags=%u xrot=%f\n", rotAndFlags, (xrot*(360.0f/sM_2PI))); }
                bLargeArc = rotAndFlags & (1u << 0);
                bArcSweep = (rotAndFlags & (1u << 1)) >> 1;
                dstX      = cur_x + ifs.getF32();
                dstY      = cur_y + ifs.getF32();
-               if(b_debug_op) { Dprintf("[dbg] arc %f %f %f %d %d %f %f (#seg=%u) (f32)\n", rx, ry, xrot, bLargeArc, bArcSweep, dstX, dstY, cur_num_seg); }
+               if(b_debug_op) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: arc %f %f %f %d %d %f %f (#seg=%u) (f32)\n", rx, ry, xrot, bLargeArc, bArcSweep, dstX, dstY, cur_num_seg); }
                cur_path->lazyBegin(cur_x, cur_y);
                cur_path->arcTo(cur_x, cur_y,
                                rx, ry,
@@ -12375,7 +12349,7 @@ struct MinnieSetup {
             case 0xA0u:  // r (u6.2)
                w = ifs.getU8() * (1.0f / 4.0f);
                h = ifs.getU8() * (1.0f / 4.0f);
-               if(b_debug_op) { Dprintf("[dbg] r %f %f  (u6.2)\n", w, h); }
+               if(b_debug_op) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: r %f %f  (u6.2)\n", w, h); }
                if(MINNIE_PATH_TYPE_IMMEDIATE == cur_path->type)
                {
                   (void)beginDrawListOpRect(w, h);
@@ -12389,7 +12363,7 @@ struct MinnieSetup {
             case 0xA1u:  // r (u14.2)
                w = ifs.getU16() * (1.0f / 4.0f);
                h = ifs.getU16() * (1.0f / 4.0f);
-               if(b_debug_op) { Dprintf("[dbg] r %f %f  (u14.2)\n", w, h); }
+               if(b_debug_op) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: r %f %f  (u14.2)\n", w, h); }
                if(MINNIE_PATH_TYPE_IMMEDIATE == cur_path->type)
                {
                   (void)beginDrawListOpRect(w, h);
@@ -12403,7 +12377,7 @@ struct MinnieSetup {
             case 0xA2u:  // r (u8.0)
                w = ifs.getU8();
                h = ifs.getU8();
-               if(b_debug_op) { Dprintf("[dbg] r %f %f  (u8.0)\n", w, h); }
+               if(b_debug_op) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: r %f %f  (u8.0)\n", w, h); }
                if(MINNIE_PATH_TYPE_IMMEDIATE == cur_path->type)
                {
                   (void)beginDrawListOpRect(w, h);
@@ -12417,7 +12391,7 @@ struct MinnieSetup {
             case 0xA3u:  // r (u8.0 even)
                w = (sF32)( (ifs.getU8() << 1) );
                h = (sF32)( (ifs.getU8() << 1) );
-               if(b_debug_op) { Dprintf("[dbg] r %f %f  (u8.0*2)\n", w, h); }
+               if(b_debug_op) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: r %f %f  (u8.0*2)\n", w, h); }
                if(MINNIE_PATH_TYPE_IMMEDIATE == cur_path->type)
                {
                   (void)beginDrawListOpRect(w, h);
@@ -12433,7 +12407,7 @@ struct MinnieSetup {
                h = ifs.getF32();
                rx = ifs.getF32();
                ry = ifs.getF32();
-               if(b_debug_op) { Dprintf("[dbg] r %f %f %f %f  (f32)\n", w, h, rx, ry); }
+               if(b_debug_op) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: r %f %f %f %f  (f32)\n", w, h, rx, ry); }
                if(MINNIE_PATH_TYPE_IMMEDIATE == cur_path->type)
                {
                   (void)beginDrawListOpRoundRect(w, h, rx, ry);
@@ -12449,7 +12423,7 @@ struct MinnieSetup {
                h = ifs.getU16() * (1.0f / 4.0f);
                rx = ifs.getU16() * (1.0f / 4.0f);
                ry = ifs.getU16() * (1.0f / 4.0f);
-               if(b_debug_op) { Dprintf("[dbg] r %f %f %f %f  (u14.2)\n", w, h, rx, ry); }
+               if(b_debug_op) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: r %f %f %f %f  (u14.2)\n", w, h, rx, ry); }
                if(MINNIE_PATH_TYPE_IMMEDIATE == cur_path->type)
                {
                   (void)beginDrawListOpRoundRect(w, h, rx, ry);
@@ -12465,7 +12439,7 @@ struct MinnieSetup {
                h = ifs.getU8() * 2.0f;
                rx = ifs.getU8() * 2.0f;
                ry = ifs.getU8() * 2.0f;
-               if(b_debug_op) { Dprintf("[dbg] r %f %f %f %f  (u8*2)\n", w, h, rx, ry); }
+               if(b_debug_op) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: r %f %f %f %f  (u8*2)\n", w, h, rx, ry); }
                if(MINNIE_PATH_TYPE_IMMEDIATE == cur_path->type)
                {
                   (void)beginDrawListOpRoundRect(w, h, rx, ry);
@@ -12479,7 +12453,7 @@ struct MinnieSetup {
             case 0xB0u:  // e (u6.2)
                rx = ifs.getU8() * (1.0f / 4.0f);
                ry = ifs.getU8() * (1.0f / 4.0f);
-               if(b_debug_op) { Dprintf("[dbg] e %f %f  (u6.2)\n", rx, ry); }
+               if(b_debug_op) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: e %f %f  (u6.2)\n", rx, ry); }
                if(MINNIE_PATH_TYPE_IMMEDIATE == cur_path->type)
                {
                   (void)beginDrawListOpEllipse(rx, ry);
@@ -12493,8 +12467,8 @@ struct MinnieSetup {
             case 0xB1u:  // e (u14.2)
                rx = ifs.getU16() * (1.0f / 4.0f);
                ry = ifs.getU16() * (1.0f / 4.0f);
-               if(b_debug_op) { Dprintf("[dbg] e %f %f  (u14.2)\n", rx, ry); }
-               /* Dprintf("xxx ellipse cur_path->type=%d\n", cur_path->type); */
+               if(b_debug_op) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: e %f %f  (u14.2)\n", rx, ry); }
+               // Dprintf("[>>>] minnie::MinnieSetup::parseBuffer: ellipse cur_path->type=%d\n", cur_path->type);
                if(MINNIE_PATH_TYPE_IMMEDIATE == cur_path->type)
                {
                   (void)beginDrawListOpEllipse(rx, ry);
@@ -12508,7 +12482,7 @@ struct MinnieSetup {
             case 0xB2u:  // e (u8.0)
                rx = (sF32)( ifs.getU8() );
                ry = (sF32)( ifs.getU8() );
-               if(b_debug_op) { Dprintf("[dbg] e %f %f  (u8.0)\n", rx, ry); }
+               if(b_debug_op) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: e %f %f  (u8.0)\n", rx, ry); }
                if(MINNIE_PATH_TYPE_IMMEDIATE == cur_path->type)
                {
                   (void)beginDrawListOpEllipse(rx, ry);
@@ -12522,7 +12496,7 @@ struct MinnieSetup {
             case 0xB3u:  // e (u8.0 even)
                rx = (sF32)( (ifs.getU8() << 1) );
                ry = (sF32)( (ifs.getU8() << 1) );
-               if(b_debug_op) { Dprintf("[dbg] e %f %f  (u8.0*2)\n", rx, ry); }
+               if(b_debug_op) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: e %f %f  (u8.0*2)\n", rx, ry); }
                if(MINNIE_PATH_TYPE_IMMEDIATE == cur_path->type)
                {
                   (void)beginDrawListOpEllipse(rx, ry);
@@ -12535,7 +12509,7 @@ struct MinnieSetup {
 
             case 0xB4u:  // circle (u14.2)
                r = ifs.getU16() * (1.0f / 4.0f);
-               if(b_debug_op) { Dprintf("[dbg] circle %f  (u14.2)\n", r); }
+               if(b_debug_op) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: circle %f  (u14.2)\n", r); }
                if(MINNIE_PATH_TYPE_IMMEDIATE == cur_path->type)
                {
                   (void)beginDrawListOpEllipse(r, r);
@@ -12582,12 +12556,12 @@ struct MinnieSetup {
                last_drawn_path = oPath;
                if(NULL != oPath)
                {
-                  if(b_debug_op) { Dprintf("[dbg] d %u  (u8)\n", pathIdx); }
+                  if(b_debug_op) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: d %u  (u8)\n", pathIdx); }
                   drawMultiPath(oPath, 0/*mode=notransform*/);
                }
                else
                {
-                  Derrorprintf("[---] 0xD0: pathIdx=%u oPath=NULL!!\n", pathIdx);
+                  Derrorprintf("[---] minnie::MinnieSetup::parseBuffer: 0xD0: pathIdx=%u oPath=NULL!!\n", pathIdx);
                }
                break;
 
@@ -12597,12 +12571,12 @@ struct MinnieSetup {
                last_drawn_path = oPath;
                if(NULL != oPath)
                {
-                  if(b_debug_op) { Dprintf("[dbg] d %u  (u16)\n", pathIdx); }
+                  if(b_debug_op) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: d %u  (u16)\n", pathIdx); }
                   drawMultiPath(oPath, 0/*mode=no transform*/);
                }
                else
                {
-                  Derrorprintf("[---] 0xD1: pathIdx=%u oPath=NULL!!\n", pathIdx);
+                  Derrorprintf("[---] minnie::MinnieSetup::parseBuffer: 0xD1: pathIdx=%u oPath=NULL!!\n", pathIdx);
                }
                break;
 
@@ -12612,12 +12586,12 @@ struct MinnieSetup {
                last_drawn_path = oPath;
                if(NULL != oPath)
                {
-                  if(b_debug_op) { Dprintf("[dbg] d2 %u  (u8)\n", pathIdx); }
+                  if(b_debug_op) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: d2 %u  (u8)\n", pathIdx); }
                   drawMultiPath(oPath, 1/*mode=transform2d*/);
                }
                else
                {
-                  Derrorprintf("[---] 0xD2: pathIdx=%u oPath=NULL!!\n", pathIdx);
+                  Derrorprintf("[---] 0xD2: minnie::MinnieSetup::parseBuffer: pathIdx=%u oPath=NULL!!\n", pathIdx);
                }
                break;
 
@@ -12627,12 +12601,12 @@ struct MinnieSetup {
                last_drawn_path = oPath;
                if(NULL != oPath)
                {
-                  if(b_debug_op) { Dprintf("[dbg] d3 %u  (u8)\n", pathIdx); }
+                  if(b_debug_op) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: d3 %u  (u8)\n", pathIdx); }
                   drawMultiPath(oPath, 2/*mode=transform3d*/);
                }
                else
                {
-                  Derrorprintf("[---] 0xD3: pathIdx=%u oPath=NULL!!\n", pathIdx);
+                  Derrorprintf("[---] minnie::MinnieSetup::parseBuffer: 0xD3: pathIdx=%u oPath=NULL!!\n", pathIdx);
                }
                break;
 
@@ -12642,12 +12616,12 @@ struct MinnieSetup {
                last_drawn_path = oPath;
                if(NULL != oPath)
                {
-                  if(b_debug_op) { Dprintf("[dbg] d2 %u  (u16)\n", pathIdx); }
+                  if(b_debug_op) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: d2 %u  (u16)\n", pathIdx); }
                   drawMultiPath(oPath, 1/*mode=transform2d*/);
                }
                else
                {
-                  Derrorprintf("[---] 0xD4: pathIdx=%u oPath=NULL!!\n", pathIdx);
+                  Derrorprintf("[---] minnie::MinnieSetup::parseBuffer: 0xD4: pathIdx=%u oPath=NULL!!\n", pathIdx);
                }
                break;
 
@@ -12657,12 +12631,12 @@ struct MinnieSetup {
                last_drawn_path = oPath;
                if(NULL != oPath)
                {
-                  if(b_debug_op) { Dprintf("[dbg] d3 %u  (u16)\n", pathIdx); }
+                  if(b_debug_op) { Dprintf("[dbg] minnie::MinnieSetup::parseBuffer: d3 %u  (u16)\n", pathIdx); }
                   drawMultiPath(oPath, 2/*mode=transform3d*/);
                }
                else
                {
-                  Derrorprintf("[---] 0xD5: pathIdx=%u oPath=NULL!!\n", pathIdx);
+                  Derrorprintf("[---] minnie::MinnieSetup::parseBuffer: 0xD5: pathIdx=%u oPath=NULL!!\n", pathIdx);
                }
                break;
 
@@ -12685,7 +12659,7 @@ struct MinnieSetup {
    // <method.png>
 #ifdef SHADERVG_SCRIPT_API
    void setFramebufferOverride(const sUI _fbIdx, void *_pixelData, const sUI _w, const sUI _h, const sUI _pitch) {
-      Dprintf("[dbg] Minnie::setFramebufferOverride: fbIdx=%u pixels=%p w=%u h=%u pitch=%u\n", _fbIdx, _pixelData, _w, _h, _pitch);
+      Dprintf("[dbg] minnie::MinnieSetup::setFramebufferOverride: fbIdx=%u pixels=%p w=%u h=%u pitch=%u\n", _fbIdx, _pixelData, _w, _h, _pitch);
       FramebufferOverride *fbOver = &framebuffer_overrides[_fbIdx];
       fbOver->pixels.any = _pixelData;
       fbOver->w     = _w;
@@ -12704,7 +12678,7 @@ struct MinnieSetup {
                            ) {
       memptr_t m; m.any = _data;
       memptr_t mStart = m;
-      Dprintf("[trc] Minnie::initScratchBuffers: data=%p dataSz=%u\n", _data, _dataSz);
+      Dprintf("[trc] minnie::MinnieSetup::initScratchBuffers: data=%p dataSz=%u\n", _data, _dataSz);
 
       def_points_per_path            = _defPointsPerPath;
       max_extruded_vertices_per_path = _maxExtrudedVerticesPerPath;
@@ -12713,7 +12687,7 @@ struct MinnieSetup {
 
       tmpfa_extrude.init(NULL/*allocator*/, _maxExtrudedVerticesPerPath * 2u, m.any);
       m.f32 += tmpfa_extrude.max_elements;
-      /* Dprintf("xxx tmpfa_extrude=%p elements=%p max=%u\n", &tmpfa_extrude, tmpfa_extrude.elements.any, tmpfa_extrude.max_elements); */
+      // Dprintf("[>>>] minnie::MinnieSetup::initScratchBuffers: tmpfa_extrude=%p elements=%p max=%u\n", &tmpfa_extrude, tmpfa_extrude.elements.any, tmpfa_extrude.max_elements);
 
       tmpfa_points2.init(NULL/*allocator*/, _maxPointsPerPath * 2u, m.any);
       m.f32 += tmpfa_points2.max_elements;
@@ -12748,7 +12722,7 @@ struct MinnieSetup {
       tmpfa_proj2.init(NULL/*allocator*/, _maxClippedTrisPerPath * 2u*3u, m.any);
       m.f32 += tmpfa_proj2.max_elements;
 
-      /* Dprintf("xxx m.any=%p mStart.any=%p => reqSz=%u\n", m.any, mStart.any, (sU32)(m.u8 - mStart.u8)); */
+      // Dprintf("[>>>] minnie::MinnieSetup::initScratchBuffers: m.any=%p mStart.any=%p => reqSz=%u\n", m.any, mStart.any, (sU32)(m.u8 - mStart.u8));
 
 #if MINNIE_ALLOC_DEBUG
       if(NULL != _data) // not probing ?
@@ -12785,12 +12759,14 @@ extern "C" {
 #define Dmin_fxn_impl(ret, name, ...) ret name##Impl (minnie_context_t _ctx, __VA_ARGS__)
 #define Dmin_fxn_impl_void(ret, name) ret name##Impl (minnie_context_t _ctx)
 #define Dmin_fxn_ctx minnie::MinnieSetup *ctx = (minnie::MinnieSetup*)_ctx
+#define Dmin_context_local minnie_context_t minnie_context = _ctx; (void)minnie_context
 #else
 #define Dmin_fxn_decl(ret, name, ...) ret name (__VA_ARGS__)
 #define Dmin_fxn_decl_void(ret, name) ret name (void)
 #define Dmin_fxn_impl(ret, name, ...) ret name (__VA_ARGS__)
 #define Dmin_fxn_impl_void(ret, name) ret name (void)
-#define Dmin_fxn_ctx minnie::MinnieSetup *ctx = (minnie::MinnieSetup*)minnie_context;
+#define Dmin_fxn_ctx minnie::MinnieSetup *ctx = (minnie::MinnieSetup*)minnie_context; (void)ctx
+#define Dmin_context_local while(0)
 #endif // MINNIE_USE_CONTEXT_ARG
 
 minnie_context_t YAC_CALL minContextCreate (void);
@@ -13094,6 +13070,18 @@ Dmin_fxn_decl(void, minSetEnableMultiPathHWPolygons, sBool _bEnable);
 #define minGetEnableMultiPathHWPolygons() minGetEnableMultiPathHWPolygonsImpl(minnie_context)
 #endif // MINNIE_USE_CONTEXT_ARG
 Dmin_fxn_decl_void(sBool, minGetEnableMultiPathHWPolygons);
+
+// YF void YAC_CALL minSetEnableForceMiterToBevel(sBool _bEnable);
+#ifdef MINNIE_USE_CONTEXT_ARG
+#define minSetEnableForceMiterToBevel(...) minSetEnableForceMiterToBevelImpl(minnie_context, __VA_ARGS__)
+#endif // MINNIE_USE_CONTEXT_ARG
+Dmin_fxn_decl(void, minSetEnableForceMiterToBevel, sBool _bEnable);
+
+// YF sBool YAC_CALL minGetEnableForceMiterToBevel(void);
+#ifdef MINNIE_USE_CONTEXT_ARG
+#define minGetEnableForceMiterToBevel() minGetEnableForceMiterToBevelImpl(minnie_context)
+#endif // MINNIE_USE_CONTEXT_ARG
+Dmin_fxn_decl_void(sBool, minGetEnableForceMiterToBevel);
 
 // YF void YAC_CALL minSetStrokeWLineStripThreshold(sF32 _threshold);
 #ifdef MINNIE_USE_CONTEXT_ARG
@@ -14246,7 +14234,7 @@ Dmin_fxn_impl_void(sBool, minGetEnableForceConcaveComplex) {
 }
 
 /* @function minSetEnableForceComplexConcave,boolean bEnable
-Force enve-odd polygons to be rendered using the concave code paths
+Force even-odd polygons to be rendered using the concave code paths
 
 @see minGetEnableForceComplexConcave
 @group Config
@@ -14334,6 +14322,28 @@ Query GPU-accelerated-filled-multipath-polygons enable-state.
 Dmin_fxn_impl_void(sBool, minGetEnableMultiPathHWPolygons) {
    Dmin_fxn_ctx;
    return ctx->getEnableMultiPathHWPolygons();
+}
+
+/* @function minSetEnableMiterToBevel,boolean bEnable
+Force miter to bevel line joints
+
+@see minGetEnableForceMiterToBevel
+@group Config
+*/
+Dmin_fxn_impl(void, minSetEnableForceMiterToBevel, sBool _bEnable) {
+   Dmin_fxn_ctx;
+   ctx->setEnableForceMiterToBevel(_bEnable);
+}
+
+/* @function minGetEnableForceMiterToBevel:boolean
+Query force-miter-to-bevel enable-state
+
+@see minSetEnableForceMiterToBevel
+@group Config
+*/
+Dmin_fxn_impl_void(sBool, minGetEnableForceMiterToBevel) {
+   Dmin_fxn_ctx;
+   return ctx->getEnableForceMiterToBevel();
 }
 
 /* @function minSetStrokeWLineStripThreshold,float threshold
@@ -14788,11 +14798,8 @@ Begin new Even-Odd path definition
 @groupref Element
 */
 Dmin_fxn_impl_void(sUI, minBeginPath) {
-#ifdef MINNIE_USE_CONTEXT_ARG
-   return minBeginPathExImpl(_ctx, MINNIE_PATH_TYPE_COMPLEX);
-#else
+   Dmin_context_local;
    return minBeginPathEx(MINNIE_PATH_TYPE_COMPLEX);
-#endif // MINNIE_USE_CONTEXT_ARG
 }
 
 /* @function minBeginPathConvex:int
@@ -14805,11 +14812,8 @@ Begin new Convex path definition
 @groupref Element
 */
 Dmin_fxn_impl_void(sUI, minBeginPathConvex) {
-#ifdef MINNIE_USE_CONTEXT_ARG
-   return minBeginPathExImpl(_ctx, MINNIE_PATH_TYPE_CONVEX);
-#else
+   Dmin_context_local;
    return minBeginPathEx(MINNIE_PATH_TYPE_CONVEX);
-#endif // MINNIE_USE_CONTEXT_ARG
 }
 
 /* @function minBeginPathConcave:int
@@ -14822,11 +14826,8 @@ Begin new Concave path definition
 @groupref Element
 */
 Dmin_fxn_impl_void(sUI, minBeginPathConcave) {
-#ifdef MINNIE_USE_CONTEXT_ARG
-   return minBeginPathExImpl(_ctx, MINNIE_PATH_TYPE_CONCAVE);
-#else
+   Dmin_context_local;
    return minBeginPathEx(MINNIE_PATH_TYPE_CONCAVE);
-#endif // MINNIE_USE_CONTEXT_ARG
 }
 
 /* @function minBeginPathComplex:int
@@ -14839,11 +14840,8 @@ Begin new Even-Odd path definition
 @groupref Element
 */
 Dmin_fxn_impl_void(sUI, minBeginPathComplex) {
-#ifdef MINNIE_USE_CONTEXT_ARG
-   return minBeginPathExImpl(_ctx, MINNIE_PATH_TYPE_COMPLEX);
-#else
+   Dmin_context_local;
    return minBeginPathEx(MINNIE_PATH_TYPE_COMPLEX);
-#endif // MINNIE_USE_CONTEXT_ARG
 }
 
 /* @function minBeginImmediate
@@ -14858,11 +14856,8 @@ Immediate paths are particularly useful for graphics elements like UV-textured t
 @groupref Immediate
 */
 Dmin_fxn_impl_void(void, minBeginImmediate) {
-#ifdef MINNIE_USE_CONTEXT_ARG
-   (void)minBeginPathExImpl(_ctx, MINNIE_PATH_TYPE_IMMEDIATE);
-#else
+   Dmin_context_local;
    (void)minBeginPathEx(MINNIE_PATH_TYPE_IMMEDIATE);
-#endif // MINNIE_USE_CONTEXT_ARG
 }
 
 /* @function minEndImmediate
@@ -14962,11 +14957,8 @@ Begin new Even-Odd sub-path definition
 @groupref Element
 */
 Dmin_fxn_impl_void(sUI, minBeginSub) {
-#ifdef MINNIE_USE_CONTEXT_ARG
-   return minBeginSubExImpl(_ctx, MINNIE_PATH_TYPE_COMPLEX);
-#else
+   Dmin_context_local;
    return minBeginSubEx(MINNIE_PATH_TYPE_COMPLEX);
-#endif // MINNIE_USE_CONTEXT_ARG
 }
 
 /* @function minBeginSubConvex:int
@@ -14978,11 +14970,8 @@ Begin new Convex sub-path definition
 @groupref Element
 */
 Dmin_fxn_impl_void(sUI, minBeginSubConvex) {
-#ifdef MINNIE_USE_CONTEXT_ARG
-   return minBeginSubExImpl(_ctx, MINNIE_PATH_TYPE_CONVEX);
-#else
+   Dmin_context_local;
    return minBeginSubEx(MINNIE_PATH_TYPE_CONVEX);
-#endif // MINNIE_USE_CONTEXT_ARG
 }
 
 /* @function minBeginSubConcave:int
@@ -14994,11 +14983,8 @@ Begin new Concave sub-path definition
 @groupref Element
 */
 Dmin_fxn_impl_void(sUI, minBeginSubConcave) {
-#ifdef MINNIE_USE_CONTEXT_ARG
-   return minBeginSubExImpl(_ctx, MINNIE_PATH_TYPE_CONCAVE);
-#else
+   Dmin_context_local;
    return minBeginSubEx(MINNIE_PATH_TYPE_CONCAVE);
-#endif // MINNIE_USE_CONTEXT_ARG
 }
 
 /* @function minBeginSubComplex:int
@@ -15010,11 +14996,8 @@ Begin new Even-Odd sub-path definition
 @groupref Element
 */
 Dmin_fxn_impl_void(sUI, minBeginSubComplex) {
-#ifdef MINNIE_USE_CONTEXT_ARG
-   return minBeginSubExImpl(_ctx, MINNIE_PATH_TYPE_COMPLEX);
-#else
+   Dmin_context_local;
    return minBeginSubEx(MINNIE_PATH_TYPE_COMPLEX);
-#endif // MINNIE_USE_CONTEXT_ARG
 }
 
 /* @function minEndSub,boolean bClosed
@@ -15024,11 +15007,8 @@ End sub-path definition
 @groupref Element
 */
 Dmin_fxn_impl(void, minEndSub, sBool _bClosed) {
-#ifdef MINNIE_USE_CONTEXT_ARG
-   minEndPathImpl(_ctx, _bClosed);
-#else
+   Dmin_context_local;
    minEndPath(_bClosed);
-#endif // MINNIE_USE_CONTEXT_ARG
 }
 
 /* @function minEndSubOpen
@@ -15038,11 +15018,8 @@ End sub-path definition and keep sub-path open
 @groupref Element
 */
 Dmin_fxn_impl_void(void, minEndSubOpen) {
-#ifdef MINNIE_USE_CONTEXT_ARG
-   minEndSubImpl(_ctx, YAC_FALSE/*bClosed*/);
-#else
+   Dmin_context_local;
    minEndSub(YAC_FALSE/*bClosed*/);
-#endif // MINNIE_USE_CONTEXT_ARG
 }
 
 /* @function minEndSubClosed
@@ -15052,11 +15029,8 @@ End sub-path definition and close sub-path (connect last to first)
 @groupref Element
 */
 Dmin_fxn_impl_void(void, minEndSubClosed) {
-#ifdef MINNIE_USE_CONTEXT_ARG
-   minEndSubImpl(_ctx, YAC_TRUE/*bClosed*/);
-#else
+   Dmin_context_local;
    minEndSub(YAC_TRUE/*bClosed*/);
-#endif // MINNIE_USE_CONTEXT_ARG
 }
 
 /* @function minStrokeWidth,float w
@@ -15252,11 +15226,8 @@ Disable line joints
 @groupref Draw
 */
 Dmin_fxn_impl_void(void, minJoinNone) {
-#ifdef MINNIE_USE_CONTEXT_ARG
-   minJoinImpl(_ctx, MINNIE_LINEJOIN_NONE);
-#else
+   Dmin_context_local;
    minJoin(MINNIE_LINEJOIN_NONE);
-#endif // MINNIE_USE_CONTEXT_ARG
 }
 
 /* @function minJoinMiter
@@ -15268,11 +15239,8 @@ Select Miter line joints
 @groupref Draw
 */
 Dmin_fxn_impl_void(void, minJoinMiter) {
-#ifdef MINNIE_USE_CONTEXT_ARG
-   minJoinImpl(_ctx, MINNIE_LINEJOIN_MITER);
-#else
+   Dmin_context_local;
    minJoin(MINNIE_LINEJOIN_MITER);
-#endif // MINNIE_USE_CONTEXT_ARG
 }
 
 /* @function minJoinRound
@@ -15284,11 +15252,8 @@ Select Round line joints
 @groupref Draw
 */
 Dmin_fxn_impl_void(void, minJoinRound) {
-#ifdef MINNIE_USE_CONTEXT_ARG
-   minJoinImpl(_ctx, MINNIE_LINEJOIN_ROUND);
-#else
+   Dmin_context_local;
    minJoin(MINNIE_LINEJOIN_ROUND);
-#endif // MINNIE_USE_CONTEXT_ARG
 }
 
 /* @function minJoinBevel
@@ -15300,11 +15265,8 @@ Select Bevel line joints
 @groupref Draw
 */
 Dmin_fxn_impl_void(void, minJoinBevel) {
-#ifdef MINNIE_USE_CONTEXT_ARG
-   minJoinImpl(_ctx, MINNIE_LINEJOIN_BEVEL);
-#else
+   Dmin_context_local;
    minJoin(MINNIE_LINEJOIN_BEVEL);
-#endif // MINNIE_USE_CONTEXT_ARG
 }
 
 /* @function minCap,int capType
@@ -15330,11 +15292,8 @@ Disable line caps
 @groupref Draw
 */
 Dmin_fxn_impl_void(void, minCapNone) {
-#ifdef MINNIE_USE_CONTEXT_ARG
-   minCapImpl(_ctx, MINNIE_LINECAP_NONE);
-#else
+   Dmin_context_local;
    minCap(MINNIE_LINECAP_NONE);
-#endif // MINNIE_USE_CONTEXT_ARG
 }
 
 /* @function minCapRound
@@ -15346,11 +15305,8 @@ Select Round line caps
 @groupref Draw
 */
 Dmin_fxn_impl_void(void, minCapRound) {
-#ifdef MINNIE_USE_CONTEXT_ARG
-   minCapImpl(_ctx, MINNIE_LINECAP_ROUND);
-#else
+   Dmin_context_local;
    minCap(MINNIE_LINECAP_ROUND);
-#endif // MINNIE_USE_CONTEXT_ARG
 }
 
 /* @function minCapButt
@@ -15362,11 +15318,8 @@ Select Butt line caps
 @groupref Draw
 */
 Dmin_fxn_impl_void(void, minCapButt) {
-#ifdef MINNIE_USE_CONTEXT_ARG
-   minCapImpl(_ctx, MINNIE_LINECAP_BUTT);
-#else
+   Dmin_context_local;
    minCap(MINNIE_LINECAP_BUTT);
-#endif // MINNIE_USE_CONTEXT_ARG
 }
 
 /* @function minSetGeoScale2f,float sx,float sy
@@ -16309,12 +16262,13 @@ Select custom paint for subsequent draw calls
 */
 Dmin_fxn_impl(void, minPaint, sUI _paintId) {
    Dmin_fxn_ctx;
-   // select paint
+   Dmin_context_local;
+
    if(_paintId > 0u)
    {
       if(_paintId <= ctx->paints.num_elements)
       {
-         /* Dprintf("xxx minPaint(%u) cur_paint_id=%u\n", _paintId, ctx->cur_paint_id); */
+         // Dprintf("[>>>] minPaint(%u) cur_paint_id=%u\n", _paintId, ctx->cur_paint_id);
          minnie::Paint *p = ctx->paints.elements[_paintId - 1u];
          ctx->cur_paint_id = _paintId;
 

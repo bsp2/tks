@@ -277,10 +277,16 @@ void hal_on_draw(void) {
       // Dprintf("xxx b_gl_buf_once=%d minDrawableIsComplete(drawable)=%d\n", b_gl_buf_once, minDrawableIsComplete(drawable));
       minSetStrokeScale(stroke_scale);
 
+      sBool bMiterToBevel = minGetEnableForceMiterToBevel();
+      if(40/*tiger*/ == test_idx)
+         minSetEnableForceMiterToBevel(1);
+
       if(MinnieVG_SetupDrawableFromBuffer(drawable, &fileBuf))
       {
          // Dprintf("xxx drawable.sz=(%f; %f)\n", minDrawableGetSizeX(drawable), minDrawableGetSizeY(drawable));
       }
+
+      minSetEnableForceMiterToBevel(bMiterToBevel);
    }
 
    MinnieVG_BeginFrame();

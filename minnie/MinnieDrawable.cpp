@@ -134,11 +134,7 @@ void _MinnieDrawable::freeGL(void) {
    if(0u != gl_buf_id)
    {
       reset();
-#if 1
       sdvg_DestroyVBO(gl_buf_id);
-#else
-      Dsdvg_glcall(zglDeleteBuffer(gl_buf_id));
-#endif
       gl_buf_id = 0u;
    }
 }
@@ -154,20 +150,8 @@ void _MinnieDrawable::lazyAllocGL(void) {
    // Create vertex attrib buffer
    if(0u == gl_buf_id && NULL != buf_gl && buf_gl->size > 0u)
    {
-#if 1
       gl_buf_id = sdvg_CreateVBO(buf_gl->size);
       sdvg_BindVBO(0);
-#else
-      gl_buf_id = Dsdvg_glcall(zglGenBuffer());
-      Dsdvg_glcall(glBindBuffer(GL_ARRAY_BUFFER, gl_buf_id));
-      Dsdvg_glcall(zglBufferData(GL_ARRAY_BUFFER, buf_gl->size, NULL, GL_STATIC_DRAW));
-      Dsdvg_glcall(glBindBuffer(GL_ARRAY_BUFFER, 0)); // remove binding
-      GLenum lastError = Dsdvg_glcall(glGetError());
-      if(GL_NO_ERROR != lastError)
-      {
-         Dyac_host_printf("[dbg] MinnieDrawable::lazyAllocGL: VBO last error is %d\n", lastError);
-      }
-#endif
    }
 }
 
@@ -278,7 +262,12 @@ sBool _MinnieDrawable::isComplete(void) {
    return (Dstream_get_offset(buf_gl) > 0u) && (Dstream_get_offset(buf_draw) > 0u);
 }
 
+#ifndef MINNIE_USE_CONTEXT_ARG
 void _MinnieDrawable::begin(void) {
+#else
+void _MinnieDrawable::begin(minnie_context_t _ctx) {
+   Dmin_context_local;
+#endif // !MINNIE_USE_CONTEXT_ARG
    minFreeDynamic();
    // minDebugPrintAllocStats();
    minResetAllocStats();
@@ -288,7 +277,12 @@ void _MinnieDrawable::begin(void) {
    minBegin();
 }
 
+#ifndef MINNIE_USE_CONTEXT_ARG
 void _MinnieDrawable::end(void) {
+#else
+void _MinnieDrawable::end(minnie_context_t _ctx) {
+   Dmin_context_local;
+#endif // !MINNIE_USE_CONTEXT_ARG
    minEnd();
    // // setSize2f((sF32)minGetWidth(), (sF32)minGetHeight());
    setBackgroundColor(minGetColorByIndex(0));
@@ -296,7 +290,7 @@ void _MinnieDrawable::end(void) {
 }
 
 void _MinnieDrawable::drawTint32(sU32 _tint32Fill, sU32 _tint32Stroke) {
-   // Dyac_host_printf("xxx _MinnieDrawable::draw()\n");
+   // Dyac_host_printf("[>>>] _MinnieDrawable::draw()\n");
    lazyAllocGL();
 
    if(0u != gl_buf_id && isComplete())
@@ -304,14 +298,8 @@ void _MinnieDrawable::drawTint32(sU32 _tint32Fill, sU32 _tint32Stroke) {
       if(b_gl_buf_update_pending)
       {
          b_gl_buf_update_pending = false;
-#if 1
          sdvg_UpdateVBO(gl_buf_id, 0, Dstream_get_offset(buf_gl), buf_gl);
          sdvg_BindVBO(0);
-#else
-         Dsdvg_glcall(glBindBuffer(GL_ARRAY_BUFFER, gl_buf_id));
-         Dsdvg_glcall(zglBufferSubData(GL_ARRAY_BUFFER, 0, Dstream_get_offset(buf_gl), buf_gl));
-         Dsdvg_glcall(glBindBuffer(GL_ARRAY_BUFFER, 0));
-#endif
       }
 
       minExecDrawListEx(buf_draw, gl_buf_id, b_debug, _tint32Fill, _tint32Stroke);
@@ -326,7 +314,6 @@ void _MinnieDrawable::draw(void) {
 #ifndef MINNIE_SKIP_DRAWABLE_C_API
 
 MinnieDrawable *minDrawableNew(void) {
-   // // return (MinnieDrawable*)new(std::nothrow)_MinnieDrawable();
    _MinnieDrawable *r = (_MinnieDrawable *)minnie_alloc(NULL/*allocator*/, sizeof(MinnieDrawable));
    new(r)_MinnieDrawable();
    return (MinnieDrawable*)r;
@@ -339,7 +326,6 @@ void minDrawableInit(MinnieDrawable *_drawable) {
 void minDrawableDelete(MinnieDrawable *_drawable) {
    if(NULL != _drawable)
    {
-      // // delete _drawable;
       _MinnieDrawable *drawable = (_MinnieDrawable*)_drawable;
       drawable->~_MinnieDrawable();
       minnie_free(NULL/*allocator*/, (void*)_drawable);
@@ -374,6 +360,10 @@ void minDrawableLazyAllocGL(MinnieDrawable *_drawable) {
    _drawable->lazyAllocGL();
 }
 
+void minDrawableOnOpen(MinnieDrawable *_drawable) {
+   _drawable->onOpen();
+}
+
 YAC_Buffer *minDrawableGetGLBuffer(MinnieDrawable *_drawable) {
    return _drawable->getGLBuffer();
 }
@@ -388,10 +378,6 @@ YAC_Buffer *minDrawableGetDrawBuffer(MinnieDrawable *_drawable) {
 
 sUI minDrawableGetDrawOffset(MinnieDrawable *_drawable) {
    return _drawable->getDrawOffset();
-}
-
-void minDrawableOnOpen(MinnieDrawable *_drawable) {
-   _drawable->onOpen();
 }
 
 void minDrawableSetSize2f(MinnieDrawable *_drawable, sF32 _w, sF32 _h) {
@@ -478,12 +464,20 @@ sBool minDrawableIsComplete(MinnieDrawable *_drawable) {
    return _drawable->isComplete();
 }
 
-void minDrawableBegin(MinnieDrawable *_drawable) {
+Dmin_fxn_impl(void, minDrawableBegin, MinnieDrawable *_drawable) {
+#ifdef MINNIE_USE_CONTEXT_ARG
+   _drawable->begin(_ctx);
+#else
    _drawable->begin();
+#endif // MINNIE_USE_CONTEXT_ARG
 }
 
-void minDrawableEnd(MinnieDrawable *_drawable) {
+Dmin_fxn_impl(void, minDrawableEnd, MinnieDrawable *_drawable) {
+#ifdef MINNIE_USE_CONTEXT_ARG
+   _drawable->end(_ctx);
+#else
    _drawable->end();
+#endif // MINNIE_USE_CONTEXT_ARG
 }
 
 void minDrawableDraw(MinnieDrawable *_drawable) {

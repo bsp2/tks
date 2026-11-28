@@ -360,14 +360,22 @@ struct MinnieDrawable_s {
 
       Free dynamic allocations, reset allocation stats, reset buffer write offsets, call %minBegin.
    */
+#ifndef MINNIE_USE_CONTEXT_ARG
    YM void begin (void);
+#else
+   void begin (minnie_context_t _ctx);
+#endif // !MINNIE_USE_CONTEXT_ARG
 
    /* @method end
       Finish drawable setup.
 
       Call %minEnd, update size and background color (first palette index), queue GL vertex buffer object update.
    */
+#ifndef MINNIE_USE_CONTEXT_ARG
    YM void end (void);
+#else
+   void end (minnie_context_t _ctx);
+#endif // !MINNIE_USE_CONTEXT_ARG
 
    /* @method draw
       Render drawable.
@@ -395,21 +403,37 @@ struct MinnieDrawable_s {
 #ifdef __cplusplus
 extern "C" {
 #endif // __cplusplus
+
+// May only be called from UI/graphics thread:
+//  (note) application must ensure that drawable is not currently used in worker thread
+//  (todo) add minDrawableAcquire() / minDrawableRelease() ?
 MinnieDrawable *minDrawableNew (void);
 void minDrawableInit (MinnieDrawable *_drawable);
 void minDrawableDelete (MinnieDrawable *_drawable);
 sBool minDrawableAlloc (MinnieDrawable *_drawable, sUI _maxGLBufSize, sUI _maxDrawBufSize);
+
+// May be called from worker threads:
+//  (note) application must ensure that drawable is not currently used in UI/graphics thread
+//  (todo) add minDrawableAcquire() / minDrawableRelease() ?
 void minDrawableReset (MinnieDrawable *_drawable);
 void minDrawableSetEnableDebug (MinnieDrawable *_drawable, sBool _bEnable);
 sBool minDrawableGetEnableDebug (MinnieDrawable *_drawable);
+
+// May only be called from UI/graphics thread:
+//  (note) application must ensure that drawable is not currently used in worker thread
+//  (todo) add minDrawableAcquire() / minDrawableRelease() ?
 void minDrawableFreeGL (MinnieDrawable *_drawable);
 void minDrawableFree (MinnieDrawable *_drawable);
 void minDrawableLazyAllocGL (MinnieDrawable *_drawable);
+void minDrawableOnOpen (MinnieDrawable *_drawable);
+
+// May be called from worker threads:
+//  (note) application must ensure that drawable is not currently used in UI/graphics thread
+//  (todo) add minDrawableAcquire() / minDrawableRelease() ?
 YAC_Buffer *minDrawableGetGLBuffer (MinnieDrawable *_drawable);
 sUI minDrawableGetGLOffset (MinnieDrawable *_drawable);
 YAC_Buffer *minDrawableGetDrawBuffer (MinnieDrawable *_drawable);
 sUI minDrawableGetDrawOffset (MinnieDrawable *_drawable);
-void minDrawableOnOpen (MinnieDrawable *_drawable);
 void minDrawableSetSize2f (MinnieDrawable *_drawable, sF32 _w, sF32 _h);
 void minDrawableSetSizeX (MinnieDrawable *_drawable, sF32 _w);
 void minDrawableSetSizeY (MinnieDrawable *_drawable, sF32 _h);
@@ -431,10 +455,29 @@ sF32 minDrawableGetTranslateX (MinnieDrawable *_drawable);
 sF32 minDrawableGetTranslateY (MinnieDrawable *_drawable);
 void minDrawableQueueGLBufUpdate (MinnieDrawable *_drawable);
 sBool minDrawableIsComplete (MinnieDrawable *_drawable);
-void minDrawableBegin (MinnieDrawable *_drawable);
-void minDrawableEnd (MinnieDrawable *_drawable);
+
+// May be called from worker threads:
+//  (note) application must ensure that drawable is not currently used in UI/graphics thread
+//  (todo) add minDrawableAcquire() / minDrawableRelease() ?
+#ifdef MINNIE_USE_CONTEXT_ARG
+#define minDrawableBegin(...) minDrawableBeginImpl(minnie_context, __VA_ARGS__)
+#endif // MINNIE_USE_CONTEXT_ARG
+Dmin_fxn_decl(void, minDrawableBegin, MinnieDrawable *_drawable);
+
+// May be called from worker threads:
+//  (note) application must ensure that drawable is not currently used in UI/graphics thread
+//  (todo) add minDrawableAcquire() / minDrawableRelease() ?
+#ifdef MINNIE_USE_CONTEXT_ARG
+#define minDrawableEnd(...) minDrawableEndImpl(minnie_context, __VA_ARGS__)
+#endif // MINNIE_USE_CONTEXT_ARG
+Dmin_fxn_decl(void, minDrawableEnd, MinnieDrawable *_drawable);
+
+// May only be called from UI/graphics thread:
+//  (note) application must ensure that drawable is not currently used in worker thread
+//  (todo) add minDrawableAcquire() / minDrawableRelease() ?
 void minDrawableDraw (MinnieDrawable *_drawable);
 void minDrawableDrawTint32 (MinnieDrawable *_drawable, sU32 _tint32Fill, sU32 _tint32Stroke);
+
 #ifdef __cplusplus
 } // extern "C"
 #endif // __cplusplus
