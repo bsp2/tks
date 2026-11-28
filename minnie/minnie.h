@@ -14324,7 +14324,7 @@ Dmin_fxn_impl_void(sBool, minGetEnableMultiPathHWPolygons) {
    return ctx->getEnableMultiPathHWPolygons();
 }
 
-/* @function minSetEnableMiterToBevel,boolean bEnable
+/* @function minSetEnableForceMiterToBevel,boolean bEnable
 Force miter to bevel line joints
 
 @see minGetEnableForceMiterToBevel
